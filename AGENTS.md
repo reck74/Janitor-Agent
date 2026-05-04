@@ -1,3 +1,14 @@
+# JANITOR FORK DIRECTIVES (SUPREME RULES)
+
+1. **ZERO-RENAMING POLICY**: Nunca hagas buscar-y-reemplazar de la palabra 'hermes' en el core. El motor subyacente se mantiene intacto para garantizar que `git pull upstream main` funcione sin conflictos destructivos.
+2. **CLI WRAPPER**: Las extensiones de Janitor heredarán de `HermesCLI` en archivos separados (ej. `janitor_cli.py`). No se modifica `cli.py` original.
+3. **SKILLS AISLADOS**: Toda habilidad nueva debe ir exclusivamente bajo `skills/janitor-*/`. Los skills del core Hermes nunca se tocan.
+4. **TUI ISOLATION**: Los cambios visuales del TUI deben ser condicionados o inyectados vía el sistema de skins (`skin_engine.py`) sin destruir la compatibilidad del protocolo JSON-RPC. No se hace hardcode en los componentes base del TUI.
+5. **merge-auditor**: Cada merge debe ser auditado contra estas directivas. Si un PR introduce 'hermes' renombrado en archivos core, se rechaza automáticamente.
+6. **tui-compilation**: Los cambios en el TUI requieren pasar `npm run build` Y `npm test` (vitest) ANTES de hacer commit. El pipeline CI de Janitor ejecuta esta habilidad como gate obligatorio.
+
+---
+
 # Hermes Agent - Development Guide
 
 Instructions for AI coding assistants and developers working on the hermes-agent codebase.
