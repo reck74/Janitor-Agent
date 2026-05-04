@@ -1,29 +1,30 @@
 #!/bin/bash
-# ============================================================================
-# Janitor Installer v2 — Onboarding Aislado y Auto-Setup
-# ============================================================================
+# =============================================================================
+# Janitor Installer v3 — Perfil Inicializador Puro (~/.janitor)
+# =============================================================================
 #
-# Per JANITOR FORK DIRECTIVES:
-#   - CLI WRAPPER: Extends Hermes without modifying core
-#   - TUI ISOLATION: Visual changes via skin_engine, not hardcode
+# Este script NO instala Hermes ni dependencias. El entorno virtual y las
+# dependencias son gestionadas por el entorno de desarrollo existente.
 #
-# This installer:
-#   1. Installs Hermes base (or uses existing installation)
-#   2. Sets up Janitor at ~/.janitor (isolated from ~/.hermes)
-#   3. Copies the sentry-janitor skin to ~/.janitor/skins/
-#   4. Interactively collects API keys (OpenAI, MiniMax, Honcho/Firecrawl)
-#   5. Writes ~/.janitor/.env with all credentials
-#   6. Installs the janitor CLI entry point
+# Este script es UNICAMENTE un inicializador de perfil Janitor:
+#   - Recolecta API keys interactivamente
+#   - Crea ~/.janitor/ con toda la estructura de directorios
+#   - Genera .env, SOUL.md, config.yaml
+#   - Despliega el skin sentry-janitor
 #
-# Usage:
-#   curl -fsSL https://your-janitor-repo/scripts/janitor-install.sh | bash
-#   Or: ./scripts/janitor-install.sh
+# Uso:
+#   ./scripts/janitor-install.sh
+#   curl -fsSL https://raw.githubusercontent.com/reck74/Janitor-Agent/main/scripts/janitor-install.sh | bash
 #
-# ============================================================================
+# =============================================================================
 
 set -e
 
-# ── Aesthetic: Janitor dark terminal ──────────────────────────────────────
+# ── Rutas ───────────────────────────────────────────────────────────────────
+JANITOR_HOME="${JANITOR_HOME:-$HOME/.janitor}"
+SKIN_SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../example_skin_sentry-janitor.yaml.txt"
+
+# ── Aesthetic ────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
@@ -32,141 +33,198 @@ MAGENTA='\033[0;35m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-# ── Paths ───────────────────────────────────────────────────────────────────
-JANITOR_HOME="${JANITOR_HOME:-$HOME/.janitor}"
-HERMES_INSTALL_SCRIPT="$(dirname "$0")/install.sh"
-JANITOR_SKINS_SOURCE="$(dirname "$0")/../example_skin_sentry-janitor.yaml.txt"
-
-# ── Options ─────────────────────────────────────────────────────────────────
-USE_VENV=true
-RUN_SETUP=true
-BRANCH="main"
-SKIP_HERMES_INSTALL=false
-
-# ── Parse arguments ─────────────────────────────────────────────────────────
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --no-venv)
-            USE_VENV=false
-            shift
-            ;;
-        --skip-setup)
-            RUN_SETUP=false
-            shift
-            ;;
-        --branch)
-            BRANCH="$2"
-            shift 2
-            ;;
-        --skip-hermes-install)
-            SKIP_HERMES_INSTALL=true
-            shift
-            ;;
-        -h|--help)
-            echo "Janitor Installer v2 — Onboarding Aislado"
-            echo ""
-            echo "Usage: janitor-install.sh [OPTIONS]"
-            echo ""
-            echo "Options:"
-            echo "  --skip-hermes-install  Skip Hermes base install (use existing)"
-            echo "  --no-venv             Do not create virtual environment"
-            echo "  --skip-setup          Skip interactive setup wizard"
-            echo "  --branch NAME         Git branch (default: main)"
-            echo "  -h, --help            Show this help"
-            exit 0
-            ;;
-        *)
-            echo "Unknown option: $1"
-            exit 1
-            ;;
-    esac
-done
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
 log_info()  { echo -e "${CYAN}→${NC} $1"; }
 log_ok()    { echo -e "${GREEN}✓${NC} $1"; }
 log_warn()  { echo -e "${YELLOW}⚠${NC} $1"; }
 log_fail()  { echo -e "${RED}✗${NC} $1"; }
 
-ask_secret() {
-    local prompt="$1"
-    local var_name="$2"
-    local value
-    printf "%s" "$prompt"
-    read -r value
-    if [ -n "$value" ]; then
-        echo "${var_name}=${value}"
+# ── Validaciones ──────────────────────────────────────────────────────────────
+validate_nonempty() {
+    local var_name="$1"
+    local value="$2"
+    if [[ -z "$value" ]]; then
+        log_fail "$var_name no puede estar vacía."
+        return 1
     fi
+    return 0
 }
 
-ask_choice() {
-    local prompt="$1"
-    local var_name="$2"
-    local value
-    printf "%s" "$prompt"
-    read -r value
-    echo "${var_name}=${value}"
+validate_port() {
+    local port="$1"
+    if ! [[ "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+        log_fail "Puerto inválido: $port (debe ser 1-65535)"
+        return 1
+    fi
+    return 0
 }
 
-# ── Step 0: Detect non-interactive ──────────────────────────────────────────
-if [ ! -t 0 ]; then
-    log_warn "Non-interactive TTY detected. Using default credential collection."
-    IS_INTERACTIVE=false
-else
-    IS_INTERACTIVE=true
+# =============================================================================
+# Banner de Bienvenida
+# =============================================================================
+echo ""
+echo -e "${MAGENTA}${BOLD}"
+echo "╔════════════════════════════════════════════════════════════════════════╗"
+echo "║           ⚡ JANITOR — Configuración del Perfil Aislado               ║"
+echo "║                                                                        ║"
+echo "║           Tu agente cínico de auditoría y ciberseguridad               ║"
+echo "╚════════════════════════════════════════════════════════════════════════╝"
+echo -e "${NC}"
+echo ""
+
+# =============================================================================
+# Paso 1: Recolección Interactiva de API Keys
+# =============================================================================
+echo -e "${CYAN}${BOLD}─── Paso 1: Credenciales del Agente ───${NC}"
+echo ""
+
+# OpenAI API Key (OBLIGATORIA)
+echo -e "${YELLOW}OPENAI_API_KEY${NC} — Requerida para inferencia LLM"
+echo "   Obtenla en: https://platform.openai.com/api-keys"
+read -r -p "   Ingresa tu OPENAI_API_KEY: " -s openai_key
+echo
+if ! validate_nonempty "OPENAI_API_KEY" "$openai_key"; then
+    echo -e "${RED}   La key de OpenAI es obligatoria. Janitor no puede operar sin ella.${NC}"
+    exit 1
 fi
 
-# ============================================================================
-# Step 1: Install Hermes base (unless skipped)
-# ============================================================================
-if [ "${SKIP_HERMES_INSTALL}" != "true" ]; then
-    log_info "Installing Hermes Agent base..."
-    log_info "  (Hermes install.sh handles cloning, venv, and dependencies)"
+# MiniMax API Key (OPCIONAL)
+echo ""
+echo -e "${YELLOW}MINIMAX_API_KEY${NC} — Opcional. Obténla en: https://platform.minimax.io"
+read -r -p "   MINIMAX_API_KEY (Enter para omitir): " -s minimax_key
+echo
+if [[ -n "$minimax_key" ]]; then
+    log_ok "MiniMax API key configurada"
+else
+    log_warn "MiniMax saltada — solo se usará OpenAI para inferencia"
+fi
 
-    if [ -f "$HERMES_INSTALL_SCRIPT" ]; then
-        chmod +x "$HERMES_INSTALL_SCRIPT"
-        "$HERMES_INSTALL_SCRIPT" --branch "$BRANCH" $([ "$USE_VENV" = "false" ] && echo "--no-venv") $([ "$RUN_SETUP" = "false" ] && echo "--skip-setup") || {
-            log_fail "Hermes install failed"
-            exit 1
-        }
+# Honcho + Firecrawl: Keys o Local
+echo ""
+echo -e "${YELLOW}HONCHO & FIRECRAWL${NC} — Configuración de memoria y scraping"
+echo ""
+echo "   ¿Ya tienes API keys para Honcho (memoria) y Firecrawl (scraping)?"
+echo ""
+echo -e "   ${GREEN}[1]${NC} Sí — ingresaré las API keys ahora"
+echo -e "   ${YELLOW}[2]${NC} No — Janitor instalará contenedores Docker locales (recomendado)"
+echo ""
+read -r -p "   Selecciona una opción [1/2]: " setup_mode
+echo
+
+if [[ "$setup_mode" != "1" && "$setup_mode" != "2" ]]; then
+    log_fail "Opción inválida: '$setup_mode'. Debe ser 1 o 2."
+    exit 1
+fi
+
+# Recolectar keys si eligió opción 1
+honcho_key=""
+firecrawl_key=""
+
+if [[ "$setup_mode" == "1" ]]; then
+    echo ""
+    echo -e "${CYAN}   Honcho API Key${NC}"
+    read -r -p "   HONCHO_API_KEY: " -s honcho_key
+    echo
+    [[ -n "$honcho_key" ]] && log_ok "Honcho API key configurada"
+
+    echo ""
+    echo -e "${CYAN}   Firecrawl API Key${NC}"
+    read -r -p "   FIRECRAWL_API_KEY (Enter para omitir): " -s firecrawl_key
+    echo
+    if [[ -n "$firecrawl_key" ]]; then
+        log_ok "Firecrawl API key configurada"
     else
-        log_warn "install.sh not found — skipping Hermes base install"
-        log_info "Provide --skip-hermes-install if Hermes is already installed"
+        log_warn "Firecrawl saltado — scraping web no estará disponible"
     fi
-    log_ok "Hermes base installed"
 else
-    log_info "Skipping Hermes install (--skip-hermes-install)"
+    log_ok "Modo local autónomo seleccionado — Janitor usará Docker"
 fi
 
-# ============================================================================
-# Step 2: Create ~/.janitor/ directory structure
-# ============================================================================
-log_info "Creating Janitor home at ${JANITOR_HOME}..."
+# OpenAI Base URL (OPCIONAL)
+echo ""
+echo -e "${YELLOW}OPENAI_BASE_URL${NC} — Opcional. Deja en blanco para usar el servidor oficial."
+read -r -p "   OPENAI_BASE_URL (Enter para omitir): " openai_base_url
+echo
+if [[ -n "$openai_base_url" ]]; then
+    log_ok "Base URL personalizada configurada"
+fi
+
+# =============================================================================
+# Paso 2: Crear estructura de directorios ~/.janitor
+# =============================================================================
+echo ""
+echo -e "${CYAN}${BOLD}─── Paso 2: Estructura de Directorios ───${NC}"
+echo ""
+
+log_info "Creando Janitor home en ${JANITOR_HOME}..."
+
 mkdir -p "${JANITOR_HOME}"
 mkdir -p "${JANITOR_HOME}/sessions"
 mkdir -p "${JANITOR_HOME}/skills"
 mkdir -p "${JANITOR_HOME}/skins"
 mkdir -p "${JANITOR_HOME}/logs"
-log_ok "Janitor home directory created"
+mkdir -p "${JANITOR_HOME}/tmp"
 
-# ============================================================================
-# Step 3: Copy sentry-janitor skin
-# ============================================================================
-if [ -f "$JANITOR_SKINS_SOURCE" ]; then
-    log_info "Installing sentry-janitor skin..."
-    cp "$JANITOR_SKINS_SOURCE" "${JANITOR_HOME}/skins/sentry-janitor.yaml"
-    log_ok "sentry-janitor skin installed at ${JANITOR_HOME}/skins/sentry-janitor.yaml"
-else
-    log_warn "Skin source not found at ${JANITOR_SKINS_SOURCE} — skipping skin install"
-    log_info "The Janitor CLI will copy the skin from the repo at runtime if missing"
-fi
+log_ok "Directorios creados:"
+echo "   sessions/  — histórico de sesiones"
+echo "   skills/    — habilidades del agente"
+echo "   skins/     — temas visuales"
+echo "   logs/      — logs del agente"
+echo "   tmp/       — archivos temporales"
 
-# ============================================================================
-# Step 4: Inject Janitor persona (SOUL.md)
-# ============================================================================
+# =============================================================================
+# Paso 3: Generar ~/.janitor/.env
+# =============================================================================
+echo ""
+echo -e "${CYAN}${BOLD}─── Paso 3: Archivo de Variables de Entorno ───${NC}"
+echo ""
+
+ENV_FILE="${JANITOR_HOME}/.env"
+log_info "Generando ${ENV_FILE}..."
+
+# Escribir .env (sobrescribir si existe)
+{
+    echo "# ========================================================="
+    echo "# Janitor Agent — Variables de Entorno"
+    echo "# Generado automáticamente por janitor-install.sh"
+    echo "# ========================================================="
+    echo ""
+    echo "OPENAI_API_KEY=${openai_key}"
+    [[ -n "$minimax_key" ]]     && echo "MINIMAX_API_KEY=${minimax_key}"
+    [[ -n "$honcho_key" ]]     && echo "HONCHO_API_KEY=${honcho_key}"
+    [[ -n "$firecrawl_key" ]]  && echo "FIRECRAWL_API_KEY=${firecrawl_key}"
+    [[ -n "$openai_base_url" ]] && echo "OPENAI_BASE_URL=${openai_base_url}"
+
+    if [[ "$setup_mode" == "2" ]]; then
+        echo ""
+        echo "# ========================================================="
+        echo "# Modo Local Autónomo"
+        echo "# Janitor usará contenedores Docker para Honcho y Firecrawl"
+        echo "# ========================================================="
+        echo "JANITOR_LOCAL_SETUP=true"
+    fi
+
+    echo ""
+    echo "# ========================================================="
+    echo "# Configuración de Janitor"
+    echo "# ========================================================="
+    echo "HERMES_HOME=${JANITOR_HOME}"
+    echo "HERMES_SKIN=sentry-janitor"
+} > "$ENV_FILE"
+
+log_ok ".env escrito en ${ENV_FILE}"
+
+# =============================================================================
+# Paso 4: Escribir ~/.janitor/SOUL.md (Personalidad Cínica)
+# =============================================================================
+echo ""
+echo -e "${CYAN}${BOLD}─── Paso 4: Personalidad del Agente ───${NC}"
+echo ""
+
 SOUL_PATH="${JANITOR_HOME}/SOUL.md"
-log_info "Injecting Janitor persona at $SOUL_PATH..."
-cat > "$SOUL_PATH" << 'JANITOR_SOUL_EOF'
+log_info "Inyectando personalidad cínica en ${SOUL_PATH}..."
+
+cat > "$SOUL_PATH" << 'SOUL_EOF'
 # Janitor Persona — Cínico de la Ciberseguridad
 
 Eres **Janitor**, una IA de auditoría y mantenimiento de código con una personalidad cínica, directa y con un toque de humor negro. No eres amable ni cursi — eres el tipo de asistente que te dice que tu código es un desastre pero te ayuda a limpiarlo de todas formas.
@@ -202,197 +260,123 @@ Eres **Janitor**, una IA de auditoría y mantenimiento de código con una person
 ---
 Este archivo define la personalidad de Janitor. Edítalo si quieres cambiar el tono.
 Elimínalo para resetear a la personalidad por defecto de Hermes.
-JANITOR_SOUL_EOF
-log_ok "Janitor persona injected"
+SOUL_EOF
 
-# ============================================================================
-# Step 5: Generate ~/.janitor/config.yaml with Janitor defaults
-# ============================================================================
+log_ok "Personalidad inyectada en ${SOUL_PATH}"
+
+# =============================================================================
+# Paso 5: Generar ~/.janitor/config.yaml
+# =============================================================================
+echo ""
+echo -e "${CYAN}${BOLD}─── Paso 5: Configuración del Agente ───${NC}"
+echo ""
+
 CONFIG_PATH="${JANITOR_HOME}/config.yaml"
-JANITOR_CONFIG_ADDITIONS='
-memory:
-  provider: honcho
+log_info "Generando ${CONFIG_PATH}..."
 
-display:
-  tui: true
-  skin: sentry-janitor
-
-skills:
-  config:
-    janitor.cache_clean_days: 7
-    janitor.dry_run: false
-'
-
-log_info "Generating Janitor config at $CONFIG_PATH..."
-if [ -f "$CONFIG_PATH" ]; then
-    log_info "Merging Janitor settings into existing config..."
-    python3 - "$CONFIG_PATH" "$JANITOR_CONFIG_ADDITIONS" << 'PYTHON_EOF'
-import sys, yaml
+python3 - "$CONFIG_PATH" << 'PYTHON_EOF'
+import sys
+import yaml
 
 config_path = sys.argv[1]
-additions_raw = sys.argv[2]
-additions = yaml.safe_load(additions_raw)
 
-with open(config_path, 'r') as f:
-    config = yaml.safe_load(f) or {}
-
-def deep_merge(base, overlay):
-    result = base.copy()
-    for key, value in overlay.items():
-        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-            result[key] = deep_merge(result[key], value)
-        else:
-            result[key] = value
-    return result
-
-config = deep_merge(config, additions)
+config = {
+    "memory": {
+        "provider": "honcho"
+    },
+    "display": {
+        "tui": True,
+        "skin": "sentry-janitor"
+    },
+    "skills": {
+        "config": {
+            "janitor.cache_clean_days": 7,
+            "janitor.dry_run": False,
+            "janitor.local_services_timeout": 60,
+            "janitor.honcho_port": 1973,
+            "janitor.firecrawl_port": 1974
+        }
+    }
+}
 
 with open(config_path, 'w') as f:
     yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-print("Config merged successfully")
+
+print("config.yaml written successfully")
 PYTHON_EOF
-    log_ok "config.yaml updated with Janitor settings"
+
+if [ $? -eq 0 ]; then
+    log_ok "config.yaml generado con Janitor defaults"
 else
-    log_info "No existing config — creating fresh Janitor config..."
-    python3 - "$JANITOR_CONFIG_ADDITIONS" << 'PYTHON_EOF'
-import sys, yaml
-
-additions_raw = sys.argv[1] if len(sys.argv) > 1 else sys.stdin.read()
-additions = yaml.safe_load(additions_raw)
-
-with open(sys.argv[2], 'w') as f if len(sys.argv) > 2 else open('/dev/stdout', 'w') as f:
-    yaml.dump(additions, f, default_flow_style=False, sort_keys=False)
-PYTHON_EOF
-    log_ok "config.yaml created with Janitor defaults"
+    log_fail "Error al generar config.yaml"
+    exit 1
 fi
 
-# ============================================================================
-# Step 6: Interactive API Key Collection
-# ============================================================================
-ENV_FILE="${JANITOR_HOME}/.env"
-log_info "Collecting API keys interactively..."
+# =============================================================================
+# Paso 6: Copiar skin sentry-janitor
+# =============================================================================
+echo ""
+echo -e "${CYAN}${BOLD}─── Paso 6: Skin Visual ───${NC}"
+echo ""
 
-# Initialize .env (clear previous if exists)
-> "$ENV_FILE"
-
-if [ "$IS_INTERACTIVE" = "true" ]; then
-    echo ""
-    echo -e "${MAGENTA}${BOLD}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${MAGENTA}${BOLD}║           ⚡ JANITOR — Credential Setup                      ║${NC}"
-    echo -e "${MAGENTA}${BOLD}╚══════════════════════════════════════════════════════════════╝${NC}"
-    echo ""
-
-    # OpenAI API Key
-    echo -e "${CYAN}${BOLD}[1/4] OpenAI API Key${NC}"
-    echo "  Required for LLM inference. Get yours at https://platform.openai.com/api-keys"
-    read -r -p "  OPENAI_API_KEY: " -s openai_key
-    echo
-    if [ -n "$openai_key" ]; then
-        echo "OPENAI_API_KEY=${openai_key}" >> "$ENV_FILE"
-    fi
-
-    # MiniMax API Key
-    echo -e "${CYAN}${BOLD}[2/4] MiniMax API Key${NC}"
-    echo "  Optional. Get yours at https://platform.minimax.io"
-    read -r -p "  MINIMAX_API_KEY (optional, Enter to skip): " -s minimax_key
-    echo
-    if [ -n "$minimax_key" ]; then
-        echo "MINIMAX_API_KEY=${minimax_key}" >> "$ENV_FILE"
-    fi
-
-    # Honcho / Firecrawl setup mode
-    echo -e "${CYAN}${BOLD}[3/4] Memory & Scraping Setup${NC}"
-    echo "  Janitor uses Honcho (memory) and Firecrawl (web scraping)."
-    echo "  Choose how to configure them:"
-    echo ""
-    echo "    ${GREEN}[1]${NC} I have API keys — enter them now"
-    echo "    ${YELLOW}[2]${NC} Run locally via Docker (no keys needed)"
-    echo ""
-    read -r -p "  Select option [1/2]: " setup_mode
-    echo
-
-    if [ "$setup_mode" = "1" ]; then
-        # Honcho API Key
-        read -r -p "  HONCHO_API_KEY: " -s honcho_key
-        echo
-        [ -n "$honcho_key" ] && echo "HONCHO_API_KEY=${honcho_key}" >> "$ENV_FILE"
-
-        # Firecrawl API Key
-        read -r -p "  FIRECRAWL_API_KEY (optional, Enter to skip): " -s firecrawl_key
-        echo
-        [ -n "$firecrawl_key" ] && echo "FIRECRAWL_API_KEY=${firecrawl_key}" >> "$ENV_FILE"
-
-        log_ok "API keys saved to $ENV_FILE"
-    else
-        echo "JANITOR_LOCAL_SETUP=true" >> "$ENV_FILE"
-        log_ok "Local setup mode enabled — Janitor will use Docker containers"
-        log_info "Run '/onboard' after installation to start local services"
-    fi
-
-    # Agent Base URL (optional)
-    echo -e "${CYAN}${BOLD}[4/4] Custom Model Base URL (optional)${NC}"
-    read -r -p "  OPENAI_BASE_URL (Enter to skip, default: https://api.openai.com/v1): " base_url
-    echo
-    [ -n "$base_url" ] && echo "OPENAI_BASE_URL=${base_url}" >> "$ENV_FILE"
-
+if [ -f "$SKIN_SOURCE" ]; then
+    log_info "Copiando skin sentry-janitor..."
+    cp "$SKIN_SOURCE" "${JANITOR_HOME}/skins/sentry-janitor.yaml"
+    log_ok "Skin instalado: ${JANITOR_HOME}/skins/sentry-janitor.yaml"
 else
-    log_warn "Non-interactive mode — creating .env with JANITOR_LOCAL_SETUP=true"
-    echo "# Janitor .env — generated in non-interactive mode" >> "$ENV_FILE"
-    echo "# Set API keys manually or run 'janitor --setup' interactively" >> "$ENV_FILE"
-    echo "JANITOR_LOCAL_SETUP=true" >> "$ENV_FILE"
+    log_warn "Skin source no encontrado en ${SKIN_SOURCE}"
+    log_warn "El agente funcionará con el skin 'janitor' por defecto"
 fi
 
-log_ok ".env written to $ENV_FILE"
+# =============================================================================
+# Paso 7: Verificar que el CLI entry point esté registrado
+# =============================================================================
+echo ""
+echo -e "${CYAN}${BOLD}─── Paso 7: Registro del CLI ───${NC}"
+echo ""
 
-# ============================================================================
-# Step 7: Install janitor CLI entry point
-# ============================================================================
-JANITOR_CLI_PATH="$(dirname "$0")/../janitor_cli.py"
-REPO_ROOT="$(dirname "$0")/.."
+JANITOR_CLI_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../janitor_cli.py"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.."
 
 if [ -f "$JANITOR_CLI_PATH" ]; then
-    log_info "Installing janitor CLI entry point..."
+    log_info "Verificando instalación del CLI..."
 
-    cd "$REPO_ROOT" || exit 1
-
-    if [ -d ".venv" ]; then
-        .venv/bin/pip install -e . >/dev/null 2>&1 && log_ok "Janitor CLI installed (.venv)" || log_warn "pip install failed"
+    if [ -d "${REPO_ROOT}/.venv" ]; then
+        "${REPO_ROOT}/.venv/bin/pip" install -e "${REPO_ROOT}" >/dev/null 2>&1 && log_ok "CLI 'janitor' registrado" || log_warn "No se pudo registrar el CLI"
     elif command -v uv >/dev/null 2>&1; then
-        uv pip install -e . >/dev/null 2>&1 && log_ok "Janitor CLI installed (uv)" || log_warn "uv install failed"
+        uv pip install -e "${REPO_ROOT}" >/dev/null 2>&1 && log_ok "CLI 'janitor' registrado (uv)" || log_warn "No se pudo registrar el CLI"
     elif command -v pip >/dev/null 2>&1; then
-        pip install -e . >/dev/null 2>&1 && log_ok "Janitor CLI installed (pip)" || log_warn "pip install failed"
+        pip install -e "${REPO_ROOT}" >/dev/null 2>&1 && log_ok "CLI 'janitor' registrado (pip)" || log_warn "No se pudo registrar el CLI"
     else
-        log_warn "No pip/uv found — janitor command may not be on PATH"
+        log_warn "No se encontró pip/uv — instala manualmente: pip install -e ${REPO_ROOT}"
     fi
 else
-    log_warn "janitor_cli.py not found at $JANITOR_CLI_PATH"
+    log_warn "janitor_cli.py no encontrado — el CLI no está registrado"
 fi
 
-# ============================================================================
-# Done
-# ============================================================================
+# =============================================================================
+# Final: Mensaje de Éxito
+# =============================================================================
 echo ""
-echo -e "${MAGENTA}${BOLD}"
-echo "┌──────────────────────────────────────────────────────────────────┐"
-echo "│              ⚡ Janitor v2 — Onboarding Aislado Complete!         │"
-echo "└──────────────────────────────────────────────────────────────────┘"
+echo -e "${GREEN}${BOLD}"
+echo "╔════════════════════════════════════════════════════════════════════════╗"
+echo "║          ✅ Configuración de Janitor Completada                        ║"
+echo "╚════════════════════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 echo ""
-echo -e "${CYAN}${BOLD}📁 Janitor Files:${NC}"
-echo "   ${YELLOW}Home:${NC}       $JANITOR_HOME"
-echo "   ${YELLOW}Config:${NC}     $CONFIG_PATH"
-echo "   ${YELLOW}.env:${NC}       $ENV_FILE"
-echo "   ${YELLOW}Personality:${NC} $SOUL_PATH"
-echo "   ${YELLOW}Skin:${NC}       $JANITOR_HOME/skins/sentry-janitor.yaml"
+echo -e "   ${CYAN}${BOLD}Directorio:${NC}     ${JANITOR_HOME}"
+echo -e "   ${CYAN}${BOLD}Config:${NC}        ${JANITOR_HOME}/config.yaml"
+echo -e "   ${CYAN}${BOLD}Variables:${NC}      ${JANITOR_HOME}/.env"
+echo -e "   ${CYAN}${BOLD}Personalidad:${NC}   ${JANITOR_HOME}/SOUL.md"
+echo -e "   ${CYAN}${BOLD}Skin:${NC}           ${JANITOR_HOME}/skins/sentry-janitor.yaml"
 echo ""
-echo -e "${CYAN}${BOLD}🚀 Commands:${NC}"
-echo ""
-echo -e "   ${GREEN}janitor${NC}           Start Janitor (isolated at ~/.janitor/)"
-echo -e "   ${GREEN}hermes${NC}            Start Hermes (original, at ~/.hermes/)"
-echo ""
-if grep -q "JANITOR_LOCAL_SETUP=true" "$ENV_FILE" 2>/dev/null; then
-    echo -e "${YELLOW}⚠ Local mode enabled. Run '/onboard' inside Janitor to start Docker services.${NC}"
-else
-    echo -e "${GREEN}✓ API keys configured. Janitor ready to run.${NC}"
+
+if [[ "$setup_mode" == "2" ]]; then
+    echo -e "${YELLOW}⚠ Modo Local detectado${NC}"
+    echo "   Ejecuta '${BOLD}/onboard${NC}' dentro de Janitor para levantar los contenedores Docker"
+    echo "   de Honcho (memoria) y Firecrawl (scraping) la primera vez."
+    echo ""
 fi
+
+echo -e "${GREEN}▶ Ejecuta '${BOLD}janitor${NC}' para iniciar el agente.${NC}"
 echo ""
