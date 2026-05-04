@@ -1,0 +1,76 @@
+name: sentry-janitor
+description: "The Janitor V3.5 — Sentry Dark IDE + Cyberpunk Flamethrower"
+
+colors:
+  # ── CAPA TUI REACT (Llaves Ocultas & Oficiales) ──────────────────────────
+  ui_primary: "#c2ef4e"         # Lime Green: Títulos y CTA principal
+  ui_border: "#362d59"          # Border Purple: Líneas estructurales
+  ui_text: "#e5e7eb"            # Light Gray: Texto secundario/UI
+  ui_accent: "#6a5fc1"          # Sentry Purple: Enlaces y focus rings
+  ui_label: "#dcdcaa"           # Code Yellow: Etiquetas técnicas
+  ui_ok: "#c2ef4e"              # Lime Green: Éxito
+  ui_error: "#fa7faa"           # Pink: Errores críticos (Fuego)
+  ui_warn: "#ffb287"            # Coral: Advertencias
+  
+  # ── TERMINAL ESPECÍFICO (Prompt & Consola) ──────────────────────────────
+  prompt: "#c2ef4e"             # Lime Green: Input activo
+  shell_dollar: "#fa7faa"       # Pink: Símbolo $ en bloques de código
+  selection_bg: "#422082"       # Deep Violet: Texto seleccionado
+  
+  # ── BANNER CLI (Fallback si falla el TUI) ───────────────────────────────
+  banner_border: "#6a5fc1"      # Sentry Purple
+  banner_title: "#c2ef4e"       # Lime Green
+  banner_accent: "#ffb287"      # Coral
+  banner_dim: "#79628c"         # Muted Purple
+  banner_text: "#ffffff"        # Pure White
+  
+  # ── COMPONENTES ESPECÍFICOS ─────────────────────────────────────────────
+  session_label: "#6a5fc1"      # Sentry Purple
+  session_border: "#362d59"     # Border Purple
+  completion_menu_bg: "#150f23" # Darker Purple (Background)
+  completion_menu_current_bg: "#362d59" # Hover State
+
+spinner:
+  waiting_faces: ["[▱]", "[▰]", "[▤]", "[▥]", "[▦]"]
+  thinking_faces: ["(⚙)", "(!)", "(>_)", "(*)", "(🔥)"]
+  thinking_verbs:
+    - "incinerating garbage"
+    - "auditing logic"
+    - "hunting race conditions"
+    - "purging cache"
+    - "compiling fixes"
+    - "deploying countermeasures"
+  wings:
+    - ["⟪🛠 ", " 🛠⟫"]
+    - ["⟪🔥", "🔥⟫"]
+    - ["⟪/ ", " /⟫"]
+
+branding:
+  agent_name: "THE JANITOR"
+  welcome: "System online. Code breaks. I incinerate it. Terminal active."
+  goodbye: "Garbage collected. Shutting down."
+  response_label: " 🛠 JANITOR "
+  prompt_symbol: "❯"
+  help_header: "(!) Tactical Commands"
+
+tool_prefix: "│"
+
+tool_emojis:
+  terminal: "🛠"
+  web_search: "🌐"
+  execute_code: "🔥"
+
+banner_logo: |
+  [bold #c2ef4e]      ██╗ █████╗ ███╗   ██╗██╗████████╗██████╗ ██████╗ [/]
+  [#c2ef4e]      ██║██╔══██╗████╗  ██║██║╚══██╔══╝██╔══██╗██╔══██╗[/]
+  [#ffb287]      ██║███████║██╔██╗ ██║██║   ██║   ██║  ██║██████╔╝[/]
+  [#fa7faa] ██   ██║██╔══██║██║╚██╗██║██║   ██║   ██║  ██║██╔══██╗[/]
+  [#6a5fc1] ╚█████╔╝██║  ██║██║ ╚████║██║   ██║   ██████╔╝██║  ██║[/]
+  [dim #362d59]  ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝   ╚═╝   ╚═════╝ ╚═╝  ╚═╝[/]
+
+banner_hero: |
+  [#fa7faa]      ⢀⣤⣶⣶⣤⡀      [/]
+  [#ffb287]      ⣿⣿⣿⣿⣿⣿      [/]
+  [#c2ef4e]      ⠙▀⠿⠿▀⠋      [/]
+  [#6a5fc1]       🛠 ── 🔥       [/]
+  [dim #79628c]   incinerating bugs    [/]

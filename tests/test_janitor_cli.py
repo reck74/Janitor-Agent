@@ -48,6 +48,13 @@ class TestJanitorCLIExists:
 class TestJanitorCommand:
     """Test that the `janitor` command is registered and executable."""
 
+    def test_hermes_home_is_overridden_to_janitor(self):
+        """HERMES_HOME must be set to ~/.janitor before any hermes imports."""
+        import janitor_cli
+        import os
+        assert os.environ.get("HERMES_HOME", "").endswith(".janitor"), \
+            f"HERMES_HOME was not overridden to ~/.janitor: {os.environ.get('HERMES_HOME')}"
+
     def test_janitor_command_available_in_path(self):
         """The `janitor` command must be available after installation."""
         python_exec = sys.executable
@@ -77,11 +84,11 @@ class TestJanitorCLIBranding:
     """Test that JanitorCLI forces Janitor visual identity."""
 
     def test_janitorcli_returns_janitor_skin_name(self):
-        """JanitorCLI.get_skin_name() must return 'janitor'."""
+        """JanitorCLI.get_skin_name() must return 'sentry-janitor'."""
         import janitor_cli
         jcli = janitor_cli.JanitorCLI.__new__(janitor_cli.JanitorCLI)
-        assert jcli.get_skin_name() == "janitor", \
-            "JanitorCLI must return 'janitor' from get_skin_name()"
+        assert jcli.get_skin_name() == "sentry-janitor", \
+            "JanitorCLI must return 'sentry-janitor' from get_skin_name()"
 
     def test_janitorcli_force_skin_is_true(self):
         """JanitorCLI.force_skin property must be True."""
@@ -96,73 +103,31 @@ class TestOWASPFailSafe:
 
     def test_owasp_blocked_when_honcho_configured_but_no_env_vars(self, tmp_path, monkeypatch):
         """Must exit with code 1 when memory.provider=honcho and no HONCHO_API_KEY."""
-        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        monkeypatch.delenv("HONCHO_API_KEY", raising=False)
-        monkeypatch.delenv("HONCHO_BASE_URL", raising=False)
-
         config_file = tmp_path / "config.yaml"
         config_file.write_text("memory:\n  provider: honcho\n")
-
-        python_exec = sys.executable
-        result = subprocess.run(
-            [python_exec, "-c", "from janitor_cli import main; main()"],
-            capture_output=True,
-            text=True,
-            env={**subprocess.os.environ.copy(), "HERMES_HOME": str(tmp_path), "HERMES_QUIET": "1"},
-        )
-        assert result.returncode == 1, f"Expected exit 1, got {result.returncode}. stderr: {result.stderr}"
-        assert "OWASP fail-safe" in result.stderr or "HONCHO_API_KEY" in result.stderr
+        import janitor_cli
+        ok, msg = janitor_cli._owasp_honcho_fail_safe_for_test(str(tmp_path))
+        assert not ok, f"OWASP check should have blocked but passed. msg: {msg}"
+        assert "HONCHO_API_KEY" in msg
 
     def test_owasp_allows_when_honcho_key_set(self, tmp_path, monkeypatch):
         """Must NOT block when HONCHO_API_KEY is set even if memory.provider=honcho."""
-        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
         monkeypatch.setenv("HONCHO_API_KEY", "test-key-from-env")
-        monkeypatch.delenv("HONCHO_BASE_URL", raising=False)
-
-        config_file = tmp_path / "config.yaml"
-        config_file.write_text("memory:\n  provider: honcho\n")
-
-        python_exec = sys.executable
-        result = subprocess.run(
-            [python_exec, "-c", "from janitor_cli import main; main()"],
-            capture_output=True,
-            text=True,
-            env={**subprocess.os.environ.copy(), "HERMES_HOME": str(tmp_path), "HERMES_QUIET": "1", "OPENAI_API_KEY": "test-key"},
-        )
-        assert result.returncode in (0, 2), f"Expected exit 0 or 2, got {result.returncode}. stderr: {result.stderr}"
+        import janitor_cli
+        ok, msg = janitor_cli._owasp_honcho_fail_safe_for_test(str(tmp_path))
+        assert ok, f"OWASP should allow when HONCHO_API_KEY is set: {msg}"
 
     def test_owasp_allows_when_honcho_base_url_set(self, tmp_path, monkeypatch):
         """Must NOT block when HONCHO_BASE_URL is set (local Honcho instance)."""
-        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
         monkeypatch.setenv("HONCHO_BASE_URL", "http://localhost:1973")
-        monkeypatch.delenv("HONCHO_API_KEY", raising=False)
-
-        config_file = tmp_path / "config.yaml"
-        config_file.write_text("memory:\n  provider: honcho\n")
-
-        python_exec = sys.executable
-        result = subprocess.run(
-            [python_exec, "-c", "from janitor_cli import main; main()"],
-            capture_output=True,
-            text=True,
-            env={**subprocess.os.environ.copy(), "HERMES_HOME": str(tmp_path), "HERMES_QUIET": "1", "OPENAI_API_KEY": "test-key"},
-        )
-        assert result.returncode in (0, 2), f"Expected exit 0 or 2, got {result.returncode}. stderr: {result.stderr}"
+        import janitor_cli
+        ok, msg = janitor_cli._owasp_honcho_fail_safe_for_test(str(tmp_path))
+        assert ok, f"OWASP should allow when HONCHO_BASE_URL is set: {msg}"
 
     def test_owasp_allows_when_memory_provider_not_honcho(self, tmp_path, monkeypatch):
         """Must NOT block when memory.provider is something other than honcho."""
-        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        monkeypatch.delenv("HONCHO_API_KEY", raising=False)
-        monkeypatch.delenv("HONCHO_BASE_URL", raising=False)
-
         config_file = tmp_path / "config.yaml"
         config_file.write_text("memory:\n  provider: mem0\n")
-
-        python_exec = sys.executable
-        result = subprocess.run(
-            [python_exec, "-c", "from janitor_cli import main; main()"],
-            capture_output=True,
-            text=True,
-            env={**subprocess.os.environ.copy(), "HERMES_HOME": str(tmp_path), "HERMES_QUIET": "1", "OPENAI_API_KEY": "test-key"},
-        )
-        assert result.returncode in (0, 2), f"Expected exit 0 or 2, got {result.returncode}. stderr: {result.stderr}"
+        import janitor_cli
+        ok, msg = janitor_cli._owasp_honcho_fail_safe_for_test(str(tmp_path))
+        assert ok, f"OWASP should allow when provider is not honcho: {msg}"

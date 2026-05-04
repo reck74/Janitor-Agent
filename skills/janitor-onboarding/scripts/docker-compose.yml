@@ -1,0 +1,53 @@
+version: "3.8"
+
+services:
+  honcho:
+    image: ghcr.io/nousresearch/honcho-agent:latest
+    container_name: janitor-honcho
+    ports:
+      - "1973:1973"
+    environment:
+      - HONCHO_ENVIRONMENT=local
+      - HONCHO_STORAGE_PATH=/data/sessions
+    volumes:
+      - honcho-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:1973/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - janitor-internal
+
+  firecrawl:
+    image: ghcr.io/nousresearch/firecrawl-agent:latest
+    container_name: janitor-firecrawl
+    ports:
+      - "1974:1974"
+    environment:
+      - FIRECRAWL_ENV=local
+      - LOG_LEVEL=info
+    volumes:
+      - firecrawl-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:1974/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - janitor-internal
+
+volumes:
+  honcho-data:
+    name: janitor-honcho-data
+  firecrawl-data:
+    name: janitor-firecrawl-data
+
+networks:
+  janitor-internal:
+    name: janitor-network
+    driver: bridge
