@@ -274,16 +274,14 @@ echo ""
 CONFIG_PATH="${JANITOR_HOME}/config.yaml"
 log_info "Generando ${CONFIG_PATH}..."
 
-python3 - "$CONFIG_PATH" << 'PYTHON_EOF'
+python3 - "$CONFIG_PATH" "$setup_mode" << 'PYTHON_EOF'
 import sys
 import yaml
 
 config_path = sys.argv[1]
+setup_mode = sys.argv[2]
 
 config = {
-    "memory": {
-        "provider": "honcho"
-    },
     "display": {
         "tui": True,
         "skin": "sentry-janitor"
@@ -298,6 +296,10 @@ config = {
         }
     }
 }
+
+# Solo habilitar Honcho como provider si el usuario eligió modo Keys y proporcionó API key
+if setup_mode == "1":
+    config["memory"] = {"provider": "honcho"}
 
 with open(config_path, 'w') as f:
     yaml.dump(config, f, default_flow_style=False, sort_keys=False)
@@ -329,30 +331,10 @@ else
 fi
 
 # =============================================================================
-# Paso 7: Verificar que el CLI entry point esté registrado
+# Paso 7: Listo para usar
 # =============================================================================
 echo ""
-echo -e "${CYAN}${BOLD}─── Paso 7: Registro del CLI ───${NC}"
-echo ""
-
-JANITOR_CLI_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../janitor_cli.py"
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.."
-
-if [ -f "$JANITOR_CLI_PATH" ]; then
-    log_info "Verificando instalación del CLI..."
-
-    if [ -d "${REPO_ROOT}/.venv" ]; then
-        "${REPO_ROOT}/.venv/bin/pip" install -e "${REPO_ROOT}" >/dev/null 2>&1 && log_ok "CLI 'janitor' registrado" || log_warn "No se pudo registrar el CLI"
-    elif command -v uv >/dev/null 2>&1; then
-        uv pip install -e "${REPO_ROOT}" >/dev/null 2>&1 && log_ok "CLI 'janitor' registrado (uv)" || log_warn "No se pudo registrar el CLI"
-    elif command -v pip >/dev/null 2>&1; then
-        pip install -e "${REPO_ROOT}" >/dev/null 2>&1 && log_ok "CLI 'janitor' registrado (pip)" || log_warn "No se pudo registrar el CLI"
-    else
-        log_warn "No se encontró pip/uv — instala manualmente: pip install -e ${REPO_ROOT}"
-    fi
-else
-    log_warn "janitor_cli.py no encontrado — el CLI no está registrado"
-fi
+log_ok "Configuración de Janitor completada."
 
 # =============================================================================
 # Final: Mensaje de Éxito

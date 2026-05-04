@@ -135,6 +135,49 @@ bash skills/janitor-onboarding/scripts/local-services.sh stop
 
 This shuts down containers but preserves data volumes.
 
+## Post-Activation: Reconfigurar Janitor para Usar los Servicios Locales
+
+**This is the critical step everyone skips, and then wonders why Janitor keeps blocking on OWASP.**
+
+Once the Docker containers are confirmed healthy (see Verification above), you MUST reconfigure
+Janitor's memory provider to actually use the local Honcho instance. Without this step,
+Janitor will keep firing the OWASP fail-safe on every startup.
+
+Run these commands in sequence using the `terminal` tool:
+
+```bash
+# 1. Agregar Honcho local base URL al .env
+echo "HONCHO_BASE_URL=http://localhost:1973" >> ~/.janitor/.env
+
+# 2. Agregar Firecrawl local base URL al .env
+echo "FIRECRAWL_BASE_URL=http://localhost:1974" >> ~/.janitor/.env
+
+# 3. Actualizar config.yaml para usar honcho como memory provider
+python3 - << 'PYTHON_EOF'
+import yaml
+from pathlib import Path
+
+config_path = Path.home() / ".janitor" / "config.yaml"
+with open(config_path) as f:
+    config = yaml.safe_load(f) or {}
+
+config["memory"] = {"provider": "honcho"}
+
+with open(config_path, "w") as f:
+    yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+PYTHON_EOF
+```
+
+After running these commands, restart Janitor. The OWASP fail-safe will pass because
+`HONCHO_BASE_URL` is now set, and your memory sessions will be stored in the local
+Docker volume instead of trying to reach a cloud endpoint with invalid credentials.
+
+**Why this matters:** The installer sets `memory.provider: honcho` only when you provide
+API keys upfront (Option 1). If you chose Option 2 (local Docker), Janitor starts with
+no memory provider configured — by design, so it can boot without blocking. But once the
+containers are running, you need to flip that switch yourself. I'm not going to do it
+for you, but I'm also not going to let you run without doing it.
+
 ## Requirements
 
 - Docker Engine ≥ 20.10
