@@ -1,57 +1,41 @@
-name: 🛠 Janitor CI
-
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-
-permissions:
-  contents: read
+name: Janitor CI
+on: [push, pull_request]
 
 jobs:
   python-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.11
-        run: uv python install 3.11
-
+      - uses: actions/checkout@v4
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Install dependencies
-        run: uv pip install -e ".[all]"
-
-      - name: Run Janitor Python tests
+        run: uv pip install --system -e ".[all]"
+      - name: Run Python tests
         run: uv run pytest tests/test_janitor_cli.py tests/hermes_cli/test_skin_engine.py -v
 
   react-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js 20
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Install React dependencies
-        run: |
-          cd ui-tui
-          npm install
-
-      - name: Type-check React code
-        run: |
-          cd ui-tui
-          npm run type-check
-
-      - name: Run React tests
-        run: |
-          cd ui-tui
-          npm test
+      - name: Install dependencies
+        working-directory: ./ui-tui
+        run: npm install
+      - name: Build local packages (hermes-ink)
+        working-directory: ./ui-tui
+        run: npm run build --prefix packages/hermes-ink
+      - name: Type Check
+        working-directory: ./ui-tui
+        run: npm run type-check
+      - name: Run Tests
+        working-directory: ./ui-tui
+        run: npm test
