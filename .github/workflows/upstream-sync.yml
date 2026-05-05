@@ -29,32 +29,35 @@ jobs:
 
           git remote add upstream https://github.com/NousResearch/hermes-agent.git || true
           git fetch upstream
+          git fetch origin main
 
           # 1. Comprobar si hay commits nuevos en upstream
-          UPSTREAM_COMMITS=$(git rev-list HEAD..upstream/main --count)
+          UPSTREAM_COMMITS=$(git rev-list origin/main..upstream/main --count)
           if [ "$UPSTREAM_COMMITS" -eq 0 ]; then
-            echo "✅ Todo está al día con upstream (Hashes idénticos)."
+            echo "✅ Todo está al día con upstream."
             exit 0
           fi
 
-          # 2. Crear rama temporal
+          # 2. Crear rama desde origin/main
           BRANCH_NAME="upstream-sync-$(date +%Y%m%d%H%M%S)"
-          git checkout -b $BRANCH_NAME
+          git checkout -b $BRANCH_NAME origin/main
 
-          # 3. Forzar un merge commit (NO fast-forward) para trazar la historia
-          git merge upstream/main --no-ff -m "chore: sync with upstream" || true
+          # 3. Merge convencional (NO amend)
+          git merge upstream/main --no-edit || true
 
-          # 4. Poda estricta de CI de upstream
+          # 4. Poda estricta de CI (Commit SEPARADO para no corromper el merge)
           find .github/workflows -type f ! -name 'tests.yml' ! -name 'upstream-sync.yml' -exec git rm -f {} + || true
-          git commit --amend --no-edit || true
+          git commit -m "chore: prune upstream workflows" || true
 
-          # 5. EL ESCUDO: Verificar si realmente hay un diff de código contra main
-          if git diff --quiet main..HEAD; then
-            echo "✅ Tras el merge y la poda, el código final es idéntico a main. No se requiere PR."
+          # 5. EL ESCUDO INFALIBLE: Comparar Hashes de Árbol (Tree SHA)
+          TREE_HEAD=$(git rev-parse HEAD^{tree})
+          TREE_MAIN=$(git rev-parse origin/main^{tree})
+          if [ "$TREE_HEAD" = "$TREE_MAIN" ]; then
+            echo "✅ Tras el merge y la poda, los archivos son IDÉNTICOS a origin/main. No se requiere PR."
             exit 0
           fi
 
-          # 6. Subir y crear PR (con pausa para que GitHub indexe la rama)
+          # 6. Subir y crear PR
           git push -u origin $BRANCH_NAME
-          sleep 3
+          sleep 5
           gh pr create --title "🔄 Upstream Sync" --body "Sincronización automática con NousResearch. Revisa los cambios." --head $BRANCH_NAME --base main
