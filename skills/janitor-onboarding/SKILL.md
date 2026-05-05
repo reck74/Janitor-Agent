@@ -125,6 +125,30 @@ docker compose -f ~/.janitor/skills/janitor-onboarding/scripts/docker-compose.ym
 docker compose -f ~/.janitor/skills/janitor-onboarding/scripts/docker-compose.yml pull
 ```
 
+## Honcho .env — Infrastructure Hack (MiniMax as Anthropic Backend)
+
+When `local-services.sh start` runs, it automatically generates a `honcho.env` file
+in the scripts directory by reading credentials from `~/.janitor/.env`.
+
+The generated file contains:
+
+```
+TRANSPORT=anthropic
+BASE_URL=https://api.minimax.io/anthropic
+LLM_ANTHROPIC_API_KEY=<MINIMAX_API_KEY from ~/.janitor/.env>
+LLM_OPENAI_API_KEY=<OPENAI_API_KEY from ~/.janitor/.env>
+```
+
+**Why this hack exists:** Honcho exposes an Anthropic-compatible API transport, but the
+actual model can be MiniMax (or any OpenAI-compatible backend). By setting
+`TRANSPORT=anthropic` and `BASE_URL=https://api.minimax.io/anthropic`, the MiniMax
+API key (stored as `MINIMAX_API_KEY` in the Janitor .env) gets re-used as
+`LLM_ANTHROPIC_API_KEY` so Honcho can call MiniMax via the Anthropic transport.
+OpenAI is similarly forwarded as `LLM_OPENAI_API_KEY` for any pure-OpenAI calls Honcho
+might make directly.
+
+This is injected into the container via `env_file: ./honcho.env` in docker-compose.yml.
+
 ## Rollback
 
 To stop local services:
@@ -139,20 +163,18 @@ This shuts down containers but preserves data volumes.
 
 **This is the critical step everyone skips, and then wonders why Janitor keeps blocking on OWASP.**
 
-Once the Docker containers are confirmed healthy (see Verification above), you MUST reconfigure
-Janitor's memory provider to actually use the local Honcho instance. Without this step,
-Janitor will keep firing the OWASP fail-safe on every startup.
+Once `local-services.sh start` has confirmed both containers are healthy, you MUST reconfigure
+Janitor's memory provider to use the local Honcho instance. The Honcho .env (with your
+MiniMax key as `LLM_ANTHROPIC_API_KEY`) is generated automatically — you just need to
+flip the memory provider switch.
 
-Run these commands in sequence using the `terminal` tool:
+Run these commands using the `terminal` tool:
 
 ```bash
-# 1. Agregar Honcho local base URL al .env
+# 1. Tell Janitor where Honcho is running locally
 echo "HONCHO_BASE_URL=http://localhost:1973" >> ~/.janitor/.env
 
-# 2. Agregar Firecrawl local base URL al .env
-echo "FIRECRAWL_BASE_URL=http://localhost:1974" >> ~/.janitor/.env
-
-# 3. Actualizar config.yaml para usar honcho como memory provider
+# 2. Flip memory.provider to honcho in config.yaml
 python3 - << 'PYTHON_EOF'
 import yaml
 from pathlib import Path
@@ -169,14 +191,14 @@ PYTHON_EOF
 ```
 
 After running these commands, restart Janitor. The OWASP fail-safe will pass because
-`HONCHO_BASE_URL` is now set, and your memory sessions will be stored in the local
-Docker volume instead of trying to reach a cloud endpoint with invalid credentials.
+`HONCHO_BASE_URL` is now set, and your memory sessions will live in the local Docker
+volume — no cloud calls, no credential leakage, no excuses.
 
-**Why this matters:** The installer sets `memory.provider: honcho` only when you provide
-API keys upfront (Option 1). If you chose Option 2 (local Docker), Janitor starts with
-no memory provider configured — by design, so it can boot without blocking. But once the
-containers are running, you need to flip that switch yourself. I'm not going to do it
-for you, but I'm also not going to let you run without doing it.
+**Why this matters:** The installer skips `memory.provider: honcho` when you chose
+Option 2 (local Docker). Janitor boots with no memory provider so it can start without
+blocking. But the moment your Docker containers are up, you need to close that gap.
+The `.env` generation happens automatically on `local-services.sh start` — you just
+need to restart Janitor to pick it up.
 
 ## Requirements
 

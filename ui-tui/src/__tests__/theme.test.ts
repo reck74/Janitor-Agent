@@ -40,19 +40,27 @@ afterEach(() => {
 })
 
 describe('DEFAULT_THEME', () => {
-  it('has brand defaults', async () => {
+  it('has Janitor brand defaults (Janitor is DEFAULT)', async () => {
     const { DEFAULT_THEME } = await importThemeWithCleanEnv()
 
-    expect(DEFAULT_THEME.brand.name).toBe('Hermes Agent')
+    expect(DEFAULT_THEME.brand.name).toBe('THE JANITOR')
     expect(DEFAULT_THEME.brand.prompt).toBe('❯')
-    expect(DEFAULT_THEME.brand.tool).toBe('┊')
+    expect(DEFAULT_THEME.brand.icon).toBe('🛠')
   })
 
-  it('has color palette', async () => {
+  it('has Janitor color palette (Janitor is DEFAULT)', async () => {
     const { DEFAULT_THEME } = await importThemeWithCleanEnv()
 
-    expect(DEFAULT_THEME.color.primary).toBe('#FFD700')
-    expect(DEFAULT_THEME.color.error).toBe('#ef5350')
+    expect(DEFAULT_THEME.color.primary).toBe('#c2ef4e')
+    expect(DEFAULT_THEME.color.error).toBe('#fa7faa')
+  })
+})
+
+describe('DEFAULT_THEME aliasing', () => {
+  it('defaults to JANITOR_DARK_THEME when nothing signals light', async () => {
+    const { DEFAULT_THEME, JANITOR_DARK_THEME } = await importThemeWithCleanEnv()
+
+    expect(DEFAULT_THEME.color.primary).toBe(JANITOR_DARK_THEME.color.primary)
   })
 })
 
@@ -71,14 +79,6 @@ describe('LIGHT_THEME', () => {
 
     expect(Object.keys(LIGHT_THEME.color).sort()).toEqual(Object.keys(DARK_THEME.color).sort())
     expect(LIGHT_THEME.brand).toEqual(DARK_THEME.brand)
-  })
-})
-
-describe('DEFAULT_THEME aliasing', () => {
-  it('defaults to DARK_THEME when nothing signals light', async () => {
-    const { DEFAULT_THEME, DARK_THEME: DARK } = await importThemeWithCleanEnv()
-
-    expect(DEFAULT_THEME).toBe(DARK)
   })
 })
 
@@ -225,11 +225,25 @@ describe('fromSkin', () => {
     expect(fromSkin({}, { prompt_symbol: '\n\t' }).brand.prompt).toBe(DEFAULT_THEME.brand.prompt)
   })
 
-  it('defaults for empty skin', async () => {
+  it('defaults for empty skin returns Janitor values (Janitor is DEFAULT)', async () => {
     const { DEFAULT_THEME, fromSkin } = await importThemeWithCleanEnv()
 
-    expect(fromSkin({}, {}).color).toEqual(DEFAULT_THEME.color)
-    expect(fromSkin({}, {}).brand.icon).toBe(DEFAULT_THEME.brand.icon)
+    // fromSkin({}, {}) applies empty skin over DEFAULT_THEME — the brand
+    // identity (icon, name) reflects Janitor because DEFAULT_THEME IS Janitor.
+    const themed = fromSkin({}, {})
+    expect(themed.brand.icon).toBe(DEFAULT_THEME.brand.icon)
+    expect(themed.brand.name).toBe(DEFAULT_THEME.brand.name)
+    expect(DEFAULT_THEME.brand.name).toBe('THE JANITOR')
+    // sessionLabel/sessionBorder fall back to muted per fromSkin design
+    expect(themed.color.sessionLabel).toBe(DEFAULT_THEME.color.muted)
+  })
+
+  it('original Hermes DARK_THEME is preserved as hermes-gold', async () => {
+    const { DARK_THEME } = await importThemeWithCleanEnv()
+    expect(DARK_THEME.color.primary).toBe('#FFD700')
+    expect(DARK_THEME.color.border).toBe('#CD7F32')
+    expect(DARK_THEME.color.accent).toBe('#FFBF00')
+    expect(DARK_THEME.brand.name).toBe('Hermes Agent')
   })
 
   it('normalizes non-banner foregrounds on light Apple Terminal', async () => {

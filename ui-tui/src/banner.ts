@@ -74,7 +74,7 @@ const LOGO_GRADIENT = [0, 0, 1, 1, 2, 2] as const
 const CADUC_GRADIENT = [2, 2, 1, 1, 0, 0, 1, 1, 2, 2, 3, 3, 3, 3, 3] as const
 
 const colorize = (art: string[], gradient: readonly number[], c: ThemeColors): Line[] => {
-  const p = [c.primary, c.accent, c.border, c.muted]
+  const p = [c.primary, c.accent, c.border, c.muted, c.warn, c.error]
 
   return art.map((text, i) => [p[gradient[i]!] ?? c.muted, text])
 }
@@ -89,5 +89,35 @@ export const caduceus = (c: ThemeColors, customHero?: string): Line[] =>
   customHero ? parseRichMarkup(customHero) : colorize(CADUCEUS_ART, CADUC_GRADIENT, c)
 
 export const artWidth = (lines: Line[]) => lines.reduce((m, [, t]) => Math.max(m, t.length), 0)
+
+// ── Janitor Art (Sentry-JANITOR skin) ───────────────────────────────────
+
+const JANITOR_LOGO_ART = [
+  '      ██╗ █████╗ ███╗   ██╗██╗████████╗██████╗ ██████╗  ',
+  '      ██║██╔══██╗████╗  ██║██║╚══██╔══╝██╔══██╗██╔══██╗ ',
+  '      ██║███████║██╔██╗ ██║██║   ██║   ██║  ██║██████╔╝ ',
+  ' ██   ██║██╔══██║██║╚██╗██║██║   ██║   ██║  ██║██╔══██╗',
+  ' ╚█████╔╝██║  ██║██║ ╚████║██║   ██║   ██████╔╝██║  ██║',
+  '  ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝   ╚═╝   ╚═════╝ ╚═╝  ╚═╝'
+]
+
+const JANITOR_HERO_ART = [
+  '      ⢀⣤⣶⣶⣤⡀      ',
+  '      ⣿⣿⣿⣿⣿⣿      ',
+  '      ⠙▀⠿⠿▀⠋      ',
+  '       🛠 ── 🔥       ',
+  '   incinerating bugs    '
+]
+
+// Gradient stops: [primary, primary, accent, accent, warn, warn]
+const JANITOR_LOGO_GRADIENT = [0, 0, 1, 1, 2, 2] as const
+// Gradient stops for hero: [error, warn, ok, accent, accent, muted, muted]
+const JANITOR_HERO_GRADIENT = [3, 2, 0, 1, 1, 5, 5] as const
+
+export const JANITOR_LOGO_WIDTH = 60
+export const JANITOR_HERO_WIDTH = 22
+
+export const janitorLogo = (c: ThemeColors): Line[] => colorize(JANITOR_LOGO_ART, JANITOR_LOGO_GRADIENT, c)
+export const janitorHero = (c: ThemeColors): Line[] => colorize(JANITOR_HERO_ART, JANITOR_HERO_GRADIENT, c)
 
 type Line = [string, string]

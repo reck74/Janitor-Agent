@@ -6,6 +6,8 @@ services:
     container_name: janitor-honcho
     ports:
       - "1973:1973"
+    env_file:
+      - ./honcho.env
     environment:
       - HONCHO_ENVIRONMENT=local
       - HONCHO_STORAGE_PATH=/data/sessions

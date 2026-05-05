@@ -232,9 +232,103 @@ function normalizeAnsiForeground(color: string): string {
   return `ansi256(${ansi})`
 }
 
+// ── Janitor Brand & Theme (Option B: Janitor is DEFAULT) ─────────────────
+
+export const JANITOR_BRAND: ThemeBrand = {
+  name: 'THE JANITOR',
+  icon: '🛠',
+  prompt: '❯',
+  welcome: 'System online. Code breaks. I incinerate it. Terminal active.',
+  goodbye: 'Garbage collected. Shutting down.',
+  tool: '│',
+  helpHeader: '(!) Tactical Commands'
+}
+
+// Janitor dark palette — Sentry Dark IDE + Cyberpunk Flamethrower
+export const JANITOR_DARK_THEME: Theme = {
+  color: {
+    primary: '#c2ef4e',      // Lime Green: títulos y CTA
+    accent: '#6a5fc1',       // Sentry Purple: enlaces y focus
+    border: '#362d59',      // Border Purple: líneas estructurales
+    text: '#e5e7eb',         // Light Gray: texto secundario
+    muted: '#79628c',        // Muted Purple: secundario
+    completionBg: '#150f23', // Darker Purple (Background)
+    completionCurrentBg: mix('#150f23', '#c2ef4e', 0.25),
+
+    label: '#dcdcaa',         // Code Yellow: etiquetas técnicas
+    ok: '#c2ef4e',           // Lime Green: éxito
+    error: '#fa7faa',        // Pink: errores críticos
+    warn: '#ffb287',         // Coral: advertencias
+
+    prompt: '#c2ef4e',       // Lime Green: input activo
+    sessionLabel: '#6a5fc1', // Sentry Purple
+    sessionBorder: '#362d59', // Border Purple
+
+    statusBg: '#0A0A0A',    // Near black
+    statusFg: '#c2ef4e',     // Lime Green
+    statusGood: '#c2ef4e',
+    statusWarn: '#FFE135',
+    statusBad: '#fa7faa',
+    statusCritical: '#FF073A',
+    selectionBg: '#422082',   // Deep Violet
+
+    diffAdded: 'rgb(220,255,220)',
+    diffRemoved: 'rgb(255,220,220)',
+    diffAddedWord: 'rgb(36,138,61)',
+    diffRemovedWord: 'rgb(207,34,46)',
+    shellDollar: '#fa7faa'  // Pink: $ en bloques de código
+  },
+
+  brand: JANITOR_BRAND,
+
+  bannerLogo: '',
+  bannerHero: ''
+}
+
+// Janitor light palette: darker variants for white backgrounds
+export const JANITOR_LIGHT_THEME: Theme = {
+  color: {
+    primary: '#5a8a1e',      // Darker lime
+    accent: '#4a44a1',       // Darker purple
+    border: '#2a2244',       // Darker purple border
+    text: '#1a1a2e',         // Near-black
+    muted: '#5a4478',        // Darker muted purple
+    completionBg: '#F0EFF5',
+    completionCurrentBg: mix('#F0EFF5', '#5a8a1e', 0.25),
+
+    label: '#6a5a1e',
+    ok: '#2d6b0f',
+    error: '#b83a5c',
+    warn: '#c06030',
+
+    prompt: '#1a1a2e',
+    sessionLabel: '#4a44a1',
+    sessionBorder: '#2a2244',
+
+    statusBg: '#F5F5F8',
+    statusFg: '#1a1a2e',
+    statusGood: '#2d6b0f',
+    statusWarn: '#8B6914',
+    statusBad: '#b83a5c',
+    statusCritical: '#8B2030',
+    selectionBg: '#D4E4F7',
+
+    diffAdded: 'rgb(200,240,200)',
+    diffRemoved: 'rgb(240,200,200)',
+    diffAddedWord: 'rgb(27,94,32)',
+    diffRemovedWord: 'rgb(183,28,28)',
+    shellDollar: '#8B2030'
+  },
+
+  brand: JANITOR_BRAND,
+
+  bannerLogo: '',
+  bannerHero: ''
+}
+
 // ── Defaults ─────────────────────────────────────────────────────────
 
-const BRAND: ThemeBrand = {
+export const BRAND: ThemeBrand = {
   name: 'Hermes Agent',
   icon: '⚕',
   prompt: '❯',
@@ -500,7 +594,7 @@ export function normalizeThemeForAnsiLightTerminal(
 const DEFAULT_LIGHT_MODE = detectLightMode()
 
 export const DEFAULT_THEME: Theme = normalizeThemeForAnsiLightTerminal(
-  DEFAULT_LIGHT_MODE ? LIGHT_THEME : DARK_THEME,
+  DEFAULT_LIGHT_MODE ? JANITOR_LIGHT_THEME : JANITOR_DARK_THEME,
   process.env,
   DEFAULT_LIGHT_MODE
 )
