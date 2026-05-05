@@ -49,15 +49,34 @@ jobs:
           find .github/workflows -type f ! -name 'tests.yml' ! -name 'upstream-sync.yml' -exec git rm -f {} + || true
           git commit -m "chore: prune upstream workflows" || true
 
-          # 5. EL ESCUDO INFALIBLE: Comparar Hashes de Árbol (Tree SHA)
-          TREE_HEAD=$(git rev-parse HEAD^{tree})
-          TREE_MAIN=$(git rev-parse origin/main^{tree})
-          if [ "$TREE_HEAD" = "$TREE_MAIN" ]; then
-            echo "✅ Tras el merge y la poda, los archivos son IDÉNTICOS a origin/main. No se requiere PR."
+          # 5. ESCUDO DE TRIPLE VERIFICACIÓN
+          MAIN_SHA=$(git rev-parse origin/main)
+          HEAD_SHA=$(git rev-parse HEAD)
+
+          # Verificación A: diff de árboles
+          if git diff --quiet $MAIN_SHA $HEAD_SHA; then
+            echo "✅ Árbol idéntico a main remoto. Sin cambios reales."
+            exit 0
+          fi
+
+          # Verificación B: conteo de archivos modificados
+          UNIQUE_CHANGES=$(git diff --name-only $MAIN_SHA..$HEAD_SHA | wc -l)
+          if [ "$UNIQUE_CHANGES" -eq 0 ]; then
+            echo "✅ 0 archivos modificados respecto a main. Sin PR necesario."
             exit 0
           fi
 
           # 6. Subir y crear PR
           git push -u origin $BRANCH_NAME
-          sleep 5
-          gh pr create --title "🔄 Upstream Sync" --body "Sincronización automática con NousResearch. Revisa los cambios." --head $BRANCH_NAME --base main
+          sleep 10
+          gh pr create \
+            --repo "${{ github.repository }}" \
+            --base main \
+            --head "$BRANCH_NAME" \
+            --title "🔄 Upstream Sync" \
+            --body "Sincronización automática con NousResearch. Revisa los cambios." \
+            || gh issue create \
+              --repo "${{ github.repository }}" \
+              --title "🚨 Sync PR failed for $BRANCH_NAME" \
+              --body "El workflow de sync creó la rama pero falló al abrir PR. Revisar manualmente." \
+              --label "upstream-sync"
