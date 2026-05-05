@@ -22,6 +22,14 @@ import sys
 # hermes_constants.get_hermes_home() reads this env var at import time.
 os.environ["HERMES_HOME"] = os.path.expanduser("~/.janitor")
 
+import argparse
+_original_argparser_init = argparse.ArgumentParser.__init__
+def _janitor_argparser_init(self, *args, **kwargs):
+    if kwargs.get("prog") == "hermes":
+        kwargs["prog"] = "janitor"
+    _original_argparser_init(self, *args, **kwargs)
+argparse.ArgumentParser.__init__ = _janitor_argparser_init
+
 sys.path.insert(0, os.path.dirname(__file__))
 import cli
 
