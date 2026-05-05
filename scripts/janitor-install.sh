@@ -96,17 +96,20 @@ if ! validate_nonempty "OPENAI_API_KEY" "$openai_key"; then
 fi
 log_ok "OpenAI key configurada — finalmente, algo útil"
 
-# MiniMax API Key (OPCIONAL) — Se usará como LLM_ANTHROPIC_API_KEY para Honcho
+# MiniMax API Key (OBLIGATORIA) — Se usa como LLM_ANTHROPIC_API_KEY para Honcho
 echo ""
-echo -e "${A_CORAL}MINIMAX_API_KEY${A_NC} — Opcional. Honcho la usará como ${A_PINK}LLM_ANTHROPIC_API_KEY${A_NC}"
+echo -e "${A_CORAL}MINIMAX_API_KEY${A_NC} — ${A_LIME}OBLIGATORIA${A_NC}. Honcho la usa como ${A_PINK}LLM_ANTHROPIC_API_KEY${A_NC}"
 echo -e "${A_MUTED}   Obtenla en: https://platform.minimax.io${A_NC}"
-read -r -p "   MINIMAX_API_KEY (Enter para omitir): " -s minimax_key
-echo
-if [[ -n "$minimax_key" ]]; then
-    log_ok "MiniMax key configurada — Honcho la usará para razonar en modo local"
-else
-    log_warn "MiniMax saltada — usaré solo OpenAI para todo. Espero que sea suficiente."
-fi
+while true; do
+    read -r -p "   MINIMAX_API_KEY: " -s minimax_key
+    echo
+    if [[ -n "$minimax_key" ]]; then
+        log_ok "MiniMax key configurada — Honcho la usará para razonar en modo local"
+        break
+    else
+        echo -e "${A_PINK}   No puede estar vacía. Sin ella Janitor no puede arrancar.${A_NC}"
+    fi
+done
 
 # Honcho + Firecrawl: Keys o Local
 echo ""
@@ -296,6 +299,10 @@ config = {
     "display": {
         "tui": True,
         "skin": "sentry-janitor"
+    },
+    "model": {
+        "provider": "minimax",
+        "default": "MiniMax-M2.7"
     },
     "skills": {
         "config": {

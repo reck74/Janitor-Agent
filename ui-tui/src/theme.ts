@@ -40,6 +40,7 @@ export interface ThemeBrand {
   goodbye: string
   tool: string
   helpHeader: string
+  version?: string
 }
 
 export interface Theme {
@@ -241,7 +242,8 @@ export const JANITOR_BRAND: ThemeBrand = {
   welcome: 'System online. Code breaks. I incinerate it. Terminal active.',
   goodbye: 'Garbage collected. Shutting down.',
   tool: '│',
-  helpHeader: '(!) Tactical Commands'
+  helpHeader: '(!) Tactical Commands',
+  version: '0.1.0'
 }
 
 // Janitor dark palette — Sentry Dark IDE + Cyberpunk Flamethrower

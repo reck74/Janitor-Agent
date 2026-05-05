@@ -146,7 +146,7 @@ export function SessionPanel({ info, sid, t }: SessionPanelProps) {
         <Box justifyContent="center" marginBottom={1}>
           <Text bold color={t.color.primary}>
             {t.brand.name}
-            {info.version ? ` v${info.version}` : ''}
+            {t.brand.version ? ` v${t.brand.version}` : info.version ? ` v${info.version}` : ''}
             {info.release_date ? ` (${info.release_date})` : ''}
           </Text>
         </Box>
