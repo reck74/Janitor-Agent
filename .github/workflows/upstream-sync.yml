@@ -30,24 +30,31 @@ jobs:
           git remote add upstream https://github.com/NousResearch/hermes-agent.git || true
           git fetch upstream
 
-          # 1. Comprobar si hay cambios reales
+          # 1. Comprobar si hay commits nuevos en upstream
           UPSTREAM_COMMITS=$(git rev-list HEAD..upstream/main --count)
           if [ "$UPSTREAM_COMMITS" -eq 0 ]; then
-            echo "✅ Todo está al día con upstream. No hay nada que sincronizar."
+            echo "✅ Todo está al día con upstream (Hashes idénticos)."
             exit 0
           fi
 
-          # 2. Hay cambios: Crear rama (Comando date seguro sin espacios ni dos puntos)
+          # 2. Crear rama temporal
           BRANCH_NAME="upstream-sync-$(date +%Y%m%d%H%M%S)"
           git checkout -b $BRANCH_NAME
 
-          # 3. Merge
-          git merge upstream/main --no-edit || true
+          # 3. Forzar un merge commit (NO fast-forward) para trazar la historia
+          git merge upstream/main --no-ff -m "chore: sync with upstream" || true
 
-          # 4. Poda de CI de upstream para no heredar basura
+          # 4. Poda estricta de CI de upstream
           find .github/workflows -type f ! -name 'tests.yml' ! -name 'upstream-sync.yml' -exec git rm -f {} + || true
           git commit --amend --no-edit || true
 
-          # 5. Subir y crear PR
+          # 5. EL ESCUDO: Verificar si realmente hay un diff de código contra main
+          if git diff --quiet main..HEAD; then
+            echo "✅ Tras el merge y la poda, el código final es idéntico a main. No se requiere PR."
+            exit 0
+          fi
+
+          # 6. Subir y crear PR (con pausa para que GitHub indexe la rama)
           git push -u origin $BRANCH_NAME
+          sleep 3
           gh pr create --title "🔄 Upstream Sync" --body "Sincronización automática con NousResearch. Revisa los cambios." --head $BRANCH_NAME --base main
