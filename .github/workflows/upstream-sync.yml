@@ -1,0 +1,85 @@
+name: 🔄 Upstream Sync (NousResearch/hermes-agent)
+
+on:
+  schedule:
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Janitor (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote and fetch
+        run: |
+          git remote add upstream https://github.com/NousResearch/hermes-agent.git
+          git fetch upstream main
+
+      - name: Check if behind upstream
+        id: check
+        run: |
+          BEHIND=$(git rev-list --count HEAD..upstream/main)
+          echo "behind=$BEHIND" >> $GITHUB_OUTPUT
+          echo "Commits behind upstream/main: $BEHIND"
+
+      - name: Skip if already up-to-date
+        if: steps.check.outputs.behind == '0'
+        run: echo "Already up-to-date with upstream. Nothing to do."
+
+      - name: Close stale sync PRs
+        if: steps.check.outputs.behind != '0'
+        run: |
+          gh pr list --repo ${{ github.repository }} --label upstream-sync --state open --json number | \
+            jq -r '.[].number' | \
+            xargs -I{} gh pr close {} --comment "Closing stale sync PR in favor of newer upstream changes."
+
+      - name: Create sync branch and attempt merge
+        if: steps.check.outputs.behind != '0'
+        id: merge
+        run: |
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          BRANCH="upstream-sync-${TIMESTAMP}"
+          git checkout -b "$BRANCH"
+
+          if git merge upstream/main --no-edit; then
+            echo "merge_status=success" >> $GITHUB_OUTPUT
+            echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+            git push origin "$BRANCH"
+          else
+            echo "merge_status=conflict" >> $GITHUB_OUTPUT
+            git merge --abort
+          fi
+
+      - name: Create Pull Request (merge success)
+        if: steps.merge.outputs.merge_status == 'success'
+        run: |
+          gh pr create \
+            --base main \
+            --head "${{ steps.merge.outputs.branch }}" \
+            --title "🔄 Sync: Merge upstream/main (${{ steps.check.outputs.behind }} commits behind)" \
+            --body "## Automated Upstream Sync\n\nThis PR was created automatically to merge the latest changes from \`NousResearch/hermes-agent/main\`.\n\n| Detail | Value |\n|--------|-------|\n| Upstream | \`NousResearch/hermes-agent\` |\n| Commits behind | ${{ steps.check.outputs.behind }} |\n| Sync branch | \`${{ steps.merge.outputs.branch }}\` |\n| Created at | $(date -u +\"%Y-%m-%d %H:%M UTC\") |\n\n### Merge-audit Checklist (Janitor Fork Directives)\n\n- [ ] ZERO-RENAMING POLICY: No \`s/hermes/janitor/g\` in core files\n- [ ] CLI WRAPPER: Extensions go in \`janitor_cli.py\`, never modify \`cli.py\`\n- [ ] SKILLS AISLADOS: New skills under \`skills/janitor-*/\`\n- [ ] TUI ISOLATION: Visual changes via \`skin_engine.py\` or theme injection\n\n> ⚠️ Reviewers: If this PR touches \`cli.py\`, \`run_agent.py\`, \`gateway/run.py\`, or \`hermes_cli/main.py\` with non-trivial changes, **reject immediately** per JANITOR FORK DIRECTIVES." \
+            --reviewer reck74
+
+      - name: Create Issue (merge conflict)
+        if: steps.merge.outputs.merge_status == 'conflict'
+        run: |
+          gh issue create \
+            --title "🚨 Upstream sync failed — merge conflicts on $(date +%Y-%m-%d)" \
+            --body "The automated sync from \`NousResearch/hermes-agent/main\` failed due to merge conflicts.\n\n**Action required:** Manual merge resolution needed. Run:\n\`\`\`bash\ngit fetch upstream\ngit checkout main\ngit merge upstream/main\n# resolve conflicts\ngit push\n\`\`\`" \
+            --label "upstream-sync,merge-conflict" \
+            --assignee reck74
