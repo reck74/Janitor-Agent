@@ -18,7 +18,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT_WORKFLOW }}
 
       - name: Configure Git
         run: |
@@ -51,6 +51,9 @@ jobs:
       - name: Create sync branch and attempt merge
         if: steps.check.outputs.behind != '0'
         id: merge
+        env:
+          GH_TOKEN: ${{ secrets.PAT_WORKFLOW }}
+          GITHUB_TOKEN: ${{ secrets.PAT_WORKFLOW }}
         run: |
           TIMESTAMP=$(date +%Y%m%d-%H%M%S)
           BRANCH="upstream-sync-${TIMESTAMP}"
@@ -59,6 +62,9 @@ jobs:
           if git merge upstream/main --no-edit; then
             echo "merge_status=success" >> $GITHUB_OUTPUT
             echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+            # Poda automática: Borrar todo excepto tests.yml y upstream-sync.yml
+            find .github/workflows -type f ! -name 'tests.yml' ! -name 'upstream-sync.yml' -exec git rm -f {} + || true
+            git commit --amend --no-edit || true
             git push origin "$BRANCH"
           else
             echo "merge_status=conflict" >> $GITHUB_OUTPUT
