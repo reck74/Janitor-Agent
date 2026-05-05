@@ -13,6 +13,7 @@ that forces the Janitor skin and identity on top of the Hermes core.
 Aislamiento: Janitor uses ~/.janitor as HERMES_HOME to stay fully isolated
 from any pre-existing Hermes installation at ~/.hermes/.
 """
+
 from __future__ import annotations
 
 import os
@@ -23,11 +24,16 @@ import sys
 os.environ["HERMES_HOME"] = os.path.expanduser("~/.janitor")
 
 import argparse
+
 _original_argparser_init = argparse.ArgumentParser.__init__
+
+
 def _janitor_argparser_init(self, *args, **kwargs):
     if kwargs.get("prog") == "hermes":
         kwargs["prog"] = "janitor"
     _original_argparser_init(self, *args, **kwargs)
+
+
 argparse.ArgumentParser.__init__ = _janitor_argparser_init
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -77,6 +83,7 @@ class JanitorCLI(cli.HermesCLI):
 
         try:
             from hermes_cli.skin_engine import set_active_skin
+
             set_active_skin("sentry-janitor")
         except Exception:
             pass
@@ -102,7 +109,6 @@ def _owasp_honcho_fail_safe():
     This prevents the Janitor from running with an incomplete Honcho integration
     that could leak session data to an unconfigured external service.
     """
-    from pathlib import Path
 
     honcho_key = os.environ.get("HONCHO_API_KEY", "").strip()
     honcho_base = os.environ.get("HONCHO_BASE_URL", "").strip()
@@ -111,6 +117,7 @@ def _owasp_honcho_fail_safe():
         return
 
     from cli import load_cli_config
+
     try:
         cfg = load_cli_config()
     except Exception:
@@ -121,11 +128,21 @@ def _owasp_honcho_fail_safe():
         return
 
     from hermes_constants import display_hermes_home
+
     home_display = display_hermes_home()
 
-    print("FATAL: Honcho memory provider configured but HONCHO_API_KEY / HONCHO_BASE_URL not set.", file=sys.stderr)
-    print("Janitor will not start with partial Honcho credentials (OWASP fail-safe).", file=sys.stderr)
-    print(f"Set HONCHO_API_KEY in {home_display}/.env or run 'hermes honcho setup'.", file=sys.stderr)
+    print(
+        "FATAL: Honcho memory provider configured but HONCHO_API_KEY / HONCHO_BASE_URL not set.",
+        file=sys.stderr,
+    )
+    print(
+        "Janitor will not start with partial Honcho credentials (OWASP fail-safe).",
+        file=sys.stderr,
+    )
+    print(
+        f"Set HONCHO_API_KEY in {home_display}/.env or run 'hermes honcho setup'.",
+        file=sys.stderr,
+    )
     sys.exit(1)
 
 
@@ -141,11 +158,13 @@ def _owasp_honcho_fail_safe_for_test(hermes_home: str):
         return True, ""
 
     from pathlib import Path
+
     config_path = Path(hermes_home) / "config.yaml"
     if not config_path.exists():
         return True, ""
 
     import yaml
+
     with open(config_path) as f:
         cfg = yaml.safe_load(f) or {}
 
@@ -154,6 +173,7 @@ def _owasp_honcho_fail_safe_for_test(hermes_home: str):
         return True, ""
 
     from hermes_constants import display_hermes_home
+
     os.environ["HERMES_HOME"] = hermes_home
     home_display = display_hermes_home()
 
@@ -178,6 +198,7 @@ def main():
 
     try:
         from hermes_cli.skin_engine import set_active_skin
+
         set_active_skin("sentry-janitor")
     except Exception:
         pass
@@ -185,6 +206,7 @@ def main():
     _owasp_honcho_fail_safe()
 
     from hermes_cli.main import main as hermes_main
+
     sys.exit(hermes_main())
 
 
