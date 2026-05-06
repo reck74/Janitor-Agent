@@ -53,14 +53,23 @@ class TestJanitorCommand:
     """Test that the `janitor` command is registered and executable."""
 
     def test_hermes_home_is_overridden_to_janitor(self):
-        """HERMES_HOME must be set to ~/.janitor before any hermes imports."""
-        import os
+        """HERMES_HOME must be set to ~/.janitor before any hermes imports.
 
-        # Trigger janitor_cli side effect (sets HERMES_HOME before any hermes imports)
-        import janitor_cli  # noqa: F401 — side effect only, not used directly
-
-        assert os.environ.get("HERMES_HOME", "").endswith(".janitor"), (
-            f"HERMES_HOME was not overridden to ~/.janitor: {os.environ.get('HERMES_HOME')}"
+        Uses subprocess to isolate from pytest fixture interference (monkeypatch,
+        xdist worker cache). In-process import would hit the module singleton
+        cache, making this test flaky in CI with pytest-xdist.
+        """
+        result = subprocess.run(
+            [sys.executable, "-c",
+             "import os; import janitor_cli; "
+             "assert os.environ['HERMES_HOME'].endswith('.janitor'), "
+             "f\"HERMES_HOME was not set to ~/.janitor: {os.environ['HERMES_HOME']}\""],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"HERMES_HOME not set to ~/.janitor in subprocess. "
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
         )
 
     def test_janitor_command_available_in_path(self):
