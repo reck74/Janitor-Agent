@@ -98,4 +98,4 @@ ln -sf "${JANITOR_VENV_DIR}/bin/janitor" "${HOME}/.local/bin/janitor"
 # ============================================================
 echo "Lanzando instalador interactivo..."
 cd "${JANITOR_SOURCE_DIR}"
-bash "${JANITOR_INSTALL_SCRIPT}"
+bash "${JANITOR_INSTALL_SCRIPT}" < /dev/tty
