@@ -18,6 +18,27 @@
 #
 # =============================================================================
 
+# =============================================================================
+# PRE-CHECK: Hostile Takeover Warning
+# =============================================================================
+if [ -d "${HOME}/.hermes" ]; then
+    echo ""
+    echo -e "${A_PINK}${A_BOLD}╔══════════════════════════════════════════════════════════════╗${A_NC}"
+    echo -e "${A_PINK}${A_BOLD}║${A_NC}  ${A_CORAL}${A_BOLD}ATENCIÓN: Hostile Takeover Detectado${A_NC}                      ${A_PINK}║${A_NC}"
+    echo -e "${A_PINK}${A_BOLD}╚══════════════════════════════════════════════════════════════╝${A_NC}"
+    echo ""
+    echo -e "${A_CORAL}⚠  Janitor es una evolución agresiva de Hermes.${A_NC}"
+    echo -e "${A_WHITE}   Se detectó una instalación previa en ${HOME}/.hermes${A_NC}"
+    echo -e "${A_WHITE}   Al continuar, Janitor tomará el control global del entorno.${A_NC}"
+    echo -e "${A_WHITE}   Tu Hermes original podría dejar de funcionar por defecto.${A_NC}"
+    echo ""
+    read -r -p "¿Deseas continuar? (y/N): " confirm
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        echo "Abortado por el usuario."
+        exit 1
+    fi
+fi
+
 set -e
 
 # ── Rutas ───────────────────────────────────────────────────────────────────
@@ -348,6 +369,31 @@ else
 fi
 
 # =============================================================================
+# Global HERMES_HOME Hijack — ~/.bashrc / ~/.zshrc
+# =============================================================================
+echo ""
+echo -e "${A_PURPLE}─── Inyección Global de HERMES_HOME y PATH ───${A_NC}"
+echo ""
+
+HERMES_HOME_EXPORT='export HERMES_HOME="$HOME/.janitor"'
+PATH_EXPORT='export PATH="$HOME/.local/bin:$PATH"'
+INJECTED_MARKER="# Janitor — Global env (añadido por janitor-install.sh)"
+
+for rc_file in "${HOME}/.bashrc" "${HOME}/.zshrc"; do
+    if [ -f "$rc_file" ]; then
+        if ! grep -q 'HERMES_HOME.*\.janitor' "$rc_file" 2>/dev/null; then
+            echo "" >> "$rc_file"
+            echo "$INJECTED_MARKER" >> "$rc_file"
+            echo "$HERMES_HOME_EXPORT" >> "$rc_file"
+            echo "$PATH_EXPORT" >> "$rc_file"
+            log_ok "HERMES_HOME + PATH inyectados en $rc_file"
+        else
+            log_info "HERMES_HOME ya presente en $rc_file — omitido"
+        fi
+    fi
+done
+
+# =============================================================================
 # Final: Mensaje de Éxito
 # =============================================================================
 echo ""
@@ -371,5 +417,7 @@ if [[ "$setup_mode" == "2" ]]; then
     echo ""
 fi
 
-echo -e "${A_LIME}▶ Ejecuta '${A_BOLD}janitor${A_NC}' para iniciar el agente.${A_NC}"
+echo -e "${A_LIME}▶ Ejecuta '${A_BOLD}source ~/.bashrc${A_NC}' (o reinicia tu terminal) para aplicar los cambios en el PATH.${A_NC}"
+echo ""
+echo -e "${A_LIME}▶ Luego ejecuta '${A_BOLD}janitor${A_NC}' para iniciar el agente.${A_NC}"
 echo ""

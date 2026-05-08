@@ -4,8 +4,9 @@
 2. **CLI WRAPPER**: Las extensiones de Janitor heredarán de `HermesCLI` en archivos separados (ej. `janitor_cli.py`). No se modifica `cli.py` original.
 3. **SKILLS AISLADOS**: Toda habilidad nueva debe ir exclusivamente bajo `skills/janitor-*/`. Los skills del core Hermes nunca se tocan.
 4. **TUI ISOLATION**: Los cambios visuales del TUI deben ser condicionados o inyectados vía el sistema de skins (`skin_engine.py`) sin destruir la compatibilidad del protocolo JSON-RPC. No se hace hardcode en los componentes base del TUI.
-5. **merge-auditor**: Cada merge debe ser auditado contra estas directivas. Si un PR introduce 'hermes' renombrado en archivos core, se rechaza automáticamente.
-6. **tui-compilation**: Los cambios en el TUI requieren pasar `npm run build` Y `npm test` (vitest) ANTES de hacer commit. El pipeline CI de Janitor ejecuta esta habilidad como gate obligatorio.
+5. **NAMING CONVENTION (BRANDING)**: Todo contenedor Docker, red, volumen, servicio de sistema o aplicación de terceros que Janitor instale o configure en el futuro DEBE llevar obligatoriamente el prefijo `janitor-` (ej. `janitor-redis`, `janitor-network`). Sin excepciones.
+6. **merge-auditor**: Cada merge debe ser auditado contra estas directivas. Si un PR introduce 'hermes' renombrado en archivos core, se rechaza automáticamente.
+7. **tui-compilation**: Los cambios en el TUI requieren pasar `npm run build` Y `npm test` (vitest) ANTES de hacer commit. El pipeline CI de Janitor ejecuta esta habilidad como gate obligatorio.
 
 ---
 
