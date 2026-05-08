@@ -28,13 +28,32 @@ check_dep() {
 
 check_dep git
 check_dep python3
-check_dep npm
 
 # Verificar o instalar uv
 if ! command -v uv &>/dev/null; then
     echo "Instalando uv..."
     curl -LsSf https://astral.sh/uv/install.sh | sh
     source "${HOME}/.local/bin/env" 2>/dev/null || true
+fi
+
+# ============================================================
+# Sanitización de Node.js (Mitigación Cross-OS WSL2)
+# ============================================================
+NPM_PATH=$(command -v npm 2>/dev/null || echo "missing")
+if [[ "$NPM_PATH" == "missing" ]] || [[ "$NPM_PATH" == *".exe" ]] || [[ "$NPM_PATH" == *"/mnt/c/"* ]]; then
+    echo "⚠️ NPM nativo no encontrado o versión de Windows detectada."
+    echo "📦 Instalando Node.js nativo (v20) aislado vía NVM (cero sudo)..."
+    export NVM_DIR="$HOME/.nvm"
+    if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash > /dev/null 2>&1
+    fi
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+    nvm install 20 > /dev/null 2>&1
+    nvm use 20 > /dev/null 2>&1
+    export PATH="$NVM_DIR/versions/node/$(nvm current)/bin:$PATH"
+    echo "✓ Node.js nativo instalado y activado."
+else
+    echo "✓ NPM nativo detectado: $NPM_PATH"
 fi
 
 # ============================================================
