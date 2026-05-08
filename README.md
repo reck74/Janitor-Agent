@@ -1,11 +1,8 @@
 # 🛠 THE JANITOR v0.1.0 — DevSecOps Orchestrator
 
-<p><strong><span style="color:#c2ef4e">       ██╗ █████╗ ███╗   ██╗██╗████████╗██████╗ ██████╗ </span></strong><br>
-<strong><span style="color:#c2ef4e">       ██║██╔══██╗████╗  ██║██║╚══██╔══╝██╔══██╗██╔══██╗</span></strong><br>
-<span style="color:#ffb287">       ██║███████║██╔██╗ ██║██║   ██║   ██║  ██║██████╔╝</span><br>
-<span style="color:#fa7faa"> ██   ██║██╔══██║██║╚██╗██║██║   ██║   ██║  ██║██╔══██╗</span><br>
-<span style="color:#6a5fc1"> ╚█████╔╝██║  ██║██║ ╚████║██║   ██║   ██████╔╝██║  ██║</span><br>
-<span style="color:#79628c">  ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝   ╚═╝   ╚═════╝ ╚═╝  ╚═╝ </span></strong></p>
+<p align="center">
+  <img src="assets/banner.png" alt="The Janitor" width="100%">
+</p>
 
 **El agente cínico que аудирует tu código, limpia tu deuda técnica y orquesta tu infraestructura DevOps — automáticamente.**
 
