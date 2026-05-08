@@ -347,6 +347,75 @@ Servers can also include `tools` in sampling requests for multi-turn tool-augmen
 
 Disable sampling for untrusted servers with `sampling: { enabled: false }`.
 
+## MiniMax Token Plan MCP (minimax-coding-plan-mcp)
+
+MiniMax provides an official MCP server via their Token Plan that adds **vision** and **web search** capabilities -- things the base MiniMax-M2.7 model cannot do natively.
+
+### Tools Provided
+
+- **`understand_image`** -- Analyze images (JPEG, PNG, GIF, WebP up to 20MB). Supports local file paths and HTTP URLs. This is the tool to use when `vision_analyze` fails due to MiniMax's lack of native image support.
+- **`web_search`** -- Web search via MiniMax infrastructure.
+
+### Configuration
+
+Requires `minimax-coding-plan-mcp` installed and `mcp` Python package:
+
+```bash
+npm install -g mmx-cli
+mmx auth login --api-key YOUR_TOKEN_PLAN_KEY
+```
+
+Then add to `config.yaml` under `mcp_servers`:
+
+```yaml
+mcp_servers:
+  minimax:
+    command: uvx
+    args:
+    - minimax-coding-plan-mcp
+    - -y
+    env:
+      MINIMAX_API_KEY: ${MINIMAX_API_KEY}
+      MINIMAX_API_HOST: https://api.minimax.io
+    timeout: 180
+    connect_timeout: 60
+```
+
+The `${MINIMAX_API_KEY}` syntax references the `.env` file via environment variable substitution.
+
+### Tool Naming
+
+After restart, tools appear as:
+- `mcp_minimax_understand_image`
+- `mcp_minimax_web_search`
+
+### Important Distinction
+
+| MCP Server | What It Does |
+|---|---|
+| `minimax_docs` | HTTP URL-only -- searches MiniMax API docs. **No vision, no search.** |
+| `minimax-coding-plan-mcp` | Full capabilities: `understand_image` + `web_search` via Token Plan API |
+
+Do NOT confuse the two. `minimax_docs` is a passive doc searcher. `minimax-coding-plan-mcp` is an active API MCP.
+
+### Quotas (Token Plan Free Tier)
+
+From `mmx quota show`:
+- `coding-plan-vlm` (understand_image): 129/1500 used
+- `coding-plan-search` (web_search): 129/1500 used
+- `image-01`: **0/0 -- not available on free plan**. Image generation requires Plus plan or higher.
+
+## Knowledge Base MCP Servers for Tool Documentation
+
+When the user asks about managing tool documentation, KB for AI agents, or searchable documentation for Janitor, see:
+
+→ `references/mcp-knowledge-base-servers.md` — Full research of alternatives ranked by GitHub stars, credibility, and fit for tool documentation use case.
+
+TL;DR for reck's setup:
+- **Grounded Docs MCP** (`arabold/docs-mcp-server`, 1.3k ⭐, 68 releases) — best for indexing tool docs as MCP tools
+- **AnythingLLM** (59.7k ⭐) — best for generic document RAG with turnkey Docker setup
+- **NOT llm-wiki-skills** (32 ⭐) or **CodeDox** (28 ⭐) — insufficient community validation
+
 ## Notes
 
 - MCP tools are called synchronously from the agent's perspective but run asynchronously on a dedicated background event loop
@@ -354,3 +423,4 @@ Disable sampling for untrusted servers with `sampling: { enabled: false }`.
 - The native MCP client is independent of `mcporter` -- you can use both simultaneously
 - Server connections are persistent and shared across all conversations in the same agent process
 - Adding or removing servers requires restarting the agent (no hot-reload currently)
+- `${ENV_VAR}` syntax in `env:` values pulls from the agent's environment (useful for `.env` integration)
