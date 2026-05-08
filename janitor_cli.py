@@ -23,6 +23,29 @@ import sys
 # hermes_constants.get_hermes_home() reads this env var at import time.
 os.environ["HERMES_HOME"] = os.path.expanduser("~/.janitor")
 
+# COMMAND HIJACKING: Intercept `janitor update` before Hermes CLI parses arguments.
+if len(sys.argv) > 1 and sys.argv[1] == "update":
+    import subprocess
+    print("\n🔥 THE JANITOR: Initiating tactical update...\n")
+    try:
+        janitor_root = os.path.dirname(os.path.abspath(__file__))
+        os.chdir(janitor_root)
+
+        print("-> Syncing incinerator protocols (git pull)...")
+        subprocess.run(["git", "pull", "origin", "main"], check=True)
+
+        print("-> Updating dependencies (uv)...")
+        subprocess.run(["uv", "pip", "install", "-e", ".[all]"], check=True)
+
+        print("-> Compiling TUI components...")
+        subprocess.run("cd ui-tui && npm install && npm run build", shell=True, check=True)
+
+        print("\n✅ Janitor updated successfully. Garbage collected.\n")
+    except subprocess.CalledProcessError as e:
+        print(f"\n❌ Update failed at step: {e.cmd}\n")
+        sys.exit(1)
+    sys.exit(0)
+
 import argparse
 
 _original_argparser_init = argparse.ArgumentParser.__init__
