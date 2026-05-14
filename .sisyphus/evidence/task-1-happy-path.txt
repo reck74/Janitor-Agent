@@ -1,0 +1,4 @@
+46:          if ! git merge upstream/main --no-edit; then
+59:              exit 1
+49:              git merge --abort 2>/dev/null || true
+64:          git commit -m "chore: prune upstream workflows" || true

@@ -1,0 +1,3 @@
+30:          git remote add upstream https://github.com/NousResearch/hermes-agent.git || true
+96 .github/workflows/upstream-sync.yml
+66:          # 5. ESCUDO DE TRIPLE VERIFICACIÓN

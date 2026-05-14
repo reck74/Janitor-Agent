@@ -258,6 +258,8 @@ export const JANITOR_DARK_THEME: Theme = {
     muted: '#79628c',        // Muted Purple: secundario
     completionBg: '#150f23', // Darker Purple (Background)
     completionCurrentBg: mix('#150f23', '#c2ef4e', 0.25),
+    completionMetaBg: '#150f23',
+    completionMetaCurrentBg: mix('#150f23', '#c2ef4e', 0.25),
 
     label: '#dcdcaa',         // Code Yellow: etiquetas técnicas
     ok: '#c2ef4e',           // Lime Green: éxito
@@ -299,6 +301,8 @@ export const JANITOR_LIGHT_THEME: Theme = {
     muted: '#5a4478',        // Darker muted purple
     completionBg: '#F0EFF5',
     completionCurrentBg: mix('#F0EFF5', '#5a8a1e', 0.25),
+    completionMetaBg: '#F0EFF5',
+    completionMetaCurrentBg: mix('#F0EFF5', '#5a8a1e', 0.25),
 
     label: '#6a5a1e',
     ok: '#2d6b0f',
