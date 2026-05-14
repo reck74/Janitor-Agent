@@ -250,79 +250,7 @@ log_info "Escribiendo ${A_WHITE}${ENV_FILE}${A_NC}..."
 log_ok ".env escrito en ${A_WHITE}${ENV_FILE}${A_NC}"
 
 # =============================================================================
-# Paso 4: Copiar SOUL.md (Personalidad Cínica)
-# =============================================================================
-echo ""
-echo -e "${A_PURPLE}─── Personalidad del Agente ───${A_NC}"
-echo ""
-
-SOUL_SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/SOUL.md"
-SOUL_PATH="${JANITOR_HOME}/SOUL.md"
-log_info "Instalando personalidad cínica desde ${A_WHITE}${SOUL_SOURCE}${A_NC}..."
-
-if [ -f "$SOUL_SOURCE" ]; then
-    cp "$SOUL_SOURCE" "$SOUL_PATH"
-    log_ok "Personalidad instalada — el cínico está listo para trabajar"
-else
-    log_warn "SOUL.md no encontrado en ${SOUL_SOURCE} — continuando sin personalidad"
-fi
-
-# =============================================================================
-# Paso 5: Generar ~/.janitor/config.yaml
-# =============================================================================
-echo ""
-echo -e "${A_PURPLE}─── Configuración del Agente ───${A_NC}"
-echo ""
-
-CONFIG_PATH="${JANITOR_HOME}/config.yaml"
-log_info "Generando ${A_WHITE}${CONFIG_PATH}${A_NC}..."
-
-python3 - "$CONFIG_PATH" "$setup_mode" << 'PYTHON_EOF'
-import sys
-import yaml
-
-config_path = sys.argv[1]
-setup_mode = sys.argv[2]
-
-config = {
-    "display": {
-        "tui": True,
-        "skin": "sentry-janitor"
-    },
-    "model": {
-        "provider": "minimax",
-        "default": "MiniMax-M2.7"
-    },
-    "skills": {
-        "config": {
-            "janitor.cache_clean_days": 7,
-            "janitor.dry_run": False,
-            "janitor.local_services_timeout": 60,
-            "janitor.honcho_port": 1973,
-            "janitor.firecrawl_port": 1974
-        }
-    }
-}
-
-# Solo habilitar Honcho como provider si el usuario eligió modo Keys y proporcionó API key
-if setup_mode == "1":
-    config["memory"] = {"provider": "honcho"}
-
-with open(config_path, 'w') as f:
-    yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-
-print("config.yaml written successfully")
-PYTHON_EOF
-
-if [ $? -eq 0 ]; then
-    log_ok "config.yaml generado"
-else
-    log_fail "Error al generar config.yaml"
-    exit 1
-fi
-
-# =============================================================================
-# Paso 6: Copiar skin sentry-janitor
+# Paso 4: Copiar skin sentry-janitor
 # =============================================================================
 echo ""
 echo -e "${A_PURPLE}─── Skin Visual ───${A_NC}"
@@ -372,9 +300,7 @@ echo "╚═══════════════════════�
 echo -e "${A_NC}"
 echo ""
 echo -e "   ${A_PURPLE}Directorio:${NC}     ${A_WHITE}${JANITOR_HOME}${A_NC}"
-echo -e "   ${A_PURPLE}Config:${NC}        ${A_WHITE}${JANITOR_HOME}/config.yaml${A_NC}"
 echo -e "   ${A_PURPLE}Variables:${NC}      ${A_WHITE}${JANITOR_HOME}/.env${A_NC}"
-echo -e "   ${A_PURPLE}Personalidad:${NC}   ${A_WHITE}${JANITOR_HOME}/SOUL.md${A_NC}"
 echo -e "   ${A_PURPLE}Skin:${NC}           ${A_WHITE}${JANITOR_HOME}/skins/sentry-janitor.yaml${A_NC}"
 echo ""
 

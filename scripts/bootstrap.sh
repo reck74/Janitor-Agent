@@ -7,7 +7,7 @@ set -euo pipefail
 
 # Config — el usuario puede cambiar estas variables
 JANITOR_REPO_URL="${JANITOR_REPO_URL:-https://github.com/reck74/Janitor-Agent.git}"
-JANITOR_SOURCE_DIR="${HOME}/.janitor-source"
+JANITOR_SOURCE_DIR="${HOME}/.janitor/janitor-core"
 JANITOR_VENV_DIR="${JANITOR_SOURCE_DIR}/venv"
 JANITOR_INSTALL_SCRIPT="${JANITOR_SOURCE_DIR}/scripts/janitor-install.sh"
 
@@ -59,6 +59,7 @@ fi
 # ============================================================
 # 3. Clonación o pull
 # ============================================================
+mkdir -p "${HOME}/.janitor"
 if [ -d "${JANITOR_SOURCE_DIR}/.git" ]; then
     echo "Janitor ya instalado. Ejecutando git pull..."
     cd "${JANITOR_SOURCE_DIR}"
