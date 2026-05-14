@@ -264,9 +264,6 @@ select = ["PLW1514"]
 "optional-skills/**" = ["PLW1514"]
 "plugins/**" = ["PLW1514"]
 
-[tool.uv]
-exclude-newer = "7 days"
-
 [dependency-groups]
 dev = [
     "ruff>=0.15.10",
