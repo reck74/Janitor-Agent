@@ -35,7 +35,8 @@ if len(sys.argv) > 1 and sys.argv[1] == "update":
         subprocess.run(["git", "pull", "origin", "main"], check=True)
 
         print("-> Updating dependencies (uv)...")
-        subprocess.run(["uv", "pip", "install", "-e", ".[all]"], check=True)
+        venv_path = sys.prefix
+        subprocess.run(["uv", "pip", "install", "--python", venv_path, "-e", ".[all]"], check=True)
 
         print("-> Compiling TUI components...")
         subprocess.run("cd ui-tui && npm install && npm run build", shell=True, check=True)
