@@ -37,6 +37,8 @@ Janitor es un **orquestador DevSecOps** con personalidad cínica que:
 
 ## Quick Start
 
+### Linux, macOS, WSL2, Termux
+
 ```bash
 # Una línea — instala Python, Node, uv, Janitor y hace el enlace global:
 curl -sL https://raw.githubusercontent.com/reck74/Janitor-Agent/main/scripts/bootstrap.sh | bash

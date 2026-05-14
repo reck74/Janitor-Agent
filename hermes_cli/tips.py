@@ -54,7 +54,7 @@ TIPS = [
     "Combine multiple references: \"Review @file:main.py and @file:test.py for consistency.\"",
 
     # --- Keybindings ---
-    "Alt+Enter (or Ctrl+J) inserts a newline for multi-line input.",
+    "Alt+Enter inserts a newline for multi-line input. (Windows Terminal intercepts Alt+Enter — use Ctrl+Enter instead.)",
     "Ctrl+C interrupts the agent. Double-press within 2 seconds to force exit.",
     "Ctrl+Z suspends Hermes to the background — run fg in your shell to resume.",
     "Tab accepts auto-suggestion ghost text or autocompletes slash commands.",
@@ -192,7 +192,7 @@ TIPS = [
     "Voice messages on Telegram, Discord, WhatsApp, and Slack are auto-transcribed.",
 
     # --- Gateway & Messaging ---
-    "Hermes runs on 18 platforms: Telegram, Discord, Slack, WhatsApp, Signal, Matrix, email, and more.",
+    "Hermes runs on 21 messaging platforms: Telegram, Discord, Slack, WhatsApp, Signal, Matrix, IRC, Microsoft Teams, email, and more.",
     "hermes gateway install sets it up as a system service that starts on boot.",
     "DingTalk uses Stream Mode — no webhooks or public URL needed.",
     "BlueBubbles brings iMessage to Hermes via a local macOS server.",
