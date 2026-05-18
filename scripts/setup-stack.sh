@@ -99,6 +99,26 @@ generate_infisical_keys() {
         log_info "INFISICAL_AUTH_SECRET already exists — preserving"
     fi
 
+    # INFISICAL_ADMIN_EMAIL / INFISICAL_ADMIN_PASSWORD — for bootstrap login
+    if ! grep -q "INFISICAL_ADMIN_EMAIL=" "$env_file" 2>/dev/null; then
+        echo "INFISICAL_ADMIN_EMAIL=admin@janitor.local" >> "$env_file"
+        log_ok "INFISICAL_ADMIN_EMAIL set"
+    else
+        log_info "INFISICAL_ADMIN_EMAIL already exists — preserving"
+    fi
+    if ! grep -q "INFISICAL_ADMIN_PASSWORD=" "$env_file" 2>/dev/null; then
+        local admin_pw
+        if command -v openssl >/dev/null 2>&1; then
+            admin_pw=$(openssl rand -hex 16)
+        else
+            admin_pw=$(python3 -c "import secrets; print(secrets.token_hex(16))")
+        fi
+        echo "INFISICAL_ADMIN_PASSWORD=${admin_pw}" >> "$env_file"
+        log_ok "INFISICAL_ADMIN_PASSWORD generated"
+    else
+        log_info "INFISICAL_ADMIN_PASSWORD already exists — preserving"
+    fi
+
     return 0
 }
 
@@ -458,7 +478,7 @@ else
 
         if [ $idx -lt $total ]; then
             log_info "Waiting 5s before launching next stack..."
-            sleep 5
+            sleep 15
         fi
     done
 
@@ -490,9 +510,9 @@ Wants=network.target
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=%h/.janitor/docker
-ExecStart=/bin/bash -c 'cd %h/.janitor/docker && docker compose --env-file %h/.janitor/.env -f docker-compose.yml up -d && sleep 5 && docker compose --env-file %h/.janitor/.env -f honcho-compose.yml up -d && sleep 5 && docker compose --env-file %h/.janitor/.env -f firecrawl-compose.yml up -d'
+ExecStart=/bin/bash -c 'cd %h/.janitor/docker && docker compose --env-file %h/.janitor/.env -f docker-compose.yml up -d && sleep 15 && docker compose --env-file %h/.janitor/.env -f honcho-compose.yml up -d && sleep 15 && docker compose --env-file %h/.janitor/.env -f firecrawl-compose.yml up -d'
 ExecStop=/bin/bash -c 'cd %h/.janitor/docker && docker compose --env-file %h/.janitor/.env -f firecrawl-compose.yml down 2>/dev/null; docker compose --env-file %h/.janitor/.env -f honcho-compose.yml down 2>/dev/null; docker compose --env-file %h/.janitor/.env -f docker-compose.yml down 2>/dev/null'
-TimeoutStartSec=120
+        TimeoutStartSec=300
 TimeoutStopSec=60
 
 [Install]

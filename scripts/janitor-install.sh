@@ -165,17 +165,7 @@ if [[ "$setup_mode" == "1" ]]; then
     echo
     [[ -n "$firecrawl_key" ]] && log_ok "Firecrawl API key configurada" || log_warn "Firecrawl saltado — nada de scraping web"
 else
-    echo -e "${A_LIME}   Modo Local Autonomous Selected — levantando contenedores Docker...${A_NC}"
-    SETUP_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/setup-stack.sh"
-    if [ -f "$SETUP_SCRIPT" ]; then
-        bash "$SETUP_SCRIPT" || {
-            log_warn "El stack Docker no se pudo levantar"
-            log_warn "Puedes intentarlo manualmente luego con: bash $SETUP_SCRIPT"
-        }
-    else
-        log_warn "setup-stack.sh no encontrado — los contenedores no se levantaron"
-        log_warn "Asegúrate de que el archivo existe en scripts/setup-stack.sh"
-    fi
+    echo -e "${A_LIME}   Modo Local Autonomous Selected — Docker se lanzará al final.${A_NC}"
 
     echo ""
     log_info "Verificando Infisical..."
@@ -327,6 +317,24 @@ for rc_file in "${HOME}/.bashrc" "${HOME}/.zshrc"; do
         fi
     fi
 done
+
+# =============================================================================
+# Phase 4: Lanzar el stack Docker (AHORA: después de escribir .env completo)
+# =============================================================================
+echo ""
+echo -e "${A_PURPLE}─── Stack Docker (Infisical, Honcho, Firecrawl) ───${A_NC}"
+echo ""
+
+SETUP_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/setup-stack.sh"
+if [ -f "$SETUP_SCRIPT" ]; then
+    bash "$SETUP_SCRIPT" || {
+        log_warn "El stack Docker no se pudo levantar"
+        log_warn "Puedes intentarlo manualmente luego con: bash $SETUP_SCRIPT"
+    }
+else
+    log_warn "setup-stack.sh no encontrado — los contenedores no se levantaron"
+    log_warn "Asegúrate de que el archivo existe en scripts/setup-stack.sh"
+fi
 
 # =============================================================================
 # Final: Mensaje de Éxito
