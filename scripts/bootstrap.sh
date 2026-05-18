@@ -17,6 +17,44 @@ JANITOR_INSTALL_SCRIPT="${JANITOR_SOURCE_DIR}/scripts/janitor-install.sh"
 echo "Descargando e instalando el motor de Janitor..."
 
 # ============================================================
+# 1b. Kill-Switch: Docker Daemon Gate
+# ============================================================
+check_docker_hard() {
+    echo -e "→ Checking Docker Daemon..."
+
+    if ! command -v docker >/dev/null 2>&1; then
+        echo -e "Docker CLI not found. Attempting install..."
+        curl -fsSL https://get.docker.com -o /tmp/get-docker.sh 2>/dev/null && sudo sh /tmp/get-docker.sh 2>/dev/null
+        if [ $? -ne 0 ]; then
+            echo -e "FATAL: Docker installation failed. Please install Docker Desktop manually."
+            exit 1
+        fi
+    fi
+
+    DOCKER_OUT=$(docker info 2>&1)
+    if [ $? -ne 0 ]; then
+        if echo "$DOCKER_OUT" | grep -q "permission denied"; then
+            echo -e "Permission denied on docker.sock. Auto-fixing group permissions..."
+            sudo usermod -aG docker "$USER" 2>/dev/null || sudo adduser "$USER" docker 2>/dev/null
+            echo -e "[ACCIÓN REQUERIDA] Tu usuario fue añadido al grupo 'docker'."
+            echo -e "Debes reiniciar tu terminal (o ejecutar 'newgrp docker') y volver a correr este instalador."
+            exit 1
+        else
+            echo -e "Docker daemon not running. Attempting to start service..."
+            sudo systemctl start docker 2>/dev/null || sudo service docker start 2>/dev/null
+            sleep 3
+            if ! docker info >/dev/null 2>&1; then
+                echo -e "FATAL: Docker daemon is dead. Start Docker Desktop manually and retry."
+                exit 1
+            fi
+        fi
+    fi
+    echo -e "✓ Docker is active and accessible."
+}
+
+check_docker_hard
+
+# ============================================================
 # 2. Validación de dependencias
 # ============================================================
 check_dep() {
