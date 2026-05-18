@@ -1,0 +1,99 @@
+services:
+  honcho-api:
+    build:
+      context: /home/reck/.janitor/src/honcho
+      dockerfile: Dockerfile
+    container_name: janitor-honcho-api
+    entrypoint: ["sh", "docker/entrypoint.sh"]
+    ports:
+      - "127.0.0.1:1973:8000"
+    environment:
+      - DB_CONNECTION_URI=postgresql+psycopg://janitor_bea9db7d:vPwptI+4UO+v+B+xnNdzoFltM3cKTLlp@honcho-database:5432/honcho
+      - CACHE_URL=redis://honcho-redis:6379/0?suppress=true
+      - CACHE_ENABLED=true
+    env_file:
+      - path: ~/.janitor/.env
+        required: false
+    volumes:
+      - honcho-api-data:/data
+    restart: unless-stopped
+    networks:
+      - honcho-network
+    depends_on:
+      honcho-database:
+        condition: service_healthy
+      honcho-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  honcho-deriver:
+    build:
+      context: /home/reck/.janitor/src/honcho
+      dockerfile: Dockerfile
+    container_name: janitor-honcho-deriver
+    entrypoint: ["python", "-m", "src.deriver"]
+    environment:
+      - DB_CONNECTION_URI=postgresql+psycopg://janitor_bea9db7d:vPwptI+4UO+v+B+xnNdzoFltM3cKTLlp@honcho-database:5432/honcho
+      - CACHE_URL=redis://honcho-redis:6379/0?suppress=true
+      - CACHE_ENABLED=true
+    env_file:
+      - path: ~/.janitor/.env
+        required: false
+    restart: unless-stopped
+    networks:
+      - honcho-network
+    depends_on:
+      honcho-database:
+        condition: service_healthy
+      honcho-redis:
+        condition: service_healthy
+
+  honcho-database:
+    image: pgvector/pgvector:pg15
+    container_name: janitor-honcho-database
+    environment:
+      POSTGRES_USER: janitor_bea9db7d
+      POSTGRES_PASSWORD: vPwptI+4UO+v+B+xnNdzoFltM3cKTLlp
+      POSTGRES_DB: honcho
+    volumes:
+      - /home/reck/.janitor/src/honcho/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - honcho-pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - honcho-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${HONCHO_POSTGRES_USER:-janitor}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  honcho-redis:
+    image: redis:8.2
+    container_name: janitor-honcho-redis
+    restart: unless-stopped
+    networks:
+      - honcho-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+volumes:
+  honcho-pgdata:
+    name: janitor-honcho-pgdata
+  honcho-redis-data:
+    name: janitor-honcho-redis-data
+  honcho-api-data:
+    name: janitor-honcho-api-data
+
+networks:
+  honcho-network:
+    name: janitor-honcho-network

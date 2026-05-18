@@ -1,0 +1,122 @@
+services:
+  firecrawl-api:
+    image: ghcr.io/firecrawl/firecrawl:latest
+    container_name: janitor-firecrawl-api
+    ports:
+      - "127.0.0.1:1974:3002"
+    environment:
+      - REDIS_URL=redis://firecrawl-redis:6379
+      - REDIS_RATE_LIMIT_URL=redis://firecrawl-redis:6379
+      - PLAYWRIGHT_MICROSERVICE_URL=http://firecrawl-playwright:3000/scrape
+      - POSTGRES_USER=${FIRECRAWL_POSTGRES_USER}
+      - POSTGRES_PASSWORD=${FIRECRAWL_POSTGRES_PASSWORD}
+      - POSTGRES_DB=${FIRECRAWL_POSTGRES_DB}
+      - POSTGRES_HOST=firecrawl-postgres
+      - POSTGRES_PORT=5432
+      - USE_DB_AUTHENTICATION=${USE_DB_AUTHENTICATION:-false}
+      - NUQ_RABBITMQ_URL=amqp://firecrawl:changeme@firecrawl-rabbitmq:5672
+      - BULL_AUTH_KEY=${BULL_AUTH_KEY}
+      - HOST=0.0.0.0
+      - PORT=3002
+      - INTERNAL_PORT=3002
+      - NUM_WORKERS_PER_QUEUE=${NUM_WORKERS_PER_QUEUE:-8}
+      - CRAWL_CONCURRENT_REQUESTS=${CRAWL_CONCURRENT_REQUESTS:-10}
+      - MAX_CONCURRENT_JOBS=2
+      - BROWSER_POOL_SIZE=2
+      - MAX_CPU=0.8
+      - MAX_RAM=0.8
+    env_file:
+      - path: ~/.janitor/.env
+        required: false
+    command: ["node", "dist/src/harness.js", "--start-docker"]
+    restart: unless-stopped
+    networks:
+      - firecrawl-network
+    depends_on:
+      firecrawl-redis:
+        condition: service_healthy
+      firecrawl-playwright:
+        condition: service_started
+      firecrawl-postgres:
+        condition: service_healthy
+      firecrawl-rabbitmq:
+        condition: service_healthy
+    cpus: 2.0
+    mem_limit: 4G
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3002/v0/health/liveness', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); }).on('error', () => process.exit(1));"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  firecrawl-playwright:
+    image: ghcr.io/firecrawl/playwright-service:latest
+    container_name: janitor-firecrawl-playwright
+    environment:
+      - PORT=3000
+      - MAX_CONCURRENT_PAGES=${CRAWL_CONCURRENT_REQUESTS:-10}
+    restart: unless-stopped
+    networks:
+      - firecrawl-network
+
+  firecrawl-redis:
+    image: redis:alpine
+    container_name: janitor-firecrawl-redis
+    restart: unless-stopped
+    networks:
+      - firecrawl-network
+    volumes:
+      - firecrawl-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  firecrawl-rabbitmq:
+    image: rabbitmq:3-management
+    container_name: janitor-firecrawl-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${FIRECRAWL_RABBITMQ_USER:-firecrawl}
+      RABBITMQ_DEFAULT_PASS: ${FIRECRAWL_RABBITMQ_PASSWORD:-changeme}
+    restart: unless-stopped
+    networks:
+      - firecrawl-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 6
+      start_period: 30s
+
+  firecrawl-postgres:
+    build:
+      context: /home/reck/.janitor/src/firecrawl/apps/nuq-postgres
+    container_name: janitor-firecrawl-postgres
+    environment:
+      POSTGRES_USER: ${FIRECRAWL_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${FIRECRAWL_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${FIRECRAWL_POSTGRES_DB}
+    volumes:
+      - firecrawl-pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - firecrawl-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${FIRECRAWL_POSTGRES_USER} -d ${FIRECRAWL_POSTGRES_DB} && psql -U ${FIRECRAWL_POSTGRES_USER} -d ${FIRECRAWL_POSTGRES_DB} -tAc \"SELECT 1 FROM pg_extension WHERE extname='pg_cron'\" | grep -q 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  firecrawl-redis-data:
+    name: janitor-firecrawl-redis-data
+  firecrawl-pgdata:
+    name: janitor-firecrawl-pgdata
+
+networks:
+  firecrawl-network:
+    name: janitor-firecrawl-network

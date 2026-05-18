@@ -17,14 +17,63 @@ from any pre-existing Hermes installation at ~/.hermes/.
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 
 # AISLAMIENTO CRÍTICO: Must be set BEFORE any hermes_ modules are imported.
 # hermes_constants.get_hermes_home() reads this env var at import time.
 os.environ["HERMES_HOME"] = os.path.expanduser("~/.janitor")
 
+
+def _load_infisical_secrets() -> None:
+    try:
+        result = subprocess.run(
+            ["infisical", "export", "--path=/janitor", "--env=prod", "--format=dotenv"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip()
+                if key and key != "HERMES_HOME":
+                    os.environ.setdefault(key, value)
+            return
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    except Exception:
+        pass
+
+    env_path = os.path.expanduser("~/.janitor/.env")
+    try:
+        with open(env_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip()
+                if key and key != "HERMES_HOME":
+                    os.environ.setdefault(key, value)
+    except FileNotFoundError:
+        print("Warning: No infisical CLI and no fallback ~/.janitor/.env found.", file=sys.stderr)
+    except Exception as e:
+        print(f"Warning: Failed to load fallback .env: {e}", file=sys.stderr)
+
+
+_load_infisical_secrets()
+
 # DICTADURA DE CONFIGURACIÓN: Force Janitor defaults into DEFAULT_CONFIG at import time.
-# This replaces the bash-generated config.yaml — Python owns the policy now.
 from hermes_cli.config import DEFAULT_CONFIG
 
 DEFAULT_CONFIG.setdefault("memory", {})["provider"] = "honcho"

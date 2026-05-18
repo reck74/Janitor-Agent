@@ -165,7 +165,46 @@ if [[ "$setup_mode" == "1" ]]; then
     echo
     [[ -n "$firecrawl_key" ]] && log_ok "Firecrawl API key configurada" || log_warn "Firecrawl saltado — nada de scraping web"
 else
-    echo -e "${A_LIME}   Modo Local Autonomous Selected — Janitor levanta los contenedores Docker${A_NC}"
+    echo -e "${A_LIME}   Modo Local Autonomous Selected — levantando contenedores Docker...${A_NC}"
+    SETUP_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/setup-stack.sh"
+    if [ -f "$SETUP_SCRIPT" ]; then
+        bash "$SETUP_SCRIPT" || {
+            log_warn "El stack Docker no se pudo levantar"
+            log_warn "Puedes intentarlo manualmente luego con: bash $SETUP_SCRIPT"
+        }
+    else
+        log_warn "setup-stack.sh no encontrado — los contenedores no se levantaron"
+        log_warn "Asegúrate de que el archivo existe en scripts/setup-stack.sh"
+    fi
+
+    echo ""
+    log_info "Verificando Infisical..."
+
+    set +e
+    INFISICAL_HEALTH=$(curl -sf --max-time 5 "http://localhost:8080/api/v1/health" 2>/dev/null)
+    INFISICAL_EXIT=$?
+    set -e
+
+    if [[ $INFISICAL_EXIT -eq 0 && -n "$INFISICAL_HEALTH" ]]; then
+        log_ok "Infisical está corriendo"
+
+        set +e
+        curl -sf -X POST "http://localhost:8080/api/v1/projects" \
+            -H "Content-Type: application/json" \
+            -d '{"name":"janitor-secrets"}' \
+            > /dev/null 2>&1
+        CURL_ORG=$?
+        set -e
+
+        if [[ $CURL_ORG -eq 0 ]]; then
+            log_ok "Proyecto janitor-secrets creado en Infisical"
+        else
+            log_warn "No se pudo crear el proyecto janitor-secrets — puede que ya exista"
+        fi
+    else
+        log_warn "Infisical no está respondiendo en localhost:8080 — omitido"
+        log_info "El proyecto se puede crear manualmente una vez Infisical esté disponible"
+    fi
 fi
 
 # OpenAI Base URL (OPCIONAL)

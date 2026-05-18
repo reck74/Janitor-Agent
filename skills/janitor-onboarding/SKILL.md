@@ -1,18 +1,12 @@
 ---
 name: janitor-onboarding
-description: |
-  Onboarding skill for Janitor Agent — spins up local Honcho (memory) and Firecrawl
-  (web scraping) services via Docker when JANITOR_LOCAL_SETUP=true is detected.
-  This is the dirty work nobody wants to do: configure containers, map ports,
-  verify that the services are actually listening before the agent tries to use them.
-  If you found this skill, congratulations — you've been assigned the janitorial task
-  of making sure the infrastructure doesn't collapse.
+description: "Onboarding for Janitor Agent — spins up 5 local Docker services."
 version: 1.0.0
 platforms: [linux, macos]
 
 metadata:
   hermes:
-    tags: [onboarding, docker, honcho, firecrawl, local-setup, infrastructure]
+    tags: [onboarding, docker, honcho, firecrawl, agentmemory, infisical, local-setup, infrastructure]
     category: devops
     config:
       janitor.local_services_timeout:
@@ -27,21 +21,28 @@ metadata:
         description: "Local port for Firecrawl service"
         default: 1974
         type: integer
+      janitor.agentmemory_port:
+        description: "Local port for AgentMemory API service"
+        default: 3111
+        type: integer
+      janitor.infisical_port:
+        description: "Local port for Infisical service"
+        default: 8080
+        type: integer
 ---
 
 # janitor-onboarding
 
-Spin up local Honcho and Firecrawl services using Docker. Activated automatically
-when `JANITOR_LOCAL_SETUP=true` is found in `~/.janitor/.env`.
-
-This skill exists because apparently someone has to be the adult in the room and make
-sure the plumbing works before the agent tries to flush data through it.
+Spin up local Honcho, Firecrawl, AgentMemory, Infisical, and Playwright services
+using Docker. Activated automatically when `JANITOR_LOCAL_SETUP=true` is found
+in `~/.janitor/.env`.
 
 ## Prerequisites
 
 - Docker daemon running (`docker info` must succeed)
 - `docker compose` available (v2 recommended)
-- Ports 1973 and 1974 must be free on localhost
+- Ports 1973, 1974, 1975, 3111, 3113, and 8080 must be free on localhost
+- Optional: Infisical CLI (`npm install -g @infisical/cli`) for secret injection
 
 ## Usage
 
@@ -59,8 +60,11 @@ bash skills/janitor-onboarding/scripts/local-services.sh start
 
 | Service | Container | Port | Purpose |
 |---------|-----------|------|---------|
-| Honcho | `honcho/agent` or equivalent | 1973 | Long-term memory & session storage |
-| Firecrawl | `firecrawl/agent` or equivalent | 1974 | Web page scraping & extraction |
+| Honcho | `janitor-honcho` | 1973 | Long-term memory & session storage |
+| Firecrawl | `janitor-firecrawl` | 1974 | Web page scraping & extraction |
+| AgentMemory | `janitor-agentmemory` | 3111, 3113 | Coding memory & context management |
+| Infisical | `janitor-infisical` | 8080 | Secret management & env injection |
+| Playwright | `janitor-playwright` | 1975 | Browser automation |
 
 ## Verification
 
@@ -69,6 +73,9 @@ After startup, the skill verifies each service is healthy:
 ```bash
 curl -f http://localhost:1973/health || echo "Honcho not responding"
 curl -f http://localhost:1974/health || echo "Firecrawl not responding"
+curl -f http://localhost:3111/health || echo "AgentMemory not responding"
+curl -f http://localhost:8080/api/v1/health || echo "Infisical not responding"
+docker ps --filter "name=janitor-playwright" --filter "status=running" || echo "Playwright not running"
 ```
 
 If a service fails health checks, the skill logs the failure and instructs the user
@@ -79,7 +86,7 @@ SERVICE UNAVAILABLE: honcho
   Likely causes:
     1. Port 1973 already in use:  lsof -i :1973
     2. Docker daemon not running:  docker info
-    3. Image not pulled:           docker pull honcho/agent:latest
+    3. Image not pulled:           docker pull janitor-honcho:latest
   Manual start:
     cd ~/.janitor/skills/janitor-onboarding/scripts
     docker compose up -d honcho

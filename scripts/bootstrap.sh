@@ -70,6 +70,23 @@ else
 fi
 
 # ============================================================
+# 3b. Ecosistema Docker (Opcional)
+# ============================================================
+SETUP_STACK="${JANITOR_SOURCE_DIR}/scripts/setup-stack.sh"
+if [ -f "$SETUP_STACK" ]; then
+    echo "🔥 Ecosistema Docker detectado. ¿Deseas levantar el stack local (Honcho, Firecrawl)?"
+    echo "   Esto requiere Docker instalado y corriendo."
+    read -r -p "   Levantar stack ahora? (Y/n): " launch_stack
+    if [[ "$launch_stack" != "n" && "$launch_stack" != "N" ]]; then
+        bash "$SETUP_STACK" || echo "⚠️ El stack no se pudo levantar — continuando con la instalación base"
+    else
+        echo "   Stack Docker omitido. Puedes levantarlo luego con: bash $SETUP_STACK"
+    fi
+else
+    echo "⚠️ setup-stack.sh no encontrado — omitiendo ecosistema Docker"
+fi
+
+# ============================================================
 # 4. Compilación Python
 # ============================================================
 echo "Configurando entorno Python..."
@@ -80,7 +97,22 @@ source venv/bin/activate
 uv pip install -e ".[all]"
 
 # ============================================================
-# 5. Compilación React/TUI
+# 4b. Playwright Browser
+# ============================================================
+echo "Instalando navegador Playwright (chromium)..."
+set +e
+uv run playwright install --with-deps chromium 2>/dev/null
+PW_RESULT=$?
+set -e
+if [ $PW_RESULT -ne 0 ]; then
+    echo "⚠️  Playwright install failed — browser tools may not work."
+    echo "   You can install manually later: uv run playwright install --with-deps chromium"
+else
+    echo "✓ Playwright chromium installed."
+fi
+
+# ============================================================
+# 6. Compilación React/TUI
 # ============================================================
 echo "Compilando interfaz TUI..."
 cd "${JANITOR_SOURCE_DIR}/ui-tui"
@@ -88,14 +120,14 @@ npm install
 npm run build
 
 # ============================================================
-# 6. Enlace global
+# 7. Enlace global
 # ============================================================
 echo "Creando enlace global..."
 mkdir -p "${HOME}/.local/bin"
 ln -sf "${JANITOR_VENV_DIR}/bin/janitor" "${HOME}/.local/bin/janitor"
 
 # ============================================================
-# 7. Handoff al instalador interactivo
+# 8. Handoff al instalador interactivo
 # ============================================================
 echo "Lanzando instalador interactivo..."
 cd "${JANITOR_SOURCE_DIR}"
