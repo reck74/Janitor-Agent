@@ -30,30 +30,38 @@ check_docker() {
         log_warn "Docker CLI not found. Attempting install..."
         set +e
         curl -fsSL https://get.docker.com -o /tmp/get-docker.sh 2>/dev/null && \
-            sh /tmp/get-docker.sh --no-start 2>/dev/null
+            sh /tmp/get-docker.sh 2>/dev/null
         DOCKER_INSTALLED=$?
         set -e
         if [ $DOCKER_INSTALLED -ne 0 ]; then
-            log_warn "Docker install failed — continuing in cloud-only mode."
-            return 0
+            log_fail "Docker install failed. Cannot proceed with Local Setup."
+            exit 1
         fi
     fi
 
-    if ! docker info >/dev/null 2>&1; then
-        log_warn "Docker daemon not running. Attempting to start..."
-        set +e
-        docker start 2>/dev/null
-        DOCKER_STARTED=$?
-        set -e
-        sleep 2
-        if ! docker info >/dev/null 2>&1; then
-            log_warn "Docker daemon could not be started — continuing in cloud-only mode."
-            return 0
+    # Capturamos la salida para distinguir entre 'daemon muerto' y 'permisos denegados'
+    DOCKER_OUTPUT=$(docker info 2>&1)
+    if [ $? -ne 0 ]; then
+        if echo "$DOCKER_OUTPUT" | grep -q "permission denied"; then
+            log_warn "Permission denied on docker.sock. Auto-fixing group permissions..."
+            sudo usermod -aG docker "$USER"
+            echo -e "\033[1;33m[DevSecOps] Tu usuario ha sido añadido al grupo 'docker'.\033[0m"
+            echo -e "\033[1;31m[ACCIÓN REQUERIDA] Linux requiere recargar la sesión. Ejecuta 'newgrp docker' o cierra y vuelve a abrir tu terminal, y luego ejecuta el instalador nuevamente.\033[0m"
+            exit 1
+        else
+            log_warn "Docker daemon not running. Attempting to start service..."
+            set +e
+            sudo systemctl start docker 2>/dev/null || sudo service docker start 2>/dev/null
+            sleep 3
+            set -e
+            if ! docker info >/dev/null 2>&1; then
+                log_fail "FATAL: Docker daemon is dead. Please start Docker Desktop or the docker service manually."
+                exit 1
+            fi
         fi
     fi
 
-    log_ok "Docker is available"
-    return 0
+    log_ok "Docker is available and running."
 }
 
 # ── Infisical key generation ───────────────────────────────────────────────────
@@ -325,30 +333,6 @@ wait_for_health() {
 }
 
 # ── GHCR authentication check ─────────────────────────────────────────────────
-check_ghcr_auth() {
-    log_info "Checking GHCR authentication..."
-
-    local test_image="ghcr.io/nousresearch/honcho-agent:latest"
-
-    set +e
-    PULL_OUTPUT=$(docker pull "$test_image" 2>&1)
-    PULL_EXIT=$?
-    set -e
-
-    if echo "$PULL_OUTPUT" | grep -qiE "denied|authentication required|unauthorized|login.required"; then
-        echo -e "${RED}[DevSecOps] Autenticación requerida para GHCR. Ejecuta 'docker login ghcr.io' con tu PAT de GitHub.${NC}"
-        return 1
-    fi
-
-    if [ $PULL_EXIT -ne 0 ]; then
-        log_warn "Docker pull failed for ${test_image} — continuing anyway."
-    else
-        log_ok "GHCR authentication OK"
-    fi
-
-    return 0
-}
-
 # ── Stack launch ───────────────────────────────────────────────────────────────
 launch_stack() {
     log_info "Launching Janitor stack..."
@@ -370,8 +354,6 @@ launch_stack() {
             return 1
         fi
     done
-
-    check_ghcr_auth || { log_fail "GHCR auth check failed"; return 1; }
 
     # ── JIT clone: Honcho source for local build ────────────────────────────────
     local HONCHO_SRC_DIR="${JANITOR_HOME}/src/honcho"
