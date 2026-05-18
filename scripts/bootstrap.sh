@@ -121,23 +121,6 @@ else
 fi
 
 # ============================================================
-# 3b. Ecosistema Docker (Opcional)
-# ============================================================
-SETUP_STACK="${JANITOR_SOURCE_DIR}/scripts/setup-stack.sh"
-if [ -f "$SETUP_STACK" ]; then
-    echo "🔥 Ecosistema Docker detectado. ¿Deseas levantar el stack local (Honcho, Firecrawl)?"
-    echo "   Esto requiere Docker instalado y corriendo."
-    read -r -p "   Levantar stack ahora? (Y/n): " launch_stack
-    if [[ "$launch_stack" != "n" && "$launch_stack" != "N" ]]; then
-        bash "$SETUP_STACK" || echo "⚠️ El stack no se pudo levantar — continuando con la instalación base"
-    else
-        echo "   Stack Docker omitido. Puedes levantarlo luego con: bash $SETUP_STACK"
-    fi
-else
-    echo "⚠️ setup-stack.sh no encontrado — omitiendo ecosistema Docker"
-fi
-
-# ============================================================
 # 4. Compilación Python
 # ============================================================
 echo "Configurando entorno Python..."

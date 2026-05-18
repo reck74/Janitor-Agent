@@ -730,7 +730,7 @@ main() {
     launch_stack
     install_playwright
     install_systemd_unit
-    install_agentmemory
+    # install_agentmemory  # Deshabilitado: AgentMemory es CLI interactivo, no daemon
     bootstrap_vault
 
     echo
