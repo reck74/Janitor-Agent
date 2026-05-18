@@ -22,9 +22,13 @@ echo "Descargando e instalando el motor de Janitor..."
 check_docker_hard() {
     echo -e "→ Checking Docker Daemon..."
 
+    # Pre-authenticate sudo with TTY access (curl | bash pipe lock workaround)
+    echo -e "${YELLOW}Se requieren permisos de administrador para validar Docker...${NC}"
+    sudo -v < /dev/tty || { echo -e "${RED}Autenticación fallida.${NC}"; exit 1; }
+
     if ! command -v docker >/dev/null 2>&1; then
         echo -e "Docker CLI not found. Attempting install..."
-        curl -fsSL https://get.docker.com -o /tmp/get-docker.sh 2>/dev/null && sudo sh /tmp/get-docker.sh 2>/dev/null
+        curl -fsSL https://get.docker.com -o /tmp/get-docker.sh 2>/dev/null && sudo sh /tmp/get-docker.sh 2>/dev/null < /dev/tty
         if [ $? -ne 0 ]; then
             echo -e "FATAL: Docker installation failed. Please install Docker Desktop manually."
             exit 1
@@ -35,13 +39,13 @@ check_docker_hard() {
     if [ $? -ne 0 ]; then
         if echo "$DOCKER_OUT" | grep -q "permission denied"; then
             echo -e "Permission denied on docker.sock. Auto-fixing group permissions..."
-            sudo usermod -aG docker "$USER" 2>/dev/null || sudo adduser "$USER" docker 2>/dev/null
+            sudo usermod -aG docker "$USER" < /dev/tty || sudo adduser "$USER" docker < /dev/tty
             echo -e "[ACCIÓN REQUERIDA] Tu usuario fue añadido al grupo 'docker'."
             echo -e "Debes reiniciar tu terminal (o ejecutar 'newgrp docker') y volver a correr este instalador."
             exit 1
         else
             echo -e "Docker daemon not running. Attempting to start service..."
-            sudo systemctl start docker 2>/dev/null || sudo service docker start 2>/dev/null
+            sudo systemctl start docker 2>/dev/null < /dev/tty || sudo service docker start 2>/dev/null < /dev/tty
             sleep 3
             if ! docker info >/dev/null 2>&1; then
                 echo -e "FATAL: Docker daemon is dead. Start Docker Desktop manually and retry."
