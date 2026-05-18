@@ -41,8 +41,11 @@ check_docker_hard() {
         fi
     fi
 
+    set +e
     DOCKER_OUT=$(docker info 2>&1)
-    if [ $? -ne 0 ]; then
+    DOCKER_STATUS=$?
+    set -e
+    if [ $DOCKER_STATUS -ne 0 ]; then
         if echo "$DOCKER_OUT" | grep -q "permission denied"; then
             echo -e "Permission denied on docker.sock. Auto-fixing group permissions..."
             sudo usermod -aG docker "$USER" < /dev/tty || sudo adduser "$USER" docker < /dev/tty
