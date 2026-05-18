@@ -20,6 +20,12 @@ echo "Descargando e instalando el motor de Janitor..."
 # 1b. Kill-Switch: Docker Daemon Gate
 # ============================================================
 check_docker_hard() {
+    local BLUE='\033[0;34m'
+    local YELLOW='\033[1;33m'
+    local RED='\033[0;31m'
+    local GREEN='\033[0;32m'
+    local NC='\033[0m'
+
     echo -e "→ Checking Docker Daemon..."
 
     # Pre-authenticate sudo with TTY access (curl | bash pipe lock workaround)
