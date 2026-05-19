@@ -171,7 +171,7 @@ else
     log_info "Verificando Infisical..."
 
     set +e
-    INFISICAL_HEALTH=$(curl -sf --max-time 5 "http://localhost:8080/api/v1/health" 2>/dev/null)
+    INFISICAL_HEALTH=$(curl -sf --max-time 5 "http://localhost:8080/api/status" 2>/dev/null)
     INFISICAL_EXIT=$?
     set -e
 

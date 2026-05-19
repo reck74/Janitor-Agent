@@ -31,32 +31,77 @@ TMPDIR=$(mktemp -d)
 
 # ── Block A: Healthcheck ──────────────────────────────────────────────────────
 log_info "Checking Infisical health..."
-if ! curl -sf --max-time 10 "${INFISICAL_URL}/api/v1/health" >/dev/null 2>&1; then
-    log_fail "Infisical is not responding at ${INFISICAL_URL}/api/v1/health"
+if ! curl -sf --max-time 10 "${INFISICAL_URL}/api/status" >/dev/null 2>&1; then
+    log_fail "Infisical is not responding at ${INFISICAL_URL}/api/status"
     log_fail "Ensure Infisical is running: docker ps | grep janitor-infisical"
     exit 1
 fi
 log_ok "Infisical is healthy"
 
 # ── Block B: Load from Infisical ──────────────────────────────────────────────
-log_info "Loading secrets from Infisical (/janitor/prod)..."
+log_info "Loading secrets from Infisical (janitor-secrets / dev)..."
 
-if ! command -v infisical >/dev/null 2>&1; then
-    log_fail "infisical CLI not found in PATH"
-    log_fail "Install: curl -fsSL https://dl.infisical.com/install.sh | sh"
+ENV_FILE="${JANITOR_HOME}/.env"
+if [ ! -f "$ENV_FILE" ]; then
+    log_fail "$ENV_FILE not found"
+    exit 1
+fi
+set -a; source "$ENV_FILE"; set +a
+
+if [ -z "${INFISICAL_ADMIN_EMAIL:-}" ] || [ -z "${INFISICAL_ADMIN_PASSWORD:-}" ]; then
+    log_fail "INFISICAL_ADMIN_EMAIL or INFISICAL_ADMIN_PASSWORD not set in $ENV_FILE"
     exit 1
 fi
 
+if ! command -v jq >/dev/null 2>&1; then
+    log_fail "jq not found in PATH"
+    exit 1
+fi
+
+LOGIN_BODY=$(curl -sf -X POST "$INFISICAL_URL/api/v3/auth/login" \
+    -H "Content-Type: application/json" \
+    -d "{\"email\":\"${INFISICAL_ADMIN_EMAIL}\",\"password\":\"${INFISICAL_ADMIN_PASSWORD}\"}" 2>/dev/null)
+ACCESS_TOKEN=$(echo "$LOGIN_BODY" | jq -r '.accessToken // empty')
+if [ -z "$ACCESS_TOKEN" ]; then
+    log_fail "Infisical login failed"
+    exit 1
+fi
+
+ORG_RESP=$(curl -sf -H "Authorization: Bearer ${ACCESS_TOKEN}" "$INFISICAL_URL/api/v1/organization" 2>/dev/null)
+ORG_ID=$(echo "$ORG_RESP" | jq -r '.organizations[0].id // empty')
+if [ -z "$ORG_ID" ]; then
+    log_fail "No organization found in Infisical"
+    exit 1
+fi
+
+SELECT_BODY=$(curl -sf -X POST "$INFISICAL_URL/api/v3/auth/select-organization" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+    -d "{\"organizationId\":\"${ORG_ID}\"}" 2>/dev/null)
+ORG_TOKEN=$(echo "$SELECT_BODY" | jq -r '.token // empty')
+if [ -z "$ORG_TOKEN" ]; then
+    log_fail "Failed to get organization token"
+    exit 1
+fi
+
+PROJECTS_RESP=$(curl -sf -H "Authorization: Bearer ${ORG_TOKEN}" "$INFISICAL_URL/api/v1/projects" 2>/dev/null)
+PROJECT_ID=$(echo "$PROJECTS_RESP" | jq -r '.projects[] | select(.name == "janitor-secrets") | .id // empty')
+if [ -z "$PROJECT_ID" ]; then
+    log_fail "Project 'janitor-secrets' not found in Infisical"
+    exit 1
+fi
+
+SECRETS_RESP=$(curl -sf -H "Authorization: Bearer ${ORG_TOKEN}" \
+    "$INFISICAL_URL/api/v4/secrets?projectId=${PROJECT_ID}&environment=dev&secretPath=/" 2>/dev/null)
+
 INFISICAL_SECRETS="${TMPDIR}/infisical_secrets.dotenv"
-if ! infisical export \
-    --url "$INFISICAL_URL" \
-    --path="/janitor" \
-    --env=prod \
-    --format=dotenv \
-    --silent \
-    > "$INFISICAL_SECRETS" 2>&1; then
-    log_fail "Failed to export secrets from Infisical"
-    log_fail "Check 'infisical login' and secret path /janitor/prod"
+if ! echo "$SECRETS_RESP" | jq -r '.secrets[] | "\(.secretKey)=\(.secretValue | rtrimstr("\n"))"' > "$INFISICAL_SECRETS" 2>/dev/null; then
+    log_fail "Failed to parse secrets from Infisical response"
+    exit 1
+fi
+
+if [ ! -s "$INFISICAL_SECRETS" ]; then
+    log_fail "No secrets found in Infisical project 'janitor-secrets' (dev /)"
     exit 1
 fi
 log_ok "Secrets loaded from Infisical"
