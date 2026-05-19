@@ -8,7 +8,7 @@ set -euo pipefail
 # Config — el usuario puede cambiar estas variables
 JANITOR_REPO_URL="${JANITOR_REPO_URL:-https://github.com/reck74/Janitor-Agent.git}"
 JANITOR_SOURCE_DIR="${HOME}/.janitor/janitor-core"
-JANITOR_VENV_DIR="${JANITOR_SOURCE_DIR}/venv"
+JANITOR_VENV_DIR="${JANITOR_SOURCE_DIR}/.venv"
 JANITOR_INSTALL_SCRIPT="${JANITOR_SOURCE_DIR}/scripts/janitor-install.sh"
 
 # ============================================================
