@@ -503,16 +503,17 @@ install_systemd_unit() {
     cat > "$svc_file" << 'EOF'
 [Unit]
 Description=Janitor Docker Stack (Infisical + Honcho + Firecrawl)
-After=network.target
-Wants=network.target
+After=network.target docker.service
+Wants=network.target docker.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+ExecStartPre=/bin/bash -c 'echo "Waiting for Docker daemon..."; while ! docker info >/dev/null 2>&1; do sleep 2; done; echo "Docker ready. Stabilizing networking..."; sleep 5'
 WorkingDirectory=%h/.janitor/docker
 ExecStart=/bin/bash -c 'cd %h/.janitor/docker && docker compose --env-file %h/.janitor/.env -f docker-compose.yml up -d && sleep 15 && docker compose --env-file %h/.janitor/.env -f honcho-compose.yml up -d && sleep 15 && docker compose --env-file %h/.janitor/.env -f firecrawl-compose.yml up -d'
 ExecStop=/bin/bash -c 'cd %h/.janitor/docker && docker compose --env-file %h/.janitor/.env -f firecrawl-compose.yml down 2>/dev/null; docker compose --env-file %h/.janitor/.env -f honcho-compose.yml down 2>/dev/null; docker compose --env-file %h/.janitor/.env -f docker-compose.yml down 2>/dev/null'
-        TimeoutStartSec=300
+TimeoutStartSec=600
 TimeoutStopSec=60
 
 [Install]
