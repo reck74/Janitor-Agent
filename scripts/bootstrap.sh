@@ -125,9 +125,9 @@ fi
 # ============================================================
 echo "Configurando entorno Python..."
 cd "${JANITOR_SOURCE_DIR}"
-uv venv venv --python 3.11
+uv venv .venv --python 3.11
 # shellcheck disable=SC1091
-source venv/bin/activate
+source .venv/bin/activate
 uv pip install -e ".[all]"
 
 # ============================================================

@@ -485,7 +485,7 @@ else
     # Health checks (non-fatal — warn but don't fail)
     wait_for_health "http://localhost:8080/api/status" "Infisical" 60 || true
     wait_for_health "http://localhost:1973/health" "Honcho" 60 || true
-    wait_for_health "http://localhost:1974/health" "Firecrawl" 60 || true
+    wait_for_health "http://localhost:1974/v0/health/liveness" "Firecrawl" 180 || true
 
     log_ok "Stack launched"
     return 0
@@ -682,18 +682,18 @@ bootstrap_vault() {
             return 0
         fi
 
-        log_info "Waiting for Infisical to be ready (up to 30s)..."
+        log_info "Waiting for Infisical to be ready (up to 60s)..."
         READY=false
-        for i in $(seq 1 15); do
+        for i in $(seq 1 30); do
             sleep 2
-            LOGIN_TEST=$(curl -sf -X POST "http://localhost:8080/api/v3/auth/login" \
+            LOGIN_TEST=$(curl -sf --max-time 5 -X POST "http://localhost:8080/api/v3/auth/login" \
                 -H "Content-Type: application/json" \
                 -d "{\"email\":\"${INFISICAL_ADMIN_EMAIL}\",\"password\":\"${INFISICAL_ADMIN_PASSWORD}\"}" 2>/dev/null)
-            if echo "$LOGIN_TEST" | jq -e '.accessToken' >/dev/null 2>&1; then
+            if echo "$LOGIN_TEST" | grep -q '"accessToken"'; then
                 READY=true
                 break
             fi
-            log_info "Waiting for Infisical login readiness (attempt $i/15)..."
+            log_info "Waiting for Infisical login readiness (attempt $i/30)..."
         done
 
         if [ "$READY" != "true" ]; then
@@ -706,7 +706,7 @@ bootstrap_vault() {
     LOGIN_BODY=$(curl -sf -X POST "http://localhost:8080/api/v3/auth/login" \
         -H "Content-Type: application/json" \
         -d "{\"email\":\"${INFISICAL_ADMIN_EMAIL}\",\"password\":\"${INFISICAL_ADMIN_PASSWORD}\"}" 2>/dev/null)
-    ACCESS_TOKEN=$(echo "$LOGIN_BODY" | jq -r '.accessToken // empty' 2>/dev/null)
+    ACCESS_TOKEN=$(echo "$LOGIN_BODY" | grep -o '"accessToken"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -o '[^"]*"$' | tr -d '"')
     if [ -z "$ACCESS_TOKEN" ]; then
         log_warn "Infisical login failed — skipping vault bootstrap"
         return 0
