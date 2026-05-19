@@ -17,6 +17,7 @@ from any pre-existing Hermes installation at ~/.hermes/.
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 
@@ -309,6 +310,260 @@ def _owasp_honcho_fail_safe_for_test(hermes_home: str):
     return False, msg
 
 
+def _janitor_cmd_update(args):
+    """Update Janitor Agent from the Janitor fork (reck74/Janitor-Agent).
+
+    Replaces the built-in ``hermes update`` so it only pulls from the
+    Janitor fork and never syncs with the upstream NousResearch/hermes-agent
+    repository.
+    """
+    from pathlib import Path
+    import hermes_cli.main as _main_mod
+
+    # Re-use Hermes internal helpers — they are stable enough for this wrapper.
+    _run_pre_update_backup = _main_mod._run_pre_update_backup
+    _install_hangup_protection = _main_mod._install_hangup_protection
+    _finalize_update_output = _main_mod._finalize_update_output
+    _stash_local_changes_if_needed = _main_mod._stash_local_changes_if_needed
+    _install_python_dependencies_with_optional_fallback = (
+        _main_mod._install_python_dependencies_with_optional_fallback
+    )
+    _is_termux_env = _main_mod._is_termux_env
+    _is_android_python = _main_mod._is_android_python
+    _install_psutil_android_compat = _main_mod._install_psutil_android_compat
+    _ensure_uv_for_termux = _main_mod._ensure_uv_for_termux
+    _update_node_dependencies = _main_mod._update_node_dependencies
+    _invalidate_update_cache = _main_mod._invalidate_update_cache
+    _clear_bytecode_cache = _main_mod._clear_bytecode_cache
+    PROJECT_ROOT = _main_mod.PROJECT_ROOT
+
+    if getattr(args, "check", False):
+        git_dir = PROJECT_ROOT / ".git"
+        if not git_dir.exists():
+            print("✗ Not a git repository — cannot check for updates.")
+            sys.exit(1)
+
+        git_cmd = ["git"]
+        if sys.platform == "win32":
+            git_cmd = ["git", "-c", "windows.appendAtomically=false"]
+
+        print("→ Fetching from origin...")
+        fetch_result = subprocess.run(
+            git_cmd + ["fetch", "origin"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        if fetch_result.returncode != 0:
+            stderr = fetch_result.stderr.strip()
+            if "Could not resolve host" in stderr or "unable to access" in stderr:
+                print("✗ Network error — cannot reach the remote repository.")
+            elif (
+                "Authentication failed" in stderr
+                or "could not read Username" in stderr
+            ):
+                print(
+                    "✗ Authentication failed — check your git credentials or SSH key."
+                )
+            else:
+                print("✗ Failed to fetch.")
+                if stderr:
+                    print(f"  {stderr.splitlines()[0]}")
+            sys.exit(1)
+
+        result = subprocess.run(
+            git_cmd + ["rev-list", "HEAD..origin/main", "--count"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        behind = int(result.stdout.strip())
+        if behind == 0:
+            print("✓ Already up to date.")
+        else:
+            print(f"⚕ {behind} update(s) available.")
+            print("  Run 'janitor update' to install.")
+        return
+
+    gateway_mode = getattr(args, "gateway", False)
+
+    # Protect against mid-update terminal disconnects (SIGHUP) and tolerate
+    # writes to a closed stdout.  No-op in gateway mode.
+    _update_io_state = _install_hangup_protection(gateway_mode=gateway_mode)
+    try:
+        print("⚕ Updating Janitor Agent from fork...")
+        print()
+
+        # Pre-update backup — runs before any git/file mutation.
+        _run_pre_update_backup(args)
+
+        git_dir = PROJECT_ROOT / ".git"
+        if not git_dir.exists():
+            print("✗ Not a git repository. Please reinstall:")
+            print("  git clone https://github.com/reck74/Janitor-Agent.git")
+            sys.exit(1)
+
+        git_cmd = ["git"]
+        if sys.platform == "win32":
+            git_cmd = ["git", "-c", "windows.appendAtomically=false"]
+
+        # Fetch updates from origin (the Janitor fork).
+        print("→ Fetching updates from origin...")
+        fetch_result = subprocess.run(
+            git_cmd + ["fetch", "origin"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        if fetch_result.returncode != 0:
+            stderr = fetch_result.stderr.strip()
+            if "Could not resolve host" in stderr or "unable to access" in stderr:
+                print("✗ Network error — cannot reach the remote repository.")
+            elif (
+                "Authentication failed" in stderr
+                or "could not read Username" in stderr
+            ):
+                print(
+                    "✗ Authentication failed — check your git credentials or SSH key."
+                )
+            else:
+                print("✗ Failed to fetch updates from origin.")
+                if stderr:
+                    print(f"  {stderr.splitlines()[0]}")
+            sys.exit(1)
+
+        # Determine current branch.
+        result = subprocess.run(
+            git_cmd + ["rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        current_branch = result.stdout.strip()
+        branch = "main"
+
+        if current_branch != "main":
+            label = (
+                "detached HEAD"
+                if current_branch == "HEAD"
+                else f"branch '{current_branch}'"
+            )
+            print(f"  ⚠ Currently on {label} — switching to main for update...")
+            auto_stash_ref = _stash_local_changes_if_needed(git_cmd, PROJECT_ROOT)
+            subprocess.run(
+                git_cmd + ["checkout", "main"],
+                cwd=PROJECT_ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        else:
+            auto_stash_ref = _stash_local_changes_if_needed(git_cmd, PROJECT_ROOT)
+
+        # Check if there are updates.
+        result = subprocess.run(
+            git_cmd + ["rev-list", f"HEAD..origin/{branch}", "--count"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        commit_count = int(result.stdout.strip())
+
+        if commit_count == 0:
+            _invalidate_update_cache()
+            print("✓ Already up to date.")
+            return
+
+        print(f"→ Pulling {commit_count} update(s) from origin/{branch}...")
+        subprocess.run(
+            git_cmd + ["pull", "--ff-only", "origin", branch],
+            cwd=PROJECT_ROOT,
+            check=True,
+        )
+        print(f"  ✓ Pulled {commit_count} update(s)")
+
+        _invalidate_update_cache()
+
+        # Clear stale .pyc bytecode cache.
+        removed = _clear_bytecode_cache(PROJECT_ROOT)
+        if removed:
+            print(
+                f"  ✓ Cleared {removed} stale __pycache__ director{'y' if removed == 1 else 'ies'}"
+            )
+
+        # Reinstall Python dependencies.
+        print("→ Updating Python dependencies...")
+        pip_cmd = [sys.executable, "-m", "pip"]
+        uv_bin = shutil.which("uv") or _ensure_uv_for_termux(pip_cmd)
+        install_group = "all"
+
+        if uv_bin:
+            uv_env = {**os.environ, "VIRTUAL_ENV": str(PROJECT_ROOT / "venv")}
+            if _is_termux_env(uv_env):
+                uv_env.pop("PYTHONPATH", None)
+                uv_env.pop("PYTHONHOME", None)
+                install_group = "termux-all"
+                print(
+                    "  → Termux detected: using uv + curated termux-all optional profile..."
+                )
+            if _is_termux_env(uv_env) and _is_android_python():
+                print(
+                    "  → Termux/Android detected: prebuilding psutil with Linux source path compatibility..."
+                )
+                _install_psutil_android_compat([uv_bin, "pip"], env=uv_env)
+            _install_python_dependencies_with_optional_fallback(
+                [uv_bin, "pip"], env=uv_env, group=install_group
+            )
+        else:
+            pip_cmd = [sys.executable, "-m", "pip"]
+            try:
+                subprocess.run(
+                    pip_cmd + ["--version"],
+                    cwd=PROJECT_ROOT,
+                    check=True,
+                    capture_output=True,
+                )
+            except subprocess.CalledProcessError:
+                subprocess.run(
+                    [sys.executable, "-m", "ensurepip", "--upgrade", "--default-pip"],
+                    cwd=PROJECT_ROOT,
+                    check=True,
+                )
+            if _is_termux_env():
+                install_group = "termux-all"
+                print(
+                    "  → Termux detected: using curated termux-all optional profile..."
+                )
+            if _is_termux_env() and _is_android_python():
+                print(
+                    "  → Termux/Android detected: prebuilding psutil with Linux source path compatibility..."
+                )
+                _install_psutil_android_compat(pip_cmd)
+            _install_python_dependencies_with_optional_fallback(
+                pip_cmd, env=None, group=install_group
+            )
+
+        print("✓ Python dependencies updated")
+
+        _update_node_dependencies()
+
+        print()
+        print("✓ Janitor Agent updated successfully!")
+        print("  Restart Janitor to use the new version.")
+
+    except subprocess.CalledProcessError as e:
+        print(f"✗ Update failed: {e}")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        print("\n✗ Update cancelled.")
+        sys.exit(130)
+    finally:
+        _finalize_update_output(_update_io_state)
+
+
 def main():
     """
     Entry point for the `janitor` command.
@@ -328,6 +583,11 @@ def main():
         pass
 
     _owasp_honcho_fail_safe()
+
+    # Monkey-patch ``hermes update`` so it pulls from the Janitor fork only.
+    import hermes_cli.main as _hermes_main_mod
+
+    _hermes_main_mod.cmd_update = _janitor_cmd_update
 
     from hermes_cli.main import main as hermes_main
 
