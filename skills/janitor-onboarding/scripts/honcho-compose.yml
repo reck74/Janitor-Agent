@@ -1,7 +1,7 @@
 services:
   honcho-api:
     build:
-      context: /home/reck/.janitor/src/honcho
+      context: ../src/honcho
       dockerfile: Dockerfile
     container_name: janitor-honcho-api
     entrypoint: ["sh", "docker/entrypoint.sh"]
@@ -33,7 +33,7 @@ services:
 
   honcho-deriver:
     build:
-      context: /home/reck/.janitor/src/honcho
+      context: ../src/honcho
       dockerfile: Dockerfile
     container_name: janitor-honcho-deriver
     entrypoint: ["python", "-m", "src.deriver"]
@@ -61,7 +61,7 @@ services:
       POSTGRES_PASSWORD: vPwptI+4UO+v+B+xnNdzoFltM3cKTLlp
       POSTGRES_DB: honcho
     volumes:
-      - /home/reck/.janitor/src/honcho/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ../src/honcho/database/init.sql:/docker-entrypoint-initdb.d/init.sql
       - honcho-pgdata:/var/lib/postgresql/data
     restart: unless-stopped
     networks:

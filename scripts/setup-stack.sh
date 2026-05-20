@@ -127,26 +127,38 @@ do_infisical() {
     log_info "Checking Infisical CLI..."
 
     if ! command -v infisical >/dev/null 2>&1; then
-        log_warn "Infisical CLI not found — skipping secrets injection."
-        return 0
+        log_warn "Infisical CLI not found. Attempting auto-installation..."
+        if [ -f /etc/debian_version ]; then
+            set +e
+            curl -1sLf 'https://dl.cloudsmith.io/public/infisical/infisical-cli/setup.deb.sh' | sudo -E bash < /dev/tty
+            sudo apt-get update < /dev/tty
+            sudo apt-get install -y infisical < /dev/tty
+            set -e
+        else
+            log_warn "Non-Debian OS detected. Cannot auto-install Infisical CLI."
+        fi
     fi
 
-    log_info "Infisical CLI detected — attempting authentication check..."
-    set +e
-    infisical secrets sync --path=/janitor --env=prod --format=dotenv --output=/tmp/infisical-check 2>/dev/null
-    INFISICAL_AUTH=$?
-    set -e
+    if command -v infisical >/dev/null 2>&1; then
+        log_info "Infisical CLI detected — attempting authentication check..."
+        set +e
+        infisical secrets sync --path=/janitor --env=prod --format=dotenv --output=/tmp/infisical-check 2>/dev/null
+        INFISICAL_AUTH=$?
+        set -e
 
-    if [ $INFISICAL_AUTH -ne 0 ]; then
-        log_warn "Infisical not authenticated or secrets unavailable — using ~/.janitor/.env fallback."
-        return 0
-    fi
+        if [ $INFISICAL_AUTH -ne 0 ]; then
+            log_warn "Infisical not authenticated or secrets unavailable — using ~/.janitor/.env fallback."
+            return 0
+        fi
 
-    log_info "Infisical authenticated — merging secrets into ~/.janitor/.env"
-    if infisical export --path=/janitor --env=prod --format=dotenv >> "${JANITOR_HOME}/.env" 2>/dev/null; then
-        log_ok "Infisical secrets merged"
+        log_info "Infisical authenticated — merging secrets into ~/.janitor/.env"
+        if infisical export --path=/janitor --env=prod --format=dotenv >> "${JANITOR_HOME}/.env" 2>/dev/null; then
+            log_ok "Infisical secrets merged"
+        else
+            log_warn "Infisical export failed — falling back to ~/.janitor/.env"
+        fi
     else
-        log_warn "Infisical export failed — falling back to ~/.janitor/.env"
+        log_warn "Infisical CLI not available — skipping secrets injection."
     fi
 
     return 0

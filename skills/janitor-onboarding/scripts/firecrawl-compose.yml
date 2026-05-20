@@ -93,7 +93,7 @@ services:
 
   firecrawl-postgres:
     build:
-      context: /home/reck/.janitor/src/firecrawl/apps/nuq-postgres
+      context: ../src/firecrawl/apps/nuq-postgres
     container_name: janitor-firecrawl-postgres
     environment:
       POSTGRES_USER: ${FIRECRAWL_POSTGRES_USER}
