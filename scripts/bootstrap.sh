@@ -135,6 +135,7 @@ uv pip install -e ".[all]"
 # ============================================================
 echo "Instalando navegador Playwright (chromium)..."
 set +e
+uv pip install playwright 2>/dev/null
 uv run playwright install --with-deps chromium < /dev/tty
 PW_RESULT=$?
 set -e
