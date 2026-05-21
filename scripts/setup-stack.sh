@@ -130,7 +130,8 @@ do_infisical() {
         log_warn "Infisical CLI not found. Attempting auto-installation..."
         if [ -f /etc/debian_version ]; then
             set +e
-            curl -1sLf 'https://dl.cloudsmith.io/public/infisical/infisical-cli/setup.deb.sh' | sudo -E bash < /dev/tty
+            curl -1sLf 'https://dl.cloudsmith.io/public/infisical/infisical-cli/setup.deb.sh' -o /tmp/infisical_setup.sh
+            sudo -E bash /tmp/infisical_setup.sh < /dev/tty
             sudo apt-get update < /dev/tty
             sudo apt-get install -y infisical < /dev/tty
             set -e
