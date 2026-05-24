@@ -7,6 +7,78 @@
 5. **NAMING CONVENTION (BRANDING)**: Todo contenedor Docker, red, volumen, servicio de sistema o aplicación de terceros que Janitor instale o configure en el futuro DEBE llevar obligatoriamente el prefijo `janitor-` (ej. `janitor-redis`, `janitor-network`). Sin excepciones.
 6. **merge-auditor**: Cada merge debe ser auditado contra estas directivas. Si un PR introduce 'hermes' renombrado en archivos core, se rechaza automáticamente.
 7. **tui-compilation**: Los cambios en el TUI requieren pasar `npm run build` Y `npm test` (vitest) ANTES de hacer commit. El pipeline CI de Janitor ejecuta esta habilidad como gate obligatorio.
+8. **MINIMALIST INSTALLER**: El instalador base (`scripts/janitor-install.sh`) NUNCA debe depender de Docker, Infisical, o servicios externos para funcionar. Honcho es la unica dependencia fundamental. Todas las demas capacidades (Infisical, Firecrawl, Playwright, AgentMemory) son skills opcionales bajo `skills/janitor-*/`.
+9. **SKILLS ARE OPTIONAL**: El usuario debe poder ejecutar `janitor` inmediatamente despues de la instalacion base sin tener que desplegar servicios adicionales. Las skills se instalan explicitamente post-primer-arranque.
+10. **MIGRATION SUPPORT**: Cada reestructuracion importante debe incluir un script de migracion (`scripts/migrate-*.sh`) para usuarios existentes, con backup automatico de configuracion.
+
+---
+
+## Janitor Skills Architecture (Post-v5 Restructure)
+
+### Philosophy
+
+Janitor follows a **minimal installer + optional skills** model. The first-run installer
+creates a functional agent with identity, configuration, skin, and optional Honcho memory.
+Everything else is delivered as opt-in skills that users install post-first-run.
+
+### Installer Contract
+
+`scripts/janitor-install.sh` deploys **only**:
+- `~/.janitor/.env` — environment variables
+- `~/.janitor/config.yaml` — agent configuration
+- `~/.janitor/SOUL.md` — agent persona
+- `~/.janitor/skins/sentry-janitor.yaml` — visual theme
+- Optional: local Honcho (via `scripts/setup-honcho.sh`)
+
+**Does NOT deploy by default**: Infisical, Firecrawl, Playwright, AgentMemory, or full-stack systemd.
+
+### Skill Hierarchy
+
+All Janitor-specific capabilities live under `skills/janitor-*/`:
+
+| Skill | Purpose | Former Location |
+|-------|---------|-----------------|
+| `janitor-honcho` | Local Honcho memory | `scripts/setup-stack.sh` (Honcho block) |
+| `janitor-vault` | Infisical secret vault | `scripts/vault-bootstrap.sh`, `load-infisical-secrets.sh` |
+| `janitor-firecrawl` | Web scraping | `scripts/setup-stack.sh` (Firecrawl block) |
+| `janitor-browser` | Playwright browser automation | `scripts/bootstrap.sh` |
+| `janitor-agentmemory` | Coding memory | `scripts/setup-stack.sh` (AgentMemory block) |
+| `janitor-onboarding` | Orientation guide | Formerly deployed 5 services |
+
+Each skill contains:
+- `SKILL.md` — metadata, description, install instructions
+- `scripts/` — deployment/install scripts
+- Compose files (if applicable) — scoped to that service only
+
+### Adding a New Janitor Skill
+
+1. Create directory: `skills/janitor-<name>/`
+2. Write `SKILL.md` with valid frontmatter (name, description, version, platforms, metadata)
+3. Add scripts under `skills/janitor-<name>/scripts/`
+4. Reference the skill from `skills/janitor-onboarding/SKILL.md` so users can discover it
+5. Do NOT modify core Hermes files or built-in skills
+
+### User Workflow
+
+```bash
+# Fresh install — minimal
+curl -fsSL .../bootstrap.sh | bash
+janitor
+
+# Post-install: add capabilities as needed
+bash skills/janitor-vault/scripts/deploy.sh
+bash skills/janitor-firecrawl/scripts/deploy.sh
+```
+
+### Migration from Legacy Full-Stack
+
+Users with old installs should run:
+```bash
+bash scripts/migrate-janitor-minimal.sh
+```
+
+This backs up config, detects Infisical shell RC snippets, offers secret export,
+and cleans up configuration without deleting Docker volumes.
 
 ---
 
