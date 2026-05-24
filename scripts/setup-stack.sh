@@ -1,4 +1,8 @@
 #!/bin/bash
+
+# LEGACY: This script is deprecated. Use setup-honcho.sh for minimal installs.
+# For full stack, install individual skills: janitor-vault, janitor-firecrawl, etc.
+
 # =============================================================================
 # setup-stack.sh — Central Docker ecosystem orchestrator for Janitor.
 # =============================================================================

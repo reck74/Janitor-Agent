@@ -1,214 +1,141 @@
 ---
 name: janitor-onboarding
-description: "Onboarding for Janitor Agent — spins up 5 local Docker services."
-version: 1.0.0
+description: "Janitor orientation and capability selector."
+version: 2.0.0
 platforms: [linux, macos]
 
 metadata:
   hermes:
-    tags: [onboarding, docker, honcho, firecrawl, agentmemory, infisical, local-setup, infrastructure]
+    tags: [onboarding, orientation, skills, capabilities]
     category: devops
-    config:
-      janitor.local_services_timeout:
-        description: "Seconds to wait for Docker services to become healthy"
-        default: 60
-        type: integer
-      janitor.honcho_port:
-        description: "Local port for Honcho service"
-        default: 1973
-        type: integer
-      janitor.firecrawl_port:
-        description: "Local port for Firecrawl service"
-        default: 1974
-        type: integer
-      janitor.agentmemory_port:
-        description: "Local port for AgentMemory API service"
-        default: 3111
-        type: integer
-      janitor.infisical_port:
-        description: "Local port for Infisical service"
-        default: 8080
-        type: integer
 ---
 
 # janitor-onboarding
 
-Spin up local Honcho, Firecrawl, AgentMemory, Infisical, and Playwright services
-using Docker. Activated automatically when `JANITOR_LOCAL_SETUP=true` is found
-in `~/.janitor/.env`.
+Welcome to Janitor. This skill does not deploy infrastructure itself.
+Instead, it guides you through available capabilities that can be
+installed as separate skills post-first-run.
 
-## Prerequisites
+## What Janitor Installed by Default
 
-- Docker daemon running (`docker info` must succeed)
-- `docker compose` available (v2 recommended)
-- Ports 1973, 1974, 1975, 3111, 3113, and 8080 must be free on localhost
-- Optional: Infisical CLI (`npm install -g @infisical/cli`) for secret injection
+The first-run installer gives you a working agent with:
 
-## Usage
+- ~/.janitor/.env — environment variables
+- ~/.janitor/config.yaml — agent configuration
+- ~/.janitor/SOUL.md — agent persona
+- ~/.janitor/skins/sentry-janitor.yaml — visual theme
+- Optional: local Honcho memory (if you chose local setup during install)
 
-```
-/onboard
-```
+## Optional Capabilities (Install as Skills)
 
-Or call the helper directly:
-
-```bash
-bash skills/janitor-onboarding/scripts/local-services.sh start
-```
-
-## What Gets Started
-
-| Service | Container | Port | Purpose |
-|---------|-----------|------|---------|
-| Honcho | `janitor-honcho` | 1973 | Long-term memory & session storage |
-| Firecrawl | `janitor-firecrawl` | 1974 | Web page scraping & extraction |
-| AgentMemory | `janitor-agentmemory` | 3111, 3113 | Coding memory & context management |
-| Infisical | `janitor-infisical` | 8080 | Secret management & env injection |
-| Playwright | `janitor-playwright` | 1975 | Browser automation |
+| Skill | What It Does | Install Command |
+|-------|-------------|-----------------|
+| janitor-honcho | Local Honcho memory (if skipped at install) | bash skills/janitor-honcho/scripts/setup-honcho.sh |
+| janitor-vault | Infisical secret vault | bash skills/janitor-vault/scripts/deploy.sh |
+| janitor-firecrawl | Web scraping service | bash skills/janitor-firecrawl/scripts/deploy.sh |
+| janitor-browser | Playwright browser automation | bash skills/janitor-browser/scripts/install.sh |
+| janitor-agentmemory | Coding memory and context | bash skills/janitor-agentmemory/scripts/deploy.sh |
 
 ## Verification
 
-After startup, the skill verifies each service is healthy:
+After installing any skill, verify its health:
 
-```bash
-curl -f http://localhost:1973/health || echo "Honcho not responding"
-curl -f http://localhost:1974/health || echo "Firecrawl not responding"
-curl -f http://localhost:3111/health || echo "AgentMemory not responding"
-curl -f http://localhost:8080/api/v1/health || echo "Infisical not responding"
-docker ps --filter "name=janitor-playwright" --filter "status=running" || echo "Playwright not running"
-```
-
-If a service fails health checks, the skill logs the failure and instructs the user
-on how to debug:
-
-```
-SERVICE UNAVAILABLE: honcho
-  Likely causes:
-    1. Port 1973 already in use:  lsof -i :1973
-    2. Docker daemon not running:  docker info
-    3. Image not pulled:           docker pull janitor-honcho:latest
-  Manual start:
-    cd ~/.janitor/skills/janitor-onboarding/scripts
-    docker compose up -d honcho
-```
-
-## Security Notes
-
-- Local services are bound to `localhost` only — not exposed to external interfaces
-- No API keys are required for local mode — services use anonymous auth
-- If you ever change your mind and get real API keys, delete `JANITOR_LOCAL_SETUP=true`
-  from `~/.janitor/.env` and set `HONCHO_API_KEY` / `FIRECRAWL_API_KEY` instead
-
-## Troubleshooting
-
-### Docker not found
-
-```bash
-# Install Docker if missing (Linux)
-curl -fsSL https://get.docker.com | sh
-
-# Verify
-docker info
-```
-
-### Port conflicts
-
-```bash
-# Find what's using port 1973
-lsof -i :1973
-# or
-ss -tlnp | grep 1973
-
-# Kill the process or configure a different port in SKILL.md metadata
-```
-
-### Service won't start
-
-```bash
-# Check Docker logs
-docker compose -f ~/.janitor/skills/janitor-onboarding/scripts/docker-compose.yml logs
-
-# Pull latest images
-docker compose -f ~/.janitor/skills/janitor-onboarding/scripts/docker-compose.yml pull
-```
-
-## Honcho .env — Infrastructure Hack (MiniMax as Anthropic Backend)
-
-When `local-services.sh start` runs, it automatically generates a `honcho.env` file
-in the scripts directory by reading credentials from `~/.janitor/.env`.
-
-The generated file contains:
-
-```
-TRANSPORT=anthropic
-BASE_URL=https://api.minimax.io/anthropic
-LLM_ANTHROPIC_API_KEY=<MINIMAX_API_KEY from ~/.janitor/.env>
-LLM_OPENAI_API_KEY=<OPENAI_API_KEY from ~/.janitor/.env>
-```
-
-**Why this hack exists:** Honcho exposes an Anthropic-compatible API transport, but the
-actual model can be MiniMax (or any OpenAI-compatible backend). By setting
-`TRANSPORT=anthropic` and `BASE_URL=https://api.minimax.io/anthropic`, the MiniMax
-API key (stored as `MINIMAX_API_KEY` in the Janitor .env) gets re-used as
-`LLM_ANTHROPIC_API_KEY` so Honcho can call MiniMax via the Anthropic transport.
-OpenAI is similarly forwarded as `LLM_OPENAI_API_KEY` for any pure-OpenAI calls Honcho
-might make directly.
-
-This is injected into the container via `env_file: ./honcho.env` in docker-compose.yml.
+{"status":"ok"}{"status":"ok"}AgentMemory not responding
+{"date":"2026-05-24T05:18:03.924Z","message":"Ok","emailConfigured":false,"inviteOnlySignup":true,"redisConfigured":true,"secretScanningConfigured":false,"auditLogStorageDisabled":false,"maxIdentityAccessTokenTTL":7776000}
 
 ## Rollback
 
 To stop local services:
 
-```bash
-bash skills/janitor-onboarding/scripts/local-services.sh stop
-```
+
 
 This shuts down containers but preserves data volumes.
 
-## Post-Activation: Reconfigurar Janitor para Usar los Servicios Locales
+## Post-Activation
 
-**This is the critical step everyone skips, and then wonders why Janitor keeps blocking on OWASP.**
-
-Once `local-services.sh start` has confirmed both containers are healthy, you MUST reconfigure
-Janitor's memory provider to use the local Honcho instance. The Honcho .env (with your
-MiniMax key as `LLM_ANTHROPIC_API_KEY`) is generated automatically — you just need to
-flip the memory provider switch.
-
-Run these commands using the `terminal` tool:
-
-```bash
-# 1. Tell Janitor where Honcho is running locally
-echo "HONCHO_BASE_URL=http://localhost:1973" >> ~/.janitor/.env
-
-# 2. Flip memory.provider to honcho in config.yaml
-python3 - << 'PYTHON_EOF'
-import yaml
-from pathlib import Path
-
-config_path = Path.home() / ".janitor" / "config.yaml"
-with open(config_path) as f:
-    config = yaml.safe_load(f) or {}
-
-config["memory"] = {"provider": "honcho"}
-
-with open(config_path, "w") as f:
-    yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-PYTHON_EOF
-```
-
-After running these commands, restart Janitor. The OWASP fail-safe will pass because
-`HONCHO_BASE_URL` is now set, and your memory sessions will live in the local Docker
-volume — no cloud calls, no credential leakage, no excuses.
-
-**Why this matters:** The installer skips `memory.provider: honcho` when you chose
-Option 2 (local Docker). Janitor boots with no memory provider so it can start without
-blocking. But the moment your Docker containers are up, you need to close that gap.
-The `.env` generation happens automatically on `local-services.sh start` — you just
-need to restart Janitor to pick it up.
+After installing a capability skill, restart Janitor to pick up new
+environment variables or configuration changes.
 
 ## Requirements
 
-- Docker Engine ≥ 20.10
-- docker compose plugin or docker-compose binary
-- localhost network access
+- Docker daemon running (docker info must succeed)
+- docker compose available (v2 recommended)
+- For individual skills, check their SKILL.md for port requirements
+
+## Troubleshooting
+
+### Docker not found
+
+# Executing docker install script, commit: 2687d91ddeb3bd6aeae37a90947761efdee87030
+
+WSL DETECTED: We recommend using Docker Desktop for Windows.
+Please get Docker Desktop from https://www.docker.com/products/docker-desktop/
+
+Client: Docker Engine - Community
+ Version:    29.4.1
+ Context:    default
+ Debug Mode: false
+ Plugins:
+  buildx: Docker Buildx (Docker Inc.)
+    Version:  v0.33.0
+    Path:     /usr/libexec/docker/cli-plugins/docker-buildx
+  compose: Docker Compose (Docker Inc.)
+    Version:  v5.1.3
+    Path:     /usr/libexec/docker/cli-plugins/docker-compose
+
+Server:
+ Containers: 13
+  Running: 9
+  Paused: 0
+  Stopped: 4
+ Images: 30
+ Server Version: 29.4.1
+ Storage Driver: overlayfs
+  driver-type: io.containerd.snapshotter.v1
+ Logging Driver: json-file
+ Cgroup Driver: systemd
+ Cgroup Version: 2
+ Plugins:
+  Volume: local
+  Network: bridge host ipvlan macvlan null overlay
+  Log: awslogs fluentd gcplogs gelf journald json-file local splunk syslog
+ CDI spec directories:
+  /etc/cdi
+  /var/run/cdi
+ Swarm: inactive
+ Runtimes: io.containerd.runc.v2 runc
+ Default Runtime: runc
+ Init Binary: docker-init
+ containerd version: 77c84241c7cbdd9b4eca2591793e3d4f4317c590
+ runc version: v1.3.5-0-g488fc13e
+ init version: de40ad0
+ Security Options:
+  seccomp
+   Profile: builtin
+  cgroupns
+ Kernel Version: 6.6.87.2-microsoft-standard-WSL2
+ Operating System: Ubuntu 24.04.4 LTS
+ OSType: linux
+ Architecture: x86_64
+ CPUs: 16
+ Total Memory: 25.44GiB
+ Name: Dustin
+ ID: 81994749-5535-4a07-926d-6688e73eb99f
+ Docker Root Dir: /var/lib/docker
+ Debug Mode: false
+ Experimental: false
+ Insecure Registries:
+  127.0.0.0/8
+  ::1/128
+ Live Restore Enabled: false
+ Firewall Backend: iptables
+
+### Port conflicts
+
+COMMAND     PID USER   FD   TYPE   DEVICE SIZE/OFF NODE NAME
+janitor  619201 reck   38u  IPv4 33265126      0t0  TCP localhost:44762->localhost:1973 (CLOSE_WAIT)
+python  3634400 reck   31u  IPv4 49517249      0t0  TCP localhost:48328->localhost:1973 (CLOSE_WAIT)
+
+### Service wont start
+
+

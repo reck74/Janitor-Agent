@@ -1,0 +1,73 @@
+services:
+  janitor-postgres:
+    image: postgres:14-alpine
+    container_name: janitor-postgres
+    environment:
+      POSTGRES_USER: ${INFISICAL_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${INFISICAL_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${INFISICAL_POSTGRES_DB}
+    volumes:
+      - janitor-pg-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - janitor-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${INFISICAL_POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  janitor-redis:
+    image: redis:alpine
+    container_name: janitor-redis
+    restart: unless-stopped
+    networks:
+      - janitor-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  janitor-infisical:
+    image: infisical/infisical:latest
+    container_name: janitor-infisical
+    ports:
+      - "8080:8080"
+    environment:
+      - INFISICAL_ENV=local
+      - LOG_LEVEL=info
+      - DB_CONNECTION_URI=postgres://${INFISICAL_POSTGRES_USER}:${INFISICAL_POSTGRES_PASSWORD}@janitor-postgres:5432/${INFISICAL_POSTGRES_DB}?sslmode=disable
+      - REDIS_URL=redis://janitor-redis:6379
+      - ENCRYPTION_KEY=${INFISICAL_ENCRYPTION_KEY}
+      - AUTH_SECRET=${INFISICAL_AUTH_SECRET}
+    volumes:
+      - janitor-infisical-data:/data
+    restart: unless-stopped
+    networks:
+      - janitor-network
+    depends_on:
+      janitor-postgres:
+        condition: service_healthy
+      janitor-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+volumes:
+  janitor-pg-data:
+    name: janitor-pg-data
+  janitor-redis-data:
+    name: janitor-redis-data
+  janitor-infisical-data:
+    name: janitor-infisical-data
+
+networks:
+  janitor-network:
+    name: janitor-network
