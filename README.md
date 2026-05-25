@@ -63,6 +63,7 @@ janitor
 
 ## Onboarding
 
+
 ```bash
 # 1. Instalar (ver Quick Start arriba)
 # 2. Configurar API keys interactivamente:
@@ -90,6 +91,7 @@ Janitor es un **fork wrapper** de [Hermes Agent](https://github.com/NousResearch
 | **Extensiones** | `janitor_cli.py` — `JanitorCLI` hereda de `HermesCLI` |
 | **Skills aislados** | Solo en `skills/janitor-*/` — skills upstream nunca se tocan |
 | **TUI branding** | `skin_engine.py` maneja el tema visual sin hardcode |
+
 
 ### Upstream Sync
 

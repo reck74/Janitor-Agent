@@ -1,6 +1,6 @@
 import { STARTUP_IMAGE, STARTUP_QUERY } from '../config/env.js'
 import { STREAM_BATCH_MS } from '../config/timing.js'
-import { SETUP_REQUIRED_TITLE, buildSetupRequiredSections } from '../content/setup.js'
+import { buildSetupRequiredSections, SETUP_REQUIRED_TITLE } from '../content/setup.js'
 import type {
   CommandsCatalogResponse,
   ConfigFullResponse,
@@ -313,6 +313,10 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       }
 
       case 'thinking.delta': {
+        if (!getUiState().busy) {
+          return
+        }
+
         const text = ev.payload?.text
 
         if (text !== undefined) {
@@ -338,15 +342,26 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           return
         }
 
-        setStatus(p.text)
-
-        if (p.kind === 'compressing') {
+        if (p.kind === 'goal') {
           sys(p.text)
+
+          const brief = p.text.startsWith('✓')
+            ? '✓ goal complete'
+            : p.text.startsWith('↻')
+              ? '↻ goal continuing'
+              : p.text.startsWith('⏸')
+                ? '⏸ goal paused'
+                : 'ready'
+
+          setStatus(brief)
+          restoreStatusAfter(6000)
 
           return
         }
 
-        if (p.kind === 'goal') {
+        setStatus(p.text)
+
+        if (p.kind === 'compressing') {
           sys(p.text)
 
           return
@@ -484,13 +499,13 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
       case 'reasoning.delta':
         if (ev.payload?.text) {
-          turnController.recordReasoningDelta(ev.payload.text)
+          turnController.recordReasoningDelta(ev.payload.text, Boolean(ev.payload.verbose))
         }
 
         return
 
       case 'reasoning.available':
-        turnController.recordReasoningAvailable(String(ev.payload?.text ?? ''))
+        turnController.recordReasoningAvailable(String(ev.payload?.text ?? ''), Boolean(ev.payload?.verbose))
 
         return
 
@@ -510,12 +525,19 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
       case 'tool.start':
         turnController.recordTodos(ev.payload.todos)
-        turnController.recordToolStart(ev.payload.tool_id, ev.payload.name ?? 'tool', ev.payload.context ?? '')
+        turnController.recordToolStart(
+          ev.payload.tool_id,
+          ev.payload.name ?? 'tool',
+          ev.payload.context ?? '',
+          ev.payload.args_text ? stripAnsi(String(ev.payload.args_text)) : undefined
+        )
 
         return
       case 'tool.complete': {
         const inlineDiffText =
           ev.payload.inline_diff && getUiState().inlineDiffs ? stripAnsi(String(ev.payload.inline_diff)).trim() : ''
+
+        const resultText = ev.payload.result_text ? stripAnsi(String(ev.payload.result_text)) : undefined
 
         if (inlineDiffText) {
           turnController.recordInlineDiffToolComplete(
@@ -523,7 +545,8 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
             ev.payload.tool_id,
             ev.payload.name,
             ev.payload.error,
-            ev.payload.duration_s
+            ev.payload.duration_s,
+            resultText
           )
         } else {
           turnController.recordToolComplete(
@@ -532,7 +555,8 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
             ev.payload.error,
             ev.payload.summary,
             ev.payload.duration_s,
-            ev.payload.todos
+            ev.payload.todos,
+            resultText
           )
         }
 

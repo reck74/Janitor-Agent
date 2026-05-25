@@ -369,7 +369,6 @@ wait_for_health() {
     return 1
 }
 
-# ── GHCR authentication check ─────────────────────────────────────────────────
 # ── Stack launch ───────────────────────────────────────────────────────────────
 launch_stack() {
     log_info "Launching Janitor stack..."
