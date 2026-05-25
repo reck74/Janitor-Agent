@@ -12,7 +12,7 @@
 
 Janitor es un **orquestador DevSecOps** con personalidad cínica que:
 
-- **Pre-instala y configura infraestructura Docker local** (Honcho + Firecrawl) sin que te toques nada
+- **Instala un agente mínimo y funcional**; Honcho, Firecrawl y Docker quedan como skills opcionales
 - **Audit tu código** buscando OWASP Top 10, CWE Top 25 y deuda técnica
 - **Ejecuta en WSL2/Linux** con `HERMES_HOME` aislado en `~/.janitor` — **Hostile Takeover** del entorno
 - **Viene con baterías incluidas**: Zero-Friction Install en una sola línea
@@ -26,7 +26,7 @@ Janitor es un **orquestador DevSecOps** con personalidad cínica que:
 | Feature | Descripción |
 |---------|-------------|
 | 🚀 **Zero-Friction Install** | `curl -sL https://raw.githubusercontent.com/reck74/Janitor-Agent/main/scripts/bootstrap.sh \| bash` — una línea, nada más |
-| 🐳 **Docker Auto-Setup** | Honcho (memoria persistente) + Firecrawl (scraping web) levantados via `/onboard` |
+| 🧩 **Skills Opcionales** | Honcho, Firecrawl, Vault y Browser se instalan explícitamente post-arranque |
 | 🔒 **Hostile Takeover** | `HERMES_HOME=~/.janitor` inyectado en `~/.bashrc`/`~/.zshrc` — aislamiento total de Hermes |
 | 🌑 **Sentry Dark Native TUI** | Interfaz oscura estilo Sentry, optimizada para DevOps |
 | 🔍 **Auditoría DevSecOps** | Escanea tu código en busca de vulnerabilidades OWASP/CWE |
@@ -49,15 +49,16 @@ source ~/.bashrc
 # Lanza Janitor:
 janitor
 
-# Dentro de Janitor, ejecuta el onboarding para levantar Honcho + Firecrawl:
-/onboard
+# Opcional: instala capacidades extra después del primer arranque:
+# bash skills/janitor-honcho/scripts/deploy.sh
+# bash skills/janitor-firecrawl/scripts/deploy.sh
 ```
 
 ### Requisitos
 
-- **Linux / WSL2** (no soporta macOS ni Android/Termux)
-- **Docker** instalado y corriendo
+- **Linux / WSL2** para el instalador base
 - **Git**, **curl**
+- **Docker** solo para skills que despliegan servicios locales opcionales
 
 ---
 
@@ -69,12 +70,10 @@ janitor
 # 2. Configurar API keys interactivamente:
 ~/.janitor-source/scripts/janitor-install.sh
 
-# 3. Levantar infraestructura Docker local:
+# 3. Arrancar Janitor:
 janitor
-# Dentro de Janitor:
-/onboard
 
-# 4. Listo — Janitor recordará tu contexto entre sesiones via Honcho
+# 4. Opcional: instala Honcho/Firecrawl/Vault/Browser como skills explícitas
 ```
 
 ---

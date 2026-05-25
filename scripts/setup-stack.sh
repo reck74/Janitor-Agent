@@ -44,8 +44,7 @@ check_docker() {
     fi
 
     # Capturamos la salida para distinguir entre 'daemon muerto' y 'permisos denegados'
-    DOCKER_OUTPUT=$(docker info 2>&1)
-    if [ $? -ne 0 ]; then
+    if ! DOCKER_OUTPUT=$(docker info 2>&1); then
         if echo "$DOCKER_OUTPUT" | grep -q "permission denied"; then
             log_warn "Permission denied on docker.sock. Auto-fixing group permissions..."
             sudo usermod -aG docker "$USER"
