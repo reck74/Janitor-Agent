@@ -1,5 +1,5 @@
 model:
-  default: MiniMax-M2.7-highspeed
+  default: MiniMax-M2.7
   provider: minimax
   base_url: https://api.minimax.io/anthropic
 providers: {}
