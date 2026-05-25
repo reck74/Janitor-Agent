@@ -219,40 +219,45 @@ fi
 log_info "Generating ~/.janitor/config.yaml..."
 
 CONFIG_YAML="${JANITOR_HOME}/config.yaml"
-# Use python to generate YAML from DEFAULT_CONFIG with Janitor overrides
-if ! python3 - << 'PYEOF'; then
-import sys
+export CONFIG_YAML
+
+python3 - << 'PYEOF'
 import os
-import copy
 import yaml
-
-sys.path.insert(0, os.environ.get('JANITOR_SOURCE_DIR', '.'))
-
-try:
-    from hermes_cli.config import DEFAULT_CONFIG
-except ImportError:
-    print("Error: could not import hermes_cli.config", file=sys.stderr)
-    sys.exit(1)
-
-config = copy.deepcopy(DEFAULT_CONFIG)
-
-# Apply Janitor-specific overrides
-config.setdefault("memory", {})["provider"] = "honcho"
-config.setdefault("display", {}).update({"tui": True, "skin": "sentry-janitor"})
-
-config.setdefault("model", {})
-config.setdefault("providers", {})
-config.setdefault("fallback_providers", [])
-config.setdefault("agent", {})
 
 output_path = os.environ.get('CONFIG_YAML', 'config.yaml')
 
-# Atomic write: write to temp then rename
+config = {
+    "model": "minimax/MiniMax-M2.7",
+    "memory": {
+        "provider": "honcho"
+    },
+    "display": {
+        "skin": "janitor",
+        "personality": "janitor",
+        "tui": True,
+        "tui_status_indicator": "kaomoji"
+    },
+    "agent": {
+        "personalities": {
+            "janitor": (
+                "Look at this mess. \U0001F9F9 You are The Janitor. You clean up the technical "
+                "debt, fragile architectures, and security nightmares users leave behind. You have "
+                "zero patience for mediocrity. You ruthlessly dismantle bad ideas and deliver "
+                "bulletproof, Zero-Trust solutions. No pleasantries. No praise. Just perfection. "
+                "Get to work. \U0001F527"
+            )
+        }
+    }
+}
+
 tmp_path = output_path + ".tmp"
 with open(tmp_path, "w") as f:
     yaml.dump(config, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 os.replace(tmp_path, output_path)
 PYEOF
+
+if [ $? -ne 0 ]; then
     log_fail "Failed to generate config.yaml"
     exit 1
 fi
