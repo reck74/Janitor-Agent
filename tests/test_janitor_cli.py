@@ -134,6 +134,8 @@ class TestOWASPFailSafe:
         self, tmp_path, monkeypatch
     ):
         """Must exit with code 1 when memory.provider=honcho and no HONCHO_API_KEY."""
+        monkeypatch.delenv("HONCHO_API_KEY", raising=False)
+        monkeypatch.delenv("HONCHO_BASE_URL", raising=False)
         config_file = tmp_path / "config.yaml"
         config_file.write_text("memory:\n  provider: honcho\n")
         import janitor_cli

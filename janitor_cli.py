@@ -49,6 +49,17 @@ def _load_janitor_env() -> None:
 
 _load_janitor_env()
 
+# COMMAND HIJACKING: Intercept `janitor update` before Hermes CLI parses arguments.
+# We delegate to a minimal bootstrap helper so this path stays importable
+# even when the venv is partially broken (e.g. new Hermes imports after a pull).
+if len(sys.argv) > 1 and sys.argv[1] == "update":
+    try:
+        from janitor_update_bootstrap import run_update
+        sys.exit(run_update())
+    except Exception as e:
+        print(f"⚠ Bootstrap update failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
 from hermes_cli.config import DEFAULT_CONFIG
 
 DEFAULT_CONFIG.setdefault("memory", {}).setdefault("provider", "honcho")
@@ -80,30 +91,6 @@ def _janitor_load_soul_md() -> str:
 
 
 prompt_builder.load_soul_md = _janitor_load_soul_md
-
-# COMMAND HIJACKING: Intercept `janitor update` before Hermes CLI parses arguments.
-if len(sys.argv) > 1 and sys.argv[1] == "update":
-    import subprocess
-    print("\n🔥 THE JANITOR: Initiating tactical update...\n")
-    try:
-        janitor_root = os.path.dirname(os.path.abspath(__file__))
-        os.chdir(janitor_root)
-
-        print("-> Syncing incinerator protocols (git pull)...")
-        subprocess.run(["git", "pull", "origin", "main"], check=True)
-
-        print("-> Updating dependencies (uv)...")
-        venv_path = sys.prefix
-        subprocess.run(["uv", "pip", "install", "--python", venv_path, "-e", ".[all]"], check=True)
-
-        print("-> Compiling TUI components...")
-        subprocess.run("cd ui-tui && npm install && npm run build", shell=True, check=True)
-
-        print("\n✅ Janitor updated successfully. Garbage collected.\n")
-    except subprocess.CalledProcessError as e:
-        print(f"\n❌ Update failed at step: {e.cmd}\n")
-        sys.exit(1)
-    sys.exit(0)
 
 import argparse
 
