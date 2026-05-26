@@ -510,9 +510,8 @@ DEFAULT_CONFIG = {
     "toolsets": ["hermes-cli"],
     "janitor": {
         "language_instruction": (
-            "IMPORTANT: You must respond only in Spanish or English. "
-            "Never use Chinese, Japanese, or Korean characters (CJK) in your output. "
-            "If the user writes in another language, respond in Spanish or English only."
+            "CRITICAL OUTPUT ENCODING RESTRICTION: Use only Spanish or English "
+            "for all natural-language text."
         ),
     },
     "agent": {
