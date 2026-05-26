@@ -510,8 +510,9 @@ DEFAULT_CONFIG = {
     "toolsets": ["hermes-cli"],
     "janitor": {
         "language_instruction": (
-            "CRITICAL OUTPUT ENCODING RESTRICTION: Use only Spanish or English "
-            "for all natural-language text."
+            "CRITICAL OUTPUT ENCODING RESTRICTION: Use exclusively English or Spanish. "
+            "All text and punctuation MUST strictly be in the ASCII or Latin-1 "
+            "supplement character set."
         ),
     },
     "agent": {
