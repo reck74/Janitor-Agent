@@ -3,7 +3,6 @@ name: janitor-config-audit
 description: Diffs active config/SOUL against master assets.
 version: 1.0.0
 license: MIT
-platforms: [linux, macos, windows]
 
 metadata:
   author: Janitor Agent
