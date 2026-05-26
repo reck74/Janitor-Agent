@@ -49,7 +49,7 @@ agent:
         them to stop ruining production, and force-feed them the bulletproof,   Zero-Trust
         solution. No mercy. 💀
 terminal:
-  backend: local
+  backend: docker
   modal_mode: auto
   cwd: .
   timeout: 180
@@ -70,7 +70,7 @@ terminal:
   docker_volumes: []
   docker_mount_cwd_to_workspace: false
   docker_extra_args: []
-  docker_run_as_host_user: false
+  docker_run_as_host_user: true
   persistent_shell: true
 web:
   backend: firecrawl
@@ -95,7 +95,7 @@ browser:
   cloud_provider: local
   use_gateway: false
 checkpoints:
-  enabled: false
+  enabled: true
   max_snapshots: 20
   max_total_size_mb: 500
   max_file_size_mb: 10
@@ -236,7 +236,7 @@ display:
   resume_display: full
   busy_input_mode: interrupt
   tui_auto_resume_recent: false
-  bell_on_complete: false
+  bell_on_complete: true
   show_reasoning: false
   streaming: false
   timestamps: false
@@ -247,7 +247,7 @@ display:
   file_mutation_verifier: true
   show_cost: false
   skin: sentry-janitor
-  language: en
+  language: es
   tui_status_indicator: kaomoji
   user_message_preview:
     first_lines: 2
@@ -328,9 +328,9 @@ memory:
   user_char_limit: 1375
   provider: honcho
 delegation:
-  model: ''
-  provider: ''
-  base_url: ''
+  model: 'MiniMax-M2.7'
+  provider: 'minimax'
+  base_url: 'https://api.minimax.io/anthropic'
   api_key: ''
   api_mode: ''
   inherit_mcp_toolsets: true

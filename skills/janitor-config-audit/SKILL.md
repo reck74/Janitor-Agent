@@ -1,75 +1,87 @@
 ---
 name: janitor-config-audit
-description: Diffs active config/SOUL against master assets.
-version: 1.0.0
+description: Use when comparing active config.yaml or SOUL.md against janitor-core assets to detect drift, or when applying upstream updates. Runs a diff-and-patch audit with YAML validation and automatic backup.
+version: 1.2.0
+author: janitor
 license: MIT
 
 metadata:
-  author: Janitor Agent
-  created: 2026-05-25
   hermes:
-    tags: [config, audit, janitor, maintenance]
-    category: devops
-    related_skills: [janitor-onboarding]
+    tags: [config, audit, drift, janitor, maintenance]
+    related_skills: [hermes-agent-skill-authoring]
 ---
 
-# Janitor Config Audit Skill
+# Janitor Config Audit
 
-Compares the user's active configuration files (`config.yaml`, `SOUL.md`) against the bundled master assets shipped with `janitor-core`. Reports differences and can apply updates selectively or in full.
+## Overview
+
+Compara los archivos de configuracion activos (`~/.janitor/config.yaml`, `~/.janitor/SOUL.md`) contra las versiones master en `janitor-core/assets/janitor/`. Reporta diferencias y permite aplicar updates de forma selectiva o automatica.
 
 ## When to Use
 
-- After upgrading `janitor-core` to ensure the user's config and persona reflect new defaults.
-- When the agent detects a schema drift or missing keys in the active `config.yaml`.
-- Before troubleshooting behavior that may stem from stale configuration.
+- User asks to "check for updates" or "sync config with upstream"
+- After a Janitor install or update to verify what changed
+- When the user wants to know if their active config drifted from the janitor-core asset
 
-## Prerequisites
+## How to Use
 
-- Python 3 and the `pyyaml` package (usually already installed by the base environment).
-- The `janitor-core` assets must exist at `$JANITOR_HOME/janitor-core/assets/janitor/`.
-- If `$JANITOR_HOME` is unset, the script falls back to `~/.janitor`.
+The script supports two invocations:
 
-## How to Run
+1. **Slash command** (may fail on WSL — see Platform Note below)
+2. **Direct terminal** (always works)
 
 ```bash
-# Show differences only
-python skills/janitor-config-audit/scripts/audit.py
+# Dry-run: solo reporte
+python3 ~/.janitor/skills/janitor-config-audit/scripts/audit.py
 
-# Show differences for a specific file
-python skills/janitor-config-audit/scripts/audit.py config
-python skills/janitor-config-audit/scripts/audit.py soul
+# Target especifico: config | soul | all (default)
+python3 ~/.janitor/skills/janitor-config-audit/scripts/audit.py config
+python3 ~/.janitor/skills/janitor-config-audit/scripts/audit.py soul
 
-# Apply all updates automatically (backs up originals first)
-python skills/janitor-config-audit/scripts/audit.py --apply
+# Aplicar todas las diferencias automaticamente
+python3 ~/.janitor/skills/janitor-config-audit/scripts/audit.py --apply
 
-# Dry-run (default) — shows diff without writing anything
-python skills/janitor-config-audit/scripts/audit.py --dry-run
+# Aplicar target especifico
+python3 ~/.janitor/skills/janitor-config-audit/scripts/audit.py config --apply
+python3 ~/.janitor/skills/janitor-config-audit/scripts/audit.py soul --apply
 ```
 
-## Quick Reference
+## Formato de diferencias
 
-| Target | Command |
+| Symbol | Meaning |
 |---|---|
-| Both files (default) | `audit.py` |
-| Only `config.yaml` | `audit.py config` |
-| Only `SOUL.md` | `audit.py soul` |
-| Apply updates | `audit.py --apply` |
-| Dry-run (no writes) | `audit.py --dry-run` |
+| `+` | Solo existe en el asset (falta en activo) |
+| `-` | Solo existe en el activo (no existe en asset) |
+| `~` | Valor diferente en ambos |
 
-## Procedure
+## Security
 
-1. The script reads `$JANITOR_HOME` (or falls back to `~/.janitor`).
-2. It compares the active file against the matching asset in `janitor-core/assets/janitor/`.
-3. For `config.yaml`, it flattens nested dicts and reports added, removed, or changed keys.
-4. For `SOUL.md`, it prints a unified text diff.
-5. In `--apply` mode, it copies the active file to a `.bak` backup, overwrites it with the asset, and validates the resulting YAML. If validation fails, it restores the backup automatically.
+- La aplicacion crea backup `.bak` antes de modificar
+- Valida YAML tras aplicacion; si esta malformado restaura el backup automaticamente
+- SOUL.md usa diff de texto plano (no YAML flatten)
 
-## Pitfalls
+## Platform Note
 
-- Manual edits to the active `config.yaml` that produce malformed YAML will trigger an automatic restore in `--apply` mode, but the update will not be applied until the YAML is fixed manually.
-- `--apply` overwrites the entire active file; there is no key-by-key merge yet. Use the diff output to decide whether to apply.
-- Missing assets (e.g., `janitor-core` not installed) result in a hard error rather than a silent skip.
+The slash command (`/janitor-config-audit`) may fail with "Failed to load skill" on WSL or non-standard Linux environments due to a platform-check inconsistency in Hermes (the scan phase and the load phase apply `skill_matches_platform()` independently, and the gates can disagree). **If the slash command fails, invoke the script directly via terminal.** The script itself has no platform restrictions.
 
-## Verification
+## Common Pitfalls
 
-After applying `config.yaml`, the script runs `yaml.safe_load()` on the result and reports `[OK] YAML valido tras aplicacion.` If the load fails, the backup is restored and the script exits with code 1.
+1. **Slash command fails with "not supported on this platform".** This is a Hermes internal bug — not a problem with the skill or script. Invoke via terminal instead.
+
+2. **YAML malformado tras aplicacion.** El script detecta el error y restaura el backup automaticamente — no pierdes datos.
+
+3. **Muchas diferencias detectadas.** Aplicar una por una (`config --apply` o `soul --apply`) para mantener visibilidad sobre cada cambio.
+
+## Archivos comparados
+
+| Archivo activo | Asset master |
+|---|---|
+| `~/.janitor/config.yaml` | `~/.janitor/janitor-core/assets/janitor/config.yaml` |
+| `~/.janitor/SOUL.md` | `~/.janitor/janitor-core/assets/janitor/SOUL.md` |
+
+## Verification Checklist
+
+- [ ] El diff reportado es esperado (revisar cada cambio antes de aplicar)
+- [ ] Backup `.bak` existe antes de aplicar
+- [ ] YAML valido tras aplicacion (script lo valida automaticamente)
+- [ ] Sesion de Janitor puede leer la nueva config
