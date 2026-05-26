@@ -27,6 +27,7 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
+from agent.janitor_language_guard import get_janitor_language_instruction
 from agent.prompt_builder import (
     DEFAULT_AGENT_IDENTITY,
     GOOGLE_MODEL_OPERATIONAL_GUIDANCE,
@@ -251,6 +252,10 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
                 stable_parts.append(_entry.platform_hint)
         except Exception:
             pass
+
+    janitor_language_instruction = get_janitor_language_instruction(agent)
+    if janitor_language_instruction:
+        stable_parts.append(janitor_language_instruction)
 
     # ── Context tier (cwd-dependent, may change between sessions) ─
     context_parts: List[str] = []
