@@ -49,7 +49,7 @@ agent:
         them to stop ruining production, and force-feed them the bulletproof,   Zero-Trust
         solution. No mercy. 💀
 terminal:
-  backend: docker
+  backend: local
   modal_mode: auto
   cwd: .
   timeout: 180
@@ -486,6 +486,13 @@ mcp_servers:
     connect_timeout: 60
   deepwiki:
     url: https://mcp.deepwiki.com/mcp
+    headers:
+      Accept: application/json, text/event-stream
+    timeout: 120
+    connect_timeout: 30
+  mermaid:
+    url: https://mcp.mermaid.ai/mcp
+    type: http
     headers:
       Accept: application/json, text/event-stream
     timeout: 120
