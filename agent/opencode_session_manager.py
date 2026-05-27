@@ -16,9 +16,9 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Literal, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +29,8 @@ STATE_FILE = Path("~/.janitor/opencode_sessions.json").expanduser()
 class TaskRecord:
     task_name: str
     session_id: str
-    status: str  # "pending" | "running" | "completed" | "failed" | "blocked"
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    status: Literal["pending", "running", "completed", "failed", "blocked"]
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     completed_at: Optional[str] = None
     error_detail: Optional[str] = None
     retry_count: int = 0
@@ -64,17 +64,22 @@ class OpenCodeSessionManager:
                 for task_name, rec in data.get("tasks", {}).items():
                     self.tasks[task_name] = TaskRecord(**rec)
                 logger.info(f"Loaded {len(self.tasks)} task records")
-            except Exception as e:
-                logger.warning(f"Could not load state file: {e}")
+            except json.JSONDecodeError as e:
+                logger.warning(f"Could not load state file (invalid JSON): {e}")
+            except OSError as e:
+                logger.warning(f"Could not load state file (I/O error): {e}")
 
     def _save(self) -> None:
         """Persist state to disk."""
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
         data = {
             "tasks": {name: asdict(rec) for name, rec in self.tasks.items()},
-            "saved_at": datetime.utcnow().isoformat(),
+            "saved_at": datetime.now(timezone.utc).isoformat(),
         }
-        self.state_file.write_text(json.dumps(data, indent=2))
+        try:
+            self.state_file.write_text(json.dumps(data, indent=2))
+        except OSError as e:
+            logger.error(f"Could not write state file: {e}")
 
     def start_task(self, task_name: str, session_id: str) -> None:
         """Mark a task as started."""
@@ -90,18 +95,22 @@ class OpenCodeSessionManager:
         """Mark a task as completed."""
         if task_name in self.tasks:
             self.tasks[task_name].status = "completed"
-            self.tasks[task_name].completed_at = datetime.utcnow().isoformat()
+            self.tasks[task_name].completed_at = datetime.now(timezone.utc).isoformat()
             self._save()
             logger.info(f"Task completed: {task_name}")
+        else:
+            logger.warning(f"complete_task: task not found: {task_name}")
 
     def fail_task(self, task_name: str, error_detail: str) -> None:
         """Mark a task as failed."""
         if task_name in self.tasks:
             self.tasks[task_name].status = "failed"
             self.tasks[task_name].error_detail = error_detail
-            self.tasks[task_name].completed_at = datetime.utcnow().isoformat()
+            self.tasks[task_name].completed_at = datetime.now(timezone.utc).isoformat()
             self._save()
             logger.warning(f"Task failed: {task_name} — {error_detail}")
+        else:
+            logger.warning(f"fail_task: task not found: {task_name}")
 
     def block_task(self, task_name: str, error_detail: str) -> None:
         """Mark a task as blocked (requires human intervention)."""
@@ -110,13 +119,16 @@ class OpenCodeSessionManager:
             self.tasks[task_name].error_detail = error_detail
             self._save()
             logger.warning(f"Task blocked (requires intervention): {task_name}")
+        else:
+            logger.warning(f"block_task: task not found: {task_name}")
 
     def increment_retry(self, task_name: str) -> int:
         """Increment retry count and return new value."""
-        if task_name in self.tasks:
-            self.tasks[task_name].retry_count += 1
-            self._save()
-        return self.tasks.get(task_name, TaskRecord(task_name="", session_id="", status="")).retry_count
+        if task_name not in self.tasks:
+            raise KeyError(f"increment_retry: task not found: {task_name}")
+        self.tasks[task_name].retry_count += 1
+        self._save()
+        return self.tasks[task_name].retry_count
 
     def get_task(self, task_name: str) -> Optional[TaskRecord]:
         """Get a task record by name."""
