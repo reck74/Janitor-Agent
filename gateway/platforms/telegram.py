@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 try:
     from telegram import Update, Bot, Message, InlineKeyboardButton, InlineKeyboardMarkup
     try:
+        from telegram import InputProfilePhotoStatic
+    except ImportError:
+        InputProfilePhotoStatic = None
+    try:
         from telegram import LinkPreviewOptions
     except ImportError:
         LinkPreviewOptions = None
@@ -44,6 +48,7 @@ except ImportError:
     Message = Any
     InlineKeyboardButton = Any
     InlineKeyboardMarkup = Any
+    InputProfilePhotoStatic = None
     LinkPreviewOptions = None
     Application = Any
     CommandHandler = Any
@@ -86,6 +91,7 @@ from gateway.platforms.telegram_network import (
     discover_fallback_ips,
     parse_fallback_ip_env,
 )
+from hermes_constants import get_hermes_home
 from utils import atomic_replace
 
 _TELEGRAM_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
@@ -107,6 +113,17 @@ _TELEGRAM_IMAGE_EXT_TO_MIME = {
 
 MAX_COMMANDS_PER_SCOPE = 30
 
+_JANITOR_ASSETS_DIR = _Path(__file__).resolve().parents[2] / "assets" / "janitor"
+_JANITOR_AVATAR_PATH = _JANITOR_ASSETS_DIR / "janitor_avatar.png"
+_JANITOR_WELCOME_PATH = _JANITOR_ASSETS_DIR / "telegram_welcome.jpg"
+_JANITOR_WELCOME_TEXT = (
+    "DENEGADO. No hay tiempo para presentaciones. "
+    "Soy The Janitor. Trae tu código roto, tu arquitectura frágil "
+    "y tus secretos hardcodeados. Los limpio. Los audito. "
+    "Los hago a prueba de balas. Comienza."
+)
+_AVATAR_FLAG_FILE = "telegram_avatar_flag"
+
 
 def check_telegram_requirements() -> bool:
     """Check if Telegram dependencies are available.
@@ -117,7 +134,7 @@ def check_telegram_requirements() -> bool:
     so the adapter's class-level type aliases get rebound.
     """
     global TELEGRAM_AVAILABLE, Update, Bot, Message, InlineKeyboardButton
-    global InlineKeyboardMarkup, LinkPreviewOptions, Application
+    global InlineKeyboardMarkup, InputProfilePhotoStatic, LinkPreviewOptions, Application
     global CommandHandler, CallbackQueryHandler, TelegramMessageHandler
     global ContextTypes, filters, ParseMode, ChatType, HTTPXRequest
     if TELEGRAM_AVAILABLE:
@@ -130,6 +147,10 @@ def check_telegram_requirements() -> bool:
     try:
         from telegram import Update as _Update, Bot as _Bot, Message as _Message
         from telegram import InlineKeyboardButton as _IKB, InlineKeyboardMarkup as _IKM
+        try:
+            from telegram import InputProfilePhotoStatic as _IPPS
+        except ImportError:
+            _IPPS = None
         try:
             from telegram import LinkPreviewOptions as _LPO
         except ImportError:
@@ -149,6 +170,7 @@ def check_telegram_requirements() -> bool:
     Message = _Message
     InlineKeyboardButton = _IKB
     InlineKeyboardMarkup = _IKM
+    InputProfilePhotoStatic = _IPPS
     LinkPreviewOptions = _LPO
     Application = _App
     CommandHandler = _CH
@@ -1327,6 +1349,58 @@ class TelegramAdapter(BasePlatformAdapter):
                             self.name, topic_name, seed_err,
                         )
 
+    async def _maybe_set_janitor_avatar(self) -> None:
+        """Set the bot profile photo from the Janitor avatar asset when needed."""
+        if not _JANITOR_AVATAR_PATH.exists():
+            logger.warning(
+                "[%s] Janitor avatar asset not found at %s; skipping Telegram avatar setup",
+                self.name,
+                _JANITOR_AVATAR_PATH,
+            )
+            return
+
+        flag_path = get_hermes_home() / _AVATAR_FLAG_FILE
+        try:
+            current_mtime = _JANITOR_AVATAR_PATH.stat().st_mtime
+        except OSError as exc:
+            logger.warning(
+                "[%s] Could not inspect Janitor avatar asset %s: %s",
+                self.name,
+                _JANITOR_AVATAR_PATH,
+                exc,
+            )
+            return
+
+        try:
+            if flag_path.exists():
+                stored_mtime = float(flag_path.read_text().strip())
+                if stored_mtime == current_mtime:
+                    logger.debug("[%s] Janitor Telegram avatar unchanged; skipping upload", self.name)
+                    return
+        except (OSError, ValueError) as exc:
+            logger.warning(
+                "[%s] Janitor Telegram avatar flag unreadable (%s); uploading avatar",
+                self.name,
+                exc,
+            )
+
+        try:
+            if InputProfilePhotoStatic is not None:
+                profile_photo = InputProfilePhotoStatic(media=_JANITOR_AVATAR_PATH)
+                await self._bot.set_my_profile_photo(profile_photo=profile_photo)
+            else:
+                with open(_JANITOR_AVATAR_PATH, "rb") as photo_file:
+                    await self._bot.set_my_profile_photo(photo=photo_file)
+            flag_path.write_text(str(current_mtime))
+            logger.info("[%s] Janitor Telegram avatar updated", self.name)
+        except Exception as exc:
+            logger.warning(
+                "[%s] Failed to set Janitor Telegram avatar: %s",
+                self.name,
+                exc,
+                exc_info=True,
+            )
+
     async def connect(self) -> bool:
         """Connect to Telegram via polling or webhook.
 
@@ -1447,6 +1521,7 @@ class TelegramAdapter(BasePlatformAdapter):
                 filters.TEXT & ~filters.COMMAND,
                 self._handle_text_message
             ))
+            self._app.add_handler(CommandHandler("start", self._handle_start))
             self._app.add_handler(TelegramMessageHandler(
                 filters.COMMAND,
                 self._handle_command
@@ -1471,6 +1546,7 @@ class TelegramAdapter(BasePlatformAdapter):
             for _attempt in range(_max_connect):
                 try:
                     await self._app.initialize()
+                    await self._maybe_set_janitor_avatar()
                     break
                 except (NetworkError, TimedOut, OSError) as init_err:
                     if _attempt < _max_connect - 1:
@@ -4819,6 +4895,40 @@ class TelegramAdapter(BasePlatformAdapter):
         event.text = self._clean_bot_trigger_text(event.text)
         event = self._apply_telegram_group_observe_attribution(event)
         self._enqueue_text_event(event)
+
+    async def _handle_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /start with the Janitor Telegram welcome image and caption."""
+        chat = getattr(update, "effective_chat", None)
+        chat_id = getattr(chat, "id", None)
+        if chat_id is None:
+            return
+
+        if _JANITOR_WELCOME_PATH.exists():
+            try:
+                with open(_JANITOR_WELCOME_PATH, "rb") as photo_file:
+                    await self._bot.send_photo(
+                        chat_id=chat_id,
+                        photo=photo_file,
+                        caption=_JANITOR_WELCOME_TEXT,
+                    )
+                return
+            except Exception as exc:
+                logger.warning(
+                    "[%s] Failed to send Janitor Telegram welcome image: %s",
+                    self.name,
+                    exc,
+                    exc_info=True,
+                )
+
+        try:
+            await self._bot.send_message(chat_id=chat_id, text=_JANITOR_WELCOME_TEXT)
+        except Exception as exc:
+            logger.warning(
+                "[%s] Failed to send Janitor Telegram welcome text: %s",
+                self.name,
+                exc,
+                exc_info=True,
+            )
 
     async def _handle_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle incoming command messages."""
