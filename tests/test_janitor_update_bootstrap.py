@@ -2,6 +2,14 @@
 
 import subprocess
 from pathlib import Path
+import tomllib
+
+
+def test_bootstrap_module_is_packaged_for_janitor_entrypoint():
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text())
+    py_modules = pyproject["tool"]["setuptools"]["py-modules"]
+
+    assert "janitor_update_bootstrap" in py_modules
 
 
 def test_update_intercept_runs_before_hermes_imports():
