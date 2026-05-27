@@ -18,7 +18,6 @@ Usage:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -219,8 +218,13 @@ class OpenCodeOrchestrator:
         """
         Send a message without waiting for reply (fire-and-forget).
 
+        Args:
+            session_id: The session to send the message to.
+            content: The prompt / message content.
+            role: Message role (default: "user").
+
         Returns:
-            message_id
+            message_id of the queued message.
         """
         body = {"content": content}
         if role:
@@ -233,7 +237,16 @@ class OpenCodeOrchestrator:
         session_id: str,
         command: str,
     ) -> dict[str, Any]:
-        """Execute a slash command in the session."""
+        """
+        Execute a slash command in the session.
+
+        Args:
+            session_id: The session to execute the command in.
+            command: The slash command to execute (e.g. "/help").
+
+        Returns:
+            Response data from the command endpoint.
+        """
         return await self._request("POST", f"/session/{session_id}/command", json={"command": command})
 
     async def send_shell(
@@ -241,7 +254,16 @@ class OpenCodeOrchestrator:
         session_id: str,
         command: str,
     ) -> dict[str, Any]:
-        """Run a shell command in the session."""
+        """
+        Run a shell command in the session.
+
+        Args:
+            session_id: The session to run the command in.
+            command: The shell command to execute.
+
+        Returns:
+            Response data from the shell endpoint.
+        """
         return await self._request("POST", f"/session/{session_id}/shell", json={"command": command})
 
 
@@ -254,15 +276,14 @@ async def detect_opencode_port(host: str = "localhost", start_port: int = 3000, 
     """
     for port in range(start_port, end_port + 1):
         try:
-            client = httpx.AsyncClient(
+            async with httpx.AsyncClient(
                 base_url=f"http://{host}:{port}",
                 timeout=httpx.Timeout(5.0),
-            )
-            response = await client.get("/global/health")
-            await client.aclose()
-            if response.status_code == 200:
-                logger.info(f"opencode serve found on port {port}")
-                return port
+            ) as client:
+                response = await client.get("/global/health")
+                if response.status_code == 200:
+                    logger.info(f"opencode serve found on port {port}")
+                    return port
         except Exception:
             continue
     return None
