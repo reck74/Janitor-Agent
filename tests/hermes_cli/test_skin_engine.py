@@ -260,6 +260,40 @@ class TestUserSkins:
         assert pirate["source"] == "user"
 
 
+class TestSentryJanitorSkin:
+    def test_bundled_sentry_janitor_skin_v2_loads(self, tmp_path, monkeypatch):
+        from pathlib import Path
+        import shutil
+
+        from hermes_cli.skin_engine import load_skin
+
+        skins_dir = tmp_path / "skins"
+        skins_dir.mkdir()
+        source = Path(__file__).resolve().parents[2] / "example_skin_sentry-janitor.yaml.txt"
+        shutil.copy2(source, skins_dir / "sentry-janitor.yaml")
+        monkeypatch.setattr("hermes_cli.skin_engine._skins_dir", lambda: skins_dir)
+
+        skin = load_skin("sentry-janitor")
+
+        assert skin.name == "sentry-janitor"
+        assert skin.get_branding("agent_name") == "J4nitor Agent"
+        assert skin.get_branding("welcome") == (
+            "Sistema en línea. Terminal activa. Más te vale que esto no sea otro error de Capa 8. Habla."
+        )
+        assert skin.get_branding("goodbye") == (
+            "Basura recolectada. Procesos aniquilados. No me llames a menos que producción esté ardiendo."
+        )
+        assert skin.get_branding("help_header") == "(☣) Comandos Tácticos (Lee antes de romper algo)"
+        assert "auditando mugre binaria" in skin.spinner["thinking_verbs"]
+        assert "quemando deuda técnica" in skin.spinner["thinking_verbs"]
+        assert len(skin.banner_hero.splitlines()) >= 18
+        assert "Limpiando la basura que llamas código" in skin.banner_hero
+        assert skin.tool_emojis["terminal"] == "🖥️"
+        assert skin.tool_emojis["patch"] == "🩹"
+        assert skin.tool_emojis["mcp_codebase_memory_search_graph"] == "🕸️"
+        assert skin.tool_emojis["mcp_playwright_browser_click"] == "🖱️"
+
+
 class TestDisplayIntegration:
     def test_get_skin_tool_prefix_default(self):
         from agent.display import get_skin_tool_prefix

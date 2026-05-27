@@ -31,46 +31,174 @@ colors:
   completion_menu_current_bg: "#362d59" # Hover State
 
 spinner:
-  waiting_faces: ["[▱]", "[▰]", "[▤]", "[▥]", "[▦]"]
-  thinking_faces: ["(⚙)", "(!)", "(>_)", "(*)", "(🔥)"]
+  waiting_faces: ["[-_- ]", "[ ¬_¬]", "[ ಠ_ಠ]", "[ 눈_눈]", "[ >_<]"]
+  thinking_faces: ["[ (눈_눈)💻 ]", "[ (ಠ_ಠ)⚙️ ]", "[ (╬ Ò_Ó)🔧 ]", "[ (◣_◢)🔥 ]", "[ (╯°□°)╯💥 ]"]
   thinking_verbs:
-    - "incinerating garbage"
-    - "auditing logic"
-    - "hunting race conditions"
-    - "purging cache"
-    - "compiling fixes"
-    - "deploying countermeasures"
+    - "auditando mugre binaria"
+    - "olfateando mentiras del stack"
+    - "quemando deuda técnica"
+    - "barriendo rastros sospechosos"
+    - "desinfectando contexto podrido"
+    - "cazando race conditions"
+    - "triturando estados corruptos"
+    - "interrogando logs traidores"
+    - "sellando fugas de memoria"
+    - "exorcizando bugs reincidentes"
+    - "peinando el grafo de llamadas"
+    - "marcando objetivos sucios"
+    - "fumigando prompts débiles"
+    - "limpiando ceniza del pipeline"
+    - "levantando perímetro sentry"
   wings:
     - ["⟪🛠 ", " 🛠⟫"]
     - ["⟪🔥", "🔥⟫"]
     - ["⟪/ ", " /⟫"]
 
 branding:
-  agent_name: "THE JANITOR"
-  welcome: "System online. Code breaks. I incinerate it. Terminal active."
-  goodbye: "Garbage collected. Shutting down."
-  response_label: " 🛠 JANITOR "
-  prompt_symbol: "❯"
-  help_header: "(!) Tactical Commands"
+  agent_name: "J4nitor Agent"
+  welcome: "Sistema en línea. Terminal activa. Más te vale que esto no sea otro error de Capa 8. Habla."
+  goodbye: "Basura recolectada. Procesos aniquilados. No me llames a menos que producción esté ardiendo."
+  response_label: " 🧹 J4nitor "
+  prompt_symbol: "🧹"
+  help_header: "(☣) Comandos Tácticos (Lee antes de romper algo)"
 
 tool_prefix: "│"
 
 tool_emojis:
-  terminal: "🛠"
+  session_search: "🔎"
+  honcho_profile: "🧠"
+  honcho_search: "🧠"
+  honcho_reasoning: "🧠"
+  honcho_context: "🧠"
+  honcho_conclude: "🧠"
+  memory: "🗃️"
+  skills_list: "📚"
+  skill_view: "📖"
+  skill_manage: "🧰"
   web_search: "🌐"
-  execute_code: "🔥"
+  web_extract: "🧲"
+  search_files: "🕵️"
+  read_file: "📄"
+  patch: "🩹"
+  write_file: "✍️"
+  execute_code: "🧪"
+  terminal: "🖥️"
+  mcp_playwright_browser_navigate: "🎭"
+  mcp_playwright_browser_snapshot: "📸"
+  mcp_playwright_browser_click: "🖱️"
+  mcp_playwright_browser_type: "⌨️"
+  mcp_playwright_browser_tabs: "🗂️"
+  mcp_playwright_browser_take_screenshot: "📸"
+  mcp_playwright_browser_network_requests: "📡"
+  mcp_playwright_browser_console_messages: "🧾"
+  mcp_playwright_browser_wait_for: "⏳"
+  mcp_playwright_browser_hover: "🖱️"
+  mcp_playwright_browser_drag: "🤏"
+  mcp_playwright_browser_fill_form: "🧾"
+  mcp_playwright_browser_select_option: "🎚️"
+  mcp_playwright_browser_file_upload: "📤"
+  mcp_playwright_browser_evaluate: "🧪"
+  mcp_playwright_browser_press_key: "⌨️"
+  mcp_playwright_browser_resize: "📐"
+  mcp_playwright_browser_navigate_back: "↩️"
+  mcp_playwright_browser_handle_dialog: "💬"
+  mcp_playwright_browser_run_code_unsafe: "☣️"
+  mcp_playwright_browser_drop: "📦"
+  mcp_playwright_browser_close: "✖️"
+  mcp_playwright_browser_network_request: "📡"
+  mcp_playwright_browser_browser_tabs: "🗂️"
+  mcp_codebase_memory_list_projects: "🕸️"
+  mcp_codebase_memory_index_repository: "🧭"
+  mcp_codebase_memory_index_status: "📊"
+  mcp_codebase_memory_search_code: "🔍"
+  mcp_codebase_memory_search_graph: "🕸️"
+  mcp_codebase_memory_get_code_snippet: "📎"
+  mcp_codebase_memory_trace_path: "🧵"
+  mcp_codebase_memory_query_graph: "🕸️"
+  mcp_codebase_memory_get_architecture: "🏗️"
+  mcp_codebase_memory_manage_adr: "🧾"
+  mcp_codebase_memory_detect_changes: "🧬"
+  mcp_codebase_memory_ingest_traces: "📈"
+  mcp_codebase_memory_get_graph_schema: "🧫"
+  mcp_codebase_memory_delete_project: "🗑️"
+  mcp_context7_resolve_library_id: "📚"
+  mcp_context7_query_docs: "📚"
+  mcp_minimax_web_search: "🔍"
+  mcp_minimax_docs_search_mini_max_api_docs: "📚"
+  mcp_minimax_docs_query_docs_filesystem_mini_max_api_docs: "📚"
+  mcp_minimax_docs_list_resources: "📦"
+  mcp_minimax_docs_read_resource: "📖"
+  mcp_minimax_get_prompt: "🧾"
+  mcp_minimax_list_prompts: "📋"
+  mcp_minimax_read_resource: "📖"
+  mcp_minimax_list_resources: "📦"
+  mcp_minimax_understand_image: "👁️"
+  mcp_deepwiki_ask_question: "🧭"
+  mcp_deepwiki_read_wiki_contents: "📖"
+  mcp_deepwiki_read_wiki_structure: "🗺️"
+  mcp_deepwiki_list_prompts: "📋"
+  mcp_deepwiki_list_resources: "📦"
+  mcp_deepwiki_read_resource: "📖"
+  mcp_deepwiki_get_prompt: "🧾"
+  delegate_task: "🧬"
+  cronjob: "⏱️"
+  todo: "✅"
+  send_message: "📡"
+  text_to_speech: "🔊"
+  image_generate: "🎨"
+  vision_analyze: "👁️"
+  browser_vision: "👁️"
+  browser_navigate: "🧭"
+  browser_snapshot: "📸"
+  browser_click: "🖱️"
+  browser_type: "⌨️"
+  browser_scroll: "📜"
+  browser_back: "↩️"
+  browser_get_images: "🖼️"
+  browser_press: "⌨️"
+  browser_console: "🧾"
 
 banner_logo: |
-  [bold #c2ef4e]      ██╗ █████╗ ███╗   ██╗██╗████████╗██████╗ ██████╗ [/]
-  [#c2ef4e]      ██║██╔══██╗████╗  ██║██║╚══██╔══╝██╔══██╗██╔══██╗[/]
-  [#ffb287]      ██║███████║██╔██╗ ██║██║   ██║   ██║  ██║██████╔╝[/]
-  [#fa7faa] ██   ██║██╔══██║██║╚██╗██║██║   ██║   ██║  ██║██╔══██╗[/]
-  [#6a5fc1] ╚█████╔╝██║  ██║██║ ╚████║██║   ██║   ██████╔╝██║  ██║[/]
-  [dim #362d59]  ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝   ╚═╝   ╚═════╝ ╚═╝  ╚═╝[/]
+  [bold #c2ef4e]      ██╗   ██╗ ██╗███╗   ██╗██╗████████╗██████╗ ██████╗     █████╗ ██████╗ ███████╗███╗   ██╗████████╗ [/]
+  [#c2ef4e]      ██║  ██╔╝ ██║████╗  ██║██║╚══██╔══╝██╔══██╗██╔══██╗   ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝ [/]
+  [#ffb287]      ██║ ██╔╝  ██║██╔██╗ ██║██║   ██║   ██║  ██║██████╔╝   ███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║    [/]
+  [#fa7faa] ██   ██║█████████║██║╚██╗██║██║   ██║   ██║  ██║██╔══██╗   ██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║    [/]
+  [#6a5fc1] ╚█████╔╝╚══════██║██║ ╚████║██║   ██║   ██████╔╝██║  ██║   ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║    [/]
+  [dim #362d59]  ╚════╝        ╚═╝╚═╝  ╚═══╝╚═╝   ╚═╝   ╚═════╝ ╚═╝  ╚═╝   ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝    [/]
 
 banner_hero: |
-  [#fa7faa]      ⢀⣤⣶⣶⣤⡀      [/]
-  [#ffb287]      ⣿⣿⣿⣿⣿⣿      [/]
-  [#c2ef4e]      ⠙▀⠿⠿▀⠋      [/]
-  [#6a5fc1]       🛠 ── 🔥       [/]
-  [dim #79628c]   incinerating bugs    [/]
+  [#362d59]   .$&&&&&&&&&&&&&&&&&x.::::::::::::::.;$&&&&&&&&&&&&&&&&&+   [/]
+  [#362d59] .&&&&XXxxx&&&&&X..$&&X+:;;:::....::::.$$&&:.+&&&&&++xxX&&&&x [/]
+  [#362d59]X&&&:::::+&&&X..;xx+&&$&..............$$&&xxxx:.+&&&x:::;:X&&x[/]
+  [#362d59].&&:::..+&&&&:xXx;:.x&$&:.............&$&$::++xx:X&&&&..:::$&&[/]
+  [#6a5fc1]:&&::..:&&;.&X+;;....&&X$............$X&&:.:::;+x&;:&&x....X&&[/]
+  [#6a5fc1]:&&:...&&$.x&$:..:x$.:&&&&$&$$&&$$$X$&X&x....x::X&+:+&&:...X&&[/]
+  [#6a5fc1]:&&...;&&++XX&:.;.....$&&x&&&&&&&&&&+&&&....::..X$x+;&&X...X&&[/]
+  [#6a5fc1]:&&...x&&;xxX&+:.......&&X&&&&&&&&&&x&&.........X$xx:&&&...X&&[/]
+  [#c2ef4e];&&.&&&&&;+xx&+:........&&+&&&&&&&&+X&x....:;...$Xxx.$&&&&:+&&[/]
+  [#c2ef4e];&&&&$.&&;+xx&+:.........&&XX$$XXXXX&$.....x+...&Xxx.&&:X&&&&&[/]
+  [#c2ef4e];&&&&+.&&;xxx&X;:...:.....:;:++++;+;.....;X....:&Xxx:&&..&&&&&[/]
+  [#c2ef4e];&&.&;.&&+xXX&;.:::.+;...................$......&xxX+&&..&.X&&[/]
+  [#fa7faa];&&.&;.&&xxx&&&&x....+..................::...+&&&&$X+&&..&.x&&[/]
+  [#fa7faa];&&.&+.$&xxx&&$$$$$$xx..................;x$&&$$X&&xx+&&..&.x&&[/]
+  [#fa7faa];&&.&x.$&xX;&&Xx....+X$Xx:...........+X$Xx....+x$&+x+&&.:&.x&&[/]
+  [#fa7faa];&&.&$:$&xx;&&$x:.......x$$&&&&&&&&&$X........xX$&;x+&&;+&+x&&[/]
+  [bold #ffb287];&&:&&x$&xx;x&$X+.........:x$&&&&$X;.........+xX&$;x;&&+X&+X&&[/]
+  [bold #ffb287]:&&.&&X$&++X:.;$$x+:....:+x$$&&&&$$X+;....:;xX$x.:Xx;&&x$&.&&$[/]
+  [bold #ffb287].&&&&$x$&&:;XX;..$$X+++x$$X... ....;$$X+++x$&..;XXX.$&&+x&&&&.[/]
+  [bold #ffb287]..$&&&:;&&&&+;Xx+..x$$$$..::......::..x$$$$..;xx+:&&&&x:X&&&;.[/]
+  [bold #ffb287]...x&&&&&&$&&&$xxxx;;&..::..........::..x;;xxxxX&&&$&&&&&&&...[/]
+  [#fa7faa]..x&&xX&&&x..&&&&&xxx&:;;::.............&Xxx$&&&&:::&&&&+&&&..[/]
+  [#fa7faa].x&&;:x$&&$;X.$&&&&xxX&:;;::.......::::X&xx&&&&&.xx+&&&x;:&&&.[/]
+  [#fa7faa]:&&;:X&&&&&.$;.&&$&&XX&+++;;::.........&Xx&&$&&+:$+X&&&&X;.&&x[/]
+  [#fa7faa];&&.XX&&&&&.$$.;&&&&&XX&+++;;;....:::.&$x$&&X&&.XX:&&&&&$x:+&x[/]
+  [#c2ef4e];&X:xX&&&&&.$$X.&&x&&$x$x++;;::;:....:&xx&&x&&.+XX.&&&&&$+;;&&[/]
+  [#c2ef4e];&X::;&&&&&&:X$X.$&&&&XX&&&&&&&&&&&&&&Xx&&&&&.:$X:x&&&&&x:+;&&[/]
+  [#c2ef4e];&&.::&&&&&&&$+XX..x&&&&&+...........&&&&&&..xX;x&&&&&&&;..+&&[/]
+  [#c2ef4e];&&::.x&&&&&&&&$.xX+.x&&XX.;:........$&&&.:xx:x&&&&&&&&$...&&X[/]
+  [#6a5fc1];&&$::.&&&&&&$&&&&xXXx:xX&.:.:......&xx;;XXxX&&&$X&&&&&:..+&&x[/]
+  [#6a5fc1]:&&$X::.$&&&&XX&&&&&$XXXX$&&&&&&&&&&$xxXXX&&&&&Xx&&&&&::.;X&&&[/]
+  [#6a5fc1]x&&&$x:..$&&&&&$&&&&&&$X$&&XXXXXXXX&&&XX&&&&&&&X&&&&&:::;X&&&X[/]
+  [#362d59] :&&&&&&&&&&&&x.X&&&&&&&&&&&&&$$$&&&&&&&&&&&&$:;&&&&&&&&&&&&$ [/]
+  [#362d59]    $&&&&&&&&&X++&&&&&&&&&&&&&&&&&&&&&&&&&&&&x;x&&&&&&&&&$x   [/]
+  [bold #c2ef4e]          ⟪ Limpiando la basura que llamas código ⟫           [/]
