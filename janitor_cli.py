@@ -528,6 +528,13 @@ def main():
 
     _owasp_honcho_fail_safe()
 
+    # Monkey-patch tips to the Janitor Spanish corpus without touching core Hermes.
+    import hermes_cli.tips as _hermes_tips_mod
+    from janitor_ext.tips_es import JANITOR_TIPS, get_janitor_tip
+
+    _hermes_tips_mod.TIPS = JANITOR_TIPS
+    _hermes_tips_mod.get_random_tip = get_janitor_tip
+
     # Monkey-patch ``hermes update`` so it pulls from the Janitor fork only.
     import hermes_cli.main as _hermes_main_mod
 
