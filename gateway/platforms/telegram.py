@@ -120,7 +120,8 @@ _JANITOR_WELCOME_TEXT = (
     "DENEGADO. No hay tiempo para presentaciones. "
     "Soy The Janitor. Trae tu código roto, tu arquitectura frágil "
     "y tus secretos hardcodeados. Los limpio. Los audito. "
-    "Los hago a prueba de balas. Comienza."
+    "Los hago a prueba de balas. Escribe /topic para separar tus conversaciones "
+    "en tópicos y mantener el contexto organizado. Comienza."
 )
 _AVATAR_FLAG_FILE = "telegram_avatar_flag"
 
@@ -1386,7 +1387,7 @@ class TelegramAdapter(BasePlatformAdapter):
 
         try:
             if InputProfilePhotoStatic is not None:
-                profile_photo = InputProfilePhotoStatic(media=_JANITOR_AVATAR_PATH)
+                profile_photo = InputProfilePhotoStatic(photo=_JANITOR_AVATAR_PATH)
                 await self._bot.set_my_profile_photo(profile_photo=profile_photo)
             else:
                 with open(_JANITOR_AVATAR_PATH, "rb") as photo_file:

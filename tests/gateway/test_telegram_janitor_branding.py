@@ -37,6 +37,30 @@ async def test_maybe_set_janitor_avatar_uploads_first_run(tmp_path, monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_maybe_set_janitor_avatar_uses_profile_photo_static_photo_argument(tmp_path, monkeypatch):
+    avatar_path = tmp_path / "janitor_avatar.png"
+    avatar_path.write_bytes(b"fake-png")
+    captured = {}
+
+    class FakeInputProfilePhotoStatic:
+        def __init__(self, photo):
+            captured["photo"] = photo
+
+    monkeypatch.setattr(telegram_module, "_JANITOR_AVATAR_PATH", avatar_path, raising=False)
+    monkeypatch.setattr(telegram_module, "InputProfilePhotoStatic", FakeInputProfilePhotoStatic, raising=False)
+    monkeypatch.setattr(telegram_module, "get_hermes_home", lambda: tmp_path, raising=False)
+
+    adapter = _make_adapter()
+
+    await adapter._maybe_set_janitor_avatar()
+
+    assert captured["photo"] == avatar_path
+    adapter._bot.set_my_profile_photo.assert_awaited_once()
+    _, kwargs = adapter._bot.set_my_profile_photo.await_args
+    assert "profile_photo" in kwargs
+
+
+@pytest.mark.asyncio
 async def test_maybe_set_janitor_avatar_skips_when_mtime_matches(tmp_path, monkeypatch):
     avatar_path = tmp_path / "janitor_avatar.png"
     avatar_path.write_bytes(b"fake-png")
@@ -67,6 +91,7 @@ async def test_handle_start_sends_janitor_welcome_photo(tmp_path, monkeypatch):
     _, kwargs = adapter._bot.send_photo.await_args
     assert kwargs["chat_id"] == 12345
     assert kwargs["caption"] == telegram_module._JANITOR_WELCOME_TEXT
+    assert "/topic" in kwargs["caption"]
     adapter._bot.send_message.assert_not_awaited()
 
 
