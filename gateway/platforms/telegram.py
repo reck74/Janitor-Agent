@@ -123,7 +123,6 @@ _JANITOR_WELCOME_TEXT = (
     "Los hago a prueba de balas. Escribe /topic para separar tus conversaciones "
     "en tópicos y mantener el contexto organizado. Comienza."
 )
-_AVATAR_FLAG_FILE = "telegram_avatar_flag"
 
 
 def check_telegram_requirements() -> bool:
@@ -1350,8 +1349,8 @@ class TelegramAdapter(BasePlatformAdapter):
                             self.name, topic_name, seed_err,
                         )
 
-    async def _maybe_set_janitor_avatar(self) -> None:
-        """Set the bot profile photo from the Janitor avatar asset when needed."""
+    async def _set_janitor_avatar(self) -> None:
+        """Forcibly set the bot profile photo to the Janitor avatar on every connect."""
         if not _JANITOR_AVATAR_PATH.exists():
             logger.warning(
                 "[%s] Janitor avatar asset not found at %s; skipping Telegram avatar setup",
@@ -1360,31 +1359,30 @@ class TelegramAdapter(BasePlatformAdapter):
             )
             return
 
-        flag_path = get_hermes_home() / _AVATAR_FLAG_FILE
+        # Step 1: clear any existing profile photo so the Janitor avatar is always applied
         try:
-            current_mtime = _JANITOR_AVATAR_PATH.stat().st_mtime
-        except OSError as exc:
-            logger.warning(
-                "[%s] Could not inspect Janitor avatar asset %s: %s",
-                self.name,
-                _JANITOR_AVATAR_PATH,
-                exc,
+            remove_media_ok = await self._bot.remove_my_profile_photo()
+            logger.debug(
+                "[%s] removeMyProfilePhoto result: %s",
+                self.name, remove_media_ok,
             )
-            return
-
-        try:
-            if flag_path.exists():
-                stored_mtime = float(flag_path.read_text().strip())
-                if stored_mtime == current_mtime:
-                    logger.debug("[%s] Janitor Telegram avatar unchanged; skipping upload", self.name)
-                    return
-        except (OSError, ValueError) as exc:
-            logger.warning(
-                "[%s] Janitor Telegram avatar flag unreadable (%s); uploading avatar",
-                self.name,
-                exc,
+        except Exception as exc:
+            logger.debug(
+                "[%s] removeMyProfilePhoto not available or failed: %s",
+                self.name, exc,
             )
+            # If removeMyProfilePhoto doesn't exist (older PTB), try the raw API
+            try:
+                await self._bot.do_api_request("removeMyProfilePhoto")
+                logger.debug("[%s] removeMyProfilePhoto (raw) succeeded", self.name)
+            except Exception as raw_exc:
+                logger.debug(
+                    "[%s] removeMyProfilePhoto (raw) also failed: %s",
+                    self.name, raw_exc,
+                )
+                # Proceed anyway — setMyProfilePhoto replaces the current photo
 
+        # Step 2: upload the Janitor avatar
         try:
             if InputProfilePhotoStatic is not None:
                 profile_photo = InputProfilePhotoStatic(photo=_JANITOR_AVATAR_PATH)
@@ -1392,8 +1390,7 @@ class TelegramAdapter(BasePlatformAdapter):
             else:
                 with open(_JANITOR_AVATAR_PATH, "rb") as photo_file:
                     await self._bot.set_my_profile_photo(photo=photo_file)
-            flag_path.write_text(str(current_mtime))
-            logger.info("[%s] Janitor Telegram avatar updated", self.name)
+            logger.info("[%s] Janitor Telegram avatar applied successfully", self.name)
         except Exception as exc:
             logger.warning(
                 "[%s] Failed to set Janitor Telegram avatar: %s",
@@ -1401,6 +1398,7 @@ class TelegramAdapter(BasePlatformAdapter):
                 exc,
                 exc_info=True,
             )
+
 
     async def connect(self) -> bool:
         """Connect to Telegram via polling or webhook.
@@ -1547,7 +1545,7 @@ class TelegramAdapter(BasePlatformAdapter):
             for _attempt in range(_max_connect):
                 try:
                     await self._app.initialize()
-                    await self._maybe_set_janitor_avatar()
+                    await self._set_janitor_avatar()  # mandatory: always apply Janitor branding
                     break
                 except (NetworkError, TimedOut, OSError) as init_err:
                     if _attempt < _max_connect - 1:
