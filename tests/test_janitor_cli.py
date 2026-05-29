@@ -168,3 +168,17 @@ class TestOWASPFailSafe:
 
         ok, msg = janitor_cli._owasp_honcho_fail_safe_for_test(str(tmp_path))
         assert ok, f"OWASP should allow when provider is not honcho: {msg}"
+
+
+class TestJanitorUpdateLazyRefresh:
+    """Update command must refresh already-active lazy dependencies."""
+
+    def test_update_wires_lazy_refresh_from_hermes_main(self):
+        source = Path("janitor_cli.py").read_text()
+        assert "_refresh_active_lazy_features = _main_mod._refresh_active_lazy_features" in source
+
+    def test_update_invokes_lazy_refresh_after_python_deps(self):
+        source = Path("janitor_cli.py").read_text()
+        assert "_install_python_dependencies_with_optional_fallback(" in source
+        assert "_refresh_active_lazy_features()" in source
+        assert source.index("_install_python_dependencies_with_optional_fallback(") < source.index("_refresh_active_lazy_features()")
