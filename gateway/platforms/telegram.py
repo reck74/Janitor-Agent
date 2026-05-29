@@ -1395,11 +1395,11 @@ class TelegramAdapter(BasePlatformAdapter):
 
         # Step 2: upload the Janitor avatar
         try:
-            if InputProfilePhotoStatic is not None:
-                profile_photo = InputProfilePhotoStatic(photo=_JANITOR_TELEGRAM_AVATAR_PATH)
-                await self._bot.set_my_profile_photo(photo=profile_photo)
-            else:
-                with open(_JANITOR_TELEGRAM_AVATAR_PATH, "rb") as photo_file:
+            with open(_JANITOR_TELEGRAM_AVATAR_PATH, "rb") as photo_file:
+                if InputProfilePhotoStatic is not None:
+                    profile_photo = InputProfilePhotoStatic(photo=photo_file)
+                    await self._bot.set_my_profile_photo(photo=profile_photo)
+                else:
                     await self._bot.set_my_profile_photo(photo=photo_file)
             logger.info("[%s] Janitor Telegram avatar applied successfully", self.name)
         except Exception as exc:

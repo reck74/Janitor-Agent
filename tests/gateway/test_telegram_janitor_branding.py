@@ -2,6 +2,7 @@ import sys
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -21,6 +22,139 @@ def _make_adapter() -> TelegramAdapter:
     adapter = TelegramAdapter(PlatformConfig(enabled=True, token="***", extra={}))
     adapter._bot = AsyncMock()
     return adapter
+
+
+@pytest.mark.asyncio
+async def test_set_janitor_avatar_on_connect(tmp_path, monkeypatch):
+    """connect() should apply Janitor branding after a successful startup."""
+    avatar_path = tmp_path / "janitor_avatar_telegram.jpg"
+    avatar_path.write_bytes(b"fake-jpg")
+    monkeypatch.setattr(telegram_module, "_JANITOR_TELEGRAM_AVATAR_PATH", avatar_path, raising=False)
+
+    remove_my_profile_photo = AsyncMock(return_value=True)
+    set_my_profile_photo = AsyncMock(return_value=SimpleNamespace(id="photo"))
+    delete_webhook = AsyncMock(return_value=None)
+    set_my_commands = AsyncMock(return_value=None)
+    bot = SimpleNamespace(
+        remove_my_profile_photo=remove_my_profile_photo,
+        set_my_profile_photo=set_my_profile_photo,
+        delete_webhook=delete_webhook,
+        set_my_commands=set_my_commands,
+    )
+    app = SimpleNamespace(
+        bot=bot,
+        add_handler=Mock(),
+        initialize=AsyncMock(return_value=None),
+        start=AsyncMock(return_value=None),
+        updater=SimpleNamespace(
+            start_polling=AsyncMock(return_value=None),
+            start_webhook=AsyncMock(return_value=None),
+        ),
+    )
+
+    class FakeBuilder:
+        def token(self, _token):
+            return self
+
+        def base_url(self, _url):
+            return self
+
+        def base_file_url(self, _url):
+            return self
+
+        def local_mode(self, _enabled):
+            return self
+
+        def request(self, _request):
+            return self
+
+        def get_updates_request(self, _request):
+            return self
+
+        def build(self):
+            return app
+
+    adapter = _make_adapter()
+    adapter._fallback_ips = Mock(return_value=[])
+    adapter._acquire_platform_lock = Mock(return_value=True)
+    adapter._mark_connected = Mock()
+    adapter._setup_dm_topics = AsyncMock(return_value=None)
+
+    application_cls = cast(object, getattr(telegram_module, "Application"))
+    _ = setattr(application_cls, "builder", Mock(return_value=FakeBuilder()))
+    _ = setattr(telegram_module, "HTTPXRequest", Mock(return_value=SimpleNamespace()))
+    _ = setattr(telegram_module, "discover_fallback_ips", AsyncMock(return_value=[]))
+    _ = setattr(telegram_module, "resolve_proxy_url", Mock(return_value=None))
+
+    avatar_spy = AsyncMock(wraps=adapter._set_janitor_avatar)
+    adapter._set_janitor_avatar = avatar_spy
+
+    assert await adapter.connect() is True
+
+    avatar_spy.assert_awaited_once()
+    remove_my_profile_photo.assert_awaited_once()
+    set_my_profile_photo.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_set_janitor_avatar_idempotent(tmp_path, monkeypatch):
+    """Calling the avatar setter twice should remain safe."""
+    avatar_path = tmp_path / "janitor_avatar_telegram.jpg"
+    avatar_path.write_bytes(b"fake-jpg")
+    monkeypatch.setattr(telegram_module, "_JANITOR_TELEGRAM_AVATAR_PATH", avatar_path, raising=False)
+
+    adapter = _make_adapter()
+    adapter._bot.remove_my_profile_photo = AsyncMock(return_value=True)
+    adapter._bot.set_my_profile_photo = AsyncMock(return_value=SimpleNamespace(id="photo"))
+
+    await adapter._set_janitor_avatar()
+    await adapter._set_janitor_avatar()
+
+    assert adapter._bot.set_my_profile_photo.await_count == 2
+    assert adapter._bot.remove_my_profile_photo.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_set_janitor_avatar_skips_incomplete_bot(tmp_path, monkeypatch):
+    """Old PTB without set_my_profile_photo should warn and skip avatar setup."""
+    avatar_path = tmp_path / "janitor_avatar_telegram.jpg"
+    avatar_path.write_bytes(b"fake-jpg")
+    monkeypatch.setattr(telegram_module, "_JANITOR_TELEGRAM_AVATAR_PATH", avatar_path, raising=False)
+    warning = Mock()
+    monkeypatch.setattr(telegram_module.logger, "warning", warning)
+
+    remove_my_profile_photo = AsyncMock(return_value=True)
+    do_api_request = AsyncMock(return_value=True)
+    bot = SimpleNamespace(remove_my_profile_photo=remove_my_profile_photo, do_api_request=do_api_request)
+
+    adapter = _make_adapter()
+    adapter._bot = bot
+
+    await adapter._set_janitor_avatar()
+
+    assert not hasattr(bot, "set_my_profile_photo")
+    assert warning.called
+    assert "set_my_profile_photo" in warning.call_args.args[0]
+    assert "22.7" in warning.call_args.args[0]
+    remove_my_profile_photo.assert_not_awaited()
+    do_api_request.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_remove_my_profile_photo_fallback_on_raw_api_failure(tmp_path, monkeypatch):
+    """If remove_my_profile_photo fails, the raw API fallback should run."""
+    avatar_path = tmp_path / "janitor_avatar_telegram.jpg"
+    avatar_path.write_bytes(b"fake-jpg")
+    monkeypatch.setattr(telegram_module, "_JANITOR_TELEGRAM_AVATAR_PATH", avatar_path, raising=False)
+
+    adapter = _make_adapter()
+    adapter._bot.remove_my_profile_photo.side_effect = RuntimeError("boom")
+    adapter._bot.do_api_request = AsyncMock(return_value=True)
+
+    await adapter._set_janitor_avatar()
+
+    adapter._bot.do_api_request.assert_awaited_once_with("removeMyProfilePhoto")
+    adapter._bot.set_my_profile_photo.assert_awaited_once()
 
 
 # ── _set_janitor_avatar  ──────────────────────────────────────────────
@@ -72,7 +206,8 @@ async def test_set_janitor_avatar_uses_photo_argument(tmp_path, monkeypatch):
 
     await adapter._set_janitor_avatar()
 
-    assert captured["photo"] == avatar_path
+    assert hasattr(captured["photo"], "read")
+    assert getattr(captured["photo"], "name", None) == str(avatar_path)
     adapter._bot.set_my_profile_photo.assert_awaited_once()
     _, kwargs = adapter._bot.set_my_profile_photo.await_args
     assert kwargs["photo"] is not None
