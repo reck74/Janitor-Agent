@@ -12,6 +12,8 @@ call is mocked — we never actually shell out during unit tests.
 
 from __future__ import annotations
 
+from pathlib import Path
+import tomllib
 from typing import Iterator
 
 import pytest
@@ -103,6 +105,24 @@ class TestAllowlist:
 
     def test_feature_install_command_unknown(self):
         assert ld.feature_install_command("not.real") is None
+
+
+class TestTelegramPins:
+    def test_pyproject_and_lazy_deps_pin_telegram_227(self):
+        expected = "python-telegram-bot[webhooks]==22.7"
+        expected_range = "python-telegram-bot[webhooks]>=22.7,<23"
+        pyproject = tomllib.loads(
+            Path(__file__).resolve().parents[2].joinpath("pyproject.toml").read_text(
+                encoding="utf-8"
+            )
+        )
+        optional_deps = pyproject["project"]["optional-dependencies"]
+
+        assert [s for s in optional_deps["messaging"] if s.startswith("python-telegram-bot")]
+        assert [s for s in optional_deps["termux"] if s.startswith("python-telegram-bot")]
+        assert optional_deps["messaging"][0] == expected_range
+        assert optional_deps["termux"][0] == expected_range
+        assert ld.LAZY_DEPS["platform.telegram"] == (expected,)
 
 
 # ---------------------------------------------------------------------------

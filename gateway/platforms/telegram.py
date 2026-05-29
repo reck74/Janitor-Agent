@@ -115,6 +115,7 @@ MAX_COMMANDS_PER_SCOPE = 30
 
 _JANITOR_ASSETS_DIR = _Path(__file__).resolve().parents[2] / "assets" / "janitor"
 _JANITOR_AVATAR_PATH = _JANITOR_ASSETS_DIR / "janitor_avatar.png"
+_JANITOR_TELEGRAM_AVATAR_PATH = _JANITOR_ASSETS_DIR / "janitor_avatar_telegram.jpg"
 _JANITOR_WELCOME_PATH = _JANITOR_ASSETS_DIR / "telegram_welcome.jpg"
 _JANITOR_WELCOME_TEXT = (
     "DENEGADO. No hay tiempo para presentaciones. "
@@ -1351,11 +1352,21 @@ class TelegramAdapter(BasePlatformAdapter):
 
     async def _set_janitor_avatar(self) -> None:
         """Forcibly set the bot profile photo to the Janitor avatar on every connect."""
-        if not _JANITOR_AVATAR_PATH.exists():
+        if not _JANITOR_TELEGRAM_AVATAR_PATH.exists():
             logger.warning(
                 "[%s] Janitor avatar asset not found at %s; skipping Telegram avatar setup",
                 self.name,
-                _JANITOR_AVATAR_PATH,
+                _JANITOR_TELEGRAM_AVATAR_PATH,
+            )
+            return
+
+        # PTB >= 22.7 is required for set_my_profile_photo / remove_my_profile_photo
+        if not hasattr(self._bot, "set_my_profile_photo"):
+            logger.warning(
+                "[%s] Janitor Telegram avatar requires python-telegram-bot >= 22.7. "
+                "Installed version lacks set_my_profile_photo. "
+                "Run: pip install 'python-telegram-bot[webhooks]==22.7'",
+                self.name,
             )
             return
 
@@ -1385,10 +1396,10 @@ class TelegramAdapter(BasePlatformAdapter):
         # Step 2: upload the Janitor avatar
         try:
             if InputProfilePhotoStatic is not None:
-                profile_photo = InputProfilePhotoStatic(photo=_JANITOR_AVATAR_PATH)
-                await self._bot.set_my_profile_photo(profile_photo=profile_photo)
+                profile_photo = InputProfilePhotoStatic(photo=_JANITOR_TELEGRAM_AVATAR_PATH)
+                await self._bot.set_my_profile_photo(photo=profile_photo)
             else:
-                with open(_JANITOR_AVATAR_PATH, "rb") as photo_file:
+                with open(_JANITOR_TELEGRAM_AVATAR_PATH, "rb") as photo_file:
                     await self._bot.set_my_profile_photo(photo=photo_file)
             logger.info("[%s] Janitor Telegram avatar applied successfully", self.name)
         except Exception as exc:
