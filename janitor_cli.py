@@ -277,6 +277,7 @@ def _janitor_cmd_update(args):
     _install_psutil_android_compat = _main_mod._install_psutil_android_compat
     _ensure_uv_for_termux = _main_mod._ensure_uv_for_termux
     _update_node_dependencies = _main_mod._update_node_dependencies
+    _refresh_active_lazy_features = _main_mod._refresh_active_lazy_features
     _invalidate_update_cache = _main_mod._invalidate_update_cache
     _clear_bytecode_cache = _main_mod._clear_bytecode_cache
     PROJECT_ROOT = _main_mod.PROJECT_ROOT
@@ -491,6 +492,8 @@ def _janitor_cmd_update(args):
             )
 
         print("✓ Python dependencies updated")
+
+        _refresh_active_lazy_features()
 
         _update_node_dependencies()
 

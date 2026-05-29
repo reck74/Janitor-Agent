@@ -150,6 +150,39 @@ def _build_tui(janitor_root: Path) -> None:
     subprocess.run(["npm", "run", "build"], cwd=ui_tui_dir, check=True)
 
 
+def _refresh_active_lazy_features() -> None:
+    """Refresh any previously-activated lazy dependency feature pins."""
+    try:
+        from tools import lazy_deps
+    except Exception as exc:
+        print(f"  ⚠ Skipping lazy dependency refresh: {exc}")
+        return
+
+    try:
+        results = lazy_deps.refresh_active_features(prompt=False)
+    except Exception as exc:
+        print(f"  ⚠ Lazy dependency refresh failed unexpectedly: {exc}")
+        return
+
+    if not results:
+        print("  → Lazy dependencies: no active feature pins to refresh")
+        return
+
+    refreshed = [feature for feature, status in results.items() if status == "refreshed"]
+    failed = [
+        (feature, status)
+        for feature, status in results.items()
+        if status.startswith("failed:")
+    ]
+
+    print(
+        "  → Lazy dependencies refreshed: "
+        f"{len(refreshed)} updated, {len(failed)} failed, {len(results) - len(refreshed) - len(failed)} current"
+    )
+    for feature, status in failed:
+        print(f"    ⚠ {feature}: {status}")
+
+
 def run_update() -> int:
     """Run the minimal update cycle and return a process exit code."""
     print("\n🔥 THE JANITOR: Initiating tactical update...\n")
@@ -173,6 +206,7 @@ def run_update() -> int:
         )
 
         _update_python_dependencies(janitor_root)
+        _refresh_active_lazy_features()
         _build_tui(janitor_root)
 
         removed = _clear_bytecode_cache(janitor_root)
