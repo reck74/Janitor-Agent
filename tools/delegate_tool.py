@@ -37,8 +37,10 @@ from toolsets import TOOLSETS
 # Must match hermes_cli.runtime_provider.RUNTIME_PROVIDER_TYPE_CUSTOM.
 _RUNTIME_PROVIDER_CUSTOM = "custom"
 from tools import file_state
+from tools.specialized_agents import load_agent_spec
 from tools.terminal_tool import set_approval_callback as _set_subagent_approval_cb
 from utils import base_url_hostname, is_truthy_value
+from tools.specialized_agents import load_agent_spec
 
 
 # Tools that children must never have access to
@@ -888,6 +890,7 @@ def _build_child_agent(
     # 'leaf' (default) cannot; 'orchestrator' retains the delegation
     # toolset subject to depth/kill-switch bounds applied below.
     role: str = "leaf",
+    agent_type: Optional[str] = None,
 ):
     """
     Build a child AIAgent on the main thread (thread-safe construction).
@@ -922,6 +925,19 @@ def _build_child_agent(
     tui_depth = max(0, child_depth - 1)  # 0 = first-level child for the UI
 
     delegation_cfg = _load_config()
+    agent_spec = None
+    if agent_type:
+        try:
+            agent_spec = load_agent_spec(agent_type)
+        except Exception as exc:
+            logger.warning("Could not load specialized agent '%s': %s", agent_type, exc)
+    if agent_spec:
+        spec_model = agent_spec.get("model")
+        if isinstance(spec_model, str) and spec_model.strip():
+            model = spec_model
+        spec_toolsets = agent_spec.get("toolsets")
+        if isinstance(spec_toolsets, list) and spec_toolsets:
+            toolsets = [str(toolset) for toolset in spec_toolsets]
 
     # When no explicit toolsets given, inherit from parent's enabled toolsets
     # so disabled tools (e.g. web) don't leak to subagents.
@@ -968,14 +984,27 @@ def _build_child_agent(
         child_toolsets.append("delegation")
 
     workspace_hint = _resolve_workspace_hint(parent_agent)
-    child_prompt = _build_child_system_prompt(
-        goal,
-        context,
-        workspace_path=workspace_hint,
-        role=effective_role,
-        max_spawn_depth=max_spawn,
-        child_depth=child_depth,
-    )
+    spec_prompt = (agent_spec or {}).get("systemPrompt")
+    if spec_prompt:
+        prompt_parts = [str(spec_prompt).strip(), "", f"YOUR TASK:\n{goal}"]
+        if context and context.strip():
+            prompt_parts.append(f"\nCONTEXT:\n{context}")
+        if workspace_hint and str(workspace_hint).strip():
+            prompt_parts.append(
+                "\nWORKSPACE PATH:\n"
+                f"{workspace_hint}\n"
+                "Use this exact path for local repository/workdir operations unless the task explicitly says otherwise."
+            )
+        child_prompt = "\n".join(prompt_parts)
+    else:
+        child_prompt = _build_child_system_prompt(
+            goal,
+            context,
+            workspace_path=workspace_hint,
+            role=effective_role,
+            max_spawn_depth=max_spawn,
+            child_depth=child_depth,
+        )
     # Extract parent's API key so subagents inherit auth (e.g. Nous Portal).
     parent_api_key = getattr(parent_agent, "api_key", None)
     if (not parent_api_key) and hasattr(parent_agent, "_client_kwargs"):
@@ -1075,6 +1104,21 @@ def _build_child_agent(
                 )
     except Exception as exc:
         logger.debug("Could not load delegation reasoning_effort: %s", exc)
+
+    if agent_spec and agent_spec.get("reasoningEffort"):
+        try:
+            from hermes_constants import parse_reasoning_effort
+
+            parsed = parse_reasoning_effort(str(agent_spec["reasoningEffort"]).strip())
+            if parsed is not None:
+                child_reasoning = parsed
+            else:
+                logger.warning(
+                    "Unknown specialized agent reasoningEffort '%s', inheriting previous level",
+                    agent_spec["reasoningEffort"],
+                )
+        except Exception as exc:
+            logger.debug("Could not load specialized agent reasoningEffort: %s", exc)
 
     # Inherit the parent's fallback provider chain so subagents can recover
     # from rate-limits and credential exhaustion exactly like the top-level

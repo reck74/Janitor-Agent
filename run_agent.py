@@ -4092,8 +4092,23 @@ class AIAgent:
         invocation paths (concurrent, sequential, inline).
         """
         from tools.delegate_tool import delegate_task as _delegate_task
+        from tools.agent_router import should_delegate, get_best_agent
+
+        # Check if task should be routed to a specialized agent
+        goal = function_args.get("goal", "")
+        agent_type = None
+        if goal:
+            try:
+                from hermes_cli.config import load_config as _load_config
+                cfg = _load_config() or {}
+                specialized_cfg = cfg.get("specialized_agents", {})
+                if specialized_cfg.get("enabled", True) and should_delegate(goal):
+                    agent_type = get_best_agent(goal)
+            except Exception:
+                pass  # Fallback to normal delegation on any error
+
         return _delegate_task(
-            goal=function_args.get("goal"),
+            goal=goal,
             context=function_args.get("context"),
             toolsets=function_args.get("toolsets"),
             tasks=function_args.get("tasks"),
@@ -4101,6 +4116,7 @@ class AIAgent:
             acp_command=function_args.get("acp_command"),
             acp_args=function_args.get("acp_args"),
             role=function_args.get("role"),
+            agent_type=agent_type,
             parent_agent=self,
         )
 
