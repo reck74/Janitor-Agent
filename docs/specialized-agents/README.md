@@ -70,6 +70,33 @@ specialized_agents:
   enabled: true  # Set to false to disable automatic routing
 ```
 
+## Explicit Agent Type
+
+When calling `delegate_task`, you can explicitly specify an agent type:
+
+```python
+delegate_task(
+    goal="Review this pull request for security issues",
+    agent_type="code-review"
+)
+```
+
+The agent type references a specialized agent definition (e.g., `code-review` from `skills/janitor-code-review-agent/agent.yaml`).
+
+## Auto-Routing
+
+When `agent_type` is not explicitly provided, Janitor automatically classifies the task using the Agent Router. The router:
+
+1. Analyzes the task description via LLM
+2. Matches it against available specialized agents
+3. Routes to the best fit — or falls back to a generic sub-agent if no match is found
+
+Example:
+```python
+# Auto-routed: router classifies "review code" → code-review agent
+delegate_task(goal="Please review this pull request for security issues")
+```
+
 ## Examples
 
 ### Code Review Agent

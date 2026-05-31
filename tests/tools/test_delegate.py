@@ -123,6 +123,20 @@ class TestDelegateRequirements(unittest.TestCase):
         self.assertIn(f"up to {_get_max_concurrent_children()}", fn["description"])
         self.assertIn(f"max_spawn_depth={_get_max_spawn_depth()}", fn["description"])
 
+    def test_registry_handler_forwards_agent_type(self):
+        """Model-facing dispatch must preserve explicit specialized agent requests."""
+        from tools.registry import registry
+
+        with patch("tools.delegate_tool.delegate_task", return_value='{"ok": true}') as mock_delegate:
+            result = registry.dispatch(
+                "delegate_task",
+                {"goal": "Review this PR", "agent_type": "code-review"},
+                parent_agent=_make_mock_parent(),
+            )
+
+        self.assertEqual(json.loads(result), {"ok": True})
+        self.assertEqual(mock_delegate.call_args.kwargs["agent_type"], "code-review")
+
 
 class TestChildSystemPrompt(unittest.TestCase):
     def test_goal_only(self):
@@ -1881,6 +1895,7 @@ class TestSpecializedChildAgents(unittest.TestCase):
             "systemPrompt": "You are a code review agent.",
             "model": "gpt-4o",
             "toolsets": ["file", "search"],
+            "skills": ["requesting-code-review", "receiving-code-review"],
             "reasoningEffort": "medium",
         }
         parent = _make_mock_parent()
@@ -1908,6 +1923,10 @@ class TestSpecializedChildAgents(unittest.TestCase):
         )
         child_prompt = call_kwargs["ephemeral_system_prompt"]
         self.assertTrue(child_prompt.startswith("You are a code review agent."))
+        self.assertIn(
+            "SKILLS AVAILABLE: requesting-code-review, receiving-code-review",
+            child_prompt,
+        )
         self.assertIn("YOUR TASK:\nReview diff", child_prompt)
         self.assertIn("CONTEXT:\nChanged files: tools/delegate_tool.py", child_prompt)
 
