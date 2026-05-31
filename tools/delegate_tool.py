@@ -37,10 +37,10 @@ from toolsets import TOOLSETS
 # Must match hermes_cli.runtime_provider.RUNTIME_PROVIDER_TYPE_CUSTOM.
 _RUNTIME_PROVIDER_CUSTOM = "custom"
 from tools import file_state
+from tools.agent_router import get_best_agent
 from tools.specialized_agents import load_agent_spec
 from tools.terminal_tool import set_approval_callback as _set_subagent_approval_cb
 from utils import base_url_hostname, is_truthy_value
-from tools.specialized_agents import load_agent_spec
 
 
 # Tools that children must never have access to
@@ -986,7 +986,10 @@ def _build_child_agent(
     workspace_hint = _resolve_workspace_hint(parent_agent)
     spec_prompt = (agent_spec or {}).get("systemPrompt")
     if spec_prompt:
+        skills = agent_spec.get("skills", []) if agent_spec else []
         prompt_parts = [str(spec_prompt).strip(), "", f"YOUR TASK:\n{goal}"]
+        if skills:
+            prompt_parts.append(f"SKILLS AVAILABLE: {', '.join(map(str, skills))}")
         if context and context.strip():
             prompt_parts.append(f"\nCONTEXT:\n{context}")
         if workspace_hint and str(workspace_hint).strip():
@@ -1968,14 +1971,15 @@ def delegate_task(
     acp_command: Optional[str] = None,
     acp_args: Optional[List[str]] = None,
     role: Optional[str] = None,
+    agent_type: Optional[str] = None,
     parent_agent=None,
 ) -> str:
     """
     Spawn one or more child agents to handle delegated tasks.
 
     Supports two modes:
-      - Single: provide goal (+ optional context, toolsets, role)
-      - Batch:  provide tasks array [{goal, context, toolsets, role}, ...]
+      - Single: provide goal (+ optional context, toolsets, role, agent_type)
+      - Batch:  provide tasks array [{goal, context, toolsets, role, agent_type}, ...]
 
     The 'role' parameter controls whether a child can further delegate:
     'leaf' (default) cannot; 'orchestrator' retains the delegation
@@ -1998,6 +2002,12 @@ def delegate_task(
 
     # Normalise the top-level role once; per-task overrides re-normalise.
     top_role = _normalize_role(role)
+
+    # Auto-route single-task delegation when no explicit agent type was set.
+    if agent_type is None and goal:
+        auto_agent = get_best_agent(goal)
+        if auto_agent:
+            agent_type = auto_agent
 
     # Depth limit — configurable via delegation.max_spawn_depth,
     # default 2 for parity with the original MAX_DEPTH constant.
@@ -2061,7 +2071,13 @@ def delegate_task(
         task_list = tasks
     elif goal and isinstance(goal, str) and goal.strip():
         task_list = [
-            {"goal": goal, "context": context, "toolsets": toolsets, "role": top_role}
+            {
+                "goal": goal,
+                "context": context,
+                "toolsets": toolsets,
+                "role": top_role,
+                "agent_type": agent_type,
+            }
         ]
     else:
         return tool_error("Provide either 'goal' (single task) or 'tasks' (batch).")
@@ -2124,6 +2140,7 @@ def delegate_task(
                     else (acp_args if acp_args is not None else creds.get("args"))
                 ),
                 role=effective_role,
+                agent_type=t.get("agent_type") or agent_type,
             )
             # Override with correct parent tool names (before child construction mutated global)
             child._delegate_saved_tool_names = _parent_tool_names
@@ -2780,6 +2797,10 @@ DELEGATE_TASK_SCHEMA = {
                             "enum": ["leaf", "orchestrator"],
                             "description": "Per-task role override. See top-level 'role' for semantics.",
                         },
+                        "agent_type": {
+                            "type": "string",
+                            "description": "Specialized agent type to use (e.g. 'code-review', 'repo-research')",
+                        },
                     },
                     "required": ["goal"],
                 },
@@ -2792,6 +2813,10 @@ DELEGATE_TASK_SCHEMA = {
                 "type": "string",
                 "enum": ["leaf", "orchestrator"],
                 "description": "(rebuilt at get_definitions() time)",
+            },
+            "agent_type": {
+                "type": "string",
+                "description": "Specialized agent type to use (e.g. 'code-review', 'repo-research')",
             },
             "acp_command": {
                 "type": "string",
@@ -2837,6 +2862,7 @@ registry.register(
         acp_command=args.get("acp_command"),
         acp_args=args.get("acp_args"),
         role=args.get("role"),
+        agent_type=args.get("agent_type"),
         parent_agent=kw.get("parent_agent"),
     ),
     check_fn=check_delegate_requirements,
