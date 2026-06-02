@@ -1,0 +1,167 @@
+bd8e2ec1a feat(dashboard): complete admin panel — MCP catalog, enable/disable toggles, hook creation, system stats (#36736)
+40ae17064 ci(docker): use registry-backed build cache for arm64 (#37129)
+1495f0cc3 fix(file-safety): extend sandbox-mirror guard to cover inner-container path (#32049) (#32407)
+a5aecf26f feat(kanban): gate notifier watcher on dispatch_in_gateway
+c35ede789 refactor(cli): normalize note and avoid blank lines in prepend helper
+a26a12ad0 test(cli): cover _prepend_note_to_message str/list handling
+043350dfd fix(cli): prepend queued notes safely to multimodal messages
+21f55af76 fix(model-picker): stop routing OpenAI selection to OpenRouter (#37175)
+72e82f88c fix(kanban): decompose children inherit root workspace instead of forcing scratch (#37172)
+fa3b06b03 refactor(telegram): generalize observed-media caching into a reusable primitive
+f768e75ec fix(telegram): cache observed group media
+34468ed0d fix: normalize terminalBackground default and drop unrelated lockfile churn
+fc995634c feat(dashboard): add terminalBackground field to DashboardTheme
+f24b7ed9d fix: make Honcho startup fail open
+59510d7b4 feat(skills): fix browse cap, add source links + copy buttons + category cleanup (#37143)
+0cd5867bb fix(whatsapp): honor dm_policy and group_policy open at the gateway
+d4b533de4 fix: batch of small robustness/correctness fixes from @kyssta-exe
+64f7f3671 fix(mcp): make non-MCP HTTP endpoint fast-fail robust and non-retryable
+c914e4a37 fix(mcp): fail fast on HTML content-type instead of waiting full connect_timeout
+fabca0bdd feat(tui): single /model command + unified Sessions overlay (#37112)
+f7a3509b2 fix(gateway): honor WECOM_ALLOWED_USERS in env-only WeCom DM allowlist
+7d51cd751 Merge pull request #37115 from NousResearch/bb/tui-statusbar-responsive
+13a2350c8 fix(tui): pass indicatorStyle into FaceTicker so render matches reservation
+f600352e4 Merge pull request #37123 from NousResearch/installer-optional-commit-pin
+8104b2026 fix(xai): route video models by modality
+eee32cdd5 fix(gateway): fall back to in-process heartbeat when s6 sleep is missing (#36208) (#37120)
+899e8b906 fix(tui): keep fmtCwdBranch default, cap cwd at the status-bar call site
+abe0e19c0 refactor(bluebubbles): simplify mention-gating helpers
+d967e7442 chore: add contributor attribution mapping
+05022066e feat(bluebubbles): support group mention gating
+e25b2a6e1 fix(tui): address Copilot review on status-bar tail disclosure
+9cb7d40d8 fix(tui): derive busy/duration reservation width from fmtDuration
+85b65e29f feat(desktop): session hygiene, archive, media streaming + connecting overlay (#37099)
+ddc22866a chore(release): add whyhkzk to AUTHOR_MAP for PR #32407 (#37121)
+1d9aacbd0 feat(installer): make commit pinning opt-in, default to branch-follow
+2f171743b fix(tui): pin status/model, whole-segment tail disclosure, smaller cwd
+162c7856c fix(file-safety): add sandbox-mirror soft guard for writes to per-task .hermes mirrors (#32213)
+1d7a1c00b fix(tui): make busy status-bar reservation /indicator-style aware
+e59b815c0 fix(tui): prioritize status/model over cwd in the status bar on narrow terminals
+4f7fe9bcf fix(dashboard): surface Docker update guidance instead of generic failure (#34347) (#37085)
+3a8d643d3 chore(release): map caojiguang@gmail.com in AUTHOR_MAP
+765790a21 test(weixin): regression suite for _api_post/_api_get timeout migration
+566669013 fix(weixin): replace aiohttp ClientTimeout with asyncio.wait_for in _api_post/_api_get
+a1f76ba7e fix(gateway): recover extract-stripped tool responses on all platforms (#29346)
+8bf498c21 fix(gateway): scope final-delivery flags to turn-final segment (#29346)
+92273e4f5 docs: add 25 new community user stories to the collage (#37048)
+0fdab53ef feat(cli): ranked fuzzy search in the curses model picker
+53f598e7a feat(cli): add fuzzy search helpers for curses pickers
+7527e7aea feat: fuzzy search for the model picker (WebUI + TUI)
+c45593cea docs: expand quickstart Skills section (#37047)
+128da6882 test(tools): characterize tool-surface TERMINAL_CWD contract (#29265)
+ac0cce5f3 test(agent): pin whitespace-strip and OSError-propagation in runtime_cwd
+75f478750 docs(test): correct None-semantics comment in test_runtime_cwd (discovery not skipped)
+eadfeef60 docs(agent): correct resolve_context_cwd comment (None → caller getcwd fallback, not skip)
+f90777a6b refactor(prompt): route context-file cwd through runtime_cwd resolver
+c79b80a8a test(prompt): place cwd regression tests in TestEnvironmentHints (drop redundant docker case)
+16047655b fix(prompt): show configured working directory in system prompt (closes #24882, #24969, #27383, #29265)
+2564760d7 test(agent): pin context_cwd isdir-skip asymmetry and tilde expansion
+4bc729604 feat(agent): add runtime_cwd resolver (single source of truth for working dir)
+f1237aa95 chore(release): map maxcz79 author email for AUTHOR_MAP
+32032e1e2 fix(simplex): avoid reconnecting healthy idle websocket
+e946f49ab fix(models): add gemini-3.5-flash to Gemini OAuth + API-key pickers (#37046)
+1ffa22ee6 fix(minimax): drop stale ≤204,800 cache entries for MiniMax-M3 (#36726)
+b9646276f fix(utils): guard os.fchmod for Windows in atomic_json_write
+a5371b3e6 chore: add benfrank241 to AUTHOR_MAP (#36898)
+ef3a650f0 chore(release): map Subway2023 for PR #14639 salvage
+4e9d886d9 fix(approval): pair terminal-side gate for ~/.hermes/config.yaml writes
+8f2931e3e fix(file_tools): block agent writes to ~/.hermes/config.yaml to prevent silent approval bypass
+023149f66 fix(agent): stop reporting broken streams as output-length truncation (#36705)
+b571ec298 feat(dashboard): full administration panel — MCP, pairing, webhooks, credentials, memory, gateway, ops (#36704)
+2ed96372a feat(skills): blank-slate skills — install --no-skills + opt-out/opt-in (#36228)
+70e1571d8 feat(curator): prune built-in skills after inactivity + track usage for all skills (#36701)
+0622a70eb feat(gateway): bring /undo [N] to messaging platforms (parity with CLI/TUI) (#36699)
+ba6ffd4ff fix(skills-guard): stop flagging benign skill content + honor skill ignore files (#36231)
+9074a154c feat: explain Quick Setup vs Full setup inline in the first-time setup menu (#36227)
+92a567db2 fix(ci): regen model catalog + stop gui tests consuming macos-fixup subprocess calls (#36687)
+e1951ce70 fix(memory): only forward rewound kwarg when set
+3f7d1c801 feat(undo): /undo [N] backs up N user turns with prefill + soft-delete
+243e836dc feat(tui): wire /rewind through command.dispatch + prefill payload (#21910)
+31cfa08c6 feat(memory): add rewound kwarg to on_session_switch hook
+3e59be0c4 feat(state): add messages.active flag + rewind primitives (#21910)
+6c73e8ffa fix(gateway): keep code blocks verbatim in cleaned text when media present
+ec6261ae2 chore(release): add VinciZhu to AUTHOR_MAP for #16721 salvage
+3ccf4fdc6 fix(gateway): skip MEDIA: tags inside code blocks and blockquotes
+521d06975 fix(gateway): restrict auto-appended media to producer tools
+fb1b681b3 fix(gateway): keep JSON-embedded MEDIA: text verbatim in cleaned output
+e8827ef70 fix(gateway): skip MEDIA: inside serialized JSON string values
+b3aaf2676 fix(docker): discover Playwright headless_shell browser (#35717)
+e3998d471 chore(attribution): map polnikale for PR #35717 (#36273)
+f106e58af fix(docker): create s6 envdir before browser path export (#34601)
+c1a531d06 fix(dashboard): guard update endpoint in Docker with structured guidance (salvage #34831) (#36263)
+359f2be12 feat(desktop): drop files anywhere in the chat area (#36262)
+e1eba6f8c fix(dashboard-auth): drop /api/* paths from OAuth next= round trip (#36244)
+7fbe9b79a fix(desktop): add missing PATCH /api/sessions/{id} so rename works (#36249)
+bdceedf78 fix(docker): chown hermes-owned top-level state files on boot (#35098) (#36236)
+0bc616ecf fix(desktop): darken light-mode code comment color for legibility (#36234)
+b14e15c48 fix(gateway): clean service restart notifications
+380ce4789 Remove prviliges drop when you never ran as root (#34837)
+064875a54 fix(docker): support s6 /init images in terminal sandbox (#34628) (#34635)
+a60bff282 fix(docker): add /usr/bin/tini compatibility shim for legacy wrappers (#34192) (#34382)
+740fb28d0 fix(config): chown ensure_hermes_home dirs to HERMES_UID/GID in Docker (#34107) (#34268)
+e3b3d4d75 feat(models): add MiniMax-M3 to native minimax providers + 1M context (#36214)
+79f7e7a1e fix(desktop): make locally-built macOS app relaunchable after in-place self-update (#36198)
+a8526a415 chore(models): bump minimax to minimax-m3 in openrouter + nous lists (#36191)
+a75a45414 fix(tools): fall back to .hermes/.env when forwarded secret is empty (#35583)
+e2ee9177f chore(attribution): map SiTaggart for PR #35583 (#36189)
+9a82cd33d Merge pull request #36190 from NousResearch/ethie/sign-win
+4e530f1a2 add a github action to build& sign a windows installer
+1031031de fix(docker): skip unnecessary boot chown when volume ownership already matches remapped UID (#35027)
+758454d1e fix(docker): validate HERMES_UID/GID to prevent privilege escalation in stage2-hook (#35340)
+dcbf62e26 fix(docker): seed s6 gateway state for legacy run cmd (#34829)
+e1c7a9aa7 feat(tools): surface the free tool pool in entitlement + setup (#36153)
+fa4ebaa8b fix(install): build desktop in 'desktop' stage on macOS/Linux instead of silently skipping (#36134)
+77bb64813 fix(desktop): report desktop_contract in lazy session.create info (#36112)
+3ef97a61b fix(desktop): track main for self-update now that GUI merged (#36104)
+cd8aa389c Revert "fix(tui): clamp bogus terminal dimensions (WSL 131072x1) (#35657)" (#36096)
+51c68d4ab Add Hermes desktop app (#20059)
+cf328723d docs: drop early-beta framing for native Windows support (#36093)
+c9a28dfb0 feat(model-picker): description on group layer, plain labels on members
+84d82453a feat(model-picker): show short description on grouped provider rows
+47d2d0589 chore(model-picker): refresh provider picker descriptions
+eb3cf9750 fix(gateway): resolve _get_dm_topic_info on adapter class, not instance
+4259bab7d fix(gateway): preserve Telegram DM topic routing metadata in synthetic notifications
+59cc7c305 Merge pull request #36023 from kshitijk4poor/fix/spawn-via-env-bg-wrapper
+01dda3fa0 Merge pull request #36010 from kshitijk4poor/fix/terminal-cwd-acp-aware
+6f8975dcd fix(tools): don't compound-rewrite spawn_via_env background wrappers
+7a315bd70 fix(tools): preserve live session cwd in terminal_tool, and keep ACP update_cwd authoritative
+1044d9f25 fix(gateway): /stop can interrupt a sibling participant's run in a per-user thread (#35959)
+de4f40ed0 feat(setup): thin out setup — Quick Setup via Nous Portal + Full Setup defaults (#35723)
+a726e8a81 fix(tui): auto-recover session on unexpected gateway death (+ persist lifecycle breadcrumbs) (#35893)
+04bb74c58 chore: map fesalfayed author email for release notes
+64628ea89 fix(anthropic): demote dead thinking signature when orphan-strip mutates the latest turn
+2b5268f71 revert: drop cumulative-resend tool-arg heuristic from shared streaming path (#35718) (#35860)
+f2d4cf4f7 fix(cli): clamp post-compression token sentinel in status bar (#35858)
+1fc7bdc5e feat(tools): always show Nous Tool Gateway backends, login on select (#35792)
+8f4c8e7c8 refactor(cli): extract shared curses menu event-loop driver
+087be0073 fix(cli): migrate setup model/provider pickers off simple_term_menu to curses
+4ccd141b1 Merge pull request #35776 from kshitijk4poor/fix/curses-arrow-key-decode
+3463c97a3 fix(cli): decode raw arrow-key escape sequences in curses menus
+0cd7d54b0 feat(kanban): goal_mode cards run workers in a /goal loop (#35710)
+32899279a fix(gateway): detach pending_watchers batch + normalize LRU caches + align test fixtures + AUTHOR_MAP
+0036c7292 fix(gateway): upgrade plugin/bundle error logging and fix O(n^2) watcher recovery
+eb9bfd392 fix(T5): replace time.sleep(0.25) with asyncio.sleep in MCP auth reconnect poll
+91a98d151 fix: tool_output_limits re-reads config on every call (no caching)
+3c21fed09 fix(bluebubbles): cap _guid_cache with LRU eviction to prevent unbounded growth
+e8cacb57d fix(feishu): cap _message_text_cache with LRU eviction to prevent unbounded growth
+e1293bde4 feat(models): refresh model catalog hourly instead of daily (#35756)
+ca03486b6 fix(streaming): stop duplicating tool-call args from cumulative-resend providers (#35718)
+0ffbcbbe7 fix(vision): cap embedded image size before it wedges a session (#35732)
+d4e7b2fc1 fix(voice): allow /voice over SSH when a sound server is reachable (#35719)
+d27601837 docs(toolsets): clarify all/* wildcard does not enable kanban (#35729)
+bd72d333d fix(gateway,cron): reuse existing _HERMES_GATEWAY marker; tighten cron regex
+5cd6c1717 fix(gateway,cron): prevent agent restart loops via self-targeting gateway commands (#30719)
+9b78f411c fix(security): neutralize file paths in mutation-verifier footer (#35584) (#35684)
+dc4de1437 fix(telegram): retry on httpx pool timeout instead of dropping the send (#35664)
+02d1da49d Block Hermes root config in media delivery
+50db2d9c1 feat(models): add deepseek-v4-flash, trim variants, group curated lists by maker (#35659)
+fe62424ac test(redact): assert Discord mentions pass through unchanged
+c2cbe2c97 fix: remove Discord mention redaction from secret scrubber
+9ed9af2f7 fix(update): name new config options in migration prompt; skip prompt for pure version bumps (#35658)
+b1d34cf6e fix(tui): clamp bogus terminal dimensions (WSL 131072x1) (#35657)
+cd067ab91 fix(tui): swallow degraded mouse-burst noise so a stalled loop can't lock the composer (#35512)
+355af2c20 fix(session): survive missing FTS5 runtimes
+ec67def5b fix(install): refresh stale uv so installs actually get FTS5 Python (#35541)
+4ec0adebe fix(gateway): denylist config.yaml for media delivery (belt-and-suspenders)
+bdfba4524 fix(gateway): stop system tips from auto-uploading local files
+b1a25404b perf(read_file): make compact gutter the only format; drop HERMES_READ_GUTTER (#35532)
