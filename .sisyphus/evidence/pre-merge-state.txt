@@ -1,0 +1,6 @@
+ D .sisyphus/run-continuation/ses_1d804c261ffefD38cELBGHvhaN.json
+?? .sisyphus/boulder.json
+?? .sisyphus/evidence/baseline-py-compile.txt
+?? .sisyphus/evidence/pre-merge-state.txt
+?? .sisyphus/notepads/
+?? .sisyphus/plans/upstream-sync-v0.15.1-to-main.md

@@ -1,0 +1,63 @@
+{
+  "schema_version": 2,
+  "active_work_id": "upstream-sync-v0-15-1-to-main-90fe411f",
+  "works": {
+    "upstream-sync-v0-15-1-to-main-90fe411f": {
+      "work_id": "upstream-sync-v0-15-1-to-main-90fe411f",
+      "active_plan": "/home/reck/Janitor-Agent/.sisyphus/plans/upstream-sync-v0.15.1-to-main.md",
+      "plan_name": "upstream-sync-v0.15.1-to-main",
+      "status": "active",
+      "started_at": "2026-06-02T04:17:43.322Z",
+      "updated_at": "2026-06-02T04:24:56.333Z",
+      "session_ids": [
+        "ses_179b19967ffepAJ8f9FWQvqq1f"
+      ],
+      "session_origins": {
+        "ses_179b19967ffepAJ8f9FWQvqq1f": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {
+        "final-wave:f1": {
+          "task_key": "final-wave:f1",
+          "task_label": "F1",
+          "task_title": "**Plan Compliance Audit** — `oracle`",
+          "session_id": "ses_1796cbd4bffe2TBCv507pT5x8B",
+          "agent": "Sisyphus-Junior",
+          "category": "quick",
+          "updated_at": "2026-06-02T04:24:56.334Z",
+          "started_at": "2026-06-02T04:24:56.334Z",
+          "status": "running"
+        }
+      },
+      "worktree_path": "/home/reck/Janitor-Agent-worktrees/upstream-sync-20260601-221912",
+      "sync_branch": "upstream-sync-20260601-221912"
+    }
+  },
+  "active_plan": "/home/reck/Janitor-Agent/.sisyphus/plans/upstream-sync-v0.15.1-to-main.md",
+  "started_at": "2026-06-02T04:17:43.322Z",
+  "updated_at": "2026-06-02T04:24:56.333Z",
+  "status": "active",
+  "session_ids": [
+    "ses_179b19967ffepAJ8f9FWQvqq1f"
+  ],
+  "session_origins": {
+    "ses_179b19967ffepAJ8f9FWQvqq1f": "direct"
+  },
+  "plan_name": "upstream-sync-v0.15.1-to-main",
+  "task_sessions": {
+    "final-wave:f1": {
+      "task_key": "final-wave:f1",
+      "task_label": "F1",
+      "task_title": "**Plan Compliance Audit** — `oracle`",
+      "session_id": "ses_1796cbd4bffe2TBCv507pT5x8B",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-06-02T04:24:56.334Z",
+      "started_at": "2026-06-02T04:24:56.334Z",
+      "status": "running"
+    }
+  },
+  "agent": "atlas",
+  "worktree_path": "/home/reck/Janitor-Agent-worktrees/upstream-sync-20260601-221912",
+  "sync_branch": "upstream-sync-20260601-221912"
+}
