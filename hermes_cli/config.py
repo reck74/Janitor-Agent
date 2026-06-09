@@ -741,6 +741,13 @@ DEFAULT_CONFIG = {
     "fallback_providers": [],
     "credential_pool_strategies": {},
     "toolsets": ["hermes-cli"],
+    "janitor": {
+        "language_instruction": (
+            "CRITICAL OUTPUT ENCODING RESTRICTION: Use exclusively English or Spanish. "
+            "All text and punctuation MUST strictly be in the ASCII or Latin-1 "
+            "supplement character set."
+        ),
+    },
     "agent": {
         "max_turns": 90,
         # Inactivity timeout for gateway agent execution (seconds).
@@ -1267,7 +1274,7 @@ DEFAULT_CONFIG = {
     
     "display": {
         "compact": False,
-        "personality": "",
+        "personality": "kawaii",
         "resume_display": "full",
         # Recap tuning for /resume and startup resume. The defaults match the
         # historical hardcoded values; expose them as config so power users can
@@ -1598,6 +1605,13 @@ DEFAULT_CONFIG = {
         # Flip to true only if you trust delegated work to run dangerous cmds
         # without human review (cron pipelines, batch automation, etc.).
         "subagent_auto_approve": False,
+        # Specialized agent routing: use LLM-based task classification to route
+        # tasks (code review, debugging, refactoring, writing) to matching
+        # specialized subagents. When disabled, all delegate_task calls use
+        # the generic fallback path.
+        "specialized_agents": {
+            "enabled": True,  # enable LLM-based task classification and routing
+        },
     },
 
     # Ephemeral prefill messages file — JSON list of {role, content} dicts
@@ -1990,6 +2004,15 @@ DEFAULT_CONFIG = {
         "level": "INFO",       # Minimum level for agent.log: DEBUG, INFO, WARNING
         "max_size_mb": 5,      # Max size per log file before rotation
         "backup_count": 3,     # Number of rotated backup files to keep
+        # Periodic process memory usage logging (gateway only). Emits a
+        # grep-friendly "[MEMORY] rss=...MB ..." line at the configured
+        # interval so slow leaks in the long-lived gateway are visible
+        # in agent.log / gateway.log as a time series. Ported from
+        # cline/cline#10343.
+        "memory_monitor": {
+            "enabled": True,         # Flip to false to silence the periodic line
+            "interval_seconds": 300, # Default: every 5 minutes
+        },
     },
 
     # Remotely-hosted model catalog manifest.  When enabled, the CLI fetches
@@ -2003,7 +2026,7 @@ DEFAULT_CONFIG = {
         # Disk cache TTL in hours.  Beyond this, the CLI refetches on the
         # next /model or `hermes model` invocation; network failures
         # silently fall back to the stale cache.
-        "ttl_hours": 1,
+        "ttl_hours": 24,
         # Optional per-provider override URLs for third parties that want
         # to self-host their own curation list using the same schema.
         # Example:
@@ -4482,16 +4505,8 @@ def migrate_config(interactive: bool = True, quiet: bool = False) -> Dict[str, A
     # published model-catalog.json deploys reach users without a day-long
     # stale window. Only rewrite the OLD default (24) — never clobber a
     # value the user deliberately customized.
-    if current_ver < 25:
-        config = read_raw_config()
-        raw_mc = config.get("model_catalog")
-        if isinstance(raw_mc, dict) and raw_mc.get("ttl_hours") == 24:
-            raw_mc["ttl_hours"] = 1
-            config["model_catalog"] = raw_mc
-            save_config(config)
-            results["config_added"].append("model_catalog.ttl_hours 24→1")
-            if not quiet:
-                print("  ✓ Lowered model_catalog.ttl_hours to 1 (hourly picker refresh)")
+    # JANITOR: removed upstream migration to ttl_hours=1; Janitor default
+    # is 24h (see DEFAULT_CONFIG above).
 
     if current_ver < latest_ver and not quiet:
         print(f"Config version: {current_ver} → {latest_ver}")
