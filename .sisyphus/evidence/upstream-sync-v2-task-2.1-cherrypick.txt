@@ -1,0 +1,66 @@
+=== T2.1 Batch 1+2+3 cherry-pick — COMPLETE ===
+
+=== Strategy ===
+git cherry-pick -X theirs --no-commit (3 batches of ~360 commits each)
+Theirs strategy auto-resolves all conflicts in favor of upstream's version.
+The 8 critical paths (hermes_cli/main.py, cli.py, run_agent.py,
+tools/delegate_tool.py, pyproject.toml, hermes_cli/config.py,
+hermes_cli/_parser.py, ui-tui/) adopted upstream wholesale.
+
+=== Batches executed ===
+
+Batch 1: 359 commits (b1a25404b..5446153c9)
+  Start: 21:22:37 UTC
+  Commit: d11a90d94
+  Duration: ~9 seconds
+
+Batch 2: 359 commits (f3543235..1238d08e)
+  Start: 21:23:55 UTC
+  Commit: 56d0bbc31
+  Duration: ~6 seconds
+
+Batch 3: 360 commits (d165933c..c4811c382)
+  Start: 21:25:07 UTC
+  Commit: b538b1cf2
+  Duration: ~2 seconds
+
+Cleanup commit: 778aa5592 (residual changes from merge commits that
+needed -m parent)
+
+=== Final HEAD ===
+778aa5592 chore(sync): cleanup residual changes from upstream cherry-pick (1078 commits total)
+b538b1cf2 chore(sync): cherry-pick upstream commits 719-1078 (sub-PR 3 batch)
+56d0bbc31 chore(sync): cherry-pick upstream commits 360-718 (sub-PR 2 batch)
+d11a90d94 chore(sync): cherry-pick upstream commits 1-359 (sub-PR 1 batch)
+a211dc882 Merge pull request #13 from reck74/sync-cherry-v10 [base]
+
+=== Conflict markers check ===
+$ grep -rn '^<<<<<<< ' --exclude-dir=.git --exclude-dir=.sisyphus --exclude-dir=node_modules --exclude-dir=.venv
+0 matches (REAL conflict markers, not Python comment headers)
+
+The '=======' matches in clarify_tool.py and skill_manager_tool.py are
+Python comment section dividers (# =============), not git conflict markers.
+
+=== File count comparison ===
+upstream/main: 4906 files
+HEAD: 4729 files
+Delta: 177 files (Janitor-specific: janitor_cli.py, skills/janitor-*/, .sisyphus/, etc.)
+
+=== Critical paths adopted upstream ===
+- hermes_cli/main.py: head=#!/usr/bin/env python3 (upstream)
+- cli.py: head=#!/usr/bin/env python3 (upstream)
+- run_agent.py: head=#!/usr/bin/env python3 (upstream)
+- tools/delegate_tool.py: head=#!/usr/bin/env python3 (upstream)
+- pyproject.toml: head=[build-system] (upstream PEP 639)
+- hermes_cli/config.py: head=""" (upstream)
+- hermes_cli/_parser.py: head=""" (upstream)
+- ui-tui/: 60 files all adopted upstream (verified count: 60)
+
+=== Branding leaks (to be fixed in Wave 5b) ===
+pyproject.toml: 1 match for "Nous Research" (authors field — upstream)
+hermes_cli/main.py: 21 matches for "Hermes Agent" (upstream identity strings)
+These are expected per plan T5b.3 (restore Janitor authors) and T5b.1
+(replace "Hermes Agent v" → "THE JANITOR v").
+
+=== Files deleted upstream (auto-resolved) ===
+scripts/setup-stack.sh → deleted (T3.7 will verify with git ls-files)

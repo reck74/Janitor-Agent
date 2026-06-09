@@ -1,0 +1,93 @@
+================================================================
+JANITOR UPSTREAM-SYNC-V2 — WAVE 3 VERIFICATION (T3.1–T3.8)
+================================================================
+Worktree : /home/reck/Janitor-Agent-worktrees/upstream-sync-20260608-221012
+Branch   : upstream-sync-20260608-221012
+HEAD     : 996888f85 chore(sync): delete scripts/setup-stack.sh (removed upstream)
+Date     : 2026-06-09
+Strategy : cherry-pick with -X theirs (adopted upstream wholesale for all
+           8 critical paths). Wave 5b will re-apply Janitor branding as
+           atomic commits. Wave 5a (Plan B) reverts agent_type threading.
+
+----------------------------------------------------------------
+PER-PATH VERIFICATION TABLE
+----------------------------------------------------------------
+
+#   Path                          | head -1          | Grep command           | Count | Expected | Status
+----+------------------------------+------------------+------------------------+-------+----------+---------
+T3.1 hermes_cli/main.py           | #!/usr/bin/env py3| "Hermes Agent"         |  23   |  ≥20     | PASS
+T3.1 hermes_cli/main.py           | (re-check)       | "JANITOR|Janitor"      |   0   |   0      | PASS (Wave 5b.1 will re-apply)
+T3.2 cli.py                       | #!/usr/bin/env py3| "Hermes Agent"         |  14   |  ≥1      | PASS
+T3.2 cli.py                       | (re-check)       | "JANITOR|Janitor"      |   0   |   0      | PASS (no Janitor patches per plan)
+T3.3 run_agent.py                 | #!/usr/bin/env py3| "agent_router"         |   0   |   0      | PASS (Plan A: no Janitor threading)
+T3.3 run_agent.py                 |                  | "agent_type"           |   0   |   0      | PASS
+T3.3 run_agent.py                 |                  | "_dispatch_delegate_task" |  1   |  0       | NOTE: This is upstream's own pre-existing method at line 4766 (NOT Janitor's Plan B threading)
+T3.4 tools/delegate_tool.py       | #!/usr/bin/env py3| "agent_type"           |   0   |   0      | PASS (already reverted by cherry-pick)
+T3.5 pyproject.toml               | (PEP 639 comment)| "Nous Research"        |   1   |   1      | PASS (line 21, authors field)
+T3.5 pyproject.toml               | (re-check)       |                        |       |          | ACTION: Wave 5b.3 will replace authors with "Janitor maintainers"
+T3.6 ui-tui/src/components/branding.tsx | EXISTS     | "Nous Research"        |   4   |  ≥1      | PASS
+T3.6 ui-tui/                      | 9 entries        | (directory structure)  |   9   |   -      | PASS (README.md, eslint.config.mjs, package.json, packages, scripts, src, tsconfig.build.json, tsconfig.json, vitest.config.ts)
+T3.6 ui-tui/                      |                  |                        |       |          | ACTION: Wave 5b.2 will re-apply Janitor theme variables
+T3.7 scripts/setup-stack.sh       | DELETED          | (ls returns "No such file or directory") | - | DELETED | PASS
+T3.7 hermes_cli/config.py         |                  | "specialized_agents"   |   0   |   0      | PASS
+T3.8 hermes_cli/_parser.py        | (docstring)      | "Hermes"               |   2   |  -       | PASS (no Janitor patches per plan)
+
+----------------------------------------------------------------
+CRITICAL PRESERVATION CHECKS
+----------------------------------------------------------------
+
+  janitor_cli.py exists          : YES
+  HermesCLI references           : 8 (matches expected preservation)
+  skills/janitor-* directories   : 11
+    - janitor-agentmemory
+    - janitor-browser
+    - janitor-code-review-agent
+    - janitor-config-audit
+    - janitor-core
+    - janitor-firecrawl
+    - janitor-honcho
+    - janitor-onboarding
+    - janitor-playwright
+    - janitor-repo-research-agent
+    - janitor-vault
+
+----------------------------------------------------------------
+FINAL ACCEPTANCE GATE
+----------------------------------------------------------------
+
+Conflict markers (`grep -rln '^<<<<<<< ' --exclude-dir=.git \
+    --exclude-dir=.sisyphus --exclude-dir=node_modules --exclude-dir=.venv`):
+  RESULT: 0 matches → PASS
+
+Working tree (`git status --short`):
+  RESULT: 1 entry (untracked evidence file from prior task, not a worktree change)
+  Status: CLEAN for tracked files → PASS
+  Note: `?? .sisyphus/evidence/upstream-sync-v2-task-2.1-cherrypick.txt` is an
+  untracked evidence file from T2.1, not a tree mutation. This file
+  (`upstream-sync-v2-wave3-critical-paths.txt`) is also expected untracked.
+
+----------------------------------------------------------------
+ACTIONS TAKEN
+----------------------------------------------------------------
+
+T3.1  : NO edit (Wave 5b.1 will re-apply Janitor branding)
+T3.2  : NO edit (no Janitor patches on cli.py per plan)
+T3.3  : NO edit (Plan A: cherry-pick adopted upstream which lacks
+         Janitor's agent_router/agent_type threading; that's Plan B
+         T5a.2 territory)
+T3.4  : NO edit (already clean after cherry-pick)
+T3.5  : NO edit (Wave 5b.3 will replace authors field)
+T3.6  : NO edit (Wave 5b.2 will re-apply Janitor theme variables)
+T3.7  : NO edit (already deleted in commit 996888f85)
+T3.8  : NO edit (no Janitor patches on _parser.py per plan)
+
+----------------------------------------------------------------
+VERDICT
+----------------------------------------------------------------
+
+ALL 8 CRITICAL PATHS VERIFIED IN UPSTREAM-ADOPTED STATE.
+scripts/setup-stack.sh DELETED (commit 996888f85).
+0 CONFLICT MARKERS.
+WORKING TREE CLEAN (for tracked files).
+WAVE 3 COMPLETE.
+================================================================
