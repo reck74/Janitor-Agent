@@ -4,12 +4,9 @@ import builtins
 import importlib
 import logging
 import sys
-from types import SimpleNamespace
-from unittest.mock import MagicMock
 
 import pytest
 
-from agent.janitor_language_guard import get_janitor_language_instruction
 from agent.prompt_builder import (
     _scan_context_content,
     _truncate_content,
@@ -31,7 +28,6 @@ from agent.prompt_builder import (
     PLATFORM_HINTS,
     WSL_ENVIRONMENT_HINT,
 )
-from agent.system_prompt import build_system_prompt_parts
 from hermes_cli.nous_subscription import NousFeatureState, NousSubscriptionFeatures
 
 
@@ -931,6 +927,29 @@ class TestEnvironmentHints:
         assert "Terminal backend: docker" in result
         assert "inside" in result.lower()
 
+    def test_build_environment_hints_uses_terminal_cwd_over_launch_dir(self, monkeypatch, tmp_path):
+        """THE BUG: gateway/cron set TERMINAL_CWD but the prompt emitted os.getcwd()
+        (the daemon launch dir). Regression for #24882/#24969/#27383/#29265."""
+        import agent.prompt_builder as _pb
+        monkeypatch.setattr(_pb, "is_wsl", lambda: False)
+        monkeypatch.delenv("TERMINAL_ENV", raising=False)
+        configured = tmp_path / "workspace"
+        configured.mkdir()
+        monkeypatch.setenv("TERMINAL_CWD", str(configured))
+        monkeypatch.chdir(tmp_path)
+        _pb._clear_backend_probe_cache()
+        assert f"Current working directory: {configured}" in _pb.build_environment_hints()
+
+    def test_build_environment_hints_falls_back_to_launch_dir(self, monkeypatch, tmp_path):
+        """The #19242 local-CLI contract: no TERMINAL_CWD → the launch dir."""
+        import agent.prompt_builder as _pb
+        monkeypatch.setattr(_pb, "is_wsl", lambda: False)
+        monkeypatch.delenv("TERMINAL_ENV", raising=False)
+        monkeypatch.delenv("TERMINAL_CWD", raising=False)
+        monkeypatch.chdir(tmp_path)
+        _pb._clear_backend_probe_cache()
+        assert f"Current working directory: {tmp_path}" in _pb.build_environment_hints()
+
     def test_build_environment_hints_uses_live_probe_when_available(self, monkeypatch):
         """When the probe succeeds, its output must appear in the hint block."""
         import agent.prompt_builder as _pb
@@ -1251,63 +1270,3 @@ class TestOpenAIModelExecutionGuidance:
 # =========================================================================
 
 
-# =========================================================================
-# Janitor language instruction
-# =========================================================================
-
-
-class TestJanitorLanguageGuard:
-    def test_instruction_returned_when_configured(self):
-        agent = MagicMock()
-        agent._config = {
-            "janitor": {
-                "language_instruction": "Respond only in Spanish or English.",
-            }
-        }
-
-        assert get_janitor_language_instruction(agent) == "Respond only in Spanish or English."
-
-    def test_instruction_empty_when_disabled(self):
-        agent = MagicMock()
-        agent._config = {"janitor": {"language_instruction": ""}}
-
-        assert get_janitor_language_instruction(agent) == ""
-
-    def test_instruction_empty_without_janitor_config(self):
-        agent = MagicMock()
-        agent._config = {}
-
-        assert get_janitor_language_instruction(agent) == ""
-
-    def test_instruction_falls_back_to_loaded_config(self, monkeypatch):
-        instruction = "Respond only in Spanish or English."
-
-        def fake_load_config():
-            return {"janitor": {"language_instruction": instruction}}
-
-        monkeypatch.setattr("hermes_cli.config.load_config", fake_load_config)
-
-        assert get_janitor_language_instruction(SimpleNamespace()) == instruction
-
-    def test_instruction_is_appended_to_stable_system_prompt(self):
-        instruction = "Respond only in Spanish or English. Never use CJK characters."
-        agent = SimpleNamespace(
-            load_soul_identity=False,
-            skip_context_files=True,
-            valid_tool_names=[],
-            _tool_use_enforcement="auto",
-            model="",
-            provider="",
-            platform="",
-            _memory_store=None,
-            _memory_enabled=False,
-            _user_profile_enabled=False,
-            _memory_manager=None,
-            pass_session_id=False,
-            session_id=None,
-            _config={"janitor": {"language_instruction": instruction}},
-        )
-
-        parts = build_system_prompt_parts(agent)
-
-        assert instruction in parts["stable"]

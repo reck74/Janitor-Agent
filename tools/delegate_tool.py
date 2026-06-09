@@ -37,8 +37,6 @@ from toolsets import TOOLSETS
 # Must match hermes_cli.runtime_provider.RUNTIME_PROVIDER_TYPE_CUSTOM.
 _RUNTIME_PROVIDER_CUSTOM = "custom"
 from tools import file_state
-from tools.agent_router import get_best_agent
-from tools.specialized_agents import load_agent_spec
 from tools.terminal_tool import set_approval_callback as _set_subagent_approval_cb
 from utils import base_url_hostname, is_truthy_value
 
@@ -890,7 +888,6 @@ def _build_child_agent(
     # 'leaf' (default) cannot; 'orchestrator' retains the delegation
     # toolset subject to depth/kill-switch bounds applied below.
     role: str = "leaf",
-    agent_type: Optional[str] = None,
 ):
     """
     Build a child AIAgent on the main thread (thread-safe construction).
@@ -925,19 +922,6 @@ def _build_child_agent(
     tui_depth = max(0, child_depth - 1)  # 0 = first-level child for the UI
 
     delegation_cfg = _load_config()
-    agent_spec = None
-    if agent_type:
-        try:
-            agent_spec = load_agent_spec(agent_type)
-        except Exception as exc:
-            logger.warning("Could not load specialized agent '%s': %s", agent_type, exc)
-    if agent_spec:
-        spec_model = agent_spec.get("model")
-        if isinstance(spec_model, str) and spec_model.strip():
-            model = spec_model
-        spec_toolsets = agent_spec.get("toolsets")
-        if isinstance(spec_toolsets, list) and spec_toolsets:
-            toolsets = [str(toolset) for toolset in spec_toolsets]
 
     # When no explicit toolsets given, inherit from parent's enabled toolsets
     # so disabled tools (e.g. web) don't leak to subagents.
@@ -984,30 +968,14 @@ def _build_child_agent(
         child_toolsets.append("delegation")
 
     workspace_hint = _resolve_workspace_hint(parent_agent)
-    spec_prompt = (agent_spec or {}).get("systemPrompt")
-    if spec_prompt:
-        skills = agent_spec.get("skills", []) if agent_spec else []
-        prompt_parts = [str(spec_prompt).strip(), "", f"YOUR TASK:\n{goal}"]
-        if skills:
-            prompt_parts.append(f"SKILLS AVAILABLE: {', '.join(map(str, skills))}")
-        if context and context.strip():
-            prompt_parts.append(f"\nCONTEXT:\n{context}")
-        if workspace_hint and str(workspace_hint).strip():
-            prompt_parts.append(
-                "\nWORKSPACE PATH:\n"
-                f"{workspace_hint}\n"
-                "Use this exact path for local repository/workdir operations unless the task explicitly says otherwise."
-            )
-        child_prompt = "\n".join(prompt_parts)
-    else:
-        child_prompt = _build_child_system_prompt(
-            goal,
-            context,
-            workspace_path=workspace_hint,
-            role=effective_role,
-            max_spawn_depth=max_spawn,
-            child_depth=child_depth,
-        )
+    child_prompt = _build_child_system_prompt(
+        goal,
+        context,
+        workspace_path=workspace_hint,
+        role=effective_role,
+        max_spawn_depth=max_spawn,
+        child_depth=child_depth,
+    )
     # Extract parent's API key so subagents inherit auth (e.g. Nous Portal).
     parent_api_key = getattr(parent_agent, "api_key", None)
     if (not parent_api_key) and hasattr(parent_agent, "_client_kwargs"):
@@ -1108,21 +1076,6 @@ def _build_child_agent(
     except Exception as exc:
         logger.debug("Could not load delegation reasoning_effort: %s", exc)
 
-    if agent_spec and agent_spec.get("reasoningEffort"):
-        try:
-            from hermes_constants import parse_reasoning_effort
-
-            parsed = parse_reasoning_effort(str(agent_spec["reasoningEffort"]).strip())
-            if parsed is not None:
-                child_reasoning = parsed
-            else:
-                logger.warning(
-                    "Unknown specialized agent reasoningEffort '%s', inheriting previous level",
-                    agent_spec["reasoningEffort"],
-                )
-        except Exception as exc:
-            logger.debug("Could not load specialized agent reasoningEffort: %s", exc)
-
     # Inherit the parent's fallback provider chain so subagents can recover
     # from rate-limits and credential exhaustion exactly like the top-level
     # agent does.  _fallback_chain is a list accepted by AIAgent's
@@ -1193,6 +1146,7 @@ def _build_child_agent(
     child._subagent_id = subagent_id
     child._parent_subagent_id = parent_subagent_id
     child._subagent_goal = goal
+    child._parent_turn_id = getattr(parent_agent, "_current_turn_id", "") or ""
 
     # Share a credential pool with the child when possible so subagents can
     # rotate credentials on rate limits instead of getting pinned to one key.
@@ -1217,6 +1171,21 @@ def _build_child_agent(
             child_progress_cb("subagent.spawn_requested", preview=goal)
         except Exception as exc:
             logger.debug("spawn_requested relay failed: %s", exc)
+
+    try:
+        from hermes_cli.plugins import invoke_hook as _invoke_hook
+        _invoke_hook(
+            "subagent_start",
+            parent_session_id=getattr(parent_agent, "session_id", None),
+            parent_turn_id=getattr(parent_agent, "_current_turn_id", "") or "",
+            parent_subagent_id=parent_subagent_id,
+            child_session_id=getattr(child, "session_id", None),
+            child_subagent_id=subagent_id,
+            child_role=effective_role,
+            child_goal=goal,
+        )
+    except Exception:
+        logger.debug("subagent_start hook invocation failed", exc_info=True)
 
     return child
 
@@ -1971,15 +1940,14 @@ def delegate_task(
     acp_command: Optional[str] = None,
     acp_args: Optional[List[str]] = None,
     role: Optional[str] = None,
-    agent_type: Optional[str] = None,
     parent_agent=None,
 ) -> str:
     """
     Spawn one or more child agents to handle delegated tasks.
 
     Supports two modes:
-      - Single: provide goal (+ optional context, toolsets, role, agent_type)
-      - Batch:  provide tasks array [{goal, context, toolsets, role, agent_type}, ...]
+      - Single: provide goal (+ optional context, toolsets, role)
+      - Batch:  provide tasks array [{goal, context, toolsets, role}, ...]
 
     The 'role' parameter controls whether a child can further delegate:
     'leaf' (default) cannot; 'orchestrator' retains the delegation
@@ -2002,12 +1970,6 @@ def delegate_task(
 
     # Normalise the top-level role once; per-task overrides re-normalise.
     top_role = _normalize_role(role)
-
-    # Auto-route single-task delegation when no explicit agent type was set.
-    if agent_type is None and goal:
-        auto_agent = get_best_agent(goal)
-        if auto_agent:
-            agent_type = auto_agent
 
     # Depth limit — configurable via delegation.max_spawn_depth,
     # default 2 for parity with the original MAX_DEPTH constant.
@@ -2071,13 +2033,7 @@ def delegate_task(
         task_list = tasks
     elif goal and isinstance(goal, str) and goal.strip():
         task_list = [
-            {
-                "goal": goal,
-                "context": context,
-                "toolsets": toolsets,
-                "role": top_role,
-                "agent_type": agent_type,
-            }
+            {"goal": goal, "context": context, "toolsets": toolsets, "role": top_role}
         ]
     else:
         return tool_error("Provide either 'goal' (single task) or 'tasks' (batch).")
@@ -2140,7 +2096,6 @@ def delegate_task(
                     else (acp_args if acp_args is not None else creds.get("args"))
                 ),
                 role=effective_role,
-                agent_type=t.get("agent_type") or agent_type,
             )
             # Override with correct parent tool names (before child construction mutated global)
             child._delegate_saved_tool_names = _parent_tool_names
@@ -2326,9 +2281,17 @@ def delegate_task(
         if _invoke_hook is None:
             continue
         try:
+            _child_index = entry.get("task_index", -1)
+            _child_agent = (
+                children[_child_index][2]
+                if isinstance(_child_index, int) and 0 <= _child_index < len(children)
+                else None
+            )
             _invoke_hook(
                 "subagent_stop",
                 parent_session_id=_parent_session_id,
+                parent_turn_id=getattr(parent_agent, "_current_turn_id", "") or "",
+                child_session_id=getattr(_child_agent, "session_id", None),
                 child_role=child_role,
                 child_summary=entry.get("summary"),
                 child_status=entry.get("status"),
@@ -2797,10 +2760,6 @@ DELEGATE_TASK_SCHEMA = {
                             "enum": ["leaf", "orchestrator"],
                             "description": "Per-task role override. See top-level 'role' for semantics.",
                         },
-                        "agent_type": {
-                            "type": "string",
-                            "description": "Specialized agent type to use (e.g. 'code-review', 'repo-research')",
-                        },
                     },
                     "required": ["goal"],
                 },
@@ -2813,10 +2772,6 @@ DELEGATE_TASK_SCHEMA = {
                 "type": "string",
                 "enum": ["leaf", "orchestrator"],
                 "description": "(rebuilt at get_definitions() time)",
-            },
-            "agent_type": {
-                "type": "string",
-                "description": "Specialized agent type to use (e.g. 'code-review', 'repo-research')",
             },
             "acp_command": {
                 "type": "string",
@@ -2862,7 +2817,6 @@ registry.register(
         acp_command=args.get("acp_command"),
         acp_args=args.get("acp_args"),
         role=args.get("role"),
-        agent_type=args.get("agent_type"),
         parent_agent=kw.get("parent_agent"),
     ),
     check_fn=check_delegate_requirements,

@@ -15,13 +15,6 @@ to be re-exported here.
 """
 
 
-from tools.opencode_orchestrator import (
-    OpenCodeOrchestrator,
-    detect_opencode_port,
-)
-from agent.opencode_session_manager import OpenCodeSessionManager
-
-
 def check_file_requirements():
     """File tools only require terminal backend availability."""
     from .terminal_tool import check_terminal_requirements
@@ -29,9 +22,4 @@ def check_file_requirements():
     return check_terminal_requirements()
 
 
-__all__ = [
-    "check_file_requirements",
-    "OpenCodeOrchestrator",
-    "detect_opencode_port",
-    "OpenCodeSessionManager",
-]
+__all__ = ["check_file_requirements"]
