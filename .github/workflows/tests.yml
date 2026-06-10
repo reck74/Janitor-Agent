@@ -117,14 +117,17 @@ jobs:
 
   # Full upstream test suite, run on demand or after every sync commit.
   # See AGENTS.md "Fork Directive #11 — Test Pruning" for rationale.
+  # startsWith (not contains) so the trigger only fires on the commit
+  # subject line, not on body text that mentions these tokens in passing
+  # (e.g. a fix(ci) commit whose body explains the sync gate).
   upstream-sync-verify:
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' &&
        github.ref == 'refs/heads/main' &&
-       (contains(github.event.head_commit.message, 'chore(sync):') ||
-        contains(github.event.head_commit.message, 'fix(sync):') ||
-        contains(github.event.head_commit.message, 'upstream-sync-')))
+       (startsWith(github.event.head_commit.message, 'chore(sync):') ||
+        startsWith(github.event.head_commit.message, 'fix(sync):') ||
+        startsWith(github.event.head_commit.message, 'upstream-sync-')))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:

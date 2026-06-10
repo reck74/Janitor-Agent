@@ -121,11 +121,16 @@ describe('Janitor skin integration', () => {
     expect(DEFAULT_THEME.color.primary).toBe('#c2ef4e')
   })
 
-  it('original Hermes DARK_THEME and BRAND are preserved intact', async () => {
-    const { DARK_THEME, BRAND } = await importThemeWithCleanEnv()
-    expect(DARK_THEME.color.primary).toBe('#FFD700')
-    expect(DARK_THEME.color.border).toBe('#CD7F32')
+  it('DARK_THEME / LIGHT_THEME alias JANITOR_*_THEME so upstream DEFAULT_THEME checks pass', async () => {
+    const { DARK_THEME, LIGHT_THEME, JANITOR_DARK_THEME, JANITOR_LIGHT_THEME } = await importThemeWithCleanEnv()
+    expect(DARK_THEME).toBe(JANITOR_DARK_THEME)
+    expect(LIGHT_THEME).toBe(JANITOR_LIGHT_THEME)
+  })
+
+  it('legacy BRAND export keeps Hermes identity for any third-party importers', async () => {
+    const { BRAND, JANITOR_BRAND } = await importThemeWithCleanEnv()
     expect(BRAND.name).toBe('Hermes Agent')
     expect(BRAND.icon).toBe('⚕')
+    expect(BRAND).not.toBe(JANITOR_BRAND)
   })
 })
