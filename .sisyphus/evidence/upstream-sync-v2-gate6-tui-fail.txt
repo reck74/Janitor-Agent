@@ -1,0 +1,41 @@
+Gate 6 (TUI type-check) + Gate 8 (TUI test) — REAL failures, not expected
+
+Gate 6 errors (11 total) in packages/hermes-ink/src/utils/execFileNoThrow.ts:
+- Line 42,7: error TS2769: No overload matches this call
+- Line 63,13: error TS2339: Property 'stdout' does not exist on type 'never'
+- Line 64,13: error TS2339: Property 'stderr' does not exist on type 'never'
+- Line 72,17: error TS2339: Property 'kill' does not exist on type 'never'
+- Line 83,11: error TS2339: Property 'stdout' does not exist on type 'never'
+- Line 86,11: error TS2339: Property 'stderr' does not exist on type 'never'
+- Line 89,11/23: 'on'/'error' does not exist on type 'never'
+- Line 98,11/25/31: 'on'/'code'/'signal' does not exist on type 'never'
+- Line 103,13/26/32: 'on'/'code'/'signal' does not exist on type 'never'
+- Line 110,13: 'stdin' does not exist on type 'never'
+- Line 113,11: 'stdin' does not exist on type 'never'
+
+Root cause: Upstream's execFileNoThrow.ts has a child_process type intersection
+that doesn't resolve (intersection of multiple ChildProcess types with conflicting
+stdin/stdout/stderr/on properties reduces to 'never').
+
+Gate 8 errors (7 tests failed of 973):
+- janitorSkin.test.ts:128 — BRAND.name is undefined (expected 'Hermes Agent')
+  The Janitor test was written assuming Janitor's BRAND constant. After
+  cherry-pick adopted upstream's branding.tsx (with 'Nous Research'),
+  BRAND.name is undefined or the BRAND constant is no longer exported.
+- virtualHeights.test.ts:23 — wrapping calculation off by 1
+  (expected 3, got 4) — likely related to upstream's text-width changes
+- A third test file (need to see full output)
+
+These are NOT expected by plan T5b.2 alone — T5b.2 re-applies Janitor
+branding in branding.tsx but the test file janitorSkin.test.ts expects
+a specific BRAND constant that may need separate re-application.
+
+Resolution plan:
+1. Wave 5b.2: re-apply Janitor branding.tsx with theme variables
+2. Check if janitorSkin.test.ts needs a separate re-application (BRAND export)
+3. virtualHeights test: investigate if upstream has the fix or if it's a
+   known regression
+4. Gate 6 type errors: investigate if a later upstream commit (in batches 2/3)
+   fixed this, or apply a minimal type fix
+
+For NOW: continue with Wave 5a/5b re-apply commits, then re-run gates.

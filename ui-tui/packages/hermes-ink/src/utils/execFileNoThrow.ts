@@ -1,5 +1,4 @@
-import { spawn } from 'child_process'
-import type { ChildProcess, StdioOptions } from 'child_process'
+import { spawn, type ChildProcess, type StdioOptions } from 'child_process'
 type ExecFileOptions = {
   input?: string
   timeout?: number
@@ -81,13 +80,13 @@ export function execFileNoThrow(
         }, options.timeout)
       : null
 
-    child.stdout?.on('data', (chunk: Buffer) => {
+    child.stdout?.on('data', chunk => {
       stdout += String(chunk)
     })
-    child.stderr?.on('data', (chunk: Buffer) => {
+    child.stderr?.on('data', chunk => {
       stderr += String(chunk)
     })
-    child.on('error', (error: Error) => {
+    child.on('error', error => {
       settle(1, String(error))
     })
 
@@ -96,12 +95,12 @@ export function execFileNoThrow(
       // daemon it forked still holds the inherited stdio pipes open.
       // When a signal kills the child, code is null — map that to 1
       // so callers don't mistake a signal-terminated run for success.
-      child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
+      child.on('exit', (code, signal) => {
         const exitCode = timedOut ? 124 : (code ?? (signal ? 1 : 0))
         settle(exitCode)
       })
     } else {
-      child.on('close', (code: number | null, signal: NodeJS.Signals | null) => {
+      child.on('close', (code, signal) => {
         const exitCode = timedOut ? 124 : (code ?? (signal ? 1 : 0))
         settle(exitCode)
       })
