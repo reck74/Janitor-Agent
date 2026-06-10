@@ -1711,13 +1711,6 @@ DEFAULT_CONFIG = {
         # Flip to true only if you trust delegated work to run dangerous cmds
         # without human review (cron pipelines, batch automation, etc.).
         "subagent_auto_approve": False,
-        # Specialized agent routing: use LLM-based task classification to route
-        # tasks (code review, debugging, refactoring, writing) to matching
-        # specialized subagents. When disabled, all delegate_task calls use
-        # the generic fallback path.
-        "specialized_agents": {
-            "enabled": True,  # enable LLM-based task classification and routing
-        },
     },
 
     # Ephemeral prefill messages file — JSON list of {role, content} dicts
