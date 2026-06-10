@@ -19,7 +19,13 @@ the update flow lives here, not inline in ``janitor_cli.py`` or
 
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
 import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
 
 
 def _git_cmd() -> list[str]:
