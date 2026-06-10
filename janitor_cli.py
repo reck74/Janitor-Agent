@@ -29,7 +29,7 @@ os.environ["HERMES_HOME"] = os.path.expanduser("~/.janitor")
 def _load_janitor_env() -> None:
     env_path = os.path.expanduser("~/.janitor/.env")
     try:
-        with open(env_path, "r") as f:
+        with open(env_path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith("#"):
@@ -234,7 +234,7 @@ def _owasp_honcho_fail_safe_for_test(hermes_home: str):
 
     import yaml
 
-    with open(config_path) as f:
+    with open(config_path, encoding="utf-8") as f:
         cfg = yaml.safe_load(f) or {}
 
     memory_provider = cfg.get("memory", {}).get("provider", "")
