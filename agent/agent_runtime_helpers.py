@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from hermes_cli.timeouts import get_provider_request_timeout
+from agent.prompt_builder import format_steer_marker
 from agent.tool_dispatch_helpers import _trajectory_normalize_msg, make_tool_result_message
 from agent.trajectory import convert_scratchpad_to_think
 from agent.credential_pool import STATUS_EXHAUSTED
@@ -1845,6 +1846,27 @@ def repair_tool_call(agent, tool_name: str) -> str | None:
     if not tool_name:
         return None
 
+    # VolcEngine api/plan workaround (issue #33007): the endpoint's
+    # protocol-translation layer occasionally leaks raw XML attribute
+    # fragments into tool_use.name, e.g.
+    #   `terminal" parameter="command" string="true`
+    #   `execute_code" parameter="code" string="true`
+    #   `session_search" parameter="session_id" string="true`
+    # We trim at the first unambiguous XML/quote character so the rest
+    # of the repair pipeline (lowercase / snake_case / fuzzy match)
+    # can resolve the cleaned name to a real tool.
+    #
+    # Crucially we DO NOT split on whitespace: legitimate inputs like
+    # "write file" must keep flowing through ``_norm`` -> ``write_file``
+    # (covered by test_space_to_underscore in
+    # tests/run_agent/test_repair_tool_call_name.py).
+    for _xml_sep in ('"', "'", "<", ">"):
+        _idx = tool_name.find(_xml_sep)
+        if _idx > 0:
+            tool_name = tool_name[:_idx]
+    if not tool_name:
+        return None
+
     def _norm(s: str) -> str:
         return s.lower().replace("-", "_").replace(" ", "_")
 
@@ -2378,7 +2400,7 @@ def apply_pending_steer_to_tool_results(agent, messages: list, num_tool_msgs: in
             existing = getattr(agent, "_pending_steer", None)
             agent._pending_steer = (existing + "\n" + steer_text) if existing else steer_text
         return
-    marker = f"\n\nUser guidance: {steer_text}"
+    marker = format_steer_marker(steer_text)
     existing_content = messages[target_idx].get("content", "")
     if not isinstance(existing_content, str):
         # Anthropic multimodal content blocks — preserve them and append
