@@ -179,6 +179,15 @@ export const en: Translations = {
       'session.new': 'New session',
       'session.next': 'Next session',
       'session.prev': 'Previous session',
+      'session.slot.1': 'Switch to recent session 1',
+      'session.slot.2': 'Switch to recent session 2',
+      'session.slot.3': 'Switch to recent session 3',
+      'session.slot.4': 'Switch to recent session 4',
+      'session.slot.5': 'Switch to recent session 5',
+      'session.slot.6': 'Switch to recent session 6',
+      'session.slot.7': 'Switch to recent session 7',
+      'session.slot.8': 'Switch to recent session 8',
+      'session.slot.9': 'Switch to recent session 9',
       'session.focusSearch': 'Search sessions',
       'session.togglePin': 'Pin / unpin current session',
       'composer.focus': 'Focus composer',
@@ -292,7 +301,8 @@ export const en: Translations = {
       technical: 'Technical',
       technicalDesc: 'Include raw tool args/results and low-level details.',
       themeTitle: 'Theme',
-      themeDesc: 'Desktop palettes only. The selected mode is applied on top.'
+      themeDesc: 'Desktop palettes only. The selected mode is applied on top.',
+      themeProfileNote: profile => `Saved for the ${profile} profile — each profile keeps its own theme.`
     },
     fieldLabels: FIELD_LABELS,
     fieldDescriptions: FIELD_DESCRIPTIONS,
@@ -542,8 +552,16 @@ export const en: Translations = {
       ready: 'Ready',
       nousIncluded: 'Included with a Nous subscription — sign in to Nous Portal to activate.',
       noApiKeyRequired: 'No API key required.',
-      postSetup: step =>
-        `This provider needs an extra setup step (${step}). Run it from the CLI with hermes tools for now.`
+      postSetupHint: step =>
+        `This backend needs a one-time install (${step}). Runs on this machine — may take a few minutes.`,
+      postSetupRun: 'Run setup',
+      postSetupRunning: 'Installing…',
+      postSetupStarting: 'Starting…',
+      postSetupCompleteTitle: 'Setup complete',
+      postSetupCompleteMessage: step => `${step} installed.`,
+      postSetupErrorTitle: 'Setup finished with errors',
+      postSetupErrorMessage: step => `Check the ${step} log.`,
+      postSetupFailed: step => `Failed to run ${step} setup`
     }
   },
 
@@ -1072,6 +1090,7 @@ export const en: Translations = {
       sessionRunning: 'Session running',
       needsInput: 'Needs your input',
       waitingForAnswer: 'Waiting for your answer',
+      handoffOrigin: platform => `Handed off from ${platform}`,
       renamed: 'Renamed',
       renameFailed: 'Rename failed',
       renameTitle: 'Rename session',
@@ -1229,9 +1248,13 @@ export const en: Translations = {
     unsupportedMessage: 'This version of Hermes can’t update itself from inside the app.',
     connectionRetry: 'Check your connection and try again.',
     latestBody: 'You’re running the latest version.',
+    latestBodyBackend: 'The backend is running the latest version.',
     allSetTitle: 'You’re all set',
     availableTitle: 'New update available',
     availableBody: 'A new version of Hermes is ready to install.',
+    availableTitleBackend: 'Backend update available',
+    availableBodyBackend: 'A newer version of the connected Hermes backend is ready to install.',
+    availableBodyNoChangelog: 'A newer version is ready. Release notes aren’t available for this install type.',
     updateNow: 'Update now',
     maybeLater: 'Maybe later',
     moreChanges: count => `+ ${count} more change${count === 1 ? '' : 's'} included.`,
@@ -1242,10 +1265,19 @@ export const en: Translations = {
     copied: 'Copied',
     done: 'Done',
     applyingBody: 'The Hermes updater will take over in its own window and reopen Hermes when it’s done.',
+    applyingBodyBackend: 'The remote backend is applying the update and will restart. Hermes reconnects automatically when it’s back.',
     applyingClose: 'Hermes will close to apply the update.',
     errorTitle: 'Update didn’t finish',
     errorBody: 'No worries — nothing was lost. You can try again now.',
-    notNow: 'Not now'
+    notNow: 'Not now',
+    applyStatus: {
+      preparing: 'Updating backend…',
+      pulling: 'Backend updating…',
+      restarting: 'Backend restarting to load the update…',
+      notAvailable: 'Update not available for this backend.',
+      failed: 'Backend update failed.',
+      noReturn: 'Backend didn’t come back online. The update may not have completed — check the backend host.'
+    }
   },
 
   install: {
@@ -1431,6 +1463,9 @@ export const en: Translations = {
       updateInProgress: 'Update in progress',
       commitsBehind: (count, branch) => `${count} commit${count === 1 ? '' : 's'} behind ${branch}`,
       desktopVersion: version => `Hermes Desktop v${version}`,
+      backendVersion: version => `Backend v${version}`,
+      clientLabel: version => `client v${version}`,
+      backendLabel: version => `backend v${version}`,
       commit: sha => `commit ${sha}`,
       branch: branch => `branch ${branch}`,
       closeCommandCenter: 'Close Command Center',
@@ -1455,8 +1490,8 @@ export const en: Translations = {
       contextUsage: 'Context usage',
       session: 'Session',
       runtimeSessionElapsed: 'Runtime session elapsed',
-      yoloOn: 'YOLO on — auto-approving dangerous commands. Click to turn off.',
-      yoloOff: 'YOLO off — click to auto-approve dangerous commands.',
+      yoloOn: 'YOLO on — auto-approving dangerous commands. Click to turn off. Shift+click toggles it globally.',
+      yoloOff: 'YOLO off — click to auto-approve dangerous commands. Shift+click toggles it globally.',
       modelNone: 'none',
       noModel: 'no model',
       switchModel: 'Switch model',
@@ -1596,7 +1631,8 @@ export const en: Translations = {
       restoreCheckpoint: 'Restore checkpoint',
       restoreNext: 'Restore next checkpoint',
       goForward: 'Go forward',
-      sendEdited: 'Send edited message'
+      sendEdited: 'Send edited message',
+      attachingFile: 'Attaching…'
     },
     approval: {
       gatewayDisconnected: 'Hermes gateway is not connected',

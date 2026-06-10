@@ -8,11 +8,18 @@ import { DesktopInstallOverlay } from '@/components/desktop-install-overlay'
 import { DesktopOnboardingOverlay } from '@/components/desktop-onboarding-overlay'
 import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overlay'
 import { Pane, PaneMain } from '@/components/pane-shell'
+import { useMediaQuery } from '@/hooks/use-media-query'
 import { useSkinCommand } from '@/themes/use-skin-command'
 
 import { formatRefValue } from '../components/assistant-ui/directive-text'
 import { getCronJobs, getSessionMessages, listAllProfileSessions, type SessionInfo, triggerCronJob } from '../hermes'
 import { preserveLocalAssistantErrors, toChatMessages } from '../lib/chat-messages'
+import {
+  isMessagingSource,
+  LOCAL_SESSION_SOURCE_IDS,
+  MESSAGING_SESSION_SOURCE_IDS,
+  normalizeSessionSource
+} from '../lib/session-source'
 import { setCronFocusJobId, setCronJobs } from '../store/cron'
 import {
   $panesFlipped,
@@ -23,13 +30,21 @@ import {
   FILE_BROWSER_MAX_WIDTH,
   FILE_BROWSER_MIN_WIDTH,
   pinSession,
+  setSidebarOverlayMounted,
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_SESSIONS_PAGE_SIZE,
   unpinSession
 } from '../store/layout'
 import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab } from '../store/preview'
-import { $activeGatewayProfile, $freshSessionRequest, normalizeProfileKey, refreshActiveProfile } from '../store/profile'
+import {
+  $activeGatewayProfile,
+  $freshSessionRequest,
+  $profileScope,
+  ALL_PROFILES,
+  normalizeProfileKey,
+  refreshActiveProfile
+} from '../store/profile'
 import {
   $activeSessionId,
   $currentCwd,
@@ -37,9 +52,12 @@ import {
   $gatewayState,
   $selectedStoredSessionId,
   $sessions,
+  $messagingSessions,
   $workingSessionIds,
   CRON_SECTION_LIMIT,
+  getRecentlySettledSessionIds,
   mergeSessionPage,
+  MESSAGING_SECTION_LIMIT,
   sessionPinId,
   setAwaitingResponse,
   setBusy,
@@ -49,6 +67,9 @@ import {
   setCurrentModel,
   setCurrentProvider,
   setMessages,
+  setMessagingPlatformTotals,
+  setMessagingSessions,
+  setMessagingTruncated,
   setSessionProfileTotals,
   setSessions,
   setSessionsLoading,
@@ -69,12 +90,14 @@ import { CommandPalette } from './command-palette'
 import { useGatewayBoot } from './gateway/hooks/use-gateway-boot'
 import { useGatewayRequest } from './gateway/hooks/use-gateway-request'
 import { useKeybinds } from './hooks/use-keybinds'
+import { SIDEBAR_COLLAPSE_MEDIA_QUERY } from './layout-constants'
 import { ModelPickerOverlay } from './model-picker-overlay'
 import { ModelVisibilityOverlay } from './model-visibility-overlay'
 import { RightSidebarPane } from './right-sidebar'
 import { $terminalTakeover } from './right-sidebar/store'
 import { PersistentTerminal, TerminalSlot } from './right-sidebar/terminal/persistent'
 import { CRON_ROUTE, NEW_CHAT_ROUTE, routeSessionId, sessionRoute, SETTINGS_ROUTE } from './routes'
+import { SessionSwitcher } from './session-switcher'
 import { useContextSuggestions } from './session/hooks/use-context-suggestions'
 import { useCwdActions } from './session/hooks/use-cwd-actions'
 import { useHermesConfig } from './session/hooks/use-hermes-config'
@@ -110,6 +133,15 @@ const SkillsView = lazy(async () => ({ default: (await import('./skills')).Skill
 // this cadence while the app is open + visible so new runs surface promptly
 // instead of waiting for the next user-triggered refreshSessions().
 const CRON_POLL_INTERVAL_MS = 30_000
+// The recents list is local-only: cron rows have their own section, and each
+// messaging platform (telegram, discord, …) is fetched separately into its own
+// self-managed sidebar section (refreshMessagingSessions). Excluding both here
+// keeps "Load more" paging through interactive local chats instead of
+// interleaving gateway threads that bury them.
+const SIDEBAR_EXCLUDED_SOURCES = ['cron', ...MESSAGING_SESSION_SOURCE_IDS]
+// The messaging slice is the inverse: drop cron + every local source so only
+// external-platform conversations remain, then split per platform in the UI.
+const MESSAGING_EXCLUDED_SOURCES = ['cron', ...LOCAL_SESSION_SOURCE_IDS]
 
 // Cheap signature compare so the poll only swaps the atom (and re-renders the
 // sidebar) when the visible cron rows actually changed.
@@ -120,12 +152,18 @@ function sameCronSignature(a: SessionInfo[], b: SessionInfo[]): boolean {
 }
 
 // Rows a session refresh must preserve even if the aggregator omits them:
-// in-flight first turns (message_count 0), pinned rows aged off the page, and
-// the actively-viewed chat (its "working" flag clears a beat before the
-// aggregator sees the persisted row). Pass `scope` to only keep the active row
-// when it belongs to the profile being paged.
+// in-flight first turns (message_count 0), pinned rows aged off the page, the
+// actively-viewed chat (its "working" flag clears a beat before the aggregator
+// sees the persisted row), and sessions whose turn just settled (same race, but
+// for a chat the user has already navigated away from). Pass `scope` to only
+// keep the active row when it belongs to the profile being paged.
 function sessionsToKeep(scope?: string): Set<string> {
-  const keep = new Set<string>([...$workingSessionIds.get(), ...$pinnedSessionIds.get()])
+  const keep = new Set<string>([
+    ...$workingSessionIds.get(),
+    ...$pinnedSessionIds.get(),
+    ...getRecentlySettledSessionIds()
+  ])
+
   const active = $selectedStoredSessionId.get()
 
   if (active) {
@@ -157,6 +195,11 @@ export function DesktopController() {
   const selectedStoredSessionId = useStore($selectedStoredSessionId)
   const terminalTakeover = useStore($terminalTakeover)
   const panesFlipped = useStore($panesFlipped)
+  const profileScope = useStore($profileScope)
+  // Below SIDEBAR_COLLAPSE_BREAKPOINT_PX there's no room for a docked rail —
+  // collapse both sidebars (without touching their stored open state) so the
+  // hover-reveal overlay becomes the way in. Restores once it's wide again.
+  const narrowViewport = useMediaQuery(SIDEBAR_COLLAPSE_MEDIA_QUERY)
 
   const routedSessionId = routeSessionId(location.pathname)
   const routeToken = `${location.pathname}:${location.search}:${location.hash}`
@@ -258,6 +301,51 @@ export function DesktopController() {
     }
   }, [])
 
+  // Messaging-platform sessions as their own slice, fetched separately from
+  // local recents so each platform renders a self-managed section and never
+  // competes with local chats for the recents page budget. One combined fetch
+  // seeds every platform; the sidebar splits the rows per source.
+  const refreshMessagingSessions = useCallback(async () => {
+    try {
+      const result = await listAllProfileSessions(MESSAGING_SECTION_LIMIT, 1, 'exclude', 'recent', 'all', {
+        excludeSources: MESSAGING_EXCLUDED_SOURCES
+      })
+
+      // Drop any non-messaging source the broad exclude didn't catch (custom
+      // sources) — those stay in local recents, not a platform section.
+      const rows = result.sessions.filter(s => isMessagingSource(s.source))
+
+      setMessagingSessions(prev => (sameCronSignature(prev, rows) ? prev : rows))
+      // Hit the cap → at least one platform may have more on disk than loaded,
+      // so platform sections offer their own per-platform "load more".
+      setMessagingTruncated(result.sessions.length >= MESSAGING_SECTION_LIMIT)
+    } catch {
+      // Non-fatal: the messaging sections just stay empty/stale.
+    }
+  }, [])
+
+  // Page a single platform's section independently (mirrors the per-profile
+  // pager): fetch that source's next window and merge it back in place, leaving
+  // every other platform's rows untouched. Resolves the platform's exact total.
+  const loadMoreMessagingForPlatform = useCallback(async (platform: string) => {
+    const inPlatform = (s: SessionInfo) => normalizeSessionSource(s.source) === platform
+    const loaded = $messagingSessions.get().filter(inPlatform).length
+
+    const result = await listAllProfileSessions(loaded + SIDEBAR_SESSIONS_PAGE_SIZE, 1, 'exclude', 'recent', 'all', {
+      source: platform
+    })
+
+    const incoming = result.sessions.filter(s => normalizeSessionSource(s.source) === platform)
+
+    setMessagingSessions(prev => [
+      ...prev.filter(s => !inPlatform(s)),
+      ...mergeSessionPage(prev.filter(inPlatform), incoming, sessionsToKeep())
+    ])
+
+    const total = result.total ?? incoming.length
+    setMessagingPlatformTotals(prev => ({ ...prev, [platform]: Math.max(total, incoming.length) }))
+  }, [])
+
   // Cron *jobs* drive the sidebar "Cron jobs" section. Jobs are created
   // synchronously (agent tool call or the cron UI), so refreshing here right
   // after an agent turn surfaces a new job immediately; the interval poll keeps
@@ -288,8 +376,13 @@ export function DesktopController() {
       // the same rows tagged profile="default". Cron sessions are excluded here
       // and fetched separately (refreshCronSessions) so the scheduler's
       // always-newest rows can't consume the recents page budget.
-      const result = await listAllProfileSessions(limit, 1, 'exclude', 'recent', 'all', {
-        excludeSources: ['cron']
+      // Scope the fetch to the active profile (not always 'all') so a profile
+      // with few recent sessions isn't windowed out of the cross-profile
+      // recency page — the empty-history-on-profile-switch bug.
+      const sessionProfile = profileScope === ALL_PROFILES ? 'all' : profileScope
+
+      const result = await listAllProfileSessions(limit, 1, 'exclude', 'recent', sessionProfile, {
+        excludeSources: SIDEBAR_EXCLUDED_SOURCES
       })
 
       if (refreshSessionsRequestRef.current === requestId) {
@@ -305,7 +398,8 @@ export function DesktopController() {
 
     void refreshCronSessions()
     void refreshCronJobs()
-  }, [refreshCronSessions, refreshCronJobs])
+    void refreshMessagingSessions()
+  }, [profileScope, refreshCronSessions, refreshCronJobs, refreshMessagingSessions])
 
   const loadMoreSessions = useCallback(() => {
     bumpSessionsLimit()
@@ -320,7 +414,7 @@ export function DesktopController() {
     const loaded = $sessions.get().filter(inKey).length
 
     const result = await listAllProfileSessions(loaded + SIDEBAR_SESSIONS_PAGE_SIZE, 1, 'exclude', 'recent', key, {
-      excludeSources: ['cron']
+      excludeSources: SIDEBAR_EXCLUDED_SOURCES
     })
 
     const keep = sessionsToKeep(key)
@@ -677,6 +771,7 @@ export function DesktopController() {
       currentView={currentView}
       onArchiveSession={sessionId => void archiveSession(sessionId)}
       onDeleteSession={sessionId => void removeSession(sessionId)}
+      onLoadMoreMessaging={loadMoreMessagingForPlatform}
       onLoadMoreProfileSessions={loadMoreSessionsForProfile}
       onLoadMoreSessions={loadMoreSessions}
       onManageCronJob={jobId => {
@@ -715,6 +810,7 @@ export function DesktopController() {
       <GatewayConnectingOverlay />
       <BootFailureOverlay />
       <CommandPalette />
+      <SessionSwitcher />
 
       {settingsOpen && (
         <Suspense fallback={null}>
@@ -834,6 +930,8 @@ export function DesktopController() {
     <Pane
       defaultOpen={false}
       disabled={!chatOpen}
+      forceCollapsed={narrowViewport}
+      hoverReveal
       id="file-browser"
       key="file-browser"
       maxWidth={FILE_BROWSER_MAX_WIDTH}
@@ -861,9 +959,12 @@ export function DesktopController() {
     >
       <Pane
         disabled={terminalTakeoverActive}
+        forceCollapsed={narrowViewport}
+        hoverReveal
         id="chat-sidebar"
         maxWidth={SIDEBAR_MAX_WIDTH}
         minWidth={SIDEBAR_DEFAULT_WIDTH}
+        onOverlayActiveChange={setSidebarOverlayMounted}
         resizable
         side={sidebarSide}
         width={`${SIDEBAR_DEFAULT_WIDTH}px`}
