@@ -139,3 +139,6 @@ python  3634400 reck   31u  IPv4 49517249      0t0  TCP localhost:48328->localho
 ### Service wont start
 
 
+### `janitor update` fails with "Fast-forward not possible"
+
+If `janitor update` fails with "Fast-forward not possible (history diverged)", run `bash scripts/migrate-janitor-update-flow.sh` from the Janitor repo, then re-run `janitor update`.
