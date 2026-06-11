@@ -85,18 +85,18 @@ jobs:
         run: uv cache prune --ci
 
       - name: Run Janitor-specific tests
-        # 3 of the 4 Janitor-specific test files are currently green. The
-        # 4th, tests/skills/test_janitor_config_audit_skill.py, is excluded
-        # because the underlying janitor-config-audit skill ships with
-        # pre-existing bugs (SKILL.md description >60 chars, missing
-        # platforms frontmatter, no backup-on-apply logic). Fix the skill
-        # in a separate branch and re-add it to this list.
+        # All 4 Janitor-specific test files are green. The 4th
+        # (config-audit skill) was re-enabled after fixing the skill:
+        # description ≤60 chars, platforms frontmatter, JANITOR_HOME
+        # env-var support, and <file>.bak on apply.
         run: |
           source .venv/bin/activate
           python -m pytest \
             tests/test_janitor_cli.py \
             tests/test_janitor_update_bootstrap.py \
+            tests/test_janitor_update_core.py \
             tests/gateway/test_telegram_janitor_branding.py \
+            tests/skills/test_janitor_config_audit_skill.py \
             --tb=short -v
         env:
           OPENROUTER_API_KEY: ""
