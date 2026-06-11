@@ -113,30 +113,3 @@ def _status(path: Path) -> str:
         check=True,
     ).stdout
 
-
-
-def test_bootstrap_update_refreshes_active_lazy_features(monkeypatch):
-    import janitor_update_bootstrap as jub
-
-    called = {"deps": 0, "tui": 0, "refresh": 0, "restore": 0}
-
-    monkeypatch.setattr(jub, "_stash_local_changes_if_needed", lambda _cwd: None)
-    monkeypatch.setattr(jub, "_update_python_dependencies", lambda _cwd: called.__setitem__("deps", called["deps"] + 1))
-    monkeypatch.setattr(jub, "_build_tui", lambda _cwd: called.__setitem__("tui", called["tui"] + 1))
-    monkeypatch.setattr(jub, "_refresh_active_lazy_features", lambda: called.__setitem__("refresh", called["refresh"] + 1))
-    monkeypatch.setattr(jub, "_clear_bytecode_cache", lambda _cwd: 0)
-    monkeypatch.setattr(jub, "_restore_stash", lambda _cwd, _ref: called.__setitem__("restore", called["restore"] + 1) or True)
-
-    class _OK:
-        returncode = 0
-
-    monkeypatch.setattr(
-        jub.subprocess,
-        "run",
-        lambda *a, **kw: _OK(),
-    )
-
-    assert jub.run_update() == 0
-    assert called["deps"] == 1
-    assert called["tui"] == 1
-    assert called["refresh"] == 1

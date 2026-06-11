@@ -12,7 +12,6 @@ Per JANITOR FORK DIRECTIVES:
 
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 import sys
@@ -124,113 +123,31 @@ def _clear_bytecode_cache(project_root: Path) -> int:
     return removed
 
 
-def _update_python_dependencies(janitor_root: Path) -> None:
-    print("  → Updating dependencies (uv)...")
-    uv_bin = shutil.which("uv")
-    if uv_bin:
-        subprocess.run(
-            [uv_bin, "pip", "install", "--python", sys.prefix, "-e", ".[all]"],
-            cwd=janitor_root,
-            check=True,
-        )
-        return
-
-    print("  ⚠ uv not found — falling back to pip")
-    subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-e", ".[all]"],
-        cwd=janitor_root,
-        check=True,
-    )
-
-
-def _build_tui(janitor_root: Path) -> None:
-    print("  → Compiling TUI components...")
-    ui_tui_dir = janitor_root / "ui-tui"
-    subprocess.run(["npm", "install"], cwd=ui_tui_dir, check=True)
-    subprocess.run(["npm", "run", "build"], cwd=ui_tui_dir, check=True)
-
-
-def _refresh_active_lazy_features() -> None:
-    """Refresh any previously-activated lazy dependency feature pins."""
-    try:
-        from tools import lazy_deps
-    except Exception as exc:
-        print(f"  ⚠ Skipping lazy dependency refresh: {exc}")
-        return
-
-    try:
-        results = lazy_deps.refresh_active_features(prompt=False)
-    except Exception as exc:
-        print(f"  ⚠ Lazy dependency refresh failed unexpectedly: {exc}")
-        return
-
-    if not results:
-        print("  → Lazy dependencies: no active feature pins to refresh")
-        return
-
-    refreshed = [feature for feature, status in results.items() if status == "refreshed"]
-    failed = [
-        (feature, status)
-        for feature, status in results.items()
-        if status.startswith("failed:")
-    ]
-
-    print(
-        "  → Lazy dependencies refreshed: "
-        f"{len(refreshed)} updated, {len(failed)} failed, {len(results) - len(refreshed) - len(failed)} current"
-    )
-    for feature, status in failed:
-        print(f"    ⚠ {feature}: {status}")
-
-
 def run_update() -> int:
-    """Run the minimal update cycle and return a process exit code."""
+    """Janitor update entry point used by the early intercept in ``janitor_cli.py``.
+
+    Prints the "🔥 THE JANITOR" banner and delegates to the shared core
+    in ``janitor_update_core``. The core owns all the canonical flow
+    logic; this wrapper exists so the intercept
+    (``if sys.argv[1] == "update"``) has a stable entry point that
+    doesn't itself import ``hermes_cli.main``.
+
+    Per JANITOR FORK DIRECTIVE #12: any change to the update flow lives
+    in ``janitor_update_core.py``, not here.
+    """
     print("\n🔥 THE JANITOR: Initiating tactical update...\n")
-    janitor_root = Path(__file__).parent.resolve()
-    stash_ref: str | None = None
 
-    try:
-        os.chdir(janitor_root)
+    from types import SimpleNamespace
+    import janitor_update_core
 
-        if not (janitor_root / ".git").exists():
-            print("✗ Not a git repository. Please reinstall.")
-            return 1
-
-        stash_ref = _stash_local_changes_if_needed(janitor_root)
-
-        print("  → Syncing incinerator protocols (git pull)...")
-        subprocess.run(
-            _git_cmd() + ["pull", "--ff-only", "origin", "main"],
-            cwd=janitor_root,
-            check=True,
-        )
-
-        _update_python_dependencies(janitor_root)
-        _refresh_active_lazy_features()
-        _build_tui(janitor_root)
-
-        removed = _clear_bytecode_cache(janitor_root)
-        if removed:
-            print(
-                f"  ✓ Cleared {removed} stale __pycache__ "
-                f"director{'y' if removed == 1 else 'ies'}"
-            )
-
-        if not _restore_stash(janitor_root, stash_ref):
-            return 1
-
-        print("\n✅ Janitor updated successfully. Garbage collected.\n")
-        return 0
-    except subprocess.CalledProcessError as e:
-        print(f"\n❌ Update failed at step: {e.cmd}\n")
-        if stash_ref:
-            _restore_stash(janitor_root, stash_ref)
-        return 1
-    except KeyboardInterrupt:
-        print("\n✗ Update cancelled.\n")
-        if stash_ref:
-            _restore_stash(janitor_root, stash_ref)
-        return 130
+    args = SimpleNamespace(
+        check=False,
+        gateway=False,
+        backup=False,
+        no_backup=False,
+        branch=None,
+    )
+    return janitor_update_core.run_janitor_update(args)
 
 
 if __name__ == "__main__":
