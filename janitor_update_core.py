@@ -27,16 +27,8 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 
-# ---------------------------------------------------------------------------
-# Module-level helper attributes.
-#
-# The tests in tests/test_janitor_update_core.py monkey-patch these via
-# ``monkeypatch.setattr(juc, "<name>", stub)``. They MUST exist at module
-# level (as ``None`` sentinels) so the setattr call works even when the
-# real lazy-imported helper is unavailable. The real implementations are
-# resolved lazily inside the phase functions via ``_try_import``.
-# ---------------------------------------------------------------------------
-
+# Module-level sentinels so tests can monkeypatch.setattr() before any import
+# error fires. Real values are loaded lazily via _try_import().
 PROJECT_ROOT: Optional[Path] = None
 _run_pre_update_backup: Optional[Callable] = None
 _install_hangup_protection: Optional[Callable] = None
@@ -50,74 +42,89 @@ _clear_bytecode_cache: Optional[Callable] = None
 _validate_critical_files_syntax: Optional[Callable] = None
 _capture_head_sha: Optional[Callable] = None
 _install_python_dependencies_with_optional_fallback: Optional[Callable] = None
+_is_termux_env: Optional[Callable] = None
+_is_android_python: Optional[Callable] = None
+_install_psutil_android_compat: Optional[Callable] = None
+_ensure_uv_for_termux: Optional[Callable] = None
 
 
-# Lazy-import cache so we only try each helper once per process.
+# Lazy-import cache: only try each helper once per process.
 _HELPER_CACHE: dict[str, Any] = {}
 
 
-def _git_cmd() -> list[str]:
-    """Return the git command list, with Windows atomic-append workaround."""
-    base = ["git"]
-    if sys.platform == "win32":
-        base = ["git", "-c", "windows.appendAtomically=false"]
-    return base
-
-
-def _try_import(helper_name: str) -> Any:
+def _try_import(name: str) -> Any:
     """Lazy-import a single helper from ``hermes_cli.main``.
 
-    Returns the helper or ``None`` if the import fails. Cached so that
-    a repeated call (e.g. after a syntax error recovery) doesn't trigger
-    a second round of import attempts.
+    Returns the helper or ``None`` if the import fails. Cached.
     """
-    if helper_name in _HELPER_CACHE:
-        return _HELPER_CACHE[helper_name]
-
+    if name in _HELPER_CACHE:
+        return _HELPER_CACHE[name]
     try:
         import hermes_cli.main as _main_mod
-        helper = getattr(_main_mod, helper_name, None)
-    except Exception as exc:
-        print(f"  ⚠ Could not load {helper_name}: {exc}")
+        helper = getattr(_main_mod, name, None)
+    except Exception:
         helper = None
-
-    _HELPER_CACHE[helper_name] = helper
+    _HELPER_CACHE[name] = helper
     return helper
 
 
-def _resolve_helper(name: str) -> Any:
-    """Return the active implementation for ``name``.
+def _ensure_loaded() -> None:
+    """Populate module-level sentinels from hermes_cli.main on first use.
 
-    Order of preference:
-    1. The module-level attribute (which the tests monkey-patch).
-    2. The lazy-imported value from ``hermes_cli.main``.
-    3. ``None`` (caller is responsible for providing a fallback).
+    Tests can override any of these via monkeypatch.setattr() before the
+    first call. If a helper is None (e.g. venv partially broken), the
+    core falls back to a local minimal implementation.
     """
-    module_attr = globals().get(name)
-    if module_attr is not None:
-        return module_attr
-    return _try_import(name)
+    global PROJECT_ROOT
+    if PROJECT_ROOT is None:
+        helper = _try_import("PROJECT_ROOT")
+        PROJECT_ROOT = helper if helper is not None else Path(__file__).parent.resolve()
+
+    for name in (
+        "_run_pre_update_backup",
+        "_install_hangup_protection",
+        "_finalize_update_output",
+        "_stash_local_changes_if_needed",
+        "_restore_stashed_changes",
+        "_refresh_active_lazy_features",
+        "_update_node_dependencies",
+        "_invalidate_update_cache",
+        "_clear_bytecode_cache",
+        "_validate_critical_files_syntax",
+        "_capture_head_sha",
+        "_install_python_dependencies_with_optional_fallback",
+        "_is_termux_env",
+        "_is_android_python",
+        "_install_psutil_android_compat",
+        "_ensure_uv_for_termux",
+    ):
+        if globals().get(name) is None:
+            globals()[name] = _try_import(name)
 
 
-def _call_helper(
-    helper_name: str,
+def _call(
+    name: str,
     *args,
     fallback: Optional[Callable] = None,
     **kwargs,
 ) -> Any:
     """Call a lazy-loaded helper with a graceful fallback.
 
-    If the helper is unavailable (import failed and module attr is None),
-    invokes ``fallback`` if provided, otherwise returns ``None`` and prints
-    a one-line warning.
+    If the helper is None (lazy import failed), invoke ``fallback`` if
+    provided, otherwise return ``None`` and print a one-line warning.
     """
-    helper = _resolve_helper(helper_name)
+    helper = globals().get(name)
     if helper is None:
         if fallback is not None:
             return fallback(*args, **kwargs)
-        print(f"  ⚠ Helper {helper_name} unavailable — skipping.")
+        print(f" ⚠ Helper {name} unavailable — skipping.")
         return None
     return helper(*args, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Local fallbacks (preserve original janitor_update_bootstrap behavior)
+# ---------------------------------------------------------------------------
 
 
 def _local_stash(git_cmd: list[str], cwd: Path) -> Optional[str]:
@@ -139,13 +146,13 @@ def _local_stash(git_cmd: list[str], cwd: Path) -> Optional[str]:
         text=True,
     )
     if unmerged.stdout.strip():
-        print("  → Clearing unmerged index entries from a previous conflict...")
+        print(" → Clearing unmerged index entries from a previous conflict...")
         subprocess.run(git_cmd + ["reset"], cwd=cwd, capture_output=True)
 
     stash_name = datetime.now(timezone.utc).strftime(
         "janitor-update-autostash-%Y%m%d-%H%M%S"
     )
-    print("  → Local changes detected — stashing before update...")
+    print(" → Local changes detected — stashing before update...")
     subprocess.run(
         git_cmd + ["stash", "push", "--include-untracked", "-m", stash_name],
         cwd=cwd,
@@ -160,7 +167,9 @@ def _local_stash(git_cmd: list[str], cwd: Path) -> Optional[str]:
     ).stdout.strip()
 
 
-def _local_restore_stash(git_cmd: list[str], cwd: Path, stash_ref: Optional[str]) -> bool:
+def _local_restore_stash(
+    git_cmd: list[str], cwd: Path, stash_ref: Optional[str]
+) -> bool:
     """Local fallback for ``_restore_stashed_changes``."""
     if not stash_ref:
         return True
@@ -181,19 +190,19 @@ def _local_restore_stash(git_cmd: list[str], cwd: Path, stash_ref: Optional[str]
 
     if not selector:
         print(
-            f"  ⚠ Could not find autostash {stash_ref}; "
+            f" ⚠ Could not find autostash {stash_ref}; "
             f"run `git stash list` manually."
         )
         return False
 
-    print("  → Restoring local changes from stash...")
+    print(" → Restoring local changes from stash...")
     apply_result = subprocess.run(
         git_cmd + ["stash", "apply", selector],
         cwd=cwd,
     )
     if apply_result.returncode != 0:
         print(
-            f"  ⚠ Failed to apply autostash {selector}; "
+            f" ⚠ Failed to apply autostash {selector}; "
             f"resolve manually with `git stash apply {selector}`."
         )
         return False
@@ -202,34 +211,27 @@ def _local_restore_stash(git_cmd: list[str], cwd: Path, stash_ref: Optional[str]
     return True
 
 
-def _validate_critical_files_syntax_or_skip(root: Path) -> tuple[bool, str | None, str | None]:
-    """Validate critical files, falling back to a no-op if helper is broken.
-
-    The fallback is permissive (returns ``(True, None, None)``) because
-    the alternative is to leave the user with a bricked install after a
-    failed validation. We log a warning so the operator knows the check
-    didn't run.
-    """
-    helper = _resolve_helper("_validate_critical_files_syntax")
-    if helper is None:
-        print(f"  ⚠ Post-pull syntax check skipped: helper unavailable")
-        return True, None, None
-    try:
-        return helper(root)
-    except Exception as exc:
-        print(f"  ⚠ Post-pull syntax check skipped: {exc}")
-        return True, None, None
+def _git_cmd() -> list[str]:
+    """Return the git command list, with Windows atomic-append workaround."""
+    base = ["git"]
+    if sys.platform == "win32":
+        base = ["git", "-c", "windows.appendAtomically=false"]
+    return base
 
 
-def _local_check_only(branch: str) -> int:
-    """Read-only check: fetch + rev-list + report."""
-    project_root = _get_project_root()
+# ---------------------------------------------------------------------------
+# Phase helpers
+# ---------------------------------------------------------------------------
+
+
+def _check_only(branch: str) -> int:
+    """Read-only mode: fetch + rev-list + report behind-count."""
+    git_cmd = _git_cmd()
+    project_root = PROJECT_ROOT
     git_dir = project_root / ".git"
     if not git_dir.exists():
         print("✗ Not a git repository — cannot check for updates.")
         return 1
-
-    git_cmd = _git_cmd()
 
     print("→ Fetching from origin...")
     fetch_result = subprocess.run(
@@ -264,174 +266,6 @@ def _local_check_only(branch: str) -> int:
         print(f"⚕ {behind} update(s) available.")
         print("  Run 'janitor update' to install.")
     return 0
-
-
-def _get_project_root() -> Path:
-    """Resolve PROJECT_ROOT lazily, falling back to janitor_update_core's parent."""
-    helper = _resolve_helper("PROJECT_ROOT")
-    if helper is not None:
-        return helper
-    return Path(__file__).parent.resolve()
-
-
-def run_janitor_update(args) -> int:
-    """Canonical Janitor update flow. Mirrors ``_cmd_update_impl``.
-
-    Args:
-        args: argparse Namespace from the CLI. Recognised attributes:
-            check (bool): if True, only report behind-count and return.
-            gateway (bool): suppresses interactive prompts.
-            backup (bool): forces a pre-update backup for this run.
-            no_backup (bool): skips pre-update backup even if config has it on.
-            branch (str|None): target branch (default ``"main"``).
-
-    Returns:
-        Process exit code: 0 = updated, 1 = failed, 130 = cancelled.
-    """
-    gateway_mode = bool(getattr(args, "gateway", False))
-    branch = getattr(args, "branch", None) or "main"
-
-    # Hangup protection — guards against SSH disconnects during npm install.
-    _update_io_state = _call_helper(
-        "_install_hangup_protection",
-        gateway_mode=gateway_mode,
-        fallback=lambda **kw: {},
-    )
-
-    try:
-        if getattr(args, "check", False):
-            return _local_check_only(branch)
-
-        print("⚕ Updating Janitor Agent from fork...")
-        print()
-
-        _call_helper("_run_pre_update_backup", args, fallback=lambda *a, **kw: None)
-
-        project_root = _get_project_root()
-        git_dir = project_root / ".git"
-        if not git_dir.exists():
-            print("✗ Not a git repository. Please reinstall:")
-            print("  git clone https://github.com/reck74/Janitor-Agent.git")
-            return 1
-
-        git_cmd = _git_cmd()
-
-        if not _fetch(git_cmd, project_root):
-            return 1
-
-        current_branch = _current_branch(git_cmd, project_root)
-        auto_stash_ref: Optional[str] = None
-
-        if current_branch != branch:
-            label = (
-                "detached HEAD"
-                if current_branch == "HEAD"
-                else f"branch '{current_branch}'"
-            )
-            print(f"  ⚠ Currently on {label} — switching to {branch} for update...")
-            auto_stash_ref = _call_helper(
-                "_stash_local_changes_if_needed",
-                git_cmd,
-                project_root,
-                fallback=_local_stash,
-            )
-            subprocess.run(
-                git_cmd + ["checkout", branch],
-                cwd=project_root,
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-        else:
-            auto_stash_ref = _call_helper(
-                "_stash_local_changes_if_needed",
-                git_cmd,
-                project_root,
-                fallback=_local_stash,
-            )
-
-        commit_count = _behind_count(git_cmd, project_root, branch)
-        if commit_count == 0:
-            _call_helper("_invalidate_update_cache", fallback=lambda *a, **kw: None)
-            print("✓ Already up to date.")
-            return 0
-
-        update_succeeded = _pull_with_fallback(git_cmd, project_root, branch)
-        if not update_succeeded:
-            if auto_stash_ref:
-                print(
-                    f"  ℹ️  Local changes preserved in stash (ref: {auto_stash_ref})"
-                )
-                print("  Restore manually with: git stash apply")
-            return 1
-
-        _call_helper("_invalidate_update_cache", fallback=lambda *a, **kw: None)
-
-        # Clear stale bytecode.
-        removed = _call_helper(
-            "_clear_bytecode_cache",
-            project_root,
-            fallback=lambda *a, **kw: 0,
-        )
-        if removed:
-            print(
-                f"  ✓ Cleared {removed} stale __pycache__ "
-                f"director{'y' if removed == 1 else 'ies'}"
-            )
-
-        _install_python_dependencies(project_root)
-
-        _call_helper(
-            "_refresh_active_lazy_features",
-            fallback=lambda *a, **kw: None,
-        )
-
-        _install_node_dependencies(project_root)
-
-        # Restore stash on success.
-        if auto_stash_ref:
-            _call_helper(
-                "_restore_stashed_changes",
-                git_cmd,
-                project_root,
-                auto_stash_ref,
-                fallback=lambda *a, **kw: _local_restore_stash(
-                    a[0], a[1], a[2],
-                ),
-            )
-
-        print()
-        print("✓ Janitor Agent updated successfully!")
-        print("  Restart Janitor to use the new version.")
-        return 0
-
-    except KeyboardInterrupt:
-        print("\n✗ Update cancelled.")
-        if auto_stash_ref:
-            _call_helper(
-                "_restore_stashed_changes",
-                git_cmd,
-                project_root,
-                auto_stash_ref,
-                fallback=lambda *a, **kw: _local_restore_stash(
-                    a[0], a[1], a[2],
-                ),
-            )
-        return 130
-    except subprocess.CalledProcessError as e:
-        print(f"\n❌ Update failed at step: {e.cmd}")
-        return 1
-    finally:
-        _call_helper(
-            "_finalize_update_output",
-            _update_io_state,
-            fallback=lambda *a, **kw: None,
-        )
-
-
-# ---------------------------------------------------------------------------
-# Internal phase helpers (split out for readability + testability)
-# ---------------------------------------------------------------------------
 
 
 def _fetch(git_cmd: list[str], cwd: Path) -> bool:
@@ -483,11 +317,10 @@ def _behind_count(git_cmd: list[str], cwd: Path, branch: str) -> int:
 def _pull_with_fallback(git_cmd: list[str], cwd: Path, branch: str) -> bool:
     """Run git pull --ff-only; on divergence reset --hard origin/<branch>.
 
-    Returns True on success, False on hard failure (reset itself failed).
-    Performs post-pull syntax validation with auto-rollback to the pre-pull
-    SHA on syntax error.
+    Returns True on success, False on hard failure. Performs post-pull
+    syntax validation with auto-rollback to the pre-pull SHA on error.
     """
-    pre_pull_sha = _call_helper(
+    pre_pull_sha = _call(
         "_capture_head_sha",
         git_cmd,
         cwd,
@@ -503,7 +336,6 @@ def _pull_with_fallback(git_cmd: list[str], cwd: Path, branch: str) -> bool:
     )
 
     if pull_result.returncode != 0:
-        # Divergence — local commits ahead that aren't on origin.
         print(
             "  ⚠ Fast-forward not possible (history diverged), "
             "resetting to match remote..."
@@ -525,10 +357,18 @@ def _pull_with_fallback(git_cmd: list[str], cwd: Path, branch: str) -> bool:
             return False
 
     # Post-pull syntax guard — auto-rollback if pulled code is broken.
-    syntax_ok, failing_path, syntax_error = _validate_critical_files_syntax_or_skip(cwd)
-    if syntax_ok and failing_path is None and syntax_error is None:
-        # No-op fallback path: the syntax check did not actually run.
-        print("  → Post-pull syntax check skipped (no validator available).")
+    print("→ Running post-pull syntax check...")
+    syntax_helper = globals().get("_validate_critical_files_syntax")
+    if syntax_helper is not None:
+        try:
+            syntax_ok, failing_path, syntax_error = syntax_helper(cwd)
+        except Exception as exc:
+            print(f"  ⚠ Post-pull syntax check skipped: {exc}")
+            syntax_ok = True
+    else:
+        print("  ⚠ Post-pull syntax check skipped: helper unavailable")
+        syntax_ok = True
+
     if not syntax_ok:
         print()
         print("✗ Pulled code has a syntax error in a critical file:")
@@ -536,7 +376,7 @@ def _pull_with_fallback(git_cmd: list[str], cwd: Path, branch: str) -> bool:
             print(f"  {failing_path}")
         if syntax_error:
             for line in str(syntax_error).splitlines()[:6]:
-                print(f"  {line}")
+                print(f"    {line}")
         if pre_pull_sha:
             print()
             print(f"→ Rolling back to {pre_pull_sha[:10]}...")
@@ -551,13 +391,13 @@ def _pull_with_fallback(git_cmd: list[str], cwd: Path, branch: str) -> bool:
                 print("  Run `janitor update` again later once a fix lands.")
             else:
                 print("  ✗ Rollback failed. Recover manually with:")
-                print(f"  cd {cwd} && git reset --hard {pre_pull_sha}")
+                print(f"    cd {cwd} && git reset --hard {pre_pull_sha}")
                 if rollback_result.stderr.strip():
-                    print(f"  ({rollback_result.stderr.strip().splitlines()[0]})")
+                    print(f"    ({rollback_result.stderr.strip().splitlines()[0]})")
         else:
             print()
             print("  Could not capture pre-pull SHA — recover manually with:")
-            print(f"  cd {cwd} && git reflog && git reset --hard <prev-sha>")
+            print(f"    cd {cwd} && git reflog && git reset --hard <prev-sha>")
         return False
 
     return True
@@ -567,7 +407,7 @@ def _install_python_dependencies(project_root: Path) -> None:
     """Install Python deps via uv (preferred) or pip fallback."""
     print("→ Updating Python dependencies...")
     pip_cmd = [sys.executable, "-m", "pip"]
-    uv_bin = shutil.which("uv") or _call_helper(
+    uv_bin = shutil.which("uv") or _call(
         "_ensure_uv_for_termux",
         pip_cmd,
         fallback=lambda *a, **kw: None,
@@ -576,12 +416,8 @@ def _install_python_dependencies(project_root: Path) -> None:
 
     if uv_bin:
         uv_env = {**os.environ, "VIRTUAL_ENV": str(project_root / "venv")}
-        is_termux = _call_helper(
-            "_is_termux_env", uv_env, fallback=lambda env: False,
-        )
-        is_android = _call_helper(
-            "_is_android_python", fallback=lambda: False,
-        )
+        is_termux = _call("_is_termux_env", uv_env, fallback=lambda env: False)
+        is_android = _call("_is_android_python", fallback=lambda: False)
         if is_termux:
             uv_env.pop("PYTHONPATH", None)
             uv_env.pop("PYTHONHOME", None)
@@ -589,22 +425,26 @@ def _install_python_dependencies(project_root: Path) -> None:
             print("  → Termux detected: using uv + curated termux-all optional profile...")
         if is_termux and is_android:
             print("  → Termux/Android detected: prebuilding psutil...")
-            _call_helper(
+            _call(
                 "_install_psutil_android_compat",
                 [uv_bin, "pip"],
                 env=uv_env,
                 fallback=lambda *a, **kw: None,
             )
-        _call_helper(
+
+        def _uv_install(*_a, **_kw):
+            subprocess.run(
+                [uv_bin, "pip", "install", "--python", sys.prefix, "-e", ".[all]"],
+                cwd=project_root,
+                check=True,
+            )
+
+        _call(
             "_install_python_dependencies_with_optional_fallback",
             [uv_bin, "pip"],
             env=uv_env,
             group=install_group,
-            fallback=lambda *a, **kw: subprocess.run(
-                [uv_bin, "pip", "install", "--python", sys.prefix, "-e", ".[all]"],
-                cwd=project_root,
-                check=True,
-            ),
+            fallback=_uv_install,
         )
     else:
         try:
@@ -620,28 +460,32 @@ def _install_python_dependencies(project_root: Path) -> None:
                 cwd=project_root,
                 check=True,
             )
-        if _call_helper("_is_termux_env", fallback=lambda: False):
+        if _call("_is_termux_env", fallback=lambda: False):
             install_group = "termux-all"
             print("  → Termux detected: using curated termux-all optional profile...")
-        if _call_helper("_is_termux_env", fallback=lambda: False) and _call_helper(
-            "_is_android_python", fallback=lambda: False,
+        if _call("_is_termux_env", fallback=lambda: False) and _call(
+            "_is_android_python", fallback=lambda: False
         ):
             print("  → Termux/Android detected: prebuilding psutil...")
-            _call_helper(
+            _call(
                 "_install_psutil_android_compat",
                 pip_cmd,
                 fallback=lambda *a, **kw: None,
             )
-        _call_helper(
+
+        def _pip_install(*_a, **_kw):
+            subprocess.run(
+                pip_cmd + ["install", "-e", ".[all]"],
+                cwd=project_root,
+                check=True,
+            )
+
+        _call(
             "_install_python_dependencies_with_optional_fallback",
             pip_cmd,
             env=None,
             group=install_group,
-            fallback=lambda *a, **kw: subprocess.run(
-                pip_cmd + ["install", "-e", ".[all]"],
-                cwd=project_root,
-                check=True,
-            ),
+            fallback=_pip_install,
         )
 
     print("✓ Python dependencies updated")
@@ -649,9 +493,9 @@ def _install_python_dependencies(project_root: Path) -> None:
 
 def _install_node_dependencies(project_root: Path) -> None:
     """Build the TUI (Janitor-specific) + run upstream node update helper."""
-    _call_helper(
+    _call(
         "_update_node_dependencies",
-        fallback=lambda *a, **kw: None,
+        fallback=lambda: None,
     )
 
     ui_tui_dir = project_root / "ui-tui"
@@ -662,4 +506,172 @@ def _install_node_dependencies(project_root: Path) -> None:
         )
         subprocess.run(
             ["npm", "run", "build"], cwd=ui_tui_dir, check=True,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def run_janitor_update(args) -> int:
+    """Canonical Janitor update flow. Mirrors ``_cmd_update_impl``.
+
+    Args:
+        args: argparse Namespace from the CLI. Recognised attributes:
+            check (bool): if True, only report behind-count and return.
+            gateway (bool): suppresses interactive prompts.
+            backup (bool): forces a pre-update backup for this run.
+            no_backup (bool): skips pre-update backup even if config has it on.
+            branch (str|None): target branch (default ``"main"``).
+
+    Returns:
+        Process exit code: 0 = updated, 1 = failed, 130 = cancelled.
+    """
+    _ensure_loaded()
+
+    gateway_mode = bool(getattr(args, "gateway", False))
+    branch = getattr(args, "branch", None) or "main"
+
+    _update_io_state = _call(
+        "_install_hangup_protection",
+        gateway_mode=gateway_mode,
+        fallback=lambda **kw: {},
+    )
+
+    try:
+        if getattr(args, "check", False):
+            return _check_only(branch)
+
+        print("⚕ Updating Janitor Agent from fork...")
+        print()
+
+        _call("_run_pre_update_backup", args, fallback=lambda _a: None)
+
+        project_root = PROJECT_ROOT
+        git_dir = project_root / ".git"
+        if not git_dir.exists():
+            print("✗ Not a git repository. Please reinstall:")
+            print("  git clone https://github.com/reck74/Janitor-Agent.git")
+            return 1
+
+        git_cmd = _git_cmd()
+
+        if not _fetch(git_cmd, project_root):
+            return 1
+
+        current_branch = _current_branch(git_cmd, project_root)
+        auto_stash_ref: Optional[str] = None
+
+        if current_branch != branch:
+            label = (
+                "detached HEAD"
+                if current_branch == "HEAD"
+                else f"branch '{current_branch}'"
+            )
+            print(f"  ⚠ Currently on {label} — switching to {branch} for update...")
+            auto_stash_ref = _call(
+                "_stash_local_changes_if_needed",
+                git_cmd,
+                project_root,
+                fallback=_local_stash,
+            )
+            subprocess.run(
+                git_cmd + ["checkout", branch],
+                cwd=project_root,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        else:
+            auto_stash_ref = _call(
+                "_stash_local_changes_if_needed",
+                git_cmd,
+                project_root,
+                fallback=_local_stash,
+            )
+
+        commit_count = _behind_count(git_cmd, project_root, branch)
+        if commit_count == 0:
+            _call("_invalidate_update_cache", fallback=lambda: None)
+            print("✓ Already up to date.")
+            return 0
+
+        update_succeeded = _pull_with_fallback(git_cmd, project_root, branch)
+        if not update_succeeded:
+            if auto_stash_ref:
+                print(
+                    f"  ℹ️  Local changes preserved in stash (ref: {auto_stash_ref})"
+                )
+                print("  Restore manually with: git stash apply")
+            return 1
+
+        _call("_invalidate_update_cache", fallback=lambda: None)
+
+        removed = _call(
+            "_clear_bytecode_cache",
+            project_root,
+            fallback=lambda _r: 0,
+        )
+        if removed:
+            print(
+                f"  ✓ Cleared {removed} stale __pycache__ director{'y' if removed == 1 else 'ies'}"
+            )
+
+        _install_python_dependencies(project_root)
+
+        _call(
+            "_refresh_active_lazy_features",
+            fallback=lambda: None,
+        )
+
+        _install_node_dependencies(project_root)
+
+        if auto_stash_ref:
+            _call(
+                "_restore_stashed_changes",
+                git_cmd,
+                project_root,
+                auto_stash_ref,
+                fallback=lambda *a, **kw: _local_restore_stash(
+                    a[0], a[1], a[2],
+                ),
+            )
+
+        print()
+        print("✓ Janitor Agent updated successfully!")
+        print("  Restart Janitor to use the new version.")
+        return 0
+
+    except KeyboardInterrupt:
+        print("\n✗ Update cancelled.")
+        if auto_stash_ref:
+            _call(
+                "_restore_stashed_changes",
+                git_cmd,
+                project_root,
+                auto_stash_ref,
+                fallback=lambda *a, **kw: _local_restore_stash(
+                    a[0], a[1], a[2],
+                ),
+            )
+        return 130
+    except subprocess.CalledProcessError as e:
+        print(f"\n❌ Update failed at step: {e.cmd}")
+        if auto_stash_ref:
+            _call(
+                "_restore_stashed_changes",
+                git_cmd,
+                project_root,
+                auto_stash_ref,
+                fallback=lambda *a, **kw: _local_restore_stash(
+                    a[0], a[1], a[2],
+                ),
+            )
+        return 1
+    finally:
+        _call(
+            "_finalize_update_output",
+            _update_io_state,
+            fallback=lambda _s: None,
         )
