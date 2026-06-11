@@ -173,12 +173,17 @@ class TestOWASPFailSafe:
 class TestJanitorUpdateLazyRefresh:
     """Update command must refresh already-active lazy dependencies."""
 
-    def test_update_wires_lazy_refresh_from_hermes_main(self):
+    def test_update_delegates_to_janitor_update_core(self):
         source = Path("janitor_cli.py").read_text()
-        assert "_refresh_active_lazy_features = _main_mod._refresh_active_lazy_features" in source
+        assert "janitor_update_core.run_janitor_update(args)" in source
 
-    def test_update_invokes_lazy_refresh_after_python_deps(self):
-        source = Path("janitor_cli.py").read_text()
-        assert "_install_python_dependencies_with_optional_fallback(" in source
-        assert "_refresh_active_lazy_features()" in source
-        assert source.index("_install_python_dependencies_with_optional_fallback(") < source.index("_refresh_active_lazy_features()")
+    def test_update_core_invokes_lazy_refresh_after_python_deps(self):
+        source = Path("janitor_update_core.py").read_text()
+        assert "_install_python_dependencies(project_root)" in source
+        assert (
+            '_call(\n            "_refresh_active_lazy_features",\n            fallback=lambda: None,\n        )'
+            in source
+        )
+        install_idx = source.index("_install_python_dependencies(project_root)")
+        refresh_idx = source.index('"_refresh_active_lazy_features",\n            fallback=lambda: None,')
+        assert install_idx < refresh_idx
