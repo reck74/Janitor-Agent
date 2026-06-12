@@ -72,14 +72,15 @@ git fetch upstream
 git merge upstream/main   # or rebase
 
 # Re-run the integration (idempotent)
-bash $HOME/Janitor-Agent/skills/janitor-opendesign/scripts/integrate-janitor.sh register
+bash "$JANITOR_SKILLS_DIR/janitor-opendesign/scripts/integrate-janitor.sh" register
+# (or set JANITOR_SKILLS_DIR=$HOME/.janitor/skills on a default install)
 
 # Rebuild + restart
 pnpm install
-bash $HOME/Janitor-Agent/skills/janitor-opendesign/scripts/start.sh
+bash "$JANITOR_SKILLS_DIR/janitor-opendesign/scripts/start.sh"
 
 # Verify
-bash $HOME/Janitor-Agent/skills/janitor-opendesign/scripts/status.sh
+bash "$JANITOR_SKILLS_DIR/janitor-opendesign/scripts/status.sh"
 curl -s http://127.0.0.1:45351/api/agents | grep -c '"id":"janitor"'
 # Expect: 1
 ```

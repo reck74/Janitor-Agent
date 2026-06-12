@@ -5,12 +5,13 @@
 # del source tree de Open Design.
 #
 # Ubicación esperada del script (relativa a la skill):
-#   integrations/janitor-agent/01-register-agent-def.sh
+#   skills/janitor-opendesign/scripts/01-register-agent-def.sh
 # ============================================================
 set -euo pipefail
 
 OD_SOURCE_DIR="${OD_SOURCE_DIR:-${HOME}/open-design}"
-JANITOR_DEF_SRC="$(dirname "$0")/agent-defs/janitor.ts"
+SCRIPT_DIR_ABS="$(cd "$(dirname "$0")" && pwd)"
+JANITOR_DEF_SRC="${SCRIPT_DIR_ABS}/../agent-defs/janitor.ts"
 JANITOR_DEF_DST="${OD_SOURCE_DIR}/apps/daemon/src/runtimes/defs/janitor.ts"
 
 if [[ ! -d "${OD_SOURCE_DIR}" ]]; then

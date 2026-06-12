@@ -4,6 +4,9 @@
 # Agrega janitor a ICON_EXT (como 'png') y lo MANTIENE FUERA
 # de MONO_ICONS en AgentIcon.tsx.
 #
+# Ubicación esperada del script (relativa a la skill):
+#   skills/janitor-opendesign/scripts/04-patch-agent-icon.sh
+#
 # Idempotente: corre limpio si ya está parcheado.
 #
 # BUG HISTORICO: la primera versión tenía un if/else al revés —

@@ -1,6 +1,6 @@
 ---
 name: janitor-opendesign
-description: "Install Open Design and register Janitor as its native coding agent. Bundles the local pnpm tools-dev control plane with persistent ports (45351/45343) and an idempotent 4-step integration that patches the Open Design source tree to recognize Janitor's ACP binary, render its PNG icon, and expose it through the agent picker. End result: every Open Design run uses Janitor as the default coding agent without further configuration."
+description: "Register Janitor as Open Design's native coding agent."
 version: 1.0.0
 author: janitor
 license: MIT
@@ -40,15 +40,29 @@ integration.
 
 ## Quick Start
 
+The skill ships at `~/.janitor/skills/janitor-opendesign/` on a deployed Janitor
+install. The examples below use `JANITOR_SKILLS_DIR` so they work regardless
+of where the skill is installed (default install, profile, worktree, or
+in-repo development checkout):
+
 ```bash
+# Default install path
+export JANITOR_SKILLS_DIR="${JANITOR_SKILLS_DIR:-$HOME/.janitor/skills}"
+
 # 1. Install + register Janitor (idempotent, safe to re-run)
-bash $HOME/Janitor-Agent/skills/janitor-opendesign/scripts/integrate-janitor.sh register
+bash "$JANITOR_SKILLS_DIR/janitor-opendesign/scripts/integrate-janitor.sh" register
 
 # 2. Start the stack on persistent ports
-bash $HOME/Janitor-Agent/skills/janitor-opendesign/scripts/start.sh
+bash "$JANITOR_SKILLS_DIR/janitor-opendesign/scripts/start.sh"
 
 # 3. Verify
-bash $HOME/Janitor-Agent/skills/janitor-opendesign/scripts/status.sh
+bash "$JANITOR_SKILLS_DIR/janitor-opendesign/scripts/status.sh"
+```
+
+For an in-repo development checkout, override the path:
+
+```bash
+export JANITOR_SKILLS_DIR="/path/to/Janitor-Agent/skills"
 ```
 
 After step 2, the agent picker in Open Design shows **The Janitor** as a
@@ -69,7 +83,8 @@ daemon and web to fixed ports that survive restarts:
 Override via env vars if defaults collide with other services on the host:
 
 ```bash
-OD_DAEMON_PORT=56095 OD_WEB_PORT=55983 bash scripts/start.sh
+OD_DAEMON_PORT=56095 OD_WEB_PORT=55983 \
+  bash "$JANITOR_SKILLS_DIR/janitor-opendesign/scripts/start.sh"
 # Now document the new MCP URL everywhere you configured it.
 ```
 
@@ -138,8 +153,8 @@ re-run.
 ## Recovery
 
 - **Stack won't start**: `cd ~/open-design && pnpm install` (rebuilds any broken TypeScript)
-- **Janitor missing from picker**: re-run `bash scripts/integrate-janitor.sh register` then restart
-- **Icon missing**: re-run `bash scripts/04-patch-agent-icon.sh` (now idempotent) then rebuild web
+- **Janitor missing from picker**: re-run `bash "$JANITOR_SKILLS_DIR/janitor-opendesign/scripts/integrate-janitor.sh" register` then restart
+- **Icon missing**: re-run `bash "$JANITOR_SKILLS_DIR/janitor-opendesign/scripts/04-patch-agent-icon.sh"` (idempotent) then rebuild web
 - **Port conflict**: another service is using 45351/45343. Override with `OD_DAEMON_PORT` / `OD_WEB_PORT` env vars and update your MCP client config
 - **Health check fails**: check `~/open-design/.tmp/tools-dev/default/logs/daemon/latest.log`
 

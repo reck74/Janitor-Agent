@@ -3,6 +3,9 @@
 # 02-patch-registry.sh
 # Agrega janitorAgentDef a BASE_AGENT_DEFS en registry.ts.
 #
+# Ubicación esperada del script (relativa a la skill):
+#   skills/janitor-opendesign/scripts/02-patch-registry.sh
+#
 # PATTERN FIJO: el script anterior usaba un sed glob que matcheaba
 # la línea del import en vez de la línea del array, causando que
 # janitor quedara importado PERO no incluido en BASE_AGENT_DEFS.

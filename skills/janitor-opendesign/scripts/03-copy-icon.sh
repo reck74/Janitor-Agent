@@ -4,6 +4,9 @@
 # Copia el icono PNG de Janitor al public/agent-icons/
 # de la copia local de Open Design.
 #
+# Ubicación esperada del script (relativa a la skill):
+#   skills/janitor-opendesign/scripts/03-copy-icon.sh
+#
 # El icono es una ilustración PNG a color (310x311) del personaje
 # "The Janitor" — se renderiza como <img> en lugar de CSS mask.
 # Estilo consistente con Devin, Aider, Trae CLI (los otros PNGs).
@@ -14,8 +17,8 @@ OD_SOURCE_DIR="${OD_SOURCE_DIR:-${HOME}/open-design}"
 ICON_DST="${OD_SOURCE_DIR}/apps/web/public/agent-icons/janitor.png"
 
 # Buscar el PNG en multiples paths (orden de preferencia):
-#   1. Junto al script (integrations/janitor-agent/icon/)
-#   2. Raiz del proyecto de la skill (un nivel arriba de integrations/)
+#   1. Junto al script (skills/janitor-opendesign/icon/)
+#   2. Raiz del proyecto de la skill (un nivel arriba de skills/)
 SCRIPT_DIR_ABS="$(cd "$(dirname "$0")" && pwd)"
 SKILL_ROOT="$(cd "${SCRIPT_DIR_ABS}/../.." && pwd)"
 
