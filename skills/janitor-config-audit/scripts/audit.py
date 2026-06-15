@@ -8,11 +8,12 @@ Con --apply: aplica las actualizaciones automaticamente.
 
 import argparse
 import difflib
+import os
 import sys
 import yaml
 from pathlib import Path
 
-JANITOR_HOME = Path.home() / ".janitor"
+JANITOR_HOME = Path(os.environ.get("JANITOR_HOME", Path.home() / ".janitor"))
 ASSETS_JANITOR = JANITOR_HOME / "janitor-core" / "assets" / "janitor"
 
 FILES = {
@@ -120,7 +121,7 @@ def audit_file(name, apply_mode=False):
     if apply_mode:
         print(f"\n  >> Aplicando actualizacion...")
         import shutil
-        backup = active_path.with_suffix(".bak")
+        backup = Path(str(active_path) + ".bak")
         shutil.copy2(active_path, backup)
         shutil.copy2(asset_path, active_path)
         print(f"  [OK] Asset aplicado. Backup en: {backup}")
