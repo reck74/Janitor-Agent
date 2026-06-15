@@ -1,0 +1,11 @@
+=== Gate 9: telegram branding tests (was the NEW regression) ===
+=== Summary: 1 files, 12 tests passed, 0 failed (100% complete) in 1.3s (32 workers) ===
+  Durations cached to test_durations.json (1 files)
+
+=== Per-file subprocess time distribution ===
+  Files:   1
+  Total subprocess CPU-wall: 1.3s  (runner wall: 1.3s, parallelism: 32x)
+  P50: 1.31s  P90: 1.31s  P95: 1.31s  P99: 1.31s  Max: 1.31s
+  <1s: 0 files (0%)  <2s: 1 files (100%)
+  Top 10 slowest:
+      1.31s  tests/gateway/test_telegram_janitor_branding.py

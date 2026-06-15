@@ -1,0 +1,11 @@
+=== Gate 8: npm test ===
+   Start at  08:24:10
+   Duration  6.47s (transform 12.59s, setup 0ms, import 28.13s, tests 10.53s, environment 11ms)
+
+npm error Lifecycle script `test` failed with error:
+npm error code 1
+npm error path /home/reck/Janitor-Agent/ui-tui
+npm error workspace hermes-tui@0.0.1
+npm error location /home/reck/Janitor-Agent/ui-tui
+npm error command failed
+npm error command sh -c vitest run

@@ -1,0 +1,6 @@
+--- Gate 10: janitor_cli --version ---
+THE JANITOR v0.16.0 (2026.6.09) · upstream c78e5931
+Project: /home/reck/Janitor-Agent
+Python: 3.11.15
+---
+--- Gate 11: git status ---
