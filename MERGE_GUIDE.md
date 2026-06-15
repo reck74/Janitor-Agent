@@ -254,3 +254,83 @@ If any matches are found, update the assertion in the same commit and add the in
 ---
 
 *Última actualización: Mayo 2026*
+
+---
+
+## v2026.6.5 Sync (Hermes v0.16.0)
+
+**Rango:** `1a710e8df` → `2a14e8957` (1,607 commits, 996 files, +80,859 / -26,205 líneas)
+**Fecha:** 2026-06-15
+**Estrategia:** Full merge con `git merge -X theirs upstream/main --no-commit` + restauración manual de archivos Janitor-only desde `HEAD` + re-aplicación de branding
+
+### Cambios adoptados
+
+**7 parches de seguridad críticos:**
+- `da28d5d11` — SSH/credential gate en `cp`/`mv`/`install`
+- `972a9885e` — Bloqueo de exfil en MCP stdio configs
+- `fc4635458` — Gateway fail-closed en own-policy adapters
+- `3380563d9` — `/api/status` host-leak fix
+- `a218a0f15` + `af5b52647` — SSL CA bundle fail-fast guard
+- `bd66e7e3f` — Codex OAuth refresh_token self-heal
+- `7a1eed826` — Anthropic replay redaction
+
+**Módulos nuevos adoptados:**
+- `agent/coding_context.py` (738 líneas)
+- `agent/ssl_guard.py` + `agent/anthropic_adapter.py`
+- `agent/transports/{anthropic,chat_completions,codex,types}.py`
+- `cron/blueprint_catalog.py` (713 líneas)
+- `gateway/platforms/whatsapp_cloud.py` (1956 líneas)
+- `hermes_cli/mcp_security.py` (nuevo módulo seguridad)
+- `hermes_cli/blueprint_cmd.py`, `model_cost_guard.py`, `setup_whatsapp_cloud.py`, `suggestions_cmd.py`, `write_approval_commands.py`
+- `tools/blueprints.py`, `read_extract.py`, `read_terminal_tool.py`, `write_approval.py`
+
+**Plataformas nuevas:** `photon`, `simplex`, `teams`, `whatsapp_cloud`
+
+**Providers nuevos:** `zai` (GLM-5.2), `langfuse` observability
+
+**Skills nuevos adoptados (11):** 5 github + 4 productivity + 2 media + 1 research + 1 note-taking (ver `skills/` post-merge)
+
+**Config v11→v12 + breaking change:**
+- `memory.write_mode` / `skills.write_mode` (tri-state) → `write_approval` (boolean, default false)
+- `_config_version`: 28 → 29
+- Slash commands: `/memory mode <on|off|approve>` → `/memory approval <on|off>` (mode queda como alias)
+
+**God-file refactor:** cli.py y gateway/run.py (Phase 2/3) — módulos extraídos a `hermes_cli/subcommands/`, `gateway/*_mixin.py`
+
+### Cambios descartados
+
+- **1,495 archivos de tests upstream** en `tests/` (per directiva #11)
+  - El job `upstream-sync-verify` corre la suite completa contra el código post-merge en `workflow_dispatch` y en pushes a `main` con commits `chore(sync):` / `fix(sync):`
+  - **Preservados**: 5 tests Janitor-specific + 3 archivos comunes (`__init__.py`, `conftest.py`) + 114 tests Electron del subtree `apps/desktop/electron/*.test.cjs`
+
+- **32 commits de `chore(release): map <author>`** (bookkeeping upstream irrelevante)
+- **`apps/desktop/` subtree Electron** traído pero NO publicado (per directivas #4 + #8). El instalador base sigue sin incluirlo.
+
+### Fixes aplicados durante el merge
+
+1. `scripts/run_tests_parallel.py`: removida definición duplicada de `--slice` (regresión upstream en su propio merge de god-file phase)
+2. `pyproject.toml`: restaurados `janitor_cli`, `janitor_update_bootstrap`, `janitor_update_core` en `py-modules` (necesario para directiva #13)
+3. Branding re-aplicado: `hermes_cli/main.py:231` y `hermes_cli/banner.py:478` ahora dicen `THE JANITOR v{VERSION} ({RELEASE_DATE})`
+
+### Post-merge para usuarios existentes
+
+```bash
+# Si tenías una config v0.15.x con write_mode, migrar:
+bash scripts/migrate-janitor-v0.16.0.sh
+
+# Verificar que la versión es correcta:
+janitor --version
+# Expected: THE JANITOR v0.16.0 (...)
+```
+
+### Branding
+- `THE JANITOR` preservado en `hermes_cli/main.py:231` y `hermes_cli/banner.py:478`
+- Re-aplicado automáticamente durante el merge
+
+### CI
+- `tests.yml` sigue podado a 5 tests Janitor-specific
+- `upstream-sync.yml` presente (job `upstream-sync-verify`)
+- `janitor-ci.yml` presente
+- `supply-chain-audit.yml` y `typecheck.yml` aceptados
+- 19 workflows en total (vs 18 upstream-only)
+
