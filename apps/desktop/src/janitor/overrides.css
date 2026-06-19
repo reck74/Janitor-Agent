@@ -1,0 +1,55 @@
+/*
+ * Janitor desktop overrides.
+ *
+ * Loaded via a side-effect import from `janitor/install-themes.ts` (which is
+ * itself invoked synchronously in `main.tsx` before `createRoot().render()`).
+ *
+ * Scope: presentation only. No behavioral changes — we never override React
+ * components or upstream state. Selectors are scoped to the Janitor skin via
+ * `[data-hermes-theme="janitor"]` so the upstream themes keep their look.
+ */
+
+/* Brand mark: swap the upstream nous-girl asset for the Janitor monogram. */
+img[src*="nous-girl.jpg"] {
+  content: url('/janitor-monogram.png');
+}
+
+/* White tile around the brand mark clashes with the dark Janitor surface. */
+[data-hermes-theme="janitor"] .bg-white:has(> img[src*="janitor-monogram"]) {
+  background-color: var(--theme-card) !important;
+}
+
+/* Global monospace — fits the DevSecOps / terminal-first aesthetic. */
+[data-hermes-theme="janitor"] body,
+[data-hermes-theme="janitor"] button,
+[data-hermes-theme="janitor"] input,
+[data-hermes-theme="janitor"] textarea,
+[data-hermes-theme="janitor"] select,
+[data-hermes-theme="janitor"] .font-sans,
+[data-hermes-theme="janitor"] [class*="font-sans"] {
+  font-family: var(--dt-font-mono, "Cascadia Code", "JetBrains Mono", monospace) !important;
+}
+
+/* Sidebar: subtle scanline accent in the wireframe style. */
+[data-hermes-theme="janitor"] [data-sidebar],
+[data-hermes-theme="janitor"] [class*="sidebar"] {
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0 14px,
+    rgba(182, 255, 92, 0.016) 14px 15px
+  );
+}
+
+/* Status dots: lime glow when Janitor is active. */
+[data-hermes-theme="janitor"] [class*="status-dot"],
+[data-hermes-theme="janitor"] [data-status-dot] {
+  background-color: #B6FF5C !important;
+  box-shadow: 0 0 10px rgba(182, 255, 92, 0.8) !important;
+}
+
+/* Active session indicator: lime border-left + soft gradient. */
+[data-hermes-theme="janitor"] [class*="session"][class*="active"],
+[data-hermes-theme="janitor"] [data-active="true"] {
+  border-left: 3px solid #B6FF5C !important;
+  background: linear-gradient(90deg, rgba(182, 255, 92, 0.13), rgba(182, 255, 92, 0.035)) !important;
+}

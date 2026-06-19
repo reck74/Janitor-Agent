@@ -334,3 +334,67 @@ janitor --version
 - `supply-chain-audit.yml` y `typecheck.yml` aceptados
 - 19 workflows en total (vs 18 upstream-only)
 
+---
+
+## 9. Customizaciones Desktop (`apps/desktop/`)
+
+> Las personalizaciones visuales de la app desktop viven aisladas bajo
+> `apps/desktop/src/janitor/` para minimizar conflictos de merge.
+
+### 9.1 Archivos propios de Janitor (NO upstream)
+
+| Path | Descripción |
+|------|-------------|
+| `apps/desktop/src/janitor/theme-presets.ts` | Theme data (light + dark) — sin React components |
+| `apps/desktop/src/janitor/install-themes.ts` | Side-effect: registra theme + carga CSS + setea default |
+| `apps/desktop/src/janitor/overrides.css` | Brand mark swap, monospace global, sidebar tweaks |
+| `apps/desktop/src/janitor/install-themes.test.ts` | Tests de idempotencia + SSR safety |
+| `apps/desktop/electron-builder.janitor.json` | Build config externo con `appId=io.janitor.agent`, `productName=J4nitor-Agent` |
+| `apps/desktop/public/janitor-{monogram,logo-hero,avatar}.png` | Assets binarios propios |
+
+### 9.2 Modificaciones upstream mínimas
+
+| Path | Cambio | Severidad |
+|------|--------|-----------|
+| `apps/desktop/src/main.tsx` | +2 líneas: `import` + llamada `installJanitorThemes()` antes de `createRoot()` | Trivial |
+| `apps/desktop/package.json` | **NO modificado** — el build Janitor usa `--config electron-builder.janitor.json` |
+
+### 9.3 Conflictos esperados al `git pull upstream main`
+
+| Archivo | Riesgo | Mitigación |
+|---------|--------|------------|
+| `apps/desktop/src/main.tsx` | Bajo (1 import + 1 call) | Re-aplicar las 2 líneas tras el merge; verificar que `installClipboardShim()` sigue presente |
+| `apps/desktop/package.json` scripts/build section | Bajo (electron-builder config inline) | No tocar — usar config externo Janitor |
+| Assets upstream `apps/desktop/public/nous-girl.jpg`, `apps/desktop/assets/icon.*` | CERO | Janitor usa su propio set; no reemplaza upstream |
+
+### 9.4 Comandos de build Janitor-branded
+
+```bash
+# Dev (sin cambios — usa el renderer upstream normal)
+cd apps/desktop
+npm run dev
+
+# Build production con branding Janitor (AppImage)
+cd apps/desktop
+npx electron-builder --config electron-builder.janitor.json --linux AppImage
+
+# Output: release/J4nitor-Agent-{version}-linux-x86_64.AppImage
+#         appId=io.janitor.agent, executableName=janitor
+```
+
+### 9.5 Build upstream (sin branding Janitor) — sigue intacto
+
+```bash
+cd apps/desktop
+npm run dist:linux  # Output: release/Hermes-{version}-linux-x86_64.AppImage
+```
+
+### 9.6 Verificación post-merge desktop
+
+```bash
+cd apps/desktop
+npm run typecheck            # debe pasar
+npm run test:ui -- install-themes.test  # 4 tests verde
+# Manual: npm run dev → Settings → Appearance debe listar "Janitor"
+```
+

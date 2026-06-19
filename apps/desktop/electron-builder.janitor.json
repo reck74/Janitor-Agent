@@ -1,0 +1,117 @@
+{
+  "electronVersion": "40.9.3",
+  "electronDist": "../../node_modules/electron/dist",
+  "appId": "io.janitor.agent",
+  "productName": "J4nitor-Agent",
+  "executableName": "janitor",
+  "protocols": [
+    {
+      "name": "Janitor Protocol",
+      "schemes": [
+        "janitor"
+      ]
+    }
+  ],
+  "artifactName": "J4nitor-Agent-${version}-${os}-${arch}.${ext}",
+  "icon": "assets/icon",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**",
+    "assets/**",
+    "electron/**",
+    "public/**",
+    "package.json"
+  ],
+  "beforeBuild": "scripts/before-build.cjs",
+  "beforePack": "scripts/before-pack.cjs",
+  "afterPack": "scripts/after-pack.cjs",
+  "extraResources": [
+    {
+      "from": "build/install-stamp.json",
+      "to": "install-stamp.json"
+    },
+    {
+      "from": "build/native-deps",
+      "to": "native-deps"
+    },
+    {
+      "from": "assets/icon.ico",
+      "to": "icon.ico"
+    }
+  ],
+  "asar": true,
+  "afterSign": "scripts/notarize.cjs",
+  "asarUnpack": [
+    "**/*.node",
+    "**/prebuilds/**",
+    "dist/**"
+  ],
+  "mac": {
+    "category": "public.app-category.developer-tools",
+    "entitlements": "electron/entitlements.mac.plist",
+    "entitlementsInherit": "electron/entitlements.mac.inherit.plist",
+    "extendInfo": {
+      "CFBundleDisplayName": "J4nitor-Agent",
+      "CFBundleExecutable": "J4nitor-Agent",
+      "CFBundleName": "J4nitor-Agent",
+      "NSAudioCaptureUsageDescription": "J4nitor-Agent uses audio capture for voice conversations.",
+      "NSMicrophoneUsageDescription": "J4nitor-Agent uses the microphone for voice input and voice conversations."
+    },
+    "gatekeeperAssess": false,
+    "hardenedRuntime": true,
+    "target": [
+      "dmg",
+      "zip"
+    ]
+  },
+  "dmg": {
+    "title": "Install J4nitor-Agent",
+    "backgroundColor": "#020A0C",
+    "iconSize": 96,
+    "window": {
+      "width": 560,
+      "height": 360
+    },
+    "contents": [
+      {
+        "x": 160,
+        "y": 170,
+        "type": "file"
+      },
+      {
+        "x": 400,
+        "y": 170,
+        "type": "link",
+        "path": "/Applications"
+      }
+    ]
+  },
+  "win": {
+    "legalTrademarks": "J4nitor-Agent",
+    "target": [
+      "nsis",
+      "msi"
+    ],
+    "signAndEditExecutable": false
+  },
+  "linux": {
+    "category": "Development",
+    "maintainer": "Reck <support@janitor.local>",
+    "synopsis": "Native desktop shell for J4nitor-Agent — DevSecOps Orchestrator.",
+    "target": [
+      "AppImage",
+      "deb",
+      "rpm"
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "perMachine": false,
+    "shortcutName": "J4nitor-Agent",
+    "uninstallDisplayName": "J4nitor-Agent",
+    "warningsAsErrors": false
+  }
+}
