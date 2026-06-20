@@ -334,3 +334,84 @@ janitor --version
 - `supply-chain-audit.yml` y `typecheck.yml` aceptados
 - 19 workflows en total (vs 18 upstream-only)
 
+---
+
+## 9. Customizaciones Desktop — Asset Replacement (`apps/desktop/public/`)
+
+> Las personalizaciones visuales de la app desktop siguen un enfoque **puramente
+> binario**: reemplazar assets upstream con sus contrapartes Janitor. Cero
+> código React/CSS/TS tocado. Trade-off: cualquier cambio upstream a esos
+> archivos requiere re-aplicar el reemplazo (conflicto trivial esperado).
+
+### 9.1 Archivos reemplazados (3 upstream binary swaps)
+
+| Path upstream | Tamaño antes → después | Asset Janitor | Uso upstream |
+|---|---|---|---|
+| `apps/desktop/public/ds-assets/filler-bg0.jpg` | 3.8 MB → 766 KB | `j4nitor-agent-logo-transparent.png` (wireframe) | `<img>` en `src/components/Backdrop.tsx:103` — fondo del empty view |
+| `apps/desktop/public/nous-girl.jpg` | 20 KB → 1.3 MB | `j4nitor-monogram.png` (wireframe) | `<img>` en `src/components/brand-mark.tsx:16` — Settings/About + Updates overlay |
+| `apps/desktop/public/apple-touch-icon.png` | 541 KB → 1.3 MB | `j4nitor-monogram.png` (wireframe) | favicon (`index.html:7-9`) + Dock/Taskbar icon (`electron/main.cjs:339-343` via `APP_ICON_PATHS`) |
+
+### 9.2 Archivos NO modificados (intencional)
+
+| Path | Razón |
+|---|---|
+| `apps/desktop/public/hermes.png` | Sin referencia en `src/` (graph confirma 0 usos). Mantenido como reliquia upstream. |
+| `apps/desktop/public/hermes-sprite.png` | Sin referencia en `src/`. Mantenido. |
+| `apps/desktop/public/hermes-frames/hermes-frame-{0..7}.png` | Sin referencia en `src/`. Mantenidos. |
+| `apps/desktop/src/components/chat/intro.tsx` (wordmark + tagline) | Renderiza texto React con `<p>{WORDMARK}</p>`. **No es un asset binario**. Reemplazar este archivo requiere upstream modification o componente React override (próxima iteración). |
+| `apps/desktop/index.html:11` (`<title>Hermes</title>`) | Texto en HTML, no binario. Próxima iteración. |
+| `apps/desktop/assets/icon.{icns,ico,png}` | Build-time Electron icons. Reemplazo va via electron-builder config externo (`apps/desktop/electron-builder.janitor.json`) — próxima iteración. |
+
+### 9.3 Riesgo conocido — MIME mismatch
+
+Los assets wireframe source son **PNG**, pero el path upstream exige extensión
+`.jpg` para 2 de los 3 archivos. El reemplazo conserva el filename upstream:
+
+| Archivo | Contenido real | Extensión | MIME servido |
+|---|---|---|---|
+| `filler-bg0.jpg` | PNG (1942×809 RGBA) | `.jpg` | `image/jpeg` por Vite |
+| `nous-girl.jpg` | PNG (1254×1254 RGB) | `.jpg` | `image/jpeg` por Vite |
+| `apple-touch-icon.png` | PNG (1254×1254 RGB) | `.png` | `image/png` (sin riesgo) |
+
+**Mitigación Chromium (Electron renderer)**: content-sniffing debería detectar
+el contenido real y renderizar OK. Si el render local muestra cuadros rotos,
+el fix es renombrar upstream a `.png` + actualizar el path en `Backdrop.tsx:103`
+(de upstream modification menor).
+
+### 9.4 Conflictos esperados al `git pull upstream main`
+
+| Archivo | Riesgo | Mitigación |
+|---|---|---|
+| `apps/desktop/public/ds-assets/filler-bg0.jpg` | **Alto** — upstream puede actualizar el fondo (animaciones, nuevos productos) | Aceptar upstream, re-aplicar el reemplazo Janitor |
+| `apps/desktop/public/nous-girl.jpg` | **Medio** — asset visualmente estable, upstream raramente lo cambia | Mismo |
+| `apps/desktop/public/apple-touch-icon.png` | **Medio** — idem | Mismo |
+| `apps/desktop/src/components/Backdrop.tsx` | CERO | No tocado |
+| `apps/desktop/src/components/brand-mark.tsx` | CERO | No tocado |
+| `apps/desktop/index.html` | CERO | No tocado |
+| Código React/TS/CSS upstream | CERO | Este commit no toca código fuente |
+
+### 9.5 Verificación post-merge
+
+```bash
+cd apps/desktop
+npm run typecheck      # sin errores esperados (no tocamos código)
+npm run test:desktop:platforms  # 18 tests electron, no afectados
+# Visual: npm run dev → verificar BrandMark, fondo, favicon
+```
+
+### 9.6 Próximas iteraciones (no incluidas)
+
+- **Wordmark + tagline**: requieren componente React o upstream modification en `intro.tsx:145,21-42,117-138`.
+- **Window title** (`index.html:11`): cambio trivial upstream, 1 línea.
+- **Sidebar top-left brand**: no existe upstream, requiere nuevo componente React.
+- **Build-time icons** (`apps/desktop/assets/icon.{icns,ico,png}`): requieren electron-builder config externo + regenerar `.icns`/`.ico` desde PNG fuente.
+
+### 9.7 Pre-flight checklist antes de PR de branding
+
+Antes de cualquier PR que toque `apps/desktop/public/`:
+
+- [ ] `npm run dev` local muestra el render esperado (BrandMark, fondo, favicon)
+- [ ] `vite build` OK sin warnings de MIME/asset resolution
+- [ ] `git diff --stat` solo toca `apps/desktop/public/*` + (opcional) `.gitignore`
+- [ ] Screenshot de Settings → About + Updates overlay + ventana maximizada con fondo visible
+

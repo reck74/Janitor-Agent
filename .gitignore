@@ -136,3 +136,8 @@ RELEASE_v*.md
 # Desktop demo-run scratch output (hermes writes demo/*.txt during recorded
 # walkthroughs). Throwaway artifacts, never part of the app.
 apps/desktop/demo/
+
+# WSL artifact: when WSL copies a file via Windows Explorer, it leaves a
+# NTFS alternate-data-stream sidecar with `<filename>:Zone.Identifier` next
+# to the copied file. Never part of the source tree.
+*:Zone.Identifier
