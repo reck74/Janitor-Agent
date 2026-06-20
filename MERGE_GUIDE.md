@@ -357,6 +357,8 @@ janitor --version
 | Path | Cambio | Severidad |
 |------|--------|-----------|
 | `apps/desktop/src/main.tsx` | +2 líneas: `import` + llamada `installJanitorThemes()` antes de `createRoot()` | Trivial |
+| `apps/desktop/src/components/chat/intro.tsx` | `WORDMARK` const + 5 fallback copy strings: `HERMES AGENT` → `J4NITOR-AGENT`, tagline EN → ES con `>_ ` prefix. Comment inline documenta la directiva (regla 1 + 6) | Bajo (texto plano) |
+| `apps/desktop/src/components/chat/intro-copy.jsonl` | 8 entradas (helpful, pirate, shakespeare, noir, hype, kawaii, catgirl, uwu, none) — todos los mentions de "Hermes" reemplazados por "Janitor" / "J4nitor-Agent" | Bajo (data) |
 | `apps/desktop/package.json` | **NO modificado** — el build Janitor usa `--config electron-builder.janitor.json` |
 
 ### 9.3 Conflictos esperados al `git pull upstream main`
@@ -364,10 +366,24 @@ janitor --version
 | Archivo | Riesgo | Mitigación |
 |---------|--------|------------|
 | `apps/desktop/src/main.tsx` | Bajo (1 import + 1 call) | Re-aplicar las 2 líneas tras el merge; verificar que `installClipboardShim()` sigue presente |
+| `apps/desktop/src/components/chat/intro.tsx` | **Medio** — upstream puede agregar nuevas fallbacks o cambiar formato del JSONL | Aceptar upstream, re-aplicar solo el cambio de `WORDMARK` y la 5ª entrada (`>_ Sistema en linea. Habla.`) |
+| `apps/desktop/src/components/chat/intro-copy.jsonl` | **Alto** — upstream regenera este archivo con nuevas personalidades | Aceptar upstream, re-aplicar el grep/replace `Hermes → Janitor` solo en las líneas que el upstream NO haya tocado |
 | `apps/desktop/package.json` scripts/build section | Bajo (electron-builder config inline) | No tocar — usar config externo Janitor |
 | Assets upstream `apps/desktop/public/nous-girl.jpg`, `apps/desktop/assets/icon.*` | CERO | Janitor usa su propio set; no reemplaza upstream |
 
-### 9.4 Comandos de build Janitor-branded
+### 9.4 Cambios visuales adicionales (commit posterior `feat(desktop): swap wordmark/tagline/hero for Janitor branding`)
+
+Sobre la base de la sección 9.1-9.3, se aplicaron además:
+
+- **Wordmark central** (`HERMES AGENT` → `J4NITOR-AGENT`) en `src/components/chat/intro.tsx:145` (constante `WORDMARK`).
+- **5 fallback copy strings** (líneas 21-42) y **5 con label** (líneas 117-138) reemplazadas por copys Janitor en español con prefijo `>_ `. Tagline fija del wireframe: `>_ Sistema en linea. Habla.`.
+- **JSONL de personalidades** (75 líneas): todas las menciones de "Hermes" en `helpful`, `pirate`, `shakespeare`, `noir`, `hype`, `kawaii`, `catgirl`, `uwu`, `none` reemplazadas.
+- **Hero background**: nuevo CSS rule `[data-hermes-theme="janitor"] [data-slot="aui_intro"] { background-image: url('/janitor-logo-hero.png'); ... }` en `src/janitor/overrides.css`. El container `data-slot="aui_intro"` es emitido por `intro.tsx:164`.
+- **Sidebar top-left brand**: nuevo CSS rule `[data-hermes-theme="janitor"] [data-sidebar]::before { content: url('/janitor-monogram.png') ' JANITOR-AGENT'; ... }` — inyecta monograma + texto sin tocar `sidebar/index.tsx`. Limitación: el `content: url(...)` produce un replaced inline element cuyo tamaño se aproxima vía `font-size` (lightningcss rechaza `::before > img`).
+
+**Documentación de directiva inline**: cada renombre en `intro.tsx` y JSONL lleva un comment `// Branding fork Janitor: ... Ver .sisyphus/plans/janitor-desktop-customization.md y AGENTS.md regla N` para que un merge automático o un reviewer no-Janitor entienda el contexto y no revierta los cambios (regla 6 merge-auditor).
+
+### 9.5 Comandos de build Janitor-branded
 
 ```bash
 # Dev (sin cambios — usa el renderer upstream normal)
@@ -382,14 +398,14 @@ npx electron-builder --config electron-builder.janitor.json --linux AppImage
 #         appId=io.janitor.agent, executableName=janitor
 ```
 
-### 9.5 Build upstream (sin branding Janitor) — sigue intacto
+### 9.6 Build upstream (sin branding Janitor) — sigue intacto
 
 ```bash
 cd apps/desktop
 npm run dist:linux  # Output: release/Hermes-{version}-linux-x86_64.AppImage
 ```
 
-### 9.6 Verificación post-merge desktop
+### 9.7 Verificación post-merge desktop
 
 ```bash
 cd apps/desktop

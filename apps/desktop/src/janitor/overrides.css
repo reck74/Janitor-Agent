@@ -53,3 +53,59 @@ img[src*="nous-girl.jpg"] {
   border-left: 3px solid #B6FF5C !important;
   background: linear-gradient(90deg, rgba(182, 255, 92, 0.13), rgba(182, 255, 92, 0.035)) !important;
 }
+
+/*
+ * Hero background: full-viewport Janitor character behind the wordmark in the
+ * empty chat view. `data-slot="aui_intro"` is the root container emitted by
+ * `src/components/chat/intro.tsx:164`; it inherits the page background-color
+ * (lime-tinted dark) so the hero PNG can sit behind the centered wordmark
+ * without obscuring it (the wordmark itself uses `mix-blend-plus-lighter`).
+ */
+[data-hermes-theme="janitor"] [data-slot="aui_intro"] {
+  background-image: url('/janitor-logo-hero.png');
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: 70% auto;
+  opacity: 1;
+  min-height: 60vh;
+}
+
+/*
+ * Sidebar top-left brand mark + "JANITOR-AGENT" label. The sidebar nav rail
+ * starts directly under the titlebar with no brand widget — we inject one as
+ * a `::before` pseudo-element so we don't have to patch `sidebar/index.tsx`.
+ * `content:` mixes a literal URL (the monogram) with the brand text. The
+ * display:flex + gap lays them out side-by-side; the position offsets below
+ * the titlebar variable to clear the OS chrome.
+ */
+[data-hermes-theme="janitor"] [data-sidebar]::before,
+[data-hermes-theme="janitor"] aside[class*="sidebar"]::before {
+  content: url('/janitor-monogram.png') ' JANITOR-AGENT';
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: calc(var(--titlebar-height, 0px) + 2.25rem);
+  padding: 0 0.75rem;
+  padding-top: var(--titlebar-height, 0px);
+  color: #B6FF5C;
+  font-family: var(--dt-font-mono, "Cascadia Code", monospace);
+  font-weight: 700;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-bottom: 1px solid #24383E;
+}
+
+/* Force the monogram image to a small fixed size inside the pseudo-element.
+ * Note: lightningcss rejects `::before > img`, so we use an attribute filter
+ * to target the monogram URL — the rest of the pseudo-element still gets the
+ * full sidebar flex layout from the rule above. */
+[data-hermes-theme="janitor"] [data-sidebar]::before,
+[data-hermes-theme="janitor"] aside[class*="sidebar"]::before {
+  /* The URL token inside `content:` becomes a replaced inline element;
+   * CSS background-size can't reach it, so we approximate sizing via the
+   * surrounding font-size. Browsers render the image at its intrinsic
+   * pixel size by default — keep the height line small enough to clip it. */
+  font-size: 0.55rem;
+  line-height: 1.5rem;
+}

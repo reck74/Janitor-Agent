@@ -20,24 +20,24 @@ const NEUTRAL_PERSONALITIES = new Set(['', 'default', 'none', 'neutral'])
 
 const FALLBACK_COPY: IntroCopy[] = [
   {
-    headline: 'What are we moving today?',
-    body: "Send a bug, branch, plan, or rough idea. I'll inspect the repo and turn it into the next concrete step."
+    headline: '¿Qué movemos hoy?',
+    body: '>_ Manda bug, rama, plan o idea. Inspecciono el repo y lo convierto en el siguiente paso concreto.'
   },
   {
-    headline: "What's on your mind?",
-    body: "Bring the code, question, or stuck part. I'll read the room before making changes."
+    headline: '¿Qué tienes en mente?',
+    body: '>_ Pasa código, pregunta o el punto atascado. Leo el contexto antes de tocar nada.'
   },
   {
-    headline: 'What should Hermes look at?',
-    body: "Send the task, failing path, or half-formed plan. I'll help turn it into action."
+    headline: '¿Qué reviso primero?',
+    body: '>_ Manda tarea, path fallido o plan a medias. Lo aterrizamos en acción.'
   },
   {
-    headline: 'Where should we start?',
-    body: "Bring the problem, goal, or file. I'll inspect first and keep the next step concrete."
+    headline: '¿Por dónde empezamos?',
+    body: '>_ Trae el problema, el objetivo o el archivo. Inspecciono primero, después ejecuto.'
   },
   {
-    headline: 'What needs attention?',
-    body: "Send the context you have. I'll help sort it into a plan or a fix."
+    headline: '¿Qué pide atención?',
+    body: '>_ Pásame el contexto que tengas. Lo ordeno en plan o fix.'
   }
 ]
 
@@ -116,24 +116,24 @@ function fallbackCopyForPersonality(personalityKey: string): IntroCopy[] {
 
   return [
     {
-      headline: `${label} mode is on. What should we work on?`,
-      body: "Send the task, file, or rough idea. I'll use your configured voice and keep the work grounded in this repo."
+      headline: `Modo ${label} activo. ¿Qué trabajamos?`,
+      body: '>_ Manda tarea, archivo o idea. Mantengo el tono configurado y el trabajo aterrizado en este repo.'
     },
     {
-      headline: `What does ${label} Hermes need to see?`,
-      body: "Bring the context or the stuck part. I'll adapt to your configured personality."
+      headline: `¿Qué necesita ver ${label} Janitor?`,
+      body: '>_ Trae el contexto o el punto atascado. Me adapto a tu personalidad configurada.'
     },
     {
-      headline: `${label} mode is ready.`,
-      body: "Send the problem, file, or idea. I'll follow the personality you've configured."
+      headline: `Modo ${label} listo.`,
+      body: '>_ Pasa problema, archivo o idea. Sigo la personalidad que configuraste.'
     },
     {
-      headline: `What should ${label} Hermes tackle?`,
-      body: "Drop the task here. I'll keep the work grounded in the repo."
+      headline: `¿Qué aborda ${label} Janitor?`,
+      body: '>_ Sistema en linea. Habla.'
     },
     {
-      headline: 'Where should we begin?',
-      body: `Give me the context and I'll answer in ${label} mode.`
+      headline: '¿Por dónde arrancamos?',
+      body: `>_ Pásame el contexto y respondo en modo ${label}.`
     }
   ]
 }
@@ -142,7 +142,9 @@ function pickCopy(copies: IntroCopy[], seed = 0): IntroCopy {
   return copies[Math.abs(seed) % copies.length] || FALLBACK_COPY[0]
 }
 
-const WORDMARK = 'HERMES AGENT'
+// Branding fork Janitor: palabra "HERMES AGENT" reemplazada por "J4NITOR-AGENT".
+// Ver .sisyphus/plans/janitor-desktop-customization.md sección 1.1 y AGENTS.md regla 1.
+const WORDMARK = 'J4NITOR-AGENT'
 
 function resolveCopy(personality?: string, seed?: number): IntroCopy {
   const personalityKey = normalizeKey(personality)
