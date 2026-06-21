@@ -238,8 +238,273 @@ cd ui-tui && npm run type-check && npm run build --prefix packages/hermes-ink &&
 
 # Estado final
 git status --short
+
+---
+
+### 3.X Re-apply test-assertion branding after any upstream sync
+
+Per AGENTS.md fork directive #12 (TEST ASSERTION BRANDING), any test file that newly contains the upstream-original string `Hermes Agent` (or `Hermes Agent v`) in a banner / `--version` assertion must be updated to `THE JANITOR` (or `THE JANITOR v`) in the same commit that re-applies the branding. Run this grep after the merge to find any drift; the result must be `0 matches`:
+
+```bash
+git grep -nE '"Hermes Agent"|"Hermes Agent v"' -- tests/ -- ':!*.pyc' ':!docs/superpowers/'
 ```
+
+If any matches are found, update the assertion in the same commit and add the inline comment block pointing back to AGENTS.md rule #12 (the comment template lives in `docs/superpowers/specs/2026-06-10-migrate-specialized-agents-to-kanban-profiles-design.md`, "Baseline assertion drift" section).
 
 ---
 
 *Última actualización: Mayo 2026*
+
+---
+
+## v2026.6.5 Sync (Hermes v0.16.0)
+
+**Rango:** `1a710e8df` → `2a14e8957` (1,607 commits, 996 files, +80,859 / -26,205 líneas)
+**Fecha:** 2026-06-15
+**Estrategia:** Full merge con `git merge -X theirs upstream/main --no-commit` + restauración manual de archivos Janitor-only desde `HEAD` + re-aplicación de branding
+
+### Cambios adoptados
+
+**7 parches de seguridad críticos:**
+- `da28d5d11` — SSH/credential gate en `cp`/`mv`/`install`
+- `972a9885e` — Bloqueo de exfil en MCP stdio configs
+- `fc4635458` — Gateway fail-closed en own-policy adapters
+- `3380563d9` — `/api/status` host-leak fix
+- `a218a0f15` + `af5b52647` — SSL CA bundle fail-fast guard
+- `bd66e7e3f` — Codex OAuth refresh_token self-heal
+- `7a1eed826` — Anthropic replay redaction
+
+**Módulos nuevos adoptados:**
+- `agent/coding_context.py` (738 líneas)
+- `agent/ssl_guard.py` + `agent/anthropic_adapter.py`
+- `agent/transports/{anthropic,chat_completions,codex,types}.py`
+- `cron/blueprint_catalog.py` (713 líneas)
+- `gateway/platforms/whatsapp_cloud.py` (1956 líneas)
+- `hermes_cli/mcp_security.py` (nuevo módulo seguridad)
+- `hermes_cli/blueprint_cmd.py`, `model_cost_guard.py`, `setup_whatsapp_cloud.py`, `suggestions_cmd.py`, `write_approval_commands.py`
+- `tools/blueprints.py`, `read_extract.py`, `read_terminal_tool.py`, `write_approval.py`
+
+**Plataformas nuevas:** `photon`, `simplex`, `teams`, `whatsapp_cloud`
+
+**Providers nuevos:** `zai` (GLM-5.2), `langfuse` observability
+
+**Skills nuevos adoptados (11):** 5 github + 4 productivity + 2 media + 1 research + 1 note-taking (ver `skills/` post-merge)
+
+**Config v11→v12 + breaking change:**
+- `memory.write_mode` / `skills.write_mode` (tri-state) → `write_approval` (boolean, default false)
+- `_config_version`: 28 → 29
+- Slash commands: `/memory mode <on|off|approve>` → `/memory approval <on|off>` (mode queda como alias)
+
+**God-file refactor:** cli.py y gateway/run.py (Phase 2/3) — módulos extraídos a `hermes_cli/subcommands/`, `gateway/*_mixin.py`
+
+### Cambios descartados
+
+- **1,495 archivos de tests upstream** en `tests/` (per directiva #11)
+  - El job `upstream-sync-verify` corre la suite completa contra el código post-merge en `workflow_dispatch` y en pushes a `main` con commits `chore(sync):` / `fix(sync):`
+  - **Preservados**: 5 tests Janitor-specific + 3 archivos comunes (`__init__.py`, `conftest.py`) + 114 tests Electron del subtree `apps/desktop/electron/*.test.cjs`
+
+- **32 commits de `chore(release): map <author>`** (bookkeeping upstream irrelevante)
+- **`apps/desktop/` subtree Electron** traído pero NO publicado (per directivas #4 + #8). El instalador base sigue sin incluirlo.
+
+### Fixes aplicados durante el merge
+
+1. `scripts/run_tests_parallel.py`: removida definición duplicada de `--slice` (regresión upstream en su propio merge de god-file phase)
+2. `pyproject.toml`: restaurados `janitor_cli`, `janitor_update_bootstrap`, `janitor_update_core` en `py-modules` (necesario para directiva #13)
+3. Branding re-aplicado: `hermes_cli/main.py:231` y `hermes_cli/banner.py:478` ahora dicen `THE JANITOR v{VERSION} ({RELEASE_DATE})`
+
+### Post-merge para usuarios existentes
+
+```bash
+# Si tenías una config v0.15.x con write_mode, migrar:
+bash scripts/migrate-janitor-v0.16.0.sh
+
+# Verificar que la versión es correcta:
+janitor --version
+# Expected: THE JANITOR v0.16.0 (...)
+```
+
+### Branding
+- `THE JANITOR` preservado en `hermes_cli/main.py:231` y `hermes_cli/banner.py:478`
+- Re-aplicado automáticamente durante el merge
+
+### CI
+- `tests.yml` sigue podado a 5 tests Janitor-specific
+- `upstream-sync.yml` presente (job `upstream-sync-verify`)
+- `janitor-ci.yml` presente
+- `supply-chain-audit.yml` y `typecheck.yml` aceptados
+- 19 workflows en total (vs 18 upstream-only)
+
+---
+
+## 9. Customizaciones Desktop — Asset Replacement (`apps/desktop/public/`)
+
+> Las personalizaciones visuales de la app desktop siguen un enfoque **puramente
+> binario**: reemplazar assets upstream con sus contrapartes Janitor. Cero
+> código React/CSS/TS tocado. Trade-off: cualquier cambio upstream a esos
+> archivos requiere re-aplicar el reemplazo (conflicto trivial esperado).
+
+### 9.1 Archivos reemplazados (3 upstream binary swaps)
+
+| Path upstream | Tamaño antes → después | Asset Janitor | Uso upstream |
+|---|---|---|---|
+| `apps/desktop/public/ds-assets/filler-bg0.jpg` | 3.8 MB → 766 KB | `j4nitor-agent-logo-transparent.png` (wireframe) | `<img>` en `src/components/Backdrop.tsx:103` — fondo del empty view |
+| `apps/desktop/public/nous-girl.jpg` | 20 KB → 1.3 MB | `j4nitor-monogram.png` (wireframe) | `<img>` en `src/components/brand-mark.tsx:16` — Settings/About + Updates overlay |
+| `apps/desktop/public/apple-touch-icon.png` | 541 KB → 1.3 MB | `j4nitor-monogram.png` (wireframe) | favicon (`index.html:7-9`) + Dock/Taskbar icon (`electron/main.cjs:339-343` via `APP_ICON_PATHS`) |
+
+### 9.2 Archivos NO modificados (intencional)
+
+| Path | Razón |
+|---|---|
+| `apps/desktop/public/hermes.png` | Sin referencia en `src/` (graph confirma 0 usos). Mantenido como reliquia upstream. |
+| `apps/desktop/public/hermes-sprite.png` | Sin referencia en `src/`. Mantenido. |
+| `apps/desktop/public/hermes-frames/hermes-frame-{0..7}.png` | Sin referencia en `src/`. Mantenidos. |
+| `apps/desktop/src/components/chat/intro.tsx` (wordmark + tagline) | Renderiza texto React con `<p>{WORDMARK}</p>`. **No es un asset binario**. Reemplazar este archivo requiere upstream modification o componente React override (próxima iteración). |
+| `apps/desktop/index.html:11` (`<title>Hermes</title>`) | Texto en HTML, no binario. Próxima iteración. |
+| `apps/desktop/assets/icon.{icns,ico,png}` | Build-time Electron icons. Reemplazo va via electron-builder config externo (`apps/desktop/electron-builder.janitor.json`) — próxima iteración. |
+
+### 9.3 Riesgo conocido — MIME mismatch
+
+Los assets wireframe source son **PNG**, pero el path upstream exige extensión
+`.jpg` para 2 de los 3 archivos. El reemplazo conserva el filename upstream:
+
+| Archivo | Contenido real | Extensión | MIME servido |
+|---|---|---|---|
+| `filler-bg0.jpg` | PNG (1942×809 RGBA) | `.jpg` | `image/jpeg` por Vite |
+| `nous-girl.jpg` | PNG (1254×1254 RGB) | `.jpg` | `image/jpeg` por Vite |
+| `apple-touch-icon.png` | PNG (1254×1254 RGB) | `.png` | `image/png` (sin riesgo) |
+
+**Mitigación Chromium (Electron renderer)**: content-sniffing debería detectar
+el contenido real y renderizar OK. Si el render local muestra cuadros rotos,
+el fix es renombrar upstream a `.png` + actualizar el path en `Backdrop.tsx:103`
+(de upstream modification menor).
+
+### 9.4 Conflictos esperados al `git pull upstream main`
+
+| Archivo | Riesgo | Mitigación |
+|---|---|---|
+| `apps/desktop/public/ds-assets/filler-bg0.jpg` | **Alto** — upstream puede actualizar el fondo (animaciones, nuevos productos) | Aceptar upstream, re-aplicar el reemplazo Janitor |
+| `apps/desktop/public/nous-girl.jpg` | **Medio** — asset visualmente estable, upstream raramente lo cambia | Mismo |
+| `apps/desktop/public/apple-touch-icon.png` | **Medio** — idem | Mismo |
+| `apps/desktop/src/components/Backdrop.tsx` | CERO | No tocado |
+| `apps/desktop/src/components/brand-mark.tsx` | CERO | No tocado |
+| `apps/desktop/index.html` | CERO | No tocado |
+| Código React/TS/CSS upstream | CERO | Este commit no toca código fuente |
+
+### 9.5 Verificación post-merge
+
+```bash
+cd apps/desktop
+npm run typecheck      # sin errores esperados (no tocamos código)
+npm run test:desktop:platforms  # 18 tests electron, no afectados
+# Visual: npm run dev → verificar BrandMark, fondo, favicon
+```
+
+### 9.6 Próximas iteraciones (no incluidas)
+
+- **Wordmark + tagline**: requieren componente React o upstream modification en `intro.tsx:145,21-42,117-138`.
+- **Window title** (`index.html:11`): cambio trivial upstream, 1 línea.
+- **Sidebar top-left brand**: no existe upstream, requiere nuevo componente React.
+- **Build-time icons** (`apps/desktop/assets/icon.{icns,ico,png}`): requieren electron-builder config externo + regenerar `.icns`/`.ico` desde PNG fuente.
+
+### 9.7 Pre-flight checklist antes de PR de branding
+
+Antes de cualquier PR que toque `apps/desktop/public/`:
+
+- [ ] `npm run dev` local muestra el render esperado (BrandMark, fondo, favicon)
+- [ ] `vite build` OK sin warnings de MIME/asset resolution
+- [ ] `git diff --stat` solo toca `apps/desktop/public/*` + (opcional) `.gitignore`
+- [ ] Screenshot de Settings → About + Updates overlay + ventana maximizada con fondo visible
+
+---
+
+## 10. Stale CI Config — Actualización post-sync de `janitor-ci.yml`
+
+> **Lección aprendida:** El sync upstream (`607078d2c`, v0.16.0) eliminó/renombró
+> archivos referenciados por `janitor-ci.yml`, pero el workflow no se actualizó
+> en el mismo commit. Resultado: ambos jobs (`python-tests` y `react-tests`)
+> fallaban en CI sin que el código tuviera bugs reales.
+
+### 10.1 Síntomas
+
+- `python-tests` job falla con `ERROR: file or directory not found: tests/hermes_cli/test_skin_engine.py`
+- `react-tests` job falla con `npm error Missing script: "type-check"`
+- Los tests pasan localmente cuando se ejecutan manualmente con los nombres correctos
+
+### 10.2 Causa raíz
+
+El commit de sync upstream puede **eliminar, mover o renombrar** archivos que
+`janitor-ci.yml` referencia directamente. El sync es un merge masivo (~1600
+commits, ~1000 archivos) y `janitor-ci.yml` es un archivo Janitor-only que el
+sync no toca — pero sus **referencias** apuntan a archivos que sí cambiaron.
+
+| Referencia en `janitor-ci.yml` | Qué pasó en el sync | Fix aplicado |
+|---|---|---|
+| `tests/hermes_cli/test_skin_engine.py` | Eliminado por upstream (reestructuración de tests) | Reemplazado con `tests/test_janitor_update_core.py` |
+| `npm run type-check` | Script renombrado a `typecheck` (sin guion) en `ui-tui/package.json` | Actualizado a `npm run typecheck` |
+
+### 10.3 Checklist post-sync obligatorio para `janitor-ci.yml`
+
+Después de **cualquier** `git merge upstream/main` (o `chore(sync):` commit),
+verificar estas 3 referencias antes de pushear:
+
+```bash
+# 1. Los archivos de test referenciados existen
+grep -E 'python -m pytest' .github/workflows/janitor-ci.yml | \
+  grep -oE 'tests/\S+\.py' | \
+  while read f; do test -f "$f" && echo "OK: $f" || echo "MISSING: $f"; done
+
+# 2. Los scripts de npm referenciados existen en package.json
+grep -E 'npm run ' .github/workflows/janitor-ci.yml | \
+  grep -oE 'npm run \S+' | \
+  while read script; do
+    name=$(echo "$script" | sed 's/npm run //')
+    node -e "const p=require('./ui-tui/package.json'); \
+      p.scripts['$name'] ? console.log('OK: $name') : console.log('MISSING: $name')"
+  done
+
+# 3. La versión de actions/checkout es consistente con el resto de workflows
+grep 'actions/checkout@' .github/workflows/janitor-ci.yml
+```
+
+Si cualquier línea dice `MISSING:`, corregir `janitor-ci.yml` en el mismo
+commit del sync (o en un commit `fix(ci):` inmediatamente después) antes
+de abrir el PR.
+
+### 10.4 Prevención — añadir al checklist de validación post-merge (§4.1)
+
+Añadir estos ítems al checklist de la sección 4.1 después de cada sync:
+
+- [ ] **CI refs válidos**: `janitor-ci.yml` no referencia archivos eliminados ni scripts renombrados (ver §10.3)
+- [ ] **CI jobs verificados**: ejecutar localmente los 2 jobs de `janitor-ci.yml` antes de pushear
+
+### 10.5 Archivos Janitor-only que el sync NO protege
+
+`janitor-ci.yml` es un archivo Janitor-only — el sync upstream no lo toca ni
+lo valida. Cualquier referencia que apunte a código upstream (tests, scripts
+de npm, paths de build) es **frágil** y debe verificarse después de cada sync.
+
+Archivos Janitor-only que dependen de estructura upstream:
+
+| Archivo Janitor | Dependencia upstream | Riesgo |
+|---|---|---|
+| `.github/workflows/janitor-ci.yml` | Tests files, npm scripts | **Alto** — se rompe en cada sync que reestructura tests o renombra scripts |
+| `.github/workflows/tests.yml` | Tests files (5 Janitor-specific) | **Medio** — los tests Janitor-specific son estables, pero nombres de archivos pueden cambiar |
+| `janitor_cli.py` | `HermesCLI` class en `cli.py` | **Bajo** — la interfaz pública es estable |
+
+### 10.6 Fix aplicado en este commit
+
+```
+fix(ci): update janitor-ci.yml references after upstream sync
+
+- Replace deleted tests/hermes_cli/test_skin_engine.py with
+  tests/test_janitor_update_core.py (skin_engine test was removed
+  by upstream sync commit 607078d2c)
+- Fix npm run type-check → npm run typecheck (script renamed in
+  upstream sync)
+- Document stale CI config issue in MERGE_GUIDE.md §10
+
+Both CI jobs now pass locally:
+- python-tests: 29 passed
+- react-tests: 1026 passed, 2 skipped
+```
+

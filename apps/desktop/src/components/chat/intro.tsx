@@ -1,6 +1,12 @@
-import { type CSSProperties, useState } from 'react'
+import { useState } from 'react'
 
 import introCopyJsonl from './intro-copy.jsonl?raw'
+
+const assetPath = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`
+
+// JANITOR-AGENT banner — replaces the upstream HERMES AGENT text wordmark.
+const JANITOR_BANNER_SRC = assetPath('janitor-logo-banner.png')
+const JANITOR_BANNER_ALT = 'Janitor Agent'
 
 type IntroCopy = {
   headline: string
@@ -142,8 +148,6 @@ function pickCopy(copies: IntroCopy[], seed = 0): IntroCopy {
   return copies[Math.abs(seed) % copies.length] || FALLBACK_COPY[0]
 }
 
-const WORDMARK = 'HERMES AGENT'
-
 function resolveCopy(personality?: string, seed?: number): IntroCopy {
   const personalityKey = normalizeKey(personality)
 
@@ -164,16 +168,14 @@ export function Intro({ personality, seed }: IntroProps) {
       data-slot="aui_intro"
     >
       <div className="w-full min-w-0">
-        <p
-          aria-label={WORDMARK}
-          className="fit-text mx-auto mb-1 w-[calc(100%-1rem)] font-['Collapse'] font-bold uppercase leading-[0.9] tracking-[0.08em] text-midground mix-blend-plus-lighter dark:text-foreground/90"
-          style={{ '--fit-min': '2.75rem' } as CSSProperties}
-        >
-          <span>
-            <span>{WORDMARK}</span>
-          </span>
-          <span aria-hidden="true">{WORDMARK}</span>
-        </p>
+        <img
+          alt={JANITOR_BANNER_ALT}
+          className="mx-auto mb-3 block h-auto w-[calc(100%-1rem)] max-w-3xl select-none object-contain mix-blend-plus-lighter"
+          draggable={false}
+          height={809}
+          src={JANITOR_BANNER_SRC}
+          width={1942}
+        />
 
         <p className="m-0 text-center leading-normal tracking-tight">{copy.body}</p>
       </div>

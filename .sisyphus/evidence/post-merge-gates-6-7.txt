@@ -1,0 +1,10 @@
+--- Gate 6: type-check ---
+> hermes-tui@0.0.1 type-check
+> tsc --noEmit -p tsconfig.json
+
+EXIT: 0
+--- Gate 7: build ---
+
+⚡ Done in 134ms
+built /home/reck/Janitor-Agent/ui-tui/dist/entry.js
+EXIT: 0

@@ -1,0 +1,19 @@
+=== Janitor-specific Janitor-MUST-HAVE checks ===
+1. ZERO-RENAMING POLICY (Directive #1): 'hermes' in core files (cli.py, run_agent.py, etc.)
+  - core files preserved 'hermes' (no rename to 'janitor'):
+    cli.py: 211 'hermes' references
+    run_agent.py: 39 'hermes' references
+    gateway/run.py: 192 'hermes' references
+    tools/delegate_tool.py: 18 'hermes' references
+
+2. 11 skills/janitor-*/ preserved (untouched in sync):
+0
+  commits in skills/janitor-*/ (should be 0)
+
+3. janitor_cli.py unchanged from a211dc882 (no commits):
+0
+  commits in janitor_cli.py (should be 0)
+
+4. scripts/janitor-install.sh unchanged (no commits):
+0
+  commits in scripts/janitor-install.sh (should be 0)

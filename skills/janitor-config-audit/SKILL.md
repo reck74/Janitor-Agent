@@ -1,9 +1,10 @@
 ---
 name: janitor-config-audit
-description: Use when comparing active config.yaml or SOUL.md against janitor-core assets to detect drift, or when applying upstream updates. Runs a diff-and-patch audit with YAML validation and automatic backup.
+description: Diff config/SOUL.md vs janitor-core; report drift or apply.
 version: 1.2.0
 author: janitor
 license: MIT
+platforms: [linux, macos]
 
 metadata:
   hermes:

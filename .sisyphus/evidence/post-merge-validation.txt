@@ -1,0 +1,16 @@
+=== POST-MERGE VALIDATION ON MAIN ===
+HEAD: c78e59316
+---
+--- Gate 1: py_compile ---
+PASS
+--- Gate 2: bash syntax ---
+PASS
+--- Gate 3: conflict markers (strict) ---
+./tests/tools/test_mcp_oauth_metadata.py:10:=======
+./venv/lib/python3.11/site-packages/wcwidth-0.6.0.dist-info/METADATA:485:=======
+./venv/lib/python3.11/site-packages/wcwidth-0.6.0.dist-info/METADATA:487:=======
+PASS (false positives only)
+--- Gate 4: branding (TUI+CLI) ---
+PASS (0 hits)
+--- Gate 5: GHCR ---
+PASS

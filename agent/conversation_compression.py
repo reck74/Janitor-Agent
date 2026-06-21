@@ -40,6 +40,36 @@ from agent.model_metadata import estimate_request_tokens_rough
 
 logger = logging.getLogger(__name__)
 
+# Stable marker the gateway matches on to re-tag the auto-compaction lifecycle
+# status as ``kind="compacting"`` (tui_gateway/server.py::_status_update), so
+# drivers like the desktop app can show an explicit "Summarizing…" indicator
+# instead of the transcript appearing to silently reset. Keep the marker phrase
+# intact if you reword COMPACTION_STATUS.
+COMPACTION_STATUS_MARKER = "Compacting context"
+COMPACTION_STATUS = (
+    f"🗜️ {COMPACTION_STATUS_MARKER} — summarizing earlier conversation so I can continue..."
+)
+
+
+def _compression_lock_holder(agent: Any) -> str:
+    """Build a unique holder id for the lock: pid:tid:agent-instance:uuid.
+
+    The pid+tid prefix lets ops tell crashed/abandoned holders apart from
+    live ones (expiry-based recovery uses the timestamp, but ``holder``
+    is what shows up in diagnostics + log lines). The agent instance id
+    and a per-acquire uuid disambiguate two co-resident agents on the
+    same thread (background_review forks run on a worker thread, but
+    on machines where compression itself dispatches to a thread pool
+    we want each acquire to be unique).
+    """
+    import threading
+    return (
+        f"pid={os.getpid()}"
+        f":tid={threading.get_ident()}"
+        f":agent={id(agent):x}"
+        f":nonce={uuid.uuid4().hex[:8]}"
+    )
+
 
 def _compression_lock_holder(agent: Any) -> str:
     """Build a unique holder id for the lock: pid:tid:agent-instance:uuid.
@@ -324,9 +354,104 @@ def compress_context(
         f"{approx_tokens:,}" if approx_tokens else "unknown", agent.model,
         focus_topic,
     )
-    agent._emit_status(
-        "🗜️ Compacting context — summarizing earlier conversation so I can continue..."
-    )
+    agent._emit_status(COMPACTION_STATUS)
+
+    # ── Compression lock ────────────────────────────────────────────────
+    # Atomic, state.db-backed lock per session_id.  Without this, two
+    # AIAgent instances that share the same session_id (most commonly the
+    # parent-turn agent and its background-review fork — see
+    # ``agent/background_review.py``: ``review_agent.session_id =
+    # agent.session_id``) can each call compress() on overlapping
+    # snapshots of the same conversation.  Both succeed, both rotate
+    # ``agent.session_id`` to a fresh id, both create child sessions in
+    # state.db parented to the same old id.  The gateway's SessionEntry
+    # only catches one rotation, so the other child becomes an orphan
+    # that silently accumulates writes — Damien's repro shape.
+    #
+    # Acquire keyed on the OLD session_id (the rotation target's parent),
+    # because that's the id that competing paths see and read from
+    # SessionEntry at the start of their own compression attempt.
+    #
+    # If we can't acquire the lock, another path is mid-compression on
+    # this session.  Aborting is correct: the messages are unchanged, the
+    # other path's rotation will produce the canonical new session_id,
+    # and our caller's auto-compress loop sees ``len(returned) == len(input)``
+    # and stops retrying for this cycle. The session is NOT corrupted —
+    # we just sit out this round and let the winner finish.
+    _lock_db = getattr(agent, "_session_db", None)
+    _lock_sid = agent.session_id or ""
+    _lock_holder: Optional[str] = None
+    # Probe whether the lock subsystem is actually available on this
+    # SessionDB instance.  A process running mismatched module versions
+    # (e.g. ``conversation_compression.py`` reloaded after a pull but the
+    # long-lived ``hermes_state.SessionDB`` class still bound to the
+    # pre-#34351 version in memory) has the call site but not the method.
+    # In that case ``try_acquire_compression_lock`` raises AttributeError —
+    # NOT a ``sqlite3.Error`` — so the method's own fail-open guard never
+    # runs and the exception propagates to the outer agent loop, which
+    # prints the error and retries.  Because compression never succeeds,
+    # the token count never drops and the loop re-triggers compaction
+    # forever (the "API call #47/#48/#49 ... has no attribute
+    # try_acquire_compression_lock" spin).  Fail OPEN here: if the lock
+    # subsystem is missing or broken in any unexpected way, skip locking
+    # and proceed with compression.  Skipping the lock risks a rare
+    # concurrent-compression session fork; an infinite no-progress loop
+    # that never compresses at all is strictly worse.
+    if _lock_db is not None and _lock_sid:
+        _lock_holder = _compression_lock_holder(agent)
+        try:
+            _lock_acquired = _lock_db.try_acquire_compression_lock(
+                _lock_sid, _lock_holder
+            )
+        except Exception as _lock_err:
+            # Broken/absent lock subsystem (version skew, etc.).  Log once
+            # per session and proceed WITHOUT the lock rather than letting
+            # the exception spin the outer loop.
+            _lock_holder = None  # we don't own anything to release
+            if getattr(agent, "_last_compression_lock_error_sid", None) != _lock_sid:
+                agent._last_compression_lock_error_sid = _lock_sid
+                logger.warning(
+                    "compression lock subsystem unavailable for session=%s "
+                    "(%s: %s) — proceeding without lock. This usually means a "
+                    "stale in-memory module after an update; restart the "
+                    "process (or `hermes update`) to resync.",
+                    _lock_sid, type(_lock_err).__name__, _lock_err,
+                )
+            _lock_acquired = True  # treat as acquired-but-unlocked; proceed
+        if not _lock_acquired:
+            try:
+                existing = _lock_db.get_compression_lock_holder(_lock_sid)
+            except Exception:
+                existing = None
+            logger.warning(
+                "compression skipped: another path is compressing session=%s "
+                "(holder=%s) — returning messages unchanged to avoid session fork",
+                _lock_sid, existing,
+            )
+            _lock_holder = None  # don't release a lock we don't own
+            # Surface to the user once — quiet for downstream auto-compress loops
+            if getattr(agent, "_last_compression_lock_warning_sid", None) != _lock_sid:
+                agent._last_compression_lock_warning_sid = _lock_sid
+                try:
+                    agent._emit_warning(
+                        "⚠ Skipping concurrent compression — another path "
+                        "is already compressing this session. Will retry "
+                        "after it finishes."
+                    )
+                except Exception:
+                    pass
+            _existing_sp = getattr(agent, "_cached_system_prompt", None)
+            if not _existing_sp:
+                _existing_sp = agent._build_system_prompt(system_message)
+            return messages, _existing_sp
+
+    def _release_lock() -> None:
+        """Release the lock keyed on the OLD session_id (before rotation)."""
+        if _lock_db is not None and _lock_sid and _lock_holder:
+            try:
+                _lock_db.release_compression_lock(_lock_sid, _lock_holder)
+            except Exception as _rel_err:
+                logger.debug("compression lock release failed: %s", _rel_err)
 
     # ── Compression lock ────────────────────────────────────────────────
     # Atomic, state.db-backed lock per session_id.  Without this, two
@@ -631,7 +756,11 @@ def compress_context(
     return compressed, new_system_prompt
 
 
-def try_shrink_image_parts_in_messages(api_messages: list) -> bool:
+def try_shrink_image_parts_in_messages(
+    api_messages: list,
+    *,
+    max_dimension: int = 8000,
+) -> bool:
     """Re-encode all native image parts at a smaller size to recover from
     image-too-large errors (Anthropic 5 MB, unknown other providers).
 
@@ -642,7 +771,8 @@ def try_shrink_image_parts_in_messages(api_messages: list) -> bool:
     Strategy: look for ``image_url`` / ``input_image`` parts carrying a
     ``data:image/...;base64,...`` payload.  For each one whose encoded
     size exceeds 4 MB (a safe target that slides under Anthropic's 5 MB
-    ceiling with header overhead), write the base64 to a tempfile, call
+    ceiling with header overhead) or whose longest side exceeds
+    ``max_dimension``, write the base64 to a tempfile, call
     ``vision_tools._resize_image_for_vision`` to produce a smaller data
     URL, and substitute it in place.
 
@@ -664,10 +794,9 @@ def try_shrink_image_parts_in_messages(api_messages: list) -> bool:
     # after a confirmed provider rejection, so the alternative is failure.
     target_bytes = 4 * 1024 * 1024
     # Anthropic enforces an 8000px per-side dimension cap independently of
-    # the 5 MB byte cap.  A tall screenshot can be well under 5 MB yet far
-    # over 8000px (e.g. 1200×12000 at 0.06 MB).  We check pixel dimensions
-    # even when the byte budget is fine.
-    max_dimension = 8000
+    # the 5 MB byte cap.  In many-image requests, the provider can report a
+    # lower cap (observed: 2000px).  The caller passes that parsed ceiling
+    # when the rejection includes it.
     changed_count = 0
     # Track parts that are over the target but could NOT be shrunk under it.
     # If any survive, retrying is pointless — the same oversized payload will
@@ -684,9 +813,9 @@ def try_shrink_image_parts_in_messages(api_messages: list) -> bool:
         # Check both byte size AND pixel dimensions.
         needs_shrink = len(url) > target_bytes  # over byte budget
         if not needs_shrink:
-            # Even if bytes are fine, check pixel dimensions against
-            # Anthropic's 8000px cap.  A tall image can be tiny in bytes
-            # yet huge in pixels.
+            # Even if bytes are fine, check pixel dimensions against the
+            # provider's reported per-side cap.  A screenshot can be tiny in
+            # bytes yet too large in pixels.
             try:
                 import base64 as _b64_dim
                 header_d, _, data_d = url.partition(",")
@@ -795,6 +924,8 @@ def try_shrink_image_parts_in_messages(api_messages: list) -> bool:
 
 
 __all__ = [
+    "COMPACTION_STATUS",
+    "COMPACTION_STATUS_MARKER",
     "check_compression_model_feasibility",
     "replay_compression_warning",
     "compress_context",

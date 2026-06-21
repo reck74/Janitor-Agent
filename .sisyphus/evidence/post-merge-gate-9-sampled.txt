@@ -1,0 +1,9 @@
+=== Gate 9 sampled: 3 test files ===
+  Files:   3
+  Total subprocess CPU-wall: 2.7s  (runner wall: 1.4s, parallelism: 32x)
+  P50: 0.85s  P90: 1.36s  P95: 1.36s  P99: 1.36s  Max: 1.36s
+  <1s: 2 files (67%)  <2s: 3 files (100%)
+  Top 10 slowest:
+      1.36s  tests/hermes_cli/test_config.py
+      0.85s  tests/agent/test_prompt_builder.py
+      0.47s  tests/hermes_cli/test_skin_engine.py
