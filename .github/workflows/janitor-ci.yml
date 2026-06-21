@@ -18,9 +18,12 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --python 3.11 --extra all --extra dev
       - name: Run Python tests
+        # tests/hermes_cli/test_skin_engine.py was removed by upstream sync
+        # (commit 607078d2c). Replaced with test_janitor_update_core.py to
+        # maintain 2-file coverage. See MERGE_GUIDE.md §10 for details.
         run: |
           source .venv/bin/activate
-          python -m pytest tests/test_janitor_cli.py tests/hermes_cli/test_skin_engine.py -v
+          python -m pytest tests/test_janitor_cli.py tests/test_janitor_update_core.py -v
 
   react-tests:
     runs-on: ubuntu-latest
@@ -37,8 +40,10 @@ jobs:
         working-directory: ./ui-tui
         run: npm run build --prefix packages/hermes-ink
       - name: Type Check
+        # Script renamed from type-check to typecheck in upstream sync
+        # (commit 607078d2c). See MERGE_GUIDE.md §10 for details.
         working-directory: ./ui-tui
-        run: npm run type-check
+        run: npm run typecheck
       - name: Run Tests
         working-directory: ./ui-tui
         run: npm test

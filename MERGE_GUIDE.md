@@ -415,3 +415,96 @@ Antes de cualquier PR que toque `apps/desktop/public/`:
 - [ ] `git diff --stat` solo toca `apps/desktop/public/*` + (opcional) `.gitignore`
 - [ ] Screenshot de Settings → About + Updates overlay + ventana maximizada con fondo visible
 
+---
+
+## 10. Stale CI Config — Actualización post-sync de `janitor-ci.yml`
+
+> **Lección aprendida:** El sync upstream (`607078d2c`, v0.16.0) eliminó/renombró
+> archivos referenciados por `janitor-ci.yml`, pero el workflow no se actualizó
+> en el mismo commit. Resultado: ambos jobs (`python-tests` y `react-tests`)
+> fallaban en CI sin que el código tuviera bugs reales.
+
+### 10.1 Síntomas
+
+- `python-tests` job falla con `ERROR: file or directory not found: tests/hermes_cli/test_skin_engine.py`
+- `react-tests` job falla con `npm error Missing script: "type-check"`
+- Los tests pasan localmente cuando se ejecutan manualmente con los nombres correctos
+
+### 10.2 Causa raíz
+
+El commit de sync upstream puede **eliminar, mover o renombrar** archivos que
+`janitor-ci.yml` referencia directamente. El sync es un merge masivo (~1600
+commits, ~1000 archivos) y `janitor-ci.yml` es un archivo Janitor-only que el
+sync no toca — pero sus **referencias** apuntan a archivos que sí cambiaron.
+
+| Referencia en `janitor-ci.yml` | Qué pasó en el sync | Fix aplicado |
+|---|---|---|
+| `tests/hermes_cli/test_skin_engine.py` | Eliminado por upstream (reestructuración de tests) | Reemplazado con `tests/test_janitor_update_core.py` |
+| `npm run type-check` | Script renombrado a `typecheck` (sin guion) en `ui-tui/package.json` | Actualizado a `npm run typecheck` |
+
+### 10.3 Checklist post-sync obligatorio para `janitor-ci.yml`
+
+Después de **cualquier** `git merge upstream/main` (o `chore(sync):` commit),
+verificar estas 3 referencias antes de pushear:
+
+```bash
+# 1. Los archivos de test referenciados existen
+grep -E 'python -m pytest' .github/workflows/janitor-ci.yml | \
+  grep -oE 'tests/\S+\.py' | \
+  while read f; do test -f "$f" && echo "OK: $f" || echo "MISSING: $f"; done
+
+# 2. Los scripts de npm referenciados existen en package.json
+grep -E 'npm run ' .github/workflows/janitor-ci.yml | \
+  grep -oE 'npm run \S+' | \
+  while read script; do
+    name=$(echo "$script" | sed 's/npm run //')
+    node -e "const p=require('./ui-tui/package.json'); \
+      p.scripts['$name'] ? console.log('OK: $name') : console.log('MISSING: $name')"
+  done
+
+# 3. La versión de actions/checkout es consistente con el resto de workflows
+grep 'actions/checkout@' .github/workflows/janitor-ci.yml
+```
+
+Si cualquier línea dice `MISSING:`, corregir `janitor-ci.yml` en el mismo
+commit del sync (o en un commit `fix(ci):` inmediatamente después) antes
+de abrir el PR.
+
+### 10.4 Prevención — añadir al checklist de validación post-merge (§4.1)
+
+Añadir estos ítems al checklist de la sección 4.1 después de cada sync:
+
+- [ ] **CI refs válidos**: `janitor-ci.yml` no referencia archivos eliminados ni scripts renombrados (ver §10.3)
+- [ ] **CI jobs verificados**: ejecutar localmente los 2 jobs de `janitor-ci.yml` antes de pushear
+
+### 10.5 Archivos Janitor-only que el sync NO protege
+
+`janitor-ci.yml` es un archivo Janitor-only — el sync upstream no lo toca ni
+lo valida. Cualquier referencia que apunte a código upstream (tests, scripts
+de npm, paths de build) es **frágil** y debe verificarse después de cada sync.
+
+Archivos Janitor-only que dependen de estructura upstream:
+
+| Archivo Janitor | Dependencia upstream | Riesgo |
+|---|---|---|
+| `.github/workflows/janitor-ci.yml` | Tests files, npm scripts | **Alto** — se rompe en cada sync que reestructura tests o renombra scripts |
+| `.github/workflows/tests.yml` | Tests files (5 Janitor-specific) | **Medio** — los tests Janitor-specific son estables, pero nombres de archivos pueden cambiar |
+| `janitor_cli.py` | `HermesCLI` class en `cli.py` | **Bajo** — la interfaz pública es estable |
+
+### 10.6 Fix aplicado en este commit
+
+```
+fix(ci): update janitor-ci.yml references after upstream sync
+
+- Replace deleted tests/hermes_cli/test_skin_engine.py with
+  tests/test_janitor_update_core.py (skin_engine test was removed
+  by upstream sync commit 607078d2c)
+- Fix npm run type-check → npm run typecheck (script renamed in
+  upstream sync)
+- Document stale CI config issue in MERGE_GUIDE.md §10
+
+Both CI jobs now pass locally:
+- python-tests: 29 passed
+- react-tests: 1026 passed, 2 skipped
+```
+
