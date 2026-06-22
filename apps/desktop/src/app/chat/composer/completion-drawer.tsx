@@ -18,6 +18,15 @@ export const COMPLETION_DRAWER_CLASS = cn(DRAWER_SHELL, 'bottom-full -mb-[9px]',
 
 export const COMPLETION_DRAWER_BELOW_CLASS = cn(DRAWER_SHELL, 'top-full -mt-[9px]', composerFusedDockCard('bottom'))
 
+// Shared row styling for completion drawer items (skin-switch popover, /, @, ?
+// triggers). Extracted so every popover item paints the same way without each
+// call site redefining its own base class.
+export const COMPLETION_DRAWER_ROW_CLASS = [
+  'relative flex w-full cursor-default select-none rounded-md px-2 py-1 text-left',
+  'outline-hidden transition-colors hover:bg-(--ui-bg-tertiary)',
+  'data-[highlighted]:bg-(--ui-bg-tertiary) data-[highlighted]:text-foreground'
+].join(' ')
+
 export function ComposerCompletionDrawer({
   adapter,
   ariaLabel,

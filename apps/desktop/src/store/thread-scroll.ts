@@ -26,6 +26,12 @@ export const setThreadAtBottom = (isAtBottom: boolean) => {
   setJumpButtonVisible(!isAtBottom)
 }
 
+// Direct setter for the scrolled-up atom. Most callers should prefer
+// `setThreadAtBottom` (keeps both atoms in lockstep), but the virtualizer
+// wants to flip scrolled-up alone when it only knows one axis — e.g. on
+// unmount, when sticky-bottom resets independently of the jump button.
+export const setThreadScrolledUp = (value: boolean) => setScrolledUp(value)
+
 export const resetThreadScroll = () => setThreadAtBottom(true)
 
 // Cross-component bridge: the jump button lives by the composer, the viewport's

@@ -508,3 +508,196 @@ Both CI jobs now pass locally:
 - react-tests: 1026 passed, 2 skipped
 ```
 
+---
+
+## 11. Telegram Core Customization (`gateway/platforms/telegram.py`)
+
+> **Lección aprendida:** El sync upstream vía wholesale adoption (T2.1,
+> commit `607078d2c`) eliminó **todas** las personalizaciones Janitor de
+> Telegram al sobreescribir `gateway/platforms/telegram.py` con la versión
+> upstream. El fix de re-aplicación (`91a891618`) tuvo que restaurar 6
+> piezas de código + 5 constantes + 1 import + 1 handler + 1 call site.
+> Las personalizaciones **no sobreviven** a un merge masivo si no se
+> documentan como zona de conflicto explícita.
+
+### 11.1 Inventario de personalizaciones Janitor en `telegram.py`
+
+Todas las adiciones son **puramente aditivas** (cumple directiva #1
+ZERO-RENAMING y directiva #4 TUI ISOLATION — no se renombra nada de
+upstream, solo se inyecta comportamiento):
+
+| Símbolo | Tipo | Ubicación | Qué hace |
+|---|---|---|---|
+| `_JANITOR_ASSETS_DIR` | Constante módulo | línea 116 | `Path(__file__).resolve().parents[2] / "assets" / "janitor"` |
+| `_JANITOR_AVATAR_PATH` | Constante módulo | línea 117 | Apunta a `assets/janitor/janitor_avatar.png` (uso general) |
+| `_JANITOR_TELEGRAM_AVATAR_PATH` | Constante módulo | línea 118 | Apunta a `assets/janitor/janitor_avatar_telegram.jpg` (uso Telegram) |
+| `_JANITOR_WELCOME_PATH` | Constante módulo | línea 119 | Apunta a `assets/janitor/telegram_welcome.jpg` |
+| `_JANITOR_WELCOME_TEXT` | Constante módulo | línea 120 | Texto de bienvenida en español (menciona `/topic`) |
+| `InputProfilePhotoStatic` (try/except) | Import | líneas 31, 33, 53 | Necesario para PTB ≥ 22.7; los mocks de test lo parchean en ambas ramas |
+| `_set_janitor_avatar()` | Método async | líneas 1872-1926 | Quita el profile photo actual del bot y sube el JPG Janitor vía `set_my_profile_photo` (PTB ≥ 22.7) con fallback `do_api_request("removeMyProfilePhoto")` |
+| `await self._set_janitor_avatar()` | Call site | línea 2077 dentro de `connect()` | **Punto de inyección único** — se ejecuta después de `_app.initialize()` |
+| `self._app.add_handler(CommandHandler("start", self._handle_start))` | Handler registration | línea 2052 | Registra el comando `/start` que envía la imagen de bienvenida |
+| `_handle_start()` | Método async | líneas 5874-5906 | Envía `telegram_welcome.jpg` con caption `_JANITOR_WELCOME_TEXT`; fallback a texto si falta el asset |
+
+### 11.2 Assets aislados (NO se modifican en merges)
+
+Estos archivos viven en `assets/janitor/` y **no son parte de upstream**.
+Un merge no debe tocarlos (no aparecen en el árbol de upstream):
+
+| Archivo | Tamaño | Uso | Test |
+|---|---|---|---|
+| `assets/janitor/janitor_avatar_telegram.jpg` | ~36 KB | Profile photo del bot (set on every connect) | `test_telegram_avatar_asset_is_jpeg` verifica magic bytes JPEG |
+| `assets/janitor/telegram_welcome.jpg` | ~948 KB | Imagen enviada en `/start` | Implícitamente cubierto por `test_handle_start_*` |
+| `assets/janitor/janitor_avatar.png` | ~169 KB | Avatar general (no Telegram-específico) | Sin test directo |
+
+**Verificación rápida post-merge**:
+```bash
+test -f assets/janitor/janitor_avatar_telegram.jpg && \
+  test -f assets/janitor/telegram_welcome.jpg && \
+  echo "OK: telegram assets present" || \
+  echo "MISSING: telegram assets"
+```
+
+### 11.3 Test de regresión — `tests/gateway/test_telegram_janitor_branding.py`
+
+Este es el archivo de **regression guard** para toda la zona de conflicto
+Telegram. Cualquier sync upstream que toque `gateway/platforms/telegram.py`
+debe ir acompañado de una corrida verde de este test.
+
+**12 funciones de test** que cubren:
+1. Avatar upload en cada `connect()` (sin flag file de "ya subido")
+2. Idempotencia del avatar setter (sube en cada llamada)
+3. Skip graceful cuando PTB < 22.7 (warning + no-op)
+4. Fallback a `do_api_request("removeMyProfilePhoto")` cuando falla la API moderna
+5. Uso correcto de `photo=` kwarg (no `profile_photo=` ni `media=`) — testea el contrato de la API de PTB
+6. Skip silencioso cuando falta el asset (no bloquea startup)
+7. `/start` envía `telegram_welcome.jpg` con caption Janitor (no `send_message`)
+8. `/start` fallback a texto cuando falta el asset
+9. Integridad JPEG del avatar (`file(1)` confirma `JPEG image data`)
+
+**Wiring CI** (ver §4.1):
+```yaml
+# .github/workflows/tests.yml, líneas 87-100
+- name: Run Janitor-specific tests
+  run: |
+    source .venv/bin/activate
+    python -m pytest \
+      tests/test_janitor_cli.py \
+      tests/test_janitor_update_bootstrap.py \
+      tests/test_janitor_update_core.py \
+      tests/gateway/test_telegram_janitor_branding.py \
+      tests/skills/test_janitor_config_audit_skill.py \
+      --tb=short -v
+```
+
+### 11.4 Síntomas de regresión Telegram
+
+Si un merge upstream rompe las personalizaciones Janitor de Telegram,
+los síntomas son:
+
+- `tests/gateway/test_telegram_janitor_branding.py` reporta **11 de 12 tests rojos** (solo pasa `test_telegram_avatar_asset_is_jpeg`, que no depende del código)
+- En runtime: el bot de Telegram arranca con el avatar de upstream (o sin avatar) en lugar de `janitor_avatar_telegram.jpg`
+- En runtime: el comando `/start` responde con texto genérico de Hermes en lugar de `telegram_welcome.jpg` + caption Janitor
+- Mensaje en logs: `TelegramAdapter` no llama a `_set_janitor_avatar()` durante el connect
+
+### 11.5 Causa raíz
+
+`gateway/platforms/telegram.py` es un **hot path** de upstream — recibe
+commits en casi cada sync (v0.16.0 incorporó ~25 commits Telegram: rich
+messages, Bot API 10.1, streaming fixes, etc.). Los métodos de Janitor
+(`_set_janitor_avatar`, `_handle_start`) son **inyectados en el cuerpo
+de la clase `TelegramAdapter`**, lo que los hace invisibles al `git
+diff` de superficie: un merge con `-X theirs` los borra sin levantar
+conflictos de tres vías.
+
+### 11.6 Resolución de conflictos
+
+**Si git marca conflicto en `gateway/platforms/telegram.py`**:
+
+1. **NO adoptes upstream completo** — las personalizaciones Janitor están en medio de métodos de upstream (`connect()`, `_handle_start` se inyecta cerca de otros handlers).
+2. **Resuelve preservando ambos lados**:
+   - Adopta la lógica nueva de upstream (rich messages, streaming fixes, etc.)
+   - Conserva los símbolos `_JANITOR_*`, los métodos `_set_janitor_avatar` y `_handle_start`, y los call sites en `connect()` y `add_handler`
+   - Verifica que el import de `InputProfilePhotoStatic` siga en **ambas** ramas del try/except (líneas 31 y 33)
+3. **Después de resolver, corre el test de regresión**:
+   ```bash
+   python -m pytest tests/gateway/test_telegram_janitor_branding.py -v
+   ```
+   Debe pasar 12/12 en menos de 2s.
+
+**Si git NO marca conflicto pero el test falla** (caso del wholesale
+adoption `607078d2c`): upstream sobreescribió el archivo sin conservar
+nada. Restaurar desde el commit de re-aplicación de referencia
+`91a891618`:
+```bash
+# Ver qué se perdió
+git diff 91a891618^ -- gateway/platforms/telegram.py | head -200
+
+# Re-aplicar el delta Janitor desde el commit de referencia
+git show 91a891618 -- gateway/platforms/telegram.py | git apply
+```
+
+### 11.7 Checklist post-merge obligatorio para Telegram
+
+Añadir al checklist de validación (§4.1) después de cualquier merge
+que toque `gateway/platforms/telegram.py`:
+
+- [ ] **Constantes presentes**: `grep -q "_JANITOR_ASSETS_DIR" gateway/platforms/telegram.py`
+- [ ] **Método avatar presente**: `grep -q "_set_janitor_avatar" gateway/platforms/telegram.py`
+- [ ] **Call site en connect**: `grep -q "await self._set_janitor_avatar" gateway/platforms/telegram.py`
+- [ ] **Handler /start**: `grep -q "_handle_start" gateway/platforms/telegram.py`
+- [ ] **Import PTB**: `grep -q "InputProfilePhotoStatic" gateway/platforms/telegram.py` (debe aparecer en línea 31 — try block — Y en línea 33 — except block; en total ≥ 2 referencias)
+- [ ] **Test verde**: `python -m pytest tests/gateway/test_telegram_janitor_branding.py -v` → 12/12 pass
+- [ ] **Assets presentes**: `test -f assets/janitor/janitor_avatar_telegram.jpg && test -f assets/janitor/telegram_welcome.jpg`
+
+```bash
+# One-liner para validar todo de una vez
+(
+  grep -q "_JANITOR_ASSETS_DIR" gateway/platforms/telegram.py && \
+  grep -q "_set_janitor_avatar" gateway/platforms/telegram.py && \
+  grep -q "await self._set_janitor_avatar" gateway/platforms/telegram.py && \
+  grep -q "_handle_start" gateway/platforms/telegram.py && \
+  grep -q "InputProfilePhotoStatic" gateway/platforms/telegram.py && \
+  test -f assets/janitor/janitor_avatar_telegram.jpg && \
+  test -f assets/janitor/telegram_welcome.jpg
+) && echo "Telegram Janitor branding: SYMBOLS OK" || echo "Telegram Janitor branding: SYMBOLS MISSING"
+
+# Test verde (separado porque pytest puede tardar):
+python -m pytest tests/gateway/test_telegram_janitor_branding.py -q
+```
+
+### 11.8 Archivos Janitor-only relacionados con Telegram
+
+| Archivo | Tipo | Riesgo en sync |
+|---|---|---|
+| `tests/gateway/test_telegram_janitor_branding.py` | Test Janitor-only | **Medio** — corre en PR gate pero el sync puede romper `gateway/platforms/telegram.py` y el test detecta regresiones |
+| `assets/janitor/janitor_avatar_telegram.jpg` | Asset binario | **Bajo** — no está en árbol upstream, no se toca |
+| `assets/janitor/telegram_welcome.jpg` | Asset binario | **Bajo** — idem |
+| `.sisyphus/evidence/post-merge-gate-9-telegram.txt` | Evidencia | **Bajo** — archivo `.sisyphus/` ignorado por git |
+| `docs/plans/2026-06-09-003-fix-telegram-stream-overflow-continuations-plan.md` | Plan activo | **Bajo** — fork-only, fuera del árbol upstream |
+
+### 11.9 Fix de referencia — commit `91a891618`
+
+El commit de referencia para restaurar las personalizaciones Janitor de
+Telegram tras un wholesale adoption es:
+
+```
+91a891618 fix(sync): re-apply Janitor fork identity lost by upstream adoption (T5b.3)
+
+- _JANITOR_ASSETS_DIR, _JANITOR_AVATAR_PATH,
+  _JANITOR_TELEGRAM_AVATAR_PATH, _JANITOR_WELCOME_PATH,
+  _JANITOR_WELCOME_TEXT constants
+- _set_janitor_avatar() method (with PTB >= 22.7 fallback)
+- _handle_start() method
+- await self._set_janitor_avatar() call in connect()
+- CommandHandler('start', self._handle_start) registration
+- Added 'InputProfilePhotoStatic' to both try/except import blocks
+```
+
+Si un sync futuro vuelve a borrar la zona (por ejemplo, otro wholesale
+adoption o una resolución `-X theirs` mal calibrada), este commit es
+la **fuente canónica** del delta Janitor en `telegram.py`. Aplicar con:
+```bash
+git show 91a891618 -- gateway/platforms/telegram.py | git apply
+```
+
