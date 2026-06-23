@@ -66,7 +66,14 @@ environments/benchmarks/evals/
 hermes_cli/web_dist/
 apps/desktop/build/
 apps/desktop/dist/
-apps/desktop/release/
+# apps/desktop/release/ is intentionally NOT ignored — Janitor ships the
+# compiled AppImage so end users do not have to rebuild after `janitor
+# update`. Only the unpacked ELF tree (developer convenience) and the
+# builder-debug log (transient diagnostic) stay ignored.
+apps/desktop/release/linux-unpacked/
+apps/desktop/release/builder-debug.yml
+apps/desktop/release/*.AppImage.blockmap
+apps/desktop/release/latest-linux.yml
 apps/desktop/*.tsbuildinfo
 
 # Web UI assets — synced from @nous-research/ui at build time via
