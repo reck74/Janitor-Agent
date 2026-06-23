@@ -8,3 +8,10 @@ web/package-lock.json linguist-generated=true
 Dockerfile  text eol=lf
 *.dockerfile text eol=lf
 docker/entrypoint.sh text eol=lf
+
+# Track the compiled desktop AppImage through Git LFS so it can ship
+# in the repo (138 MB exceeds GitHub's 100 MB push limit) without
+# bloating the regular git history. End users get the binary via
+# `janitor update` without rebuilding.
+*.AppImage filter=lfs diff=lfs merge=lfs -text
+apps/desktop/release/J4nitor-Agent-*.AppImage filter=lfs diff=lfs merge=lfs -text

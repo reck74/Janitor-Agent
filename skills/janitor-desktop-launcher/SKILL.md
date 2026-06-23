@@ -31,6 +31,10 @@ If you need to *rebuild* the AppImage first, use `npm run dist:linux` from
 - For headless servers, `xvfb-run` (provides a virtual X display).
 - The release artifact must exist. If it does not, run
   `cd apps/desktop && npm run dist:linux` once.
+- The AppImage ships via Git LFS in this repo (138 MB exceeds
+  GitHub's 100 MB push limit). New clones need `git lfs install`
+  on first run before `git pull` to materialize the binary.
+  Without LFS the launcher falls back to the unpacked ELF path.
 
 ## How to Run
 
@@ -92,6 +96,11 @@ bash skills/janitor-desktop-launcher/scripts/launch.sh --version
 - **Do not run as root inside the AppImage.** Electron's `chrome-sandbox`
   refuses to escalate; either run as your normal user or pass
   `--no-sandbox` (not recommended).
+- **Binary ships via Git LFS.** End users who clone the repo must run
+  `git lfs install` once on the host so `git pull` materializes the
+  AppImage. Without LFS, the file appears as a 3-line pointer and the
+  launcher errors out with "no AppImage found" — fallback to
+  `--unpacked` (still requires `npm run pack` locally) or install LFS.
 
 ## Verification
 
