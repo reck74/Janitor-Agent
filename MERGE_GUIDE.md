@@ -131,6 +131,7 @@ git checkout HEAD -- .github/workflows/
 - [ ] **Branding sanitization**: verificar que no queden strings de upstream (`Nous Research`, `Messenger of the Digital Gods`, `Hermes Agent v`)
 - [ ] **GHCR purge**: verificar que no queden `check_ghcr_auth` ni `ghcr.io` en scripts
 - [ ] **Git status**: `git status --short` debe estar limpio (sin untracked de `.sisyphus/run-continuation/`)
+- [ ] **Janitor dependency pins intactos**: verificar que ningún merge revirtió pins requeridos por features Janitor — ver §4.4 para la lista canónica y comandos de validación
 
 ### 4.2 Gates del TUI (obligatorios si se toca `ui-tui/`)
 
@@ -151,6 +152,58 @@ npm test
 
 ```bash
 python3 -m py_compile cli.py run_agent.py gateway/run.py
+```
+
+### 4.4 Pins de dependencias requeridos por features Janitor
+
+Ciertos pins en `pyproject.toml` no son negociables porque el código Janitor
+asume APIs que solo existen en versiones mínimas específicas. Un sync upstream
+con `-X theirs` puede revertirlos silenciosamente, dejando la lógica Python
+intacta pero el comportamiento roto en runtime (los mocks de tests no detectan
+el problema). Esta sección es la lista canónica.
+
+| Pin | Razón | Símbolo / archivo Janitor que lo requiere |
+|---|---|---|
+| `python-telegram-bot[webhooks]>=22.7,<23` (en extras `messaging` y `termux`) | `set_my_profile_photo` / `remove_my_profile_photo` solo disponibles desde PTB 22.7 | `gateway/platforms/telegram.py:_set_janitor_avatar()` |
+
+**Comando de validación** (incluir en todo `chore(sync):` post-merge):
+
+```bash
+# Debe retornar exactamente 2 matches (messaging + termux)
+grep -E 'python-telegram-bot\[webhooks\]>=22\.7' pyproject.toml | wc -l
+
+# Validación completa de runtime: la versión resuelta en uv.lock debe ser >= 22.7
+grep -A1 'name = "python-telegram-bot"$' uv.lock | grep version
+# Salida esperada (o cualquier 22.x >= 22.7):
+#   version = "22.8"
+```
+
+**One-liner fail-fast** (retorna exit 0 si está bien, 1 si falta el pin):
+
+```bash
+(
+  [ "$(grep -cE 'python-telegram-bot\[webhooks\]>=22\.7' pyproject.toml)" = "2" ] && \
+  uv lock --check && \
+  python3 -c "import tomllib, re; d=tomllib.loads(open('pyproject.toml').read())['project']['optional-dependencies']; assert any('>=22.7' in x for x in d.get('messaging', [])), 'messaging pin missing'; assert any('>=22.7' in x for x in d.get('termux', [])), 'termux pin missing'; print('Janitor pins: OK')" \
+) || echo "Janitor pins: FAIL — restore with: git show <fix-commit> -- pyproject.toml uv.lock | git apply"
+```
+
+**Origen del riesgo** (jun 2026): el cherry-pick `ab83b15f7` revirtió el pin
+`>=22.7,<23` → `==22.6` durante un wholesale adoption. El fix de T5b.3
+(`91a891618`) restauró el código Python pero pasó por alto el pin, dejando
+el bug dormido hasta el siguiente arranque del bot en runtime. Este guardrail
+existe para que el próximo `chore(sync):` no repita la regresión.
+
+**Si falla**: NO cambiar el código Python para que coincida con la versión
+antigua — eso es deuda técnica. Restaurar el pin correcto:
+
+```bash
+# Pin de referencia
+git show fa2b7d8a5 -- pyproject.toml | grep "python-telegram-bot" | head -2
+# Regenerar lock
+uv lock
+# Validar
+scripts/run_tests.sh tests/gateway/test_telegram_janitor_branding.py
 ```
 
 ---
@@ -649,6 +702,7 @@ que toque `gateway/platforms/telegram.py`:
 - [ ] **Import PTB**: `grep -q "InputProfilePhotoStatic" gateway/platforms/telegram.py` (debe aparecer en línea 31 — try block — Y en línea 33 — except block; en total ≥ 2 referencias)
 - [ ] **Test verde**: `python -m pytest tests/gateway/test_telegram_janitor_branding.py -v` → 12/12 pass
 - [ ] **Assets presentes**: `test -f assets/janitor/janitor_avatar_telegram.jpg && test -f assets/janitor/telegram_welcome.jpg`
+- [ ] **Pin PTB intacto**: `grep -E 'python-telegram-bot\[webhooks\]>=22\.7' pyproject.toml | wc -l` debe retornar `2` (messaging + termux). Si retorna 0, el pin fue revertido por el sync aunque los símbolos del código sigan presentes — los mocks de tests bypasean el check `hasattr(self._bot, "set_my_profile_photo")` pero el bot real falla en runtime. Ver §4.4 para el guardrail completo y comando de restauración.
 
 ```bash
 # One-liner para validar todo de una vez
