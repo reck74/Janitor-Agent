@@ -42,9 +42,16 @@ import time
 import urllib.error
 import urllib.request
 import zipfile
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+from agent.secret_sources._cache import (
+    CachedFetch as _CachedFetch,
+    DiskCache,
+    FetchResult,
+    is_valid_env_name as _is_valid_env_name,
+)
+from agent.secret_sources.base import ErrorKind, SecretSource
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +77,20 @@ _BWS_RUN_TIMEOUT = 30
 # In-process cache so repeated load_hermes_dotenv() calls (CLI startup,
 # gateway hot-reload, test suites) don't re-fetch from BSM.
 _CacheKey = Tuple[str, str, str]  # (access_token_fingerprint, project_id, server_url)
-_CACHE: Dict[_CacheKey, "_CachedFetch"] = {}
+_CACHE: Dict[_CacheKey, _CachedFetch] = {}
+
+# Disk-persisted cache so back-to-back CLI invocations (e.g. `hermes chat -q ...`
+# called from scripts, cron, the gateway forking new agents) don't each pay the
+# ~380ms `bws secret list` tax. The in-process _CACHE above only saves repeated
+# fetches WITHIN one process; this saves repeated fetches ACROSS processes.
+#
+# Layout: one JSON object per cache key, written atomically with mode 0600 in
+# <hermes_home>/cache/bws_cache.json. The file holds only the secret VALUES,
+# never the access token. It's plaintext-equivalent to ~/.hermes/.env (which
+# we already accept) but kept out of the .env file so users editing it won't
+# accidentally commit BSM-sourced secrets. The atomic-write/0600/TTL mechanics
+# live in agent.secret_sources._cache.DiskCache, shared with the other backends.
+_DISK_CACHE_BASENAME = "bws_cache.json"
 
 # Disk-persisted cache so back-to-back CLI invocations (e.g. `hermes chat -q ...`
 # called from scripts, cron, the gateway forking new agents) don't each pay the
@@ -169,36 +189,24 @@ def _write_disk_cache(cache_key: _CacheKey, entry: "_CachedFetch",
         pass  # best-effort — disk cache miss on next invocation is fine
 
 
-@dataclass
-class _CachedFetch:
-    secrets: Dict[str, str]
-    fetched_at: float
-
-    def is_fresh(self, ttl_seconds: float) -> bool:
-        if ttl_seconds <= 0:
-            return False
-        return (time.time() - self.fetched_at) < ttl_seconds
+def _cache_key_str(cache_key: _CacheKey) -> str:
+    """Serialize a cache key to a stable string for JSON storage."""
+    token_fp, project_id, server_url = cache_key
+    return f"{token_fp}|{project_id}|{server_url}"
 
 
-# ---------------------------------------------------------------------------
-# Public dataclasses
-# ---------------------------------------------------------------------------
+_DISK_CACHE: DiskCache = DiskCache(
+    _DISK_CACHE_BASENAME, key_serializer=_cache_key_str
+)
 
 
-@dataclass
-class FetchResult:
-    """Outcome of a single BSM pull."""
+def _disk_cache_path(home_path: Optional[Path] = None) -> Path:
+    """Return the disk cache path under hermes_home/cache/.
 
-    secrets: Dict[str, str] = field(default_factory=dict)
-    applied: List[str] = field(default_factory=list)   # set into os.environ
-    skipped: List[str] = field(default_factory=list)   # already set, not overridden
-    warnings: List[str] = field(default_factory=list)  # non-fatal issues
-    error: Optional[str] = None                        # fatal: nothing was fetched
-    binary_path: Optional[Path] = None
-
-    @property
-    def ok(self) -> bool:
-        return self.error is None
+    Thin wrapper over the shared DiskCache, kept for tests and any direct
+    callers; falls back to `$HERMES_HOME` / `~/.hermes` when home is None.
+    """
+    return _DISK_CACHE.path(home_path)
 
 
 # ---------------------------------------------------------------------------
@@ -479,7 +487,7 @@ def fetch_bitwarden_secrets(
         if cached and cached.is_fresh(cache_ttl_seconds):
             return cached.secrets, []
         # L2: disk cache. ~5ms on cache hit vs ~380ms for `bws secret list`.
-        disk_cached = _read_disk_cache(cache_key, cache_ttl_seconds, home_path)
+        disk_cached = _DISK_CACHE.read(cache_key, cache_ttl_seconds, home_path)
         if disk_cached is not None:
             # Promote into in-process cache so subsequent fetches in the
             # same process skip the disk read too.
@@ -499,7 +507,7 @@ def fetch_bitwarden_secrets(
     entry = _CachedFetch(secrets=secrets, fetched_at=time.time())
     _CACHE[cache_key] = entry
     if use_cache:
-        _write_disk_cache(cache_key, entry, home_path)
+        _DISK_CACHE.write(cache_key, entry, cache_ttl_seconds, home_path)
     return secrets, warnings
 
 
@@ -573,14 +581,6 @@ def _run_bws_list(
             continue
         secrets[key] = value
     return secrets, warnings
-
-
-def _is_valid_env_name(name: str) -> bool:
-    if not name:
-        return False
-    if not (name[0].isalpha() or name[0] == "_"):
-        return False
-    return all(c.isalnum() or c == "_" for c in name)
 
 
 # ---------------------------------------------------------------------------
@@ -674,6 +674,142 @@ def apply_bitwarden_secrets(
 
 
 # ---------------------------------------------------------------------------
+# SecretSource adapter — the registry-facing wrapper around this module.
+# ---------------------------------------------------------------------------
+
+
+class BitwardenSource(SecretSource):
+    """Bitwarden Secrets Manager as a registered secret source.
+
+    Thin adapter over the module's fetch machinery.  ``fetch()`` only
+    *fetches* — precedence, override semantics, conflict warnings, and
+    the ``os.environ`` writes are the orchestrator's job
+    (see ``agent.secret_sources.registry.apply_all``).
+
+    Bitwarden is a **bulk** source: it injects every secret in the
+    configured BSM project, so explicit per-var bindings from mapped
+    sources (e.g. the 1Password ``env:`` map) outrank it.
+    """
+
+    name = "bitwarden"
+    label = "Bitwarden Secrets Manager"
+    shape = "bulk"
+    scheme = "bws"
+
+    def override_existing(self, cfg: dict) -> bool:
+        # Default True (matches DEFAULT_CONFIG): the point of BSM is
+        # centralized rotation — if .env had the final say, rotating a
+        # key in Bitwarden wouldn't take effect until the stale .env
+        # line was also deleted.
+        return bool(isinstance(cfg, dict) and cfg.get("override_existing", True))
+
+    def protected_env_vars(self, cfg: dict):
+        token_env = "BWS_ACCESS_TOKEN"
+        if isinstance(cfg, dict):
+            token_env = str(cfg.get("access_token_env") or token_env)
+        return frozenset({token_env})
+
+    def config_schema(self) -> dict:
+        return {
+            "enabled": {"description": "Master switch", "default": False},
+            "access_token_env": {
+                "description": "Env var holding the machine-account access token",
+                "default": "BWS_ACCESS_TOKEN",
+            },
+            "project_id": {"description": "BSM project UUID", "default": ""},
+            "cache_ttl_seconds": {
+                "description": "Disk+memory cache TTL; 0 disables",
+                "default": 300,
+            },
+            "override_existing": {
+                "description": "BSM values overwrite .env/shell values",
+                "default": True,
+            },
+            "auto_install": {
+                "description": "Auto-download the pinned bws binary",
+                "default": True,
+            },
+            "server_url": {
+                "description": "Region / self-hosted endpoint (empty = US Cloud)",
+                "default": "",
+            },
+        }
+
+    def fetch(self, cfg: dict, home_path: Path) -> FetchResult:
+        cfg = cfg if isinstance(cfg, dict) else {}
+        result = FetchResult()
+
+        access_token_env = str(cfg.get("access_token_env") or "BWS_ACCESS_TOKEN")
+        access_token = os.environ.get(access_token_env, "").strip()
+        if not access_token:
+            result.error = (
+                f"secrets.bitwarden.enabled is true but {access_token_env} is "
+                "not set.  Run `hermes secrets bitwarden setup`."
+            )
+            result.error_kind = ErrorKind.NOT_CONFIGURED
+            return result
+
+        project_id = str(cfg.get("project_id") or "")
+        if not project_id:
+            result.error = (
+                "secrets.bitwarden.project_id is empty.  "
+                "Run `hermes secrets bitwarden setup`."
+            )
+            result.error_kind = ErrorKind.NOT_CONFIGURED
+            return result
+
+        auto_install = bool(cfg.get("auto_install", True))
+        binary = find_bws(install_if_missing=auto_install)
+        result.binary_path = binary
+        if binary is None:
+            result.error = (
+                "bws binary not available and auto-install is disabled.  "
+                "Run `hermes secrets bitwarden setup` to install."
+            )
+            result.error_kind = ErrorKind.BINARY_MISSING
+            return result
+
+        try:
+            ttl = float(cfg.get("cache_ttl_seconds", 300))
+        except (TypeError, ValueError):
+            ttl = 300.0
+
+        try:
+            secrets, warnings = fetch_bitwarden_secrets(
+                access_token=access_token,
+                project_id=project_id,
+                binary=binary,
+                cache_ttl_seconds=ttl,
+                server_url=str(cfg.get("server_url", "") or "").strip(),
+                home_path=home_path,
+            )
+        except RuntimeError as exc:
+            result.error = str(exc)
+            result.error_kind = _classify_bws_error(str(exc))
+            return result
+
+        result.secrets = secrets
+        result.warnings.extend(warnings)
+        return result
+
+
+def _classify_bws_error(message: str) -> ErrorKind:
+    """Best-effort mapping of bws failure text onto the shared taxonomy."""
+    lowered = message.lower()
+    if "timed out" in lowered:
+        return ErrorKind.TIMEOUT
+    if "binary not available" in lowered or "failed to invoke" in lowered:
+        return ErrorKind.BINARY_MISSING
+    if any(tok in lowered for tok in ("unauthorized", "invalid token",
+                                      "access token", "401", "403")):
+        return ErrorKind.AUTH_FAILED
+    if any(tok in lowered for tok in ("network", "connection", "resolve",
+                                      "download", "dns")):
+        return ErrorKind.NETWORK
+    return ErrorKind.INTERNAL
+
+
+# ---------------------------------------------------------------------------
 # Test hook — used by hermetic tests to flush the cache between cases.
 # ---------------------------------------------------------------------------
 
@@ -686,7 +822,4 @@ def _reset_cache_for_tests(home_path: Optional[Path] = None) -> None:
     writer itself.
     """
     _CACHE.clear()
-    try:
-        _disk_cache_path(home_path).unlink()
-    except (FileNotFoundError, OSError):
-        pass
+    _DISK_CACHE.clear(home_path)

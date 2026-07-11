@@ -184,6 +184,29 @@ export const roseTheme: DashboardTheme = {
   },
 };
 
+/** Light mode — vivid Nous-blue accents on a cream canvas. */
+export const nousBlueTheme: DashboardTheme = {
+  name: "nous-blue",
+  label: "Nous Blue",
+  description: "Light mode — vivid Nous-blue accents on cream canvas",
+  palette: {
+    background: { hex: "#E8F2FD", alpha: 1 },
+    midground: { hex: "#0053FD", alpha: 1 },
+    foreground: { hex: "#170d02", alpha: 0 },
+    warmGlow: "rgba(0, 83, 253, 0.12)",
+    noiseOpacity: 0,
+  },
+  typography: DEFAULT_TYPOGRAPHY,
+  layout: DEFAULT_LAYOUT,
+  terminalBackground: "#f5f8fc",
+  terminalForeground: "#170d02",
+  seriesColors: {
+    inputTokenAccent: "#001934",
+    outputTokenAccent: "#0053fd",
+  },
+  swatchColors: ["#170d02", "#0053FD", "#E8F2FD"],
+};
+
 /**
  * Nous Blue — the inverted "light mode" Hermes look, ported from the
  * LENS_5I overlay preset in `@nous-research/ui`.

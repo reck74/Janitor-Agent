@@ -2,30 +2,20 @@ import type { Unstable_TriggerAdapter } from '@assistant-ui/core'
 import { ComposerPrimitive } from '@assistant-ui/react'
 import type { ReactNode } from 'react'
 
-import { composerFusedDockCard } from '@/components/chat/composer-dock'
+import { composerPanelCard } from '@/components/chat/composer-dock'
 import { cn } from '@/lib/utils'
 
-// Same docked chrome as the queue/status stack, but its own thing: a narrow,
-// left-aligned card (not full width) that fuses to the composer's edge instead
-// of floating above it. `left-1` matches the stack's `mx-1` inset; the negative
-// margin overlaps the seam so the composer's (now-transparent) edge border reads
-// as shared. Fused (opaque) fill — the composer surface swaps to the same fill
-// while a drawer is open, so the two paint as one panel.
-const DRAWER_SHELL =
-  'absolute left-1 z-50 w-80 max-w-[calc(100%-0.5rem)] max-h-[min(22rem,calc(100vh-8rem))] overflow-y-auto overscroll-contain p-1 text-xs text-popover-foreground'
+// A standalone glassy panel floating just off the composer edge, inset from the
+// left. Skin is the shared composerPanelCard (also used by the attach menu).
+const DRAWER_SHELL = cn(
+  'absolute left-2 z-50 w-80 max-w-[calc(100%-1rem)] max-h-[min(22rem,calc(100vh-8rem))]',
+  'overflow-y-auto overscroll-contain p-1 text-popover-foreground',
+  composerPanelCard
+)
 
-export const COMPLETION_DRAWER_CLASS = cn(DRAWER_SHELL, 'bottom-full -mb-[9px]', composerFusedDockCard('top'))
+export const COMPLETION_DRAWER_CLASS = cn(DRAWER_SHELL, 'bottom-full mb-1')
 
-export const COMPLETION_DRAWER_BELOW_CLASS = cn(DRAWER_SHELL, 'top-full -mt-[9px]', composerFusedDockCard('bottom'))
-
-// Shared row styling for completion drawer items (skin-switch popover, /, @, ?
-// triggers). Extracted so every popover item paints the same way without each
-// call site redefining its own base class.
-export const COMPLETION_DRAWER_ROW_CLASS = [
-  'relative flex w-full cursor-default select-none rounded-md px-2 py-1 text-left',
-  'outline-hidden transition-colors hover:bg-(--ui-bg-tertiary)',
-  'data-[highlighted]:bg-(--ui-bg-tertiary) data-[highlighted]:text-foreground'
-].join(' ')
+export const COMPLETION_DRAWER_BELOW_CLASS = cn(DRAWER_SHELL, 'top-full mt-1')
 
 export function ComposerCompletionDrawer({
   adapter,

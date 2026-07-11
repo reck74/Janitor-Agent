@@ -14,8 +14,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from gateway.config import PlatformConfig
-from gateway.platforms import telegram as telegram_module
-from gateway.platforms.telegram import TelegramAdapter
+from plugins.platforms.telegram import adapter as telegram_module
+from plugins.platforms.telegram.adapter import TelegramAdapter
 
 
 def _make_adapter() -> TelegramAdapter:
