@@ -85,10 +85,9 @@ jobs:
         run: uv cache prune --ci
 
       - name: Run Janitor-specific tests
-        # All 4 Janitor-specific test files are green. The 4th
-        # (config-audit skill) was re-enabled after fixing the skill:
-        # description ≤60 chars, platforms frontmatter, JANITOR_HOME
-        # env-var support, and <file>.bak on apply.
+        # Janitor-specific test files. The monkeypatch-signatures file
+        # enforces AGENTS.md directive #14 (signature invariants) so a
+        # stale wrapper after upstream sync fails CI before merge.
         run: |
           source .venv/bin/activate
           python -m pytest \
@@ -97,6 +96,7 @@ jobs:
             tests/test_janitor_update_core.py \
             tests/gateway/test_telegram_janitor_branding.py \
             tests/skills/test_janitor_config_audit_skill.py \
+            tests/test_janitor_monkeypatch_signatures.py \
             --tb=short -v
         env:
           OPENROUTER_API_KEY: ""
