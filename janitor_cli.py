@@ -82,11 +82,14 @@ from agent import prompt_builder
 _original_load_soul_md = prompt_builder.load_soul_md
 
 
-def _janitor_load_soul_md() -> str:
+def _janitor_load_soul_md(context_length=None):
+    # Signature MUST mirror upstream prompt_builder.load_soul_md(context_length).
+    # Upstream's system_prompt.py:186 calls load_soul_md(_ctx_len); a wrapper
+    # with no args raises TypeError at runtime. See AGENTS.md post-sync audit.
     soul = _load_janitor_soul()
     if soul:
         return soul
-    return _original_load_soul_md()
+    return _original_load_soul_md(context_length)
 
 
 prompt_builder.load_soul_md = _janitor_load_soul_md
