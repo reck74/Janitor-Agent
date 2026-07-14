@@ -132,6 +132,7 @@ git checkout HEAD -- .github/workflows/
 - [ ] **GHCR purge**: verificar que no queden `check_ghcr_auth` ni `ghcr.io` en scripts
 - [ ] **Git status**: `git status --short` debe estar limpio (sin untracked de `.sisyphus/run-continuation/`)
 - [ ] **Janitor dependency pins intactos**: verificar que ningún merge revirtió pins requeridos por features Janitor — ver §4.4 para la lista canónica y comandos de validación
+- [ ] **Monkey-patch signatures (directiva #14)**: `janitor_cli.py` monkey-patchea funciones upstream. Si upstream cambió la firma de alguna, el wrapper se rompe en runtime. Validación automática: `python -m pytest tests/test_janitor_monkeypatch_signatures.py -v`. Si falla, actualizar la firma del wrapper en `janitor_cli.py` para calzar con la firma upstream actual — NO debilitar el test. Ver §4.5 para el procedimiento de auditoría manual.
 
 ### 4.2 Gates del TUI (obligatorios si se toca `ui-tui/`)
 
@@ -205,6 +206,47 @@ uv lock
 # Validar
 scripts/run_tests.sh tests/gateway/test_telegram_janitor_branding.py
 ```
+
+### 4.5 Auditoría de firmas de monkey-patches (directiva #14)
+
+`janitor_cli.py` monkey-patchea funciones upstream en tiempo de importación. Si
+un sync upstream cambia la firma de una función parchada (añade/remueve
+parámetros), `-X theirs` adopta el caller nuevo y el callee nuevo, pero nunca
+tocan `janitor_cli.py` (archivo del fork), así que el wrapper conserva la firma
+vieja y crashea en runtime con `TypeError`.
+
+**Esto ya pasó** (sync v2026.7.7.2, PR #44): upstream añadió `context_length` a
+`prompt_builder.load_soul_md` y cambió `system_prompt.py:186` para pasarlo. El
+wrapper `_janitor_load_soul_md` seguía con cero argumentos.
+
+**Validación automática** (incluida en todo `chore(sync):` post-merge):
+
+```bash
+python -m pytest tests/test_janitor_monkeypatch_signatures.py -v
+```
+
+**Auditoría manual** (para descubrir nuevos parches que el test aún no cubre):
+
+```bash
+# Listar todas las asignaciones de monkey-patch en janitor_cli.py
+grep -nE '^\w+\.\w+ = _janitor_|ArgumentParser\.__init__ = ' janitor_cli.py
+
+# Para cada parche encontrado, comparar la firma del wrapper vs el original:
+python3 -c "
+import inspect, janitor_cli
+from agent import prompt_builder
+orig = inspect.signature(janitor_cli._original_load_soul_md)
+wrap = inspect.signature(prompt_builder.load_soul_md)
+print('Original:', orig)
+print('Wrapper:', wrap)
+assert set(orig.parameters) <= set(wrap.parameters), 'Wrapper missing params!'
+print('OK')
+"
+```
+
+**Si el test falla**: actualizar la firma del wrapper en `janitor_cli.py` para
+calzar con la firma upstream actual. NO debilitar el test — es la única barrera
+automatizada contra este bug. Ver directiva #14 en `AGENTS.md`.
 
 ---
 
