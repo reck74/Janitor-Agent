@@ -122,7 +122,5 @@ description: Expert in identifying security flaws and OWASP vulnerabilities.
 systemPrompt: |
   You are a security auditor. Analyze the provided context for security risks.
   Focus on input validation, authentication, and data protection.
-skills:
-  - janitor-vault
 model: gpt-4-turbo
 ```

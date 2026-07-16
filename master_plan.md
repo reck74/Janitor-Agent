@@ -19,7 +19,7 @@ funcione sin conflictos destructivos.
 ### Filosofia del Cambio
 
 Janitor evoluciona de un instalador monolitico que desplegaba toda la infraestructura 
-(Infisical + Honcho + Firecrawl + Playwright + AgentMemory) a un modelo minimalista donde:
+legacy a un modelo minimalista donde:
 
 1. **El primer arranque instala solo lo fundamental**: identidad, configuracion, skin, y memoria Honcho
 2. **Todas las capacidades adicionales son skills opcionales**: se instalan post-primer-arranque via comandos de skill
@@ -52,7 +52,7 @@ El instalador base (
 -  — tema visual
 - Opcional: Honcho local (si el usuario elige modo local)
 
-**NO incluye**: Infisical, Firecrawl, Playwright, AgentMemory, ni systemd full-stack.
+**NO incluye**: Infisical, AgentMemory, ni systemd full-stack.
 
 ### Jerarquia de Skills
 
@@ -96,7 +96,7 @@ El instalador base (
 
 **Responsabilidad**: Desplegar SOLO Honcho + Postgres + Redis.
 
-**NO incluye**: Infisical, Firecrawl, Playwright, AgentMemory, systemd full-stack.
+**NO incluye**: Infisical, systemd full-stack.
 
 ### 3. Stack Legacy (scripts/setup-stack.sh)
 
@@ -123,10 +123,8 @@ Cada skill es un paquete autonomo bajo skills/janitor-<name>/:
 - Compose files (si aplica) — solo para ese servicio
 
 **Skills disponibles**:
-- janitor-vault: Infisical + scripts de bootstrap
 - janitor-firecrawl: Firecrawl local + pg_cron patch
 - janitor-browser: Playwright + Chromium
-- janitor-agentmemory: AgentMemory via npm
 - janitor-honcho: Honcho local (si se salto en instalacion)
 
 ### 6. Orientacion (skills/janitor-onboarding/)
@@ -319,10 +317,10 @@ changed 254 packages in 57s
 
 ### Fase 5: Extraccion de Skills
 - [x] Crear skills/janitor-honcho/ con compose y SKILL.md
-- [x] Crear skills/janitor-vault/ (migrar Infisical scripts)
+- [x] ~~Crear skills/janitor-vault/~~ (REMOVED — Infisical eliminated from stack)
 - [x] Crear skills/janitor-firecrawl/ (migrar Firecrawl compose)
 - [x] Crear skills/janitor-browser/ (migrar Playwright install)
-- [x] Crear skills/janitor-agentmemory/ (migrar AgentMemory deploy)
+- [x] ~~Crear skills/janitor-agentmemory/~~ (REMOVED — AgentMemory eliminated from stack)
 - [x] Convertir skills/janitor-onboarding/ en guia/orientacion
 
 ### Fase 6: Documentacion y Migracion
