@@ -5,7 +5,7 @@
 #
 # Este script es UNICAMENTE un inicializador de perfil Janitor.
 # Despliega lo fundamental: config, soul, skin, .env, y opcionalmente Honcho local.
-# Todo lo demas (Infisical, Firecrawl, Playwright, AgentMemory) son skills opcionales
+# Todo lo demas (Firecrawl, Browser) son skills opcionales
 # que se instalan post-primer-arranque via /skills.
 #
 # Uso:
@@ -296,10 +296,8 @@ if [[ "$setup_mode" == "2" ]]; then
 fi
 
 echo -e "   ${CORAL}Capacidades opcionales disponibles como skills:${NC}"
-echo -e "   ${MUTED}  • janitor-vault      (Infisical — gestion de secretos)${NC}"
 echo -e "   ${MUTED}  • janitor-firecrawl  (Web scraping local)${NC}"
 echo -e "   ${MUTED}  • janitor-browser    (Playwright — automatizacion de navegador)${NC}"
-echo -e "   ${MUTED}  • janitor-agentmemory (Memoria de codigo adicional)${NC}"
 echo ""
 
 if [[ "$setup_mode" == "3" ]]; then
