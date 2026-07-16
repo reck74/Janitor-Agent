@@ -7,8 +7,8 @@
 5. **NAMING CONVENTION (BRANDING)**: Todo contenedor Docker, red, volumen, servicio de sistema o aplicación de terceros que Janitor instale o configure en el futuro DEBE llevar obligatoriamente el prefijo `janitor-` (ej. `janitor-redis`, `janitor-network`). Sin excepciones.
 6. **merge-auditor**: Cada merge debe ser auditado contra estas directivas. Si un PR introduce 'hermes' renombrado en archivos core, se rechaza automáticamente.
 7. **tui-compilation**: Los cambios en el TUI requieren pasar `npm run build` Y `npm test` (vitest) ANTES de hacer commit. El pipeline CI de Janitor ejecuta esta habilidad como gate obligatorio.
-8. **MINIMALIST INSTALLER**: El instalador base (`scripts/janitor-install.sh`) NUNCA debe depender de Docker, Infisical, o servicios externos para funcionar. Honcho es la unica dependencia fundamental. Todas las demas capacidades (Infisical, Firecrawl, Playwright, AgentMemory) son skills opcionales bajo `skills/janitor-*/`.
-9. **SKILLS ARE OPTIONAL**: El usuario debe poder ejecutar `janitor` inmediatamente despues de la instalacion base sin tener que desplegar servicios adicionales. Las skills se instalan explicitamente post-primer-arranque.
+8. **ESSENTIAL DEPENDENCIES**: Docker y Honcho son dependencias fundamentales del stack Janitor, no opcionales. El `bootstrap.sh` verifica la presencia de Docker y asiste en su instalacion (`get-docker.sh`) si falta. El `janitor-install.sh` despliega Honcho (modo Docker local) o solicita credenciales de Honcho cloud. `MINIMAX_API_KEY` es obligatoria porque es el proveedor de IA principal de Janitor (usada como `LLM_ANTHROPIC_API_KEY` por Honcho). Las capacidades restantes (Firecrawl, Browser) son skills opcionales bajo `skills/janitor-*/` que se instalan explicitamente post-primer-arranque.
+9. **OPTIONAL SKILLS ARE EXPLICIT**: Tras la instalacion base (que incluye Docker + Honcho), el usuario puede ejecutar `janitor` inmediatamente. Las skills opcionales (Firecrawl, Browser) se instalan explicitamente post-arranque via `bash skills/janitor-*/scripts/deploy.sh`. Janitor no incluye Infisical ni AgentMemory en su stack — la gestion de secretos y memoria de codigo se maneja por otros mecanismos.
 10. **MIGRATION SUPPORT**: Cada reestructuracion importante debe incluir un script de migracion (`scripts/migrate-*.sh`) para usuarios existentes, con backup automatico de configuracion.
 11. **TEST PRUNING (TWO-TIER CI)**: El gate de PR (`tests.yml :: test`) corre UNICAMENTE los tests Janitor-especificos (3 archivos actualmente verdes: `test_janitor_cli.py`, `test_janitor_update_bootstrap.py`, `test_telegram_janitor_branding.py`). El cuarto archivo Janitor, `tests/skills/test_janitor_config_audit_skill.py`, esta temporalmente excluido porque el skill subyacente `janitor-config-audit` tiene bugs pre-existentes (description de 199 chars, falta frontmatter `platforms`, no implementa backup-on-apply). Cuando se repare el skill, re-añadirlo a la lista del `test` job. El suite completo de upstream (~17k tests) se ejecuta en el job `upstream-sync-verify`, que corre en `workflow_dispatch` (manual) o automaticamente en push a `main` cuyo commit message matche `chore(sync):`, `fix(sync):`, o merge de un branch `upstream-sync-*`. **Razon**: upstream ya valida su propio test suite antes de que cualquier commit llegue al fork. Re-correrlo en cada PR es trabajo redundante. Si una sincronizacion upstream rompe tests, el gate de sync lo detecta y el equipo decide caso por caso (fix cherry-pick, skip con razon, etc.). **NO** se borran los archivos de test upstream del arbol — permanecen disponibles para que `upstream-sync-verify` los corra. **NO** se deshabilita el `test` job para que ejecute la suite completa, eso revierte esta directiva.
 12. **TEST ASSERTION BRANDING**: Toda aserción de test que compare contra el string del banner CLI (e.g. output de `--version`, el titulo del welcome banner) DEBE assertar sobre `THE JANITOR` / `THE JANITOR v`, NO sobre `Hermes Agent` / `Hermes Agent v`. Los commits de branding del fork re-aplican el string del banner Janitor en `hermes_cli/main.py` y `hermes_cli/banner.py`, pero los tests upstream siguen hardcodeando el string upstream. Cuando un nuevo test upstream introduzca el literal `Hermes Agent`, actualizar la aserción a `THE JANITOR` en el mismo commit y añadir un comentario inline que apunte a esta directiva. Ver `MERGE_GUIDE.md` para el checklist post-`git pull`.
@@ -34,7 +34,7 @@ Everything else is delivered as opt-in skills that users install post-first-run.
 - `~/.janitor/skins/sentry-janitor.yaml` — visual theme
 - Optional: local Honcho (via `scripts/setup-honcho.sh`)
 
-**Does NOT deploy by default**: Infisical, Firecrawl, Playwright, AgentMemory, or full-stack systemd.
+**Does NOT deploy by default**: Firecrawl, Browser, or full-stack systemd.
 
 ### Skill Hierarchy
 
@@ -43,10 +43,8 @@ All Janitor-specific capabilities live under `skills/janitor-*/`:
 | Skill | Purpose | Former Location |
 |-------|---------|-----------------|
 | `janitor-honcho` | Local Honcho memory | `scripts/setup-stack.sh` (Honcho block) |
-| `janitor-vault` | Infisical secret vault | `scripts/vault-bootstrap.sh`, `load-infisical-secrets.sh` |
 | `janitor-firecrawl` | Web scraping | `scripts/setup-stack.sh` (Firecrawl block) |
 | `janitor-browser` | Playwright browser automation | `scripts/bootstrap.sh` |
-| `janitor-agentmemory` | Coding memory | `scripts/setup-stack.sh` (AgentMemory block) |
 | `janitor-onboarding` | Orientation guide | Formerly deployed 5 services |
 
 Each skill contains:
@@ -70,7 +68,6 @@ curl -fsSL .../bootstrap.sh | bash
 janitor
 
 # Post-install: add capabilities as needed
-bash skills/janitor-vault/scripts/deploy.sh
 bash skills/janitor-firecrawl/scripts/deploy.sh
 ```
 
