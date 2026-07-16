@@ -31,17 +31,14 @@ The first-run installer gives you a working agent with:
 | Skill | What It Does | Install Command |
 |-------|-------------|-----------------|
 | janitor-honcho | Local Honcho memory (if skipped at install) | bash skills/janitor-honcho/scripts/setup-honcho.sh |
-| janitor-vault | Infisical secret vault | bash skills/janitor-vault/scripts/deploy.sh |
 | janitor-firecrawl | Web scraping service | bash skills/janitor-firecrawl/scripts/deploy.sh |
 | janitor-browser | Playwright browser automation | bash skills/janitor-browser/scripts/install.sh |
-| janitor-agentmemory | Coding memory and context | bash skills/janitor-agentmemory/scripts/deploy.sh |
 
 ## Verification
 
 After installing any skill, verify its health:
 
-{"status":"ok"}{"status":"ok"}AgentMemory not responding
-{"date":"2026-05-24T05:18:03.924Z","message":"Ok","emailConfigured":false,"inviteOnlySignup":true,"redisConfigured":true,"secretScanningConfigured":false,"auditLogStorageDisabled":false,"maxIdentityAccessTokenTTL":7776000}
+Run `janitor` and use `/skills` to check installed capabilities, or verify the service directly (e.g. `curl http://localhost:1973/health` for Honcho).
 
 ## Rollback
 
