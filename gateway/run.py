@@ -16172,7 +16172,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         if not _cache_lock or _cache is None:
             return
         try:
-            _sess_row = await self._session_db.get_session(session_id)
+            _sess_row = await asyncio.to_thread(
+                self._session_db.get_session, session_id
+            )
             _live = _sess_row.get("message_count", 0) if _sess_row else None
         except Exception:
             return
@@ -16205,57 +16207,6 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         _cache[session_key] = (
                             cached[0], cached[1], _live, _snapshot_sid,
                         )
-
-    def _refresh_agent_cache_message_count(
-        self, session_key: str, session_id: Optional[str]
-    ) -> None:
-        """Re-baseline a cached agent's stored message_count after THIS turn.
-
-        The cross-process coherence guard (#45966) compares the session's
-        on-disk ``message_count`` against the count snapshotted next to the
-        cached agent, and rebuilds the agent on a mismatch.  But the snapshot
-        is taken at agent-BUILD time — before this turn writes its own user +
-        assistant (+ tool) rows — and the cache entry is never rewritten on a
-        reuse.  So without this re-baseline, THIS process's own turn would
-        grow ``message_count`` and the very next turn would see a mismatch
-        and rebuild the agent — every turn, for every conversation — silently
-        destroying the per-conversation prompt caching the cache exists to
-        protect.
-
-        Call this once a turn has completed and the agent has flushed its
-        rows to the SessionDB.  It snapshots the now-current count (which
-        includes this process's own writes) so the guard only fires when a
-        DIFFERENT process changes the transcript out from under us.  The
-        ``_sig`` is left untouched; only the count element is refreshed, and
-        only when the same agent is still cached (no rebuild/eviction raced
-        in between).  Fail-safe: any DB error leaves the snapshot as-is, which
-        at worst costs one unnecessary rebuild on the next turn.
-        """
-        if self._session_db is None or not session_id:
-            return
-        _cache_lock = getattr(self, "_agent_cache_lock", None)
-        _cache = getattr(self, "_agent_cache", None)
-        if not _cache_lock or _cache is None:
-            return
-        try:
-            _sess_row = self._session_db.get_session(session_id)
-            _live = _sess_row.get("message_count", 0) if _sess_row else None
-        except Exception:
-            return
-        if _live is None:
-            return
-        with _cache_lock:
-            cached = _cache.get(session_key)
-            # Only re-baseline a live 3-tuple entry; skip pending sentinels,
-            # legacy 2-tuples (they intentionally opt out of the guard), and
-            # the case where the entry was evicted/rebuilt mid-turn.
-            if (
-                isinstance(cached, tuple)
-                and len(cached) > 2
-                and cached[0] is not _AGENT_PENDING_SENTINEL
-            ):
-                if cached[2] != _live:
-                    _cache[session_key] = (cached[0], cached[1], _live)
 
     def _evict_cached_agent(self, session_key: str) -> None:
         """Remove a cached agent for a session (called on /new, /model, etc).

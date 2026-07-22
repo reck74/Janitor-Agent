@@ -3,7 +3,7 @@
 ## Summary
 
 The Janitor installer has been restructured from a monolithic full-stack deployment
-(Infisical + Honcho + Firecrawl + Playwright + AgentMemory) to a minimal first-run
+to a minimal first-run
 model where only the agent identity, configuration, and optional Honcho memory are
 deployed by default. All additional services become opt-in skills installed post-first-run.
 
@@ -56,30 +56,25 @@ New skills extracted:
 | Skill | Contents | Former Location |
 |-------|----------|-----------------|
 | `skills/janitor-honcho/` | `SKILL.md`, `honcho-compose.yml` | `setup-stack.sh` (Honcho block) |
-| `skills/janitor-vault/` | `SKILL.md`, Infisical compose, `vault-bootstrap.sh`, `load-infisical-secrets.sh` | `scripts/vault-bootstrap.sh`, `scripts/load-infisical-secrets.sh` |
 | `skills/janitor-firecrawl/` | `SKILL.md`, `firecrawl-compose.yml` | `setup-stack.sh` (Firecrawl block) |
 | `skills/janitor-browser/` | `SKILL.md`, `install.sh` (Playwright) | `scripts/bootstrap.sh` |
-| `skills/janitor-agentmemory/` | `SKILL.md`, `deploy.sh` | `setup-stack.sh` (AgentMemory block) |
 
 ## Migration for Existing Users
 
 If you installed Janitor before this change and are running the full stack:
 
 1. **Backup**: run `bash scripts/migrate-janitor-minimal.sh`. It backs up
-   `~/.janitor/.env`, `config.yaml`, `SOUL.md`, and offers to export Infisical
-   secrets into `.env`.
-2. **Clean shell RC**: the migration script detects and optionally removes
-   `load-infisical-secrets.sh` source lines from `~/.bashrc` / `.zshrc`.
-3. **Preserve Docker volumes**: the script never deletes volumes. If you want to
-   stop old services, run:
+   `~/.janitor/.env`, `config.yaml`, and `SOUL.md`.
+2. **Preserve Docker volumes**: the script never deletes volumes. If you want to
+    stop old services, run:
    ```bash
    cd ~/.janitor/docker
    docker compose -f docker-compose.yml down
    docker compose -f firecrawl-compose.yml down
    docker compose -f honcho-compose.yml down
    ```
-4. **Install skills as needed**: if you still want Infisical or Firecrawl, install
-   their respective skills from `skills/janitor-vault/` and `skills/janitor-firecrawl/`.
+3. **Install skills as needed**: if you still want Firecrawl or Browser, install
+   their respective skills from `skills/janitor-firecrawl/` and `skills/janitor-browser/`.
 
 ## Fresh Install Workflow
 
@@ -104,7 +99,7 @@ are added by installing skills.
 
 ## Philosophy
 
-- **First run should not fail** because Docker, Infisical, or Firecrawl are unavailable.
+- **First run should not fail** because Docker or Firecrawl are unavailable.
 - **Skills are the expansion mechanism** — updates ship new skills; users opt in.
 - **Hermes core remains untouched** — all Janitor changes stay in wrapper files,
   scripts, and `skills/janitor-*`.

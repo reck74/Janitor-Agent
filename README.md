@@ -50,7 +50,7 @@ Janitor es un **orquestador DevSecOps** con personalidad cínica que:
 | Feature | Descripción |
 |---------|-------------|
 | 🚀 **Zero-Friction Install** | `curl -sL https://raw.githubusercontent.com/reck74/Janitor-Agent/main/scripts/bootstrap.sh \| bash` — una línea, nada más |
-| 🧩 **Skills Opcionales** | Honcho, Firecrawl, Vault y Browser se instalan explícitamente post-arranque |
+| 🧩 **Skills Opcionales** | Firecrawl y Browser se instalan explícitamente post-arranque |
 | 🔒 **Hostile Takeover** | `HERMES_HOME=~/.janitor` inyectado en `~/.bashrc`/`~/.zshrc` — aislamiento total de Hermes |
 | 🌑 **Sentry Dark Native TUI** | Interfaz oscura estilo Sentry, optimizada para DevOps |
 | 🔍 **Auditoría DevSecOps** | Escanea tu código en busca de vulnerabilidades OWASP/CWE |
@@ -95,7 +95,7 @@ After installation:
 # 3. Arrancar Janitor:
 janitor
 
-# 4. Opcional: instala Honcho/Firecrawl/Vault/Browser como skills explícitas
+# 4. Opcional: instala Firecrawl/Browser como skills explícitas
 ```
 
 ### Troubleshooting
