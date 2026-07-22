@@ -88,6 +88,11 @@ jobs:
         # Janitor-specific test files. The monkeypatch-signatures file
         # enforces AGENTS.md directive #14 (signature invariants) so a
         # stale wrapper after upstream sync fails CI before merge.
+        # The no-duplicate-methods file enforces directive #15 (post-sync
+        # duplicate method audit) — catches the class of bug where a
+        # ``-X theirs`` merge leaves two definitions of the same method
+        # in a core file and Python's last-definition-wins silently
+        # shadows the correct one (broke Telegram in v2026.7.7.2).
         run: |
           source .venv/bin/activate
           python -m pytest \
@@ -97,6 +102,7 @@ jobs:
             tests/gateway/test_telegram_janitor_branding.py \
             tests/skills/test_janitor_config_audit_skill.py \
             tests/test_janitor_monkeypatch_signatures.py \
+            tests/test_janitor_no_duplicate_methods.py \
             --tb=short -v
         env:
           OPENROUTER_API_KEY: ""
