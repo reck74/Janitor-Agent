@@ -133,6 +133,7 @@ git checkout HEAD -- .github/workflows/
 - [ ] **Git status**: `git status --short` debe estar limpio (sin untracked de `.sisyphus/run-continuation/`)
 - [ ] **Janitor dependency pins intactos**: verificar que ningún merge revirtió pins requeridos por features Janitor — ver §4.4 para la lista canónica y comandos de validación
 - [ ] **Monkey-patch signatures (directiva #14)**: `janitor_cli.py` monkey-patchea funciones upstream. Si upstream cambió la firma de alguna, el wrapper se rompe en runtime. Validación automática: `python -m pytest tests/test_janitor_monkeypatch_signatures.py -v`. Si falla, actualizar la firma del wrapper en `janitor_cli.py` para calzar con la firma upstream actual — NO debilitar el test. Ver §4.5 para el procedimiento de auditoría manual.
+- [ ] **Duplicate method audit (directiva #15)**: un merge `-X theirs` puede dejar dos definiciones del mismo método en un archivo core (una del fork, otra de upstream) en zonas no conflictivas del archivo. Python "last definition wins" silenciosamente pisa la primera con la segunda — puede cambiar un método de `async` a `sync` mientras los callers siguen usando `await`, produciendo `TypeError: object NoneType can't be used in 'await' expression` en runtime. Validación automática: `python -m pytest tests/test_janitor_no_duplicate_methods.py -v`. Si falla, identificar cuál definición es la correcta (usualmente la del fork Janitor, con la lógica más completa) y borrar la otra — NO debilitar el test. Ver §4.6 para el procedimiento de auditoría manual.
 
 ### 4.2 Gates del TUI (obligatorios si se toca `ui-tui/`)
 
@@ -247,6 +248,72 @@ print('OK')
 **Si el test falla**: actualizar la firma del wrapper en `janitor_cli.py` para
 calzar con la firma upstream actual. NO debilitar el test — es la única barrera
 automatizada contra este bug. Ver directiva #14 en `AGENTS.md`.
+
+### 4.6 Auditoría de métodos duplicados (directiva #15)
+
+Un merge `-X theirs` resuelve conflictos textuales a favor de upstream, pero
+cuando tanto el fork Janitor como upstream añaden un método con el mismo
+nombre a la misma clase en distintas zonas del archivo (zonas no
+conflictivas), **ambas definiciones sobreviven**. Python aplica "last
+definition wins": la segunda definición pisa silenciosamente a la primera.
+Si una es `async` y la otra `sync`, los callers que usan `await` crashean
+con `TypeError: object NoneType can't be used in 'await' expression`.
+
+**Esto ya pasó** (sync v2026.7.7.2, merge `83d4f8d62`): el fork tenía
+`async def _refresh_agent_cache_message_count` en `gateway/run.py:16134`
+(commits `3bc4a2ff7`, `aa4731598`, `b4cacba6a`) y upstream añadió una
+versión `def` (sync) en `gateway/run.py:16209`. La versión sync pisó a la
+async, y cada mensaje de Telegram crasheó **después** de generar la
+respuesta correcta — el gateway descartaba la respuesta y enviaba el
+mensaje de error genérico.
+
+**Validación automática** (incluida en todo `chore(sync):` post-merge):
+
+```bash
+python -m pytest tests/test_janitor_no_duplicate_methods.py -v
+```
+
+**Auditoría manual** (para descubrir duplicados que el test aún no cubre
+o para archivos fuera de la lista `_SCANNED_FILES`):
+
+```bash
+# Detectar métodos duplicados en un archivo core específico vía AST.
+# Excluye pares @property/@.setter (intencionales). Retorna líneas
+# donde hay >1 definición del mismo método en la misma clase.
+python3 -c "
+import ast, sys
+path = sys.argv[1]
+tree = ast.parse(open(path).read())
+def deco_name(d):
+    if isinstance(d, ast.Name): return d.id
+    if isinstance(d, ast.Attribute):
+        parts=[]; c=d
+        while isinstance(c, ast.Attribute): parts.append(c.attr); c=c.value
+        if isinstance(c, ast.Name): parts.append(c.id)
+        return '.'.join(reversed(parts))
+    return ''
+def is_prop(n):
+    ds={deco_name(x) for x in n.decorator_list}
+    return 'property' in ds or 'cached_property' in ds or any(x.endswith(('.setter','.deleter','.getter')) for x in ds)
+seen={}
+for node in ast.walk(tree):
+    if not isinstance(node, ast.ClassDef): continue
+    for c in node.body:
+        if isinstance(c,(ast.FunctionDef,ast.AsyncFunctionDef)) and not is_prop(c):
+            seen.setdefault((node.name,c.name),[]).append((c.lineno,'async' if isinstance(c,ast.AsyncFunctionDef) else 'sync'))
+for (cls,mth),locs in seen.items():
+    if len(locs)>1:
+        print(f'{cls}.{mth}: {locs}')
+" gateway/run.py
+```
+
+**Si el test falla**: identificar cuál definición es la correcta
+——usualmente la del fork Janitor, que tiene la lógica más completa (por
+ejemplo, manejo de 4-tuple cache entries en `_refresh_agent_cache_message_count`)
+——y borrar la otra. Si se conserva la versión sync, eliminar también el
+`await` de los callers. Si se conserva la async, asegurar que las llamadas
+a métodos ahora-sync (como `SessionDB.get_session`) usen `asyncio.to_thread`.
+NO debilitar el test. Ver directiva #15 en `AGENTS.md`.
 
 ---
 
