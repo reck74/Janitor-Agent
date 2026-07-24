@@ -275,6 +275,42 @@ if [[ "$setup_mode" == "2" ]]; then
 fi
 
 # =============================================================================
+# Paso 6b: Preguntar sobre Firecrawl (solo si se eligio modo 2 — local)
+# =============================================================================
+# Skill opcional: el instalador base NO depende de Firecrawl (directiva #8/#9).
+# Solo se ofrece el deploy interactivo al usuario; si lo rechaza, queda como
+# skill instalable post-primer-arranque.
+if [[ "$setup_mode" == "2" ]]; then
+    echo ""
+    echo -e "${PURPLE}--- Firecrawl (Web Scraping Local) ---${NC}"
+    echo ""
+    echo "   Quieres desplegar Firecrawl ahora? (web scraping local)"
+    echo "   Requiere ~4GB RAM adicionales para los 5 contenedores."
+    echo ""
+    echo -e "   ${LIME}[1]${NC}  Si, desplegar ahora"
+    echo -e "   ${MUTED}[2]${NC}  Saltar — instalar manualmente despues"
+    echo ""
+    read -r -p "   Selecciona [1/2]: " firecrawl_choice
+    echo
+
+    if [[ "$firecrawl_choice" == "1" ]]; then
+        FIRECRAWL_DEPLOY="${JANITOR_SOURCE}/skills/janitor-firecrawl/scripts/deploy.sh"
+        if [ -f "$FIRECRAWL_DEPLOY" ]; then
+            bash "$FIRECRAWL_DEPLOY" || {
+                log_warn "Firecrawl no se pudo levantar."
+                log_warn "Puedes intentarlo manualmente luego: bash $FIRECRAWL_DEPLOY"
+            }
+        else
+            log_warn "deploy.sh no encontrado ($FIRECRAWL_DEPLOY)"
+            log_warn "Instalacion de Firecrawl pospuesta."
+        fi
+    else
+        log_info "Firecrawl saltado. Instalalo despues con:"
+        log_info "  bash ~/.janitor/skills/janitor-firecrawl/scripts/deploy.sh"
+    fi
+fi
+
+# =============================================================================
 # Final: Mensaje de Exito
 # =============================================================================
 echo ""

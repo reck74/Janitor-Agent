@@ -1,7 +1,7 @@
 ---
 name: janitor-onboarding
 description: "Janitor orientation and capability selector."
-version: 2.0.0
+version: 2.1.0
 platforms: [linux, macos]
 
 metadata:
@@ -18,124 +18,111 @@ installed as separate skills post-first-run.
 
 ## What Janitor Installed by Default
 
-The first-run installer gives you a working agent with:
+The first-run installer (`scripts/janitor-install.sh`) gives you a working agent with:
 
-- ~/.janitor/.env — environment variables
-- ~/.janitor/config.yaml — agent configuration
-- ~/.janitor/SOUL.md — agent persona
-- ~/.janitor/skins/sentry-janitor.yaml — visual theme
+- `~/.janitor/.env` — environment variables (API keys)
+- `~/.janitor/config.yaml` — agent configuration
+- `~/.janitor/SOUL.md` — agent persona
+- `~/.janitor/skins/sentry-janitor.yaml` — visual theme
 - Optional: local Honcho memory (if you chose local setup during install)
+- Optional: local Firecrawl web scraping (the installer prompts for it after Honcho)
+
+Per AGENTS.md directive #9, none of this requires external services — you can
+run `janitor` immediately after the base install.
 
 ## Optional Capabilities (Install as Skills)
 
+Each skill has its own `deploy.sh` (or equivalent) under `~/.janitor/skills/<name>/scripts/`.
+Install whichever you need; they are fully independent.
+
 | Skill | What It Does | Install Command |
 |-------|-------------|-----------------|
-| janitor-honcho | Local Honcho memory (if skipped at install) | bash skills/janitor-honcho/scripts/setup-honcho.sh |
-| janitor-firecrawl | Web scraping service | bash skills/janitor-firecrawl/scripts/deploy.sh |
-| janitor-browser | Playwright browser automation | bash skills/janitor-browser/scripts/install.sh |
+| janitor-honcho | Local Honcho memory (if skipped at install) | `bash ~/.janitor/skills/janitor-honcho/scripts/setup-honcho.sh` |
+| janitor-firecrawl | Web scraping service | `bash ~/.janitor/skills/janitor-firecrawl/scripts/deploy.sh` |
+| janitor-browser | Playwright browser automation | `bash ~/.janitor/skills/janitor-browser/scripts/install.sh` |
 
 ## Verification
 
-After installing any skill, verify its health:
+Each skill's `SKILL.md` documents its own health checks. Common patterns:
 
-Run `janitor` and use `/skills` to check installed capabilities, or verify the service directly (e.g. `curl http://localhost:1973/health` for Honcho).
+```bash
+# Honcho
+curl -f http://localhost:1973/health
+
+# Firecrawl
+curl -f http://127.0.0.1:1974/v0/health/liveness
+
+# Generic Docker health
+docker ps --filter "name=janitor-" --format "{{.Names}}\t{{.Status}}"
+```
 
 ## Rollback
 
-To stop local services:
+Each skill ships a compose file under `~/.janitor/docker/`. Stop a skill with:
 
+```bash
+docker compose -f ~/.janitor/docker/<skill>-compose.yml down
+```
 
-
-This shuts down containers but preserves data volumes.
+Data volumes are preserved unless you pass `-v` or explicitly `docker volume rm`.
 
 ## Post-Activation
 
-After installing a capability skill, restart Janitor to pick up new
-environment variables or configuration changes.
+After installing a capability skill, **restart Janitor** to pick up new
+environment variables or configuration changes. The web tools (in particular)
+only activate when `FIRECRAWL_API_URL` and `FIRECRAWL_API_KEY` are present in
+`~/.janitor/.env` — `janitor-firecrawl`'s `deploy.sh` injects them for you.
 
 ## Requirements
 
-- Docker daemon running (docker info must succeed)
-- docker compose available (v2 recommended)
-- For individual skills, check their SKILL.md for port requirements
+- Docker daemon running (`docker info` must succeed)
+- `docker compose` v2+ available
+- For individual skills, check their `SKILL.md` for port and RAM requirements
 
 ## Troubleshooting
 
-### Docker not found
+### Docker not found or not running
 
-# Executing docker install script, commit: 2687d91ddeb3bd6aeae37a90947761efdee87030
+Install Docker via the official script, then start the daemon:
 
-WSL DETECTED: We recommend using Docker Desktop for Windows.
-Please get Docker Desktop from https://www.docker.com/products/docker-desktop/
+```bash
+curl -fsSL https://get.docker.com | sh
+sudo systemctl enable --now docker
+sudo usermod -aG docker "$USER"  # then log out and back in
+```
 
-Client: Docker Engine - Community
- Version:    29.4.1
- Context:    default
- Debug Mode: false
- Plugins:
-  buildx: Docker Buildx (Docker Inc.)
-    Version:  v0.33.0
-    Path:     /usr/libexec/docker/cli-plugins/docker-buildx
-  compose: Docker Compose (Docker Inc.)
-    Version:  v5.1.3
-    Path:     /usr/libexec/docker/cli-plugins/docker-compose
-
-Server:
- Containers: 13
-  Running: 9
-  Paused: 0
-  Stopped: 4
- Images: 30
- Server Version: 29.4.1
- Storage Driver: overlayfs
-  driver-type: io.containerd.snapshotter.v1
- Logging Driver: json-file
- Cgroup Driver: systemd
- Cgroup Version: 2
- Plugins:
-  Volume: local
-  Network: bridge host ipvlan macvlan null overlay
-  Log: awslogs fluentd gcplogs gelf journald json-file local splunk syslog
- CDI spec directories:
-  /etc/cdi
-  /var/run/cdi
- Swarm: inactive
- Runtimes: io.containerd.runc.v2 runc
- Default Runtime: runc
- Init Binary: docker-init
- containerd version: 77c84241c7cbdd9b4eca2591793e3d4f4317c590
- runc version: v1.3.5-0-g488fc13e
- init version: de40ad0
- Security Options:
-  seccomp
-   Profile: builtin
-  cgroupns
- Kernel Version: 6.6.87.2-microsoft-standard-WSL2
- Operating System: Ubuntu 24.04.4 LTS
- OSType: linux
- Architecture: x86_64
- CPUs: 16
- Total Memory: 25.44GiB
- Name: Dustin
- ID: 81994749-5535-4a07-926d-6688e73eb99f
- Docker Root Dir: /var/lib/docker
- Debug Mode: false
- Experimental: false
- Insecure Registries:
-  127.0.0.0/8
-  ::1/128
- Live Restore Enabled: false
- Firewall Backend: iptables
+Verify with `docker info` — it must return server info without errors.
 
 ### Port conflicts
 
-COMMAND     PID USER   FD   TYPE   DEVICE SIZE/OFF NODE NAME
-janitor  619201 reck   38u  IPv4 33265126      0t0  TCP localhost:44762->localhost:1973 (CLOSE_WAIT)
-python  3634400 reck   31u  IPv4 49517249      0t0  TCP localhost:48328->localhost:1973 (CLOSE_WAIT)
+If a skill's container cannot bind its port (e.g. `1974` for Firecrawl,
+`1973` for Honcho), find what is holding it:
 
-### Service wont start
+```bash
+ss -tlnp | grep -E ':(1973|1974|5672)\b'
+# or
+sudo lsof -iTCP:1974 -sTCP:LISTEN
+```
 
+Kill the conflicting process or change the port mapping in the skill's
+compose file (`~/.janitor/docker/<skill>-compose.yml`).
+
+### Service won't start
+
+Check container logs first:
+
+```bash
+docker logs <container-name> --tail 100
+# e.g.
+docker logs janitor-firecrawl-api --tail 100
+```
+
+Common causes: insufficient RAM (Firecrawl needs ~4GB across its 5 containers),
+missing `~/.janitor/docker/<skill>.env` file (re-run the skill's `deploy.sh`),
+or stale credentials (delete the env file and re-run `deploy.sh`).
 
 ### `janitor update` fails with "Fast-forward not possible"
 
-If `janitor update` fails with "Fast-forward not possible (history diverged)", run `bash scripts/migrate-janitor-update-flow.sh` from the Janitor repo, then re-run `janitor update`.
+If `janitor update` fails with "Fast-forward not possible (history diverged)",
+run `bash scripts/migrate-janitor-update-flow.sh` from the Janitor repo, then
+re-run `janitor update`.
