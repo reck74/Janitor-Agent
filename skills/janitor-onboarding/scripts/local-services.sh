@@ -97,7 +97,7 @@ do_start() {
         docker compose -f "$FIRECRAWL_COMPOSE" -p janitor up -d || {
             log_warn "Firecrawl start failed — may already be running or needs setup"
         }
-        wait_for_health "http://localhost:1974/health" "Firecrawl" 60 || true
+        wait_for_health "http://localhost:1974/v0/health/liveness" "Firecrawl" 60 || true
     else
         log_warn "Firecrawl compose not found at $FIRECRAWL_COMPOSE"
         log_warn "Run: bash skills/janitor-firecrawl/scripts/deploy.sh"
@@ -129,10 +129,12 @@ do_status() {
     echo -e "${BOLD}Janitor Local Services Status${NC}"
     echo ""
 
-    for port_name in "1973:Honcho" "1974:Firecrawl"; do
+    for port_name in "1973:Honcho:/health" "1974:Firecrawl:/v0/health/liveness"; do
         local port="${port_name%%:*}"
-        local name="${port_name##*:}"
-        if curl -sf "http://localhost:${port}/health" >/dev/null 2>&1; then
+        local rest="${port_name#*:}"
+        local name="${rest%%:*}"
+        local endpoint="${rest##*:}"
+        if curl -sf "http://localhost:${port}${endpoint}" >/dev/null 2>&1; then
             echo -e "  ${GREEN}●${NC} ${name} (localhost:${port}) — healthy"
         else
             echo -e "  ${RED}●${NC} ${name} (localhost:${port}) — not responding"
