@@ -1,10 +1,6 @@
 ---
 name: janitor-core
-description: |
-  Janitor core skill — cache cleaning and environment hygiene for Hermes/Janitor agents.
-  Removes stale session caches, temp files, and corrupted tool artifacts to keep the
-  agent environment clean and secure. Operates with cínico paranoia: assumes all cached
-  data is potentially compromised until verified.
+description: Clean stale caches and corrupted artifacts from the agent.
 version: 1.0.0
 platforms: [linux, macos]
 
