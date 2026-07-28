@@ -18,19 +18,28 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --python 3.11 --extra all --extra dev
       - name: Run Python tests
-        # tests/hermes_cli/test_skin_engine.py was removed by upstream sync
-        # (commit 607078d2c). Replaced with test_janitor_update_core.py to
-        # maintain 2-file coverage. See MERGE_GUIDE.md §10 for details.
+        # Runs the SAME Janitor test list as tests.yml :: test (AGENTS.md
+        # directive #11). Keep both invocations in sync — any new
+        # tests/**/test_*janitor*.py must be added to both in the same PR.
         run: |
           source .venv/bin/activate
-          python -m pytest tests/test_janitor_cli.py tests/test_janitor_update_core.py -v
+          python -m pytest \
+            tests/test_janitor_cli.py \
+            tests/test_janitor_update_bootstrap.py \
+            tests/test_janitor_update_core.py \
+            tests/gateway/test_telegram_janitor_branding.py \
+            tests/skills/test_janitor_config_audit_skill.py \
+            tests/skills/test_janitor_firecrawl_skill.py \
+            tests/test_janitor_monkeypatch_signatures.py \
+            tests/test_janitor_no_duplicate_methods.py \
+            --tb=short -v
 
   react-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
       - name: Set up Node.js
-        uses: actions/setup-node@v7.0.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version: '20'
       - name: Install dependencies
