@@ -565,8 +565,10 @@ export function fromSkin(
         warn: c('ui_warn') ?? d.color.warn,
 
         prompt: c('prompt') ?? c('banner_text') ?? d.color.prompt,
-        sessionLabel: c('session_label') ?? muted,
-        sessionBorder: c('session_border') ?? muted,
+        // Skins that define colors but no session_* keys get muted-tracking
+        // (upstream behavior); an EMPTY skin must reproduce DEFAULT_THEME.
+        sessionLabel: c('session_label') ?? (hasSkinColors ? muted : d.color.sessionLabel),
+        sessionBorder: c('session_border') ?? (hasSkinColors ? muted : d.color.sessionBorder),
 
         statusBg: d.color.statusBg,
         statusFg: d.color.statusFg,
