@@ -91,6 +91,11 @@ After installation:
 # 1. Instalar (ver Quick Start arriba)
 # 2. Configurar API keys interactivamente:
 ~/.janitor-source/scripts/janitor-install.sh
+#    El instalador solicita:
+#    - OPENAI_API_KEY  (obligatoria)
+#    - MINIMAX_API_KEY (obligatoria — usada como LLM_ANTHROPIC_API_KEY para Honcho)
+#    - HONCHO_API_KEY  (opcional — si no se provee, usar modo Docker local)
+#    - FIRECRAWL_API_KEY (opcional)
 
 # 3. Arrancar Janitor:
 janitor
@@ -140,27 +145,6 @@ For more context, see the upstream Astral reports: [astral-sh/uv#13553](https://
 ### Wrapper Pattern
 
 Janitor es un **fork wrapper** de [Hermes Agent](https://github.com/NousResearch/hermes-agent):
-
----
-
-## Skip the API-key collection — Nous Portal
-
-Hermes works with whatever provider you want — that's not changing. But if you'd rather not collect five separate API keys for the model, web search, image generation, TTS, and a cloud browser, **[Nous Portal](https://portal.nousresearch.com)** covers all of them under one subscription:
-
-- **300+ models** — pick any of them with `/model <name>`
-- **Tool Gateway** — web search (Firecrawl), image generation (FAL), text-to-speech (OpenAI), cloud browser (Browser Use), all routed through your sub. No extra accounts.
-
-One command from a fresh install:
-
-```bash
-hermes setup --portal
-```
-
-That logs you in via OAuth, sets Nous as your provider, and turns on the Tool Gateway. Check what's wired up any time with `hermes portal info`. Full details on the [Tool Gateway docs page](https://hermes-agent.nousresearch.com/docs/user-guide/features/tool-gateway).
-
-You can still bring your own keys per-tool whenever you want — the gateway is per-backend, not all-or-nothing.
-
----
 
 ---
 
@@ -237,15 +221,7 @@ If you're coming from OpenClaw, Hermes can automatically import your settings, m
 
 **During first-time setup:** The setup wizard (`hermes setup`) automatically detects `~/.openclaw` and offers to migrate before configuration begins.
 
-**Anytime after install:**
-
-```bash
-# El instalador interactivo solicita:
-# - OPENAI_API_KEY  (obligatoria)
-# - MINIMAX_API_KEY (obligatoria — usada como LLM_ANTHROPIC_API_KEY para Honcho)
-# - HONCHO_API_KEY  (opcional — si no se provee, usar modo Docker local)
-# - FIRECRAWL_API_KEY (opcional)
-```
+**Anytime after install:** `hermes claw migrate`
 
 What gets imported:
 
