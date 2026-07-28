@@ -132,7 +132,7 @@ def _ensure_janitor_skin_file():
 
         skin_file = skins_dir / "sentry-janitor.yaml"
         if not skin_file.exists():
-            bundled = Path(__file__).parent / "example_skin_sentry-janitor.yaml.txt"
+            bundled = Path(__file__).parent / "assets" / "janitor" / "sentry-janitor.yaml"
             if bundled.exists():
                 shutil.copy2(bundled, skin_file)
     except Exception:
