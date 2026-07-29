@@ -24,8 +24,17 @@ CONTEXT
 
 INVARIANT
     No class in a scanned core file may define the same method name twice.
+    No scanned core file may define the same module-level function twice.
     The post-fix state of ``_refresh_agent_cache_message_count`` is locked:
     exactly one definition, and it MUST be ``async`` (callers await it).
+
+    Module-level duplicates are the same bug class one scope up: the same
+    v2026.7.7.2 merge left SIX duplicated top-level functions in ``cli.py``
+    (``_reset_terminal_input_modes_on_exit``, ``_should_emit_cleanup_session_finalize``,
+    ``_notify_session_finalize``, ``_emit_interrupted_session_end``,
+    ``_finalize_single_query``, ``_notify_single_query_session_finalize``)
+    and one in ``gateway/run.py`` (``_load_gateway_runtime_config``).
+    Class-method scanning alone cannot see them.
 
 See AGENTS.md directive #15 (POST-SYNC DUPLICATE METHOD AUDIT).
 """
@@ -145,6 +154,58 @@ def _find_duplicates(path: pathlib.Path):
         for (cls, method), locs in seen.items()
         if len(locs) > 1
     }
+
+
+def _collect_module_functions(tree: ast.Module):
+    """Yield ``(function_name, lineno, is_async)`` for every function defined
+    DIRECTLY at module top level (``tree.body``). Functions nested inside
+    classes, ``if``/``try`` blocks or other functions are excluded — platform
+    or import-fallback conditional definitions are intentional, and merge
+    artifacts always appear as sequential top-level defs."""
+    for child in tree.body:
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            yield (
+                child.name,
+                child.lineno,
+                isinstance(child, ast.AsyncFunctionDef),
+            )
+
+
+def _find_module_duplicates(path: pathlib.Path):
+    """Return ``{function_name: [(lineno, is_async), ...]}`` for top-level
+    functions defined more than once in the same file."""
+    tree = ast.parse(path.read_text())
+    seen: dict[str, list[tuple[int, bool]]] = {}
+    for name, lineno, is_async in _collect_module_functions(tree):
+        seen.setdefault(name, []).append((lineno, is_async))
+    return {name: locs for name, locs in seen.items() if len(locs) > 1}
+
+
+class TestNoDuplicateModuleLevelFunctions:
+    """No scanned core file may define the same module-level function twice.
+
+    The v2026.7.7.2 merge left six duplicated top-level functions in
+    ``cli.py`` and one (``_load_gateway_runtime_config``) in
+    ``gateway/run.py`` — identical copies the class-method scan cannot see.
+    Today the copies are byte-identical (benign); the danger is the NEXT
+    sync editing only one copy and silently shadowing the other, exactly
+    how the Telegram crash started."""
+
+    def test_all_scanned_core_files_have_no_duplicate_module_functions(self):
+        """Broad scan: every file in _SCANNED_FILES must be free of
+        duplicate top-level function definitions."""
+        missing = [str(p) for p in _SCANNED_FILES if not p.exists()]
+        assert not missing, f"Scanned files missing (update _SCANNED_FILES): {missing}"
+
+        all_dups = {}
+        for path in _SCANNED_FILES:
+            dups = _find_module_duplicates(path)
+            if dups:
+                all_dups[str(path)] = dups
+        assert not all_dups, (
+            f"Duplicate module-level function definitions found (last def wins):\n"
+            + "\n".join(f"  {f}: {d}" for f, d in all_dups.items())
+        )
 
 
 class TestRefreshAgentCacheMessageCountRegression:
