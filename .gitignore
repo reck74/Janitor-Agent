@@ -147,3 +147,20 @@ apps/desktop/demo/
 # PR body is the archive. See the hermes-agent-dev skill's
 # pr-infographic-workflow reference (storage rule + lapse #8 / #COMMIT-1).
 infographic/
+
+# --- Janitor repo hygiene -------------------------------------------------
+# Agent-session state from local tooling (OpenCode/Sisyphus runs). The
+# tracked evidence/plans landed by accident in early fork history; they are
+# runtime state, not project content.
+.sisyphus/
+.omo/
+
+# Per-user local tool settings (tracked .claude agent configs stay).
+.claude/settings.local.json
+
+# Windows Zone.Identifier download sidecars.
+*:Zone.Identifier
+
+# Desktop build output — release binaries belong in GitHub Releases, not in
+# git (the AppImage was committed as a dangling LFS pointer with no filter).
+apps/desktop/release/
