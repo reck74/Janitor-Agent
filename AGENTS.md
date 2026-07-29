@@ -47,6 +47,12 @@ All Janitor-specific capabilities live under `skills/janitor-*/`:
 | `janitor-firecrawl` | Web scraping | `scripts/setup-stack.sh` (Firecrawl block) |
 | `janitor-browser` | Playwright browser automation | `scripts/bootstrap.sh` |
 | `janitor-onboarding` | Orientation guide | Formerly deployed 5 services |
+| `janitor-core` | Cache cleaning and environment hygiene | Fork-native |
+| `janitor-config-audit` | Config/SOUL.md drift audit | Fork-native |
+| `janitor-code-review-agent` | Code review agent | Fork-native |
+| `janitor-repo-research-agent` | GitHub repository research agent | Fork-native |
+| `janitor-desktop-launcher` | Launch the compiled Janitor Desktop AppImage | Fork-native |
+| `janitor-opendesign` | Open Design native agent registration | Fork-native |
 
 Each skill contains:
 - `SKILL.md` — metadata, description, install instructions

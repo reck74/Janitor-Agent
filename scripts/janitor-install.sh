@@ -17,7 +17,7 @@ set -e
 
 JANITOR_HOME="${JANITOR_HOME:-$HOME/.janitor}"
 JANITOR_SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.."
-SKIN_SOURCE="${JANITOR_SOURCE}/example_skin_sentry-janitor.yaml.txt"
+SKIN_SOURCE="${JANITOR_SOURCE}/assets/janitor/sentry-janitor.yaml"
 
 LIME='\033[38;2;194;239;78m'
 PURPLE='\033[38;2;106;95;193m'
