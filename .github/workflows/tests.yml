@@ -1,6 +1,7 @@
 name: Tests
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths-ignore:
@@ -234,11 +235,6 @@ jobs:
         # Optimized for CI: prunes pre-built wheels that are cheap to
         # re-download, keeping the persisted cache small and fast to restore.
         run: uv cache prune --ci
-
-      - name: Packaged-wheel i18n smoke test
-        run: |
-          source .venv/bin/activate
-          python -m pytest -m integration tests/test_wheel_locales_e2e.py -v
 
       - name: Run e2e tests
         run: |

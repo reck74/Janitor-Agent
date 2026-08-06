@@ -50,6 +50,7 @@ _SCANNED_FILES = [
     pathlib.Path("gateway/session.py"),
     pathlib.Path("run_agent.py"),
     pathlib.Path("cli.py"),
+    pathlib.Path("plugins/platforms/telegram/adapter.py"),
 ]
 
 

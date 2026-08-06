@@ -2,7 +2,6 @@ import sys
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -74,17 +73,32 @@ async def test_set_janitor_avatar_on_connect(tmp_path, monkeypatch):
         def build(self):
             return app
 
+    # Heap type: required so _instrument_polling_request's __class__ swap is legal.
+    class FakeRequest:
+        pass
+
     adapter = _make_adapter()
     adapter._fallback_ips = Mock(return_value=[])
     adapter._acquire_platform_lock = Mock(return_value=True)
     adapter._mark_connected = Mock()
     adapter._setup_dm_topics = AsyncMock(return_value=None)
+    # Branding is applied before polling; stub the 60s progress gate (#67498).
+    adapter._start_polling_resilient = AsyncMock(return_value=True)
 
-    application_cls = cast(object, getattr(telegram_module, "Application"))
-    _ = setattr(application_cls, "builder", Mock(return_value=FakeBuilder()))
-    _ = setattr(telegram_module, "HTTPXRequest", Mock(return_value=SimpleNamespace()))
-    _ = setattr(telegram_module, "discover_fallback_ips", AsyncMock(return_value=[]))
-    _ = setattr(telegram_module, "resolve_proxy_url", Mock(return_value=None))
+    # Replace the module-global Application, not the PTB class attribute —
+    # PTB 22.8's Application is an immutable (non-heap) type.
+    monkeypatch.setattr(
+        telegram_module,
+        "Application",
+        SimpleNamespace(builder=Mock(return_value=FakeBuilder())),
+    )
+    monkeypatch.setattr(
+        telegram_module,
+        "HTTPXRequest",
+        Mock(side_effect=lambda *a, **k: FakeRequest()),
+    )
+    monkeypatch.setattr(telegram_module, "discover_fallback_ips", AsyncMock(return_value=[]))
+    monkeypatch.setattr(telegram_module, "resolve_proxy_url", Mock(return_value=None))
 
     avatar_spy = AsyncMock(wraps=adapter._set_janitor_avatar)
     adapter._set_janitor_avatar = avatar_spy
