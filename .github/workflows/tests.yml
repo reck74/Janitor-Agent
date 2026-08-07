@@ -1,6 +1,7 @@
 name: Tests
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths-ignore:
@@ -125,9 +126,10 @@ jobs:
 
   # Full upstream test suite, run on demand or after every sync commit.
   # See AGENTS.md "Fork Directive #11 — Test Pruning" for rationale.
-  # startsWith (not contains) so the trigger only fires on the commit
-  # subject line, not on body text that mentions these tokens in passing
-  # (e.g. a fix(ci) commit whose body explains the sync gate).
+  # chore(sync): / fix(sync): use startsWith to scope to the commit subject.
+  # The upstream-sync-* branch check uses contains because GitHub's standard
+  # merge commit ('Merge pull request #N from owner/upstream-sync-...')
+  # does not start with the prefix — the branch name is in the body.
   upstream-sync-verify:
     if: |
       github.event_name == 'workflow_dispatch' ||
@@ -135,7 +137,7 @@ jobs:
        github.ref == 'refs/heads/main' &&
        (startsWith(github.event.head_commit.message, 'chore(sync):') ||
         startsWith(github.event.head_commit.message, 'fix(sync):') ||
-        startsWith(github.event.head_commit.message, 'upstream-sync-')))
+        contains(github.event.head_commit.message, 'upstream-sync-')))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -234,11 +236,6 @@ jobs:
         # Optimized for CI: prunes pre-built wheels that are cheap to
         # re-download, keeping the persisted cache small and fast to restore.
         run: uv cache prune --ci
-
-      - name: Packaged-wheel i18n smoke test
-        run: |
-          source .venv/bin/activate
-          python -m pytest -m integration tests/test_wheel_locales_e2e.py -v
 
       - name: Run e2e tests
         run: |

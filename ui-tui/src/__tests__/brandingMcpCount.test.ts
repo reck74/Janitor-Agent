@@ -4,7 +4,7 @@ import { renderSync } from '@hermes/ink'
 import React from 'react'
 import { describe, expect, it } from 'vitest'
 
-import { SessionPanel } from '../components/branding.js'
+import { Banner, SessionPanel } from '../components/branding.js'
 import { DEFAULT_THEME } from '../theme.js'
 import type { McpServerStatus, SessionInfo } from '../types.js'
 
@@ -50,10 +50,9 @@ const baseInfo = (mcp_servers: McpServerStatus[]): SessionInfo => ({
   tools: { file: ['read_file', 'write_file'] }
 })
 
-async function renderFooter(info: SessionInfo): Promise<string> {
-  const streams = makeStreams()
-
-  const instance = renderSync(React.createElement(SessionPanel, { info, sid: 'test', t: DEFAULT_THEME }), {
+async function renderOutput(node: Parameters<typeof renderSync>[0], columns: number): Promise<string> {
+  const streams = makeStreams(columns)
+  const instance = renderSync(node, {
     patchConsole: false,
     stderr: streams.stderr as NodeJS.WriteStream,
     stdin: streams.stdin as NodeJS.ReadStream,
@@ -70,6 +69,16 @@ async function renderFooter(info: SessionInfo): Promise<string> {
     instance.unmount()
     instance.cleanup()
   }
+}
+
+async function renderFooter(info: SessionInfo): Promise<string> {
+  return renderOutput(React.createElement(SessionPanel, { info, sid: 'test', t: DEFAULT_THEME }), 100)
+}
+
+async function renderBanner(columns: number, name: string): Promise<string> {
+  const theme = { ...DEFAULT_THEME, brand: { ...DEFAULT_THEME.brand, name } }
+
+  return renderOutput(React.createElement(Banner, { maxWidth: columns, t: theme }), columns)
 }
 
 describe('branding MCP headline count', () => {
@@ -107,5 +116,21 @@ describe('branding MCP headline count', () => {
 
     expect(frame).toContain('2 MCP')
     expect(frame).not.toContain('3 MCP')
+  })
+})
+
+describe('responsive banner branding', () => {
+  it('derives every tagline tier from the active theme brand name', async () => {
+    const brandName = 'Test Operator'
+
+    const wide = await renderBanner(120, brandName)
+    const compact = await renderBanner(58, brandName)
+    const mid = await renderBanner(50, brandName)
+    const tiny = await renderBanner(40, brandName)
+
+    expect(wide).toContain(`${brandName} · DevSecOps Orchestrator`)
+    expect(compact).toContain(`${brandName} · DevSecOps Orchestrator`)
+    expect(mid).toContain(`${brandName} · DevSecOps`)
+    expect(tiny).toContain(brandName)
   })
 })

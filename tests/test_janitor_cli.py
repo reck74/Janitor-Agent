@@ -6,6 +6,7 @@ the JANITOR FORK DIRECTIVES requirements.
 
 import subprocess
 import sys
+from importlib.metadata import entry_points
 from pathlib import Path
 
 
@@ -51,6 +52,25 @@ class TestJanitorCLIExists:
 
 class TestJanitorCommand:
     """Test that the `janitor` command is registered and executable."""
+
+    def test_janitor_console_script_is_registered(self):
+        """The `janitor` console script must exist in installed metadata.
+
+        Given the package is installed, When console_scripts entry points are
+        read, Then `janitor` is present and dispatches to `janitor_cli:main`.
+        scripts/janitor-install.sh relies on this to put `janitor` on PATH;
+        importing janitor_cli.main directly does not prove registration.
+        """
+        console_scripts = entry_points(group="console_scripts")
+        janitor = {ep.name: ep.value for ep in console_scripts}.get("janitor")
+
+        assert janitor is not None, (
+            "`janitor` console script missing from installed metadata; "
+            "[project.scripts] in pyproject.toml must declare it"
+        )
+        assert janitor == "janitor_cli:main", (
+            f"`janitor` must dispatch to janitor_cli:main, got {janitor!r}"
+        )
 
     def test_hermes_home_is_overridden_to_janitor(self):
         """HERMES_HOME must be set to ~/.janitor before any hermes imports.

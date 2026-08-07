@@ -20,6 +20,10 @@ export const HERMES_BASE_PATH = readBasePath();
 const BASE = HERMES_BASE_PATH;
 
 import type { DashboardTheme } from "@/themes/types";
+import {
+  attemptDashboardTokenReloadOnce,
+  clearDashboardTokenReloadAttempt,
+} from "@/lib/dashboard-auth-reload";
 
 // Ephemeral session token for protected endpoints.
 // Injected into index.html by the server — never fetched via API.
@@ -61,8 +65,8 @@ export function getManagementProfile(): string {
 
 // Endpoint families that honor ?profile= on the backend (web_server.py
 // _profile_scope or explicit per-profile DB opens). Anything else — ops,
-// pairing, cron (which has its own per-job profile params), profiles
-// themselves — is machine-global or self-scoped and must NOT be rewritten.
+// cron (which has its own per-job profile params), profiles themselves — is
+// machine-global or self-scoped and must NOT be rewritten.
 const PROFILE_SCOPED_PREFIXES = [
   "/api/status",
   "/api/gateway",
@@ -80,6 +84,10 @@ const PROFILE_SCOPED_PREFIXES = [
   "/api/model/auxiliary",
   "/api/model/moa",
   "/api/model/options",
+  // A named profile keeps its own pairing whitelist, and its gateway only
+  // consults that one — approving into the global store would grant access
+  // the running gateway never sees.
+  "/api/pairing",
 ];
 
 function withManagementProfile(url: string): string {
@@ -156,20 +164,7 @@ export async function fetchJSON<T>(
     // handled above, so reaching here in gated mode means a real
     // middleware failure that should not reload-loop.
     if (!window.__HERMES_AUTH_REQUIRED__ && !options?.allowUnauthorized) {
-      let alreadyReloaded = false;
-      try {
-        alreadyReloaded =
-          sessionStorage.getItem("hermes.tokenReloadAttempted") === "1";
-      } catch {
-        /* SSR / privacy mode — fall through to throw */
-      }
-      if (!alreadyReloaded) {
-        try {
-          sessionStorage.setItem("hermes.tokenReloadAttempted", "1");
-        } catch {
-          /* SSR / privacy mode — best effort */
-        }
-        window.location.reload();
+      if (attemptDashboardTokenReloadOnce()) {
         return new Promise<T>(() => {});
       }
     }
@@ -178,11 +173,7 @@ export async function fetchJSON<T>(
     // Clear the stale-token reload guard: a successful 2xx proves the
     // current ``window.__HERMES_SESSION_TOKEN__`` is valid, so the next
     // 401 — if any — should be allowed to trigger its own reload cycle.
-    try {
-      sessionStorage.removeItem("hermes.tokenReloadAttempted");
-    } catch {
-      /* SSR / privacy mode — ignore */
-    }
+    clearDashboardTokenReloadAttempt();
   }
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
@@ -304,111 +295,43 @@ function appendProfileParam(url: string, profile?: string): string {
   return `${url}${url.includes("?") ? "&" : "?"}profile=${encodeURIComponent(profile)}`;
 }
 
-/**
- * Fetch a single-use ticket for a WebSocket upgrade in gated mode.
- *
- * The dashboard's gated-mode WS auth (``hermes_cli.web_server._ws_auth_ok``)
- * rejects the legacy ``?token=<_SESSION_TOKEN>`` path and only accepts
- * ``?ticket=<minted>`` consumed against the in-memory ticket store. Browsers
- * can't set ``Authorization`` on a WS upgrade, so this round-trip via the
- * authenticated REST endpoint is the bridge from cookie auth to WS auth.
- *
- * Tickets are single-use and TTL=30s — every WS connect attempt must
- * fetch a fresh ticket.
- */
-export async function getWsTicket(): Promise<{ ticket: string; ttl_seconds: number }> {
-  const res = await fetch(`${BASE}/api/auth/ws-ticket`, {
-    method: "POST",
-    credentials: "include",
-  });
-  if (!res.ok) {
-    throw new Error(`/api/auth/ws-ticket: HTTP ${res.status}`);
+function appendQueryParam(url: string, key: string, value?: string): string {
+  if (!value) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}${key}=${encodeURIComponent(value)}`;
+}
+
+export interface SessionQueryOptions {
+  profile?: string;
+  order?: "created" | "recent";
+  source?: string | null;
+  sources?: string[];
+  excludeSources?: string[];
+}
+
+function normalizeSessionQueryOptions(
+  profileOrOptions?: string | SessionQueryOptions,
+  order: "created" | "recent" = "created",
+): SessionQueryOptions {
+  if (typeof profileOrOptions === "string") {
+    return { profile: profileOrOptions, order };
   }
-  return res.json();
+  return {
+    profile: getManagementProfile(),
+    order,
+    ...(profileOrOptions ?? {}),
+  };
 }
 
-/**
- * Resolve the auth query-param pair (``[name, value]``) for a WebSocket
- * connect. In gated mode mints a fresh single-use ticket; in loopback
- * mode returns the injected session token.
- */
-export async function buildWsAuthParam(): Promise<[string, string]> {
-  if (window.__HERMES_AUTH_REQUIRED__) {
-    const { ticket } = await getWsTicket();
-    return ["ticket", ticket];
+function appendSessionFilters(url: string, options: SessionQueryOptions): string {
+  let next = url;
+  next = appendQueryParam(next, "source", options.source ?? undefined);
+  if (options.sources && options.sources.length > 0) {
+    next = appendQueryParam(next, "sources", options.sources.join(","));
   }
-  const token = window.__HERMES_SESSION_TOKEN__ ?? "";
-  return ["token", token];
-}
-
-/**
- * Authenticated ``fetch`` for dashboard ``/api/...`` requests that aren't
- * plain JSON — file uploads (``FormData``), binary downloads (blobs), etc.
- * Mirrors ``fetchJSON``'s auth handling but returns the raw ``Response`` so
- * the caller can read ``.blob()`` / ``.formData()`` / stream it.
- *
- * Auth, in both modes, exactly as ``fetchJSON`` does it:
- *  - loopback / ``--insecure``: attach the ``X-Hermes-Session-Token`` header.
- *  - gated OAuth: no token header (it's absent by design); the
- *    ``hermes_session_at`` cookie rides along via ``credentials: 'include'``.
- *
- * Unlike ``fetchJSON`` this does NOT parse the body, does NOT throw on
- * non-2xx (the caller decides — a 404 on a download is meaningful), and
- * does NOT run the global 401 → /login redirect (binary endpoints aren't
- * navigation targets). Callers that want the redirect behaviour should use
- * ``fetchJSON``.
- */
-export async function authedFetch(
-  url: string,
-  init?: RequestInit,
-): Promise<Response> {
-  const headers = new Headers(init?.headers);
-  const token = window.__HERMES_SESSION_TOKEN__;
-  if (token) {
-    setSessionHeader(headers, token);
+  if (options.excludeSources && options.excludeSources.length > 0) {
+    next = appendQueryParam(next, "exclude_sources", options.excludeSources.join(","));
   }
-  return fetch(`${BASE}${url}`, {
-    ...init,
-    headers,
-    credentials: init?.credentials ?? "include",
-  });
-}
-
-/**
- * Build an absolute ``ws(s)://`` URL for a dashboard WebSocket endpoint,
- * with the correct auth query param appended for the active mode (fresh
- * single-use ``ticket`` in gated mode, ``token`` in loopback). Plugins and
- * the SPA should use this instead of hand-assembling a WS URL + reading
- * ``window.__HERMES_SESSION_TOKEN__`` directly, so the gated-mode ticket
- * path can never be forgotten.
- *
- * ``path`` is the dashboard-relative path (e.g.
- * ``"/api/plugins/kanban/events"``); the base-path prefix and host are
- * applied here. Extra query params can be supplied via ``params`` and are
- * merged before the auth param.
- */
-export async function buildWsUrl(
-  path: string,
-  params?: Record<string, string>,
-): Promise<string> {
-  const [authName, authValue] = await buildWsAuthParam();
-  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const qs = new URLSearchParams(params ?? {});
-  qs.set(authName, authValue);
-  return `${proto}//${window.location.host}${BASE}${path}?${qs}`;
-}
-
-/** Build a ``?profile=<name>`` query suffix, or "" when unset.
- *
- * Used by the skills/toolsets endpoints so the dashboard can manage a
- * profile other than the one the server process runs under. */
-function profileQuery(profile?: string): string {
-  return profile ? `?profile=${encodeURIComponent(profile)}` : "";
-}
-
-function appendProfileParam(url: string, profile?: string): string {
-  if (!profile || url.includes("profile=")) return url;
-  return `${url}${url.includes("?") ? "&" : "?"}profile=${encodeURIComponent(profile)}`;
+  return appendProfileParam(next, options.profile);
 }
 
 export const api = {
@@ -449,15 +372,17 @@ export const api = {
   getSessions: (
     limit = 20,
     offset = 0,
-    profile = getManagementProfile(),
+    profileOrOptions: string | SessionQueryOptions = getManagementProfile(),
     order: "created" | "recent" = "created",
-  ) =>
-    fetchJSON<PaginatedSessions>(
-      appendProfileParam(
-        `/api/sessions?limit=${limit}&offset=${offset}&order=${order}`,
-        profile,
+  ) => {
+    const options = normalizeSessionQueryOptions(profileOrOptions, order);
+    return fetchJSON<PaginatedSessions>(
+      appendSessionFilters(
+        `/api/sessions?limit=${limit}&offset=${offset}&order=${options.order ?? order}`,
+        options,
       ),
-    ),
+    );
+  },
   getSessionMessages: (id: string, profile = getManagementProfile()) =>
     fetchJSON<SessionMessagesResponse>(
       appendProfileParam(`/api/sessions/${encodeURIComponent(id)}/messages`, profile),
@@ -510,6 +435,15 @@ export const api = {
     fetchJSON<SessionStoreStats>(appendProfileParam("/api/sessions/stats", profile)),
   exportSessionUrl: (id: string, profile = getManagementProfile()) =>
     appendProfileParam(`/api/sessions/${encodeURIComponent(id)}/export`, profile),
+  importSessions: (
+    sessions: Array<Record<string, unknown>>,
+    profile = getManagementProfile(),
+  ) =>
+    fetchJSON<SessionImportResponse>("/api/sessions/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessions, profile: profile || undefined }),
+    }),
   pruneSessions: (
     older_than_days: number,
     source?: string,
@@ -830,7 +764,7 @@ export const api = {
   getToolsets: (profile?: string) =>
     fetchJSON<ToolsetInfo[]>(`/api/tools/toolsets${profileQuery(profile)}`),
   toggleToolset: (name: string, enabled: boolean, profile?: string) =>
-    fetchJSON<{ ok: boolean; name: string; enabled: boolean }>(
+    fetchJSON<{ ok: boolean; name: string; platform: string; enabled: boolean }>(
       `/api/tools/toolsets/${encodeURIComponent(name)}`,
       {
         method: "PUT",
@@ -871,10 +805,18 @@ export const api = {
     ),
 
   // Session search (FTS5)
-  searchSessions: (q: string, profile = getManagementProfile()) =>
-    fetchJSON<SessionSearchResponse>(
-      appendProfileParam(`/api/sessions/search?q=${encodeURIComponent(q)}`, profile),
-    ),
+  searchSessions: (
+    q: string,
+    profileOrOptions: string | SessionQueryOptions = getManagementProfile(),
+  ) => {
+    const options = normalizeSessionQueryOptions(profileOrOptions);
+    return fetchJSON<SessionSearchResponse>(
+      appendSessionFilters(
+        `/api/sessions/search?q=${encodeURIComponent(q)}`,
+        options,
+      ),
+    );
+  },
 
   // OAuth provider management
   getOAuthProviders: () =>
@@ -997,54 +939,6 @@ export const api = {
       { method: "DELETE" },
     ),
 
-  // Messaging platforms (gateway channels)
-  getMessagingPlatforms: () =>
-    fetchJSON<{ platforms: MessagingPlatform[] }>("/api/messaging/platforms"),
-  updateMessagingPlatform: (id: string, body: MessagingPlatformUpdate) =>
-    fetchJSON<{ ok: boolean; platform: string }>(
-      `/api/messaging/platforms/${encodeURIComponent(id)}`,
-      {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      },
-    ),
-  testMessagingPlatform: (id: string) =>
-    fetchJSON<MessagingPlatformTestResult>(
-      `/api/messaging/platforms/${encodeURIComponent(id)}/test`,
-      { method: "POST" },
-    ),
-  startTelegramOnboarding: (body: { bot_name?: string }) =>
-    fetchJSON<TelegramOnboardingStartResponse>(
-      "/api/messaging/telegram/onboarding/start",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      },
-    ),
-  getTelegramOnboardingStatus: (pairingId: string) =>
-    fetchJSON<TelegramOnboardingStatusResponse>(
-      `/api/messaging/telegram/onboarding/${encodeURIComponent(pairingId)}`,
-    ),
-  applyTelegramOnboarding: (
-    pairingId: string,
-    body: { allowed_user_ids: string[] },
-  ) =>
-    fetchJSON<TelegramOnboardingApplyResponse>(
-      `/api/messaging/telegram/onboarding/${encodeURIComponent(pairingId)}/apply`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      },
-    ),
-  cancelTelegramOnboarding: (pairingId: string) =>
-    fetchJSON<{ ok: boolean }>(
-      `/api/messaging/telegram/onboarding/${encodeURIComponent(pairingId)}`,
-      { method: "DELETE" },
-    ),
-
   // Gateway / update actions
   restartGateway: () =>
     fetchJSON<ActionResponse>("/api/gateway/restart", { method: "POST" }),
@@ -1141,6 +1035,15 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
+  authMcpServer: (name: string) =>
+    fetchJSON<McpOAuthFlow>(
+      `/api/mcp/servers/${encodeURIComponent(name)}/auth`,
+      { method: "POST" },
+    ),
+  getMcpOAuthFlow: (flowId: string) =>
+    fetchJSON<McpOAuthFlow>(
+      `/api/mcp/oauth/flows/${encodeURIComponent(flowId)}`,
+    ),
   removeMcpServer: (name: string) =>
     fetchJSON<{ ok: boolean }>(`/api/mcp/servers/${encodeURIComponent(name)}`, {
       method: "DELETE",
@@ -1178,18 +1081,29 @@ export const api = {
     ),
 
   // ── Admin: Pairing ──────────────────────────────────────────────────
+  // The mutating endpoints read the profile off the BODY, so the query-param
+  // rewrite in withManagementProfile doesn't reach them — send it explicitly
+  // or an approval lands in the wrong profile's whitelist.
   getPairing: () => fetchJSON<PairingResponse>("/api/pairing"),
-  approvePairing: (platform: string, code: string) =>
+  approvePairing: (platform: string, request_id: string) =>
     fetchJSON<{ ok: boolean; user: PairingUser }>("/api/pairing/approve", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ platform, code }),
+      body: JSON.stringify({
+        platform,
+        request_id,
+        profile: getManagementProfile() || undefined,
+      }),
     }),
   revokePairing: (platform: string, user_id: string) =>
     fetchJSON<{ ok: boolean }>("/api/pairing/revoke", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ platform, user_id }),
+      body: JSON.stringify({
+        platform,
+        user_id,
+        profile: getManagementProfile() || undefined,
+      }),
     }),
   clearPendingPairing: () =>
     fetchJSON<{ ok: boolean; cleared: number }>("/api/pairing/clear-pending", {
@@ -1453,6 +1367,16 @@ export interface SessionStoreStats {
   by_source: Record<string, number>;
 }
 
+export interface SessionImportResponse {
+  ok: boolean;
+  imported: number;
+  skipped: number;
+  detached: number;
+  imported_ids: string[];
+  skipped_ids: string[];
+  errors: Array<Record<string, unknown>>;
+}
+
 export interface SkillHubResult {
   name: string;
   description: string;
@@ -1543,7 +1467,7 @@ export interface McpServer {
   command: string | null;
   args: string[];
   env: Record<string, string>;
-  auth: string | null;
+  auth: "header" | "oauth" | null;
   enabled: boolean;
   tools: string[] | null;
 }
@@ -1578,19 +1502,31 @@ export interface McpCatalogDiagnostic {
 }
 
 
+export type McpHttpAuth = "none" | "header" | "oauth";
+
 export interface McpServerCreate {
   name: string;
   url?: string;
   command?: string;
   args?: string[];
   env?: Record<string, string>;
-  auth?: string;
+  auth?: McpHttpAuth;
+  bearer_token?: string;
 }
 
 export interface McpTestResult {
   ok: boolean;
   error?: string;
   tools: Array<{ name: string; description: string }>;
+}
+
+export interface McpOAuthFlow {
+  flow_id: string;
+  server_name: string;
+  status: "starting" | "authorization_required" | "approved" | "error";
+  authorization_url: string | null;
+  error: string | null;
+  tools?: Array<{ name: string; description: string }>;
 }
 
 export interface MessagingPlatformEnvVar {
@@ -1653,7 +1589,7 @@ export interface PairingUser {
   platform: string;
   user_id: string;
   user_name?: string;
-  code?: string;
+  request_id?: string;
   age_minutes?: number;
 }
 
@@ -1776,14 +1712,17 @@ export interface MemoryProviderFieldOption {
 export interface MemoryProviderField {
   key: string;
   label: string;
-  kind: "text" | "secret" | "select" | "boolean";
+  kind: "text" | "secret" | "select" | "boolean" | "integer" | "number";
   description: string;
   placeholder: string;
   required: boolean;
-  value: string | boolean;
+  value: string | boolean | number;
   is_set: boolean;
   options: MemoryProviderFieldOption[];
   url: string;
+  minimum?: number | null;
+  maximum?: number | null;
+  step?: number | null;
   when?: Record<string, string | boolean | number> | null;
 }
 
@@ -1918,6 +1857,13 @@ export interface StatusResponse {
    * Empty in loopback mode; empty + ``auth_required=true`` is a
    * fail-closed state (the dashboard will refuse to bind). */
   auth_providers?: string[];
+  /** Supported dashboard auth flows for the client to choose from. In gated
+   * mode always includes ``"cookie"``; includes ``"native_pkce"`` when a
+   * brokerable OAuth provider is registered, signalling that the desktop can
+   * use the RFC 8252 system-browser + loopback + PKCE flow (no embedded
+   * webview, no session cookies). Absent / missing ``"native_pkce"`` ⇒ an
+   * older gateway ⇒ the desktop falls back to the embedded-webview flow. */
+  auth_flows?: string[];
   /** False when the dashboard is running in a hosted/managed layout where
    * updates are handled by the outer launcher instead of ``hermes update``. */
   can_update_hermes?: boolean;
@@ -2309,36 +2255,6 @@ export interface AutomationBlueprint {
   appUrl: string;
 }
 
-export interface CronDeliveryTarget {
-  id: string;
-  name: string;
-  home_target_set: boolean;
-  home_env_var: string | null;
-}
-
-export interface AutomationBlueprintField {
-  name: string;
-  type: "time" | "enum" | "text" | "weekdays";
-  label: string;
-  default: string | null;
-  options: string[];
-  optional: boolean;
-  /** When false, options are suggestions — any value is accepted. */
-  strict?: boolean;
-  help: string;
-}
-
-export interface AutomationBlueprint {
-  key: string;
-  title: string;
-  description: string;
-  category: string;
-  tags: string[];
-  fields: AutomationBlueprintField[];
-  command: string;
-  appUrl: string;
-}
-
 export interface SkillInfo {
   name: string;
   description: string;
@@ -2363,6 +2279,8 @@ export interface ToolsetInfo {
   name: string;
   label: string;
   description: string;
+  platform: string;
+  platform_label: string;
   enabled: boolean;
   configured: boolean;
   tools: string[];
@@ -2401,13 +2319,12 @@ export interface ToolsetEnvResult {
   is_set: Record<string, boolean>;
 }
 
-export interface SessionSearchResult {
+export interface SessionSearchResult extends SessionInfo {
   session_id: string;
   snippet: string;
   role: string | null;
-  source: string | null;
-  model: string | null;
   session_started: number | null;
+  lineage_root?: string;
 }
 
 export interface SessionSearchResponse {
@@ -2467,6 +2384,9 @@ export interface AuxiliaryModelsResponse {
 export interface MoaModelSlot {
   provider: string;
   model: string;
+  /** Optional per-slot reasoning effort — round-tripped, not edited here. */
+  reasoning_effort?: string;
+  enabled?: boolean;
 }
 
 export interface MoaConfigResponse {
@@ -2477,13 +2397,21 @@ export interface MoaConfigResponse {
     aggregator: MoaModelSlot;
     reference_temperature: number;
     aggregator_temperature: number;
+    reference_timeout: number | null;
+    degraded_reference_policy: "loud" | "silent";
     max_tokens: number;
+    /** Optional advisor output cap — round-tripped, not edited here. */
+    reference_max_tokens?: number | null;
+    /** Fan-out cadence (user_turn default | per_iteration | every_n:N) — round-tripped. */
+    fanout?: string;
     enabled: boolean;
   }>;
   reference_models: MoaModelSlot[];
   aggregator: MoaModelSlot;
   reference_temperature: number;
   aggregator_temperature: number;
+  reference_timeout: number | null;
+  degraded_reference_policy: "loud" | "silent";
   max_tokens: number;
   enabled: boolean;
 }
