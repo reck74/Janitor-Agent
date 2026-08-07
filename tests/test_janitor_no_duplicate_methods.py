@@ -51,6 +51,7 @@ _SCANNED_FILES = [
     pathlib.Path("run_agent.py"),
     pathlib.Path("cli.py"),
     pathlib.Path("plugins/platforms/telegram/adapter.py"),
+    pathlib.Path("agent/tool_dispatch_helpers.py"),
 ]
 
 
