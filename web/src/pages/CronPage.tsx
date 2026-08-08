@@ -576,37 +576,6 @@ export default function CronPage() {
     setEditForm(editorFormFromJob(job));
   }, []);
 
-  // Edit job modal state
-  const [editJob, setEditJob] = useState<CronJob | null>(null);
-  const [editPrompt, setEditPrompt] = useState("");
-  const [editSchedule, setEditSchedule] = useState("");
-  const [editName, setEditName] = useState("");
-  const [editDeliver, setEditDeliver] = useState("local");
-  const [editSkills, setEditSkills] = useState<string[]>([]);
-  const [saving, setSaving] = useState(false);
-  const closeEditModal = useCallback(() => setEditJob(null), []);
-  const editModalRef = useModalBehavior({
-    open: editJob !== null,
-    onClose: closeEditModal,
-  });
-
-  // Skills installed in the profile a job will run under, for the
-  // attach-skill selector (parity with `hermes cron edit --add-skill`).
-  // Keyed on the create-modal profile; the edit modal reuses the list —
-  // a job's current skills are always shown even if not in it.
-  const [availableSkills, setAvailableSkills] = useState<SkillInfo[]>([]);
-
-  const openEditModal = useCallback((job: CronJob) => {
-    setEditJob(job);
-    setEditPrompt(getJobPrompt(job));
-    setEditSchedule(
-      asText(job.schedule?.expr) || asText(job.schedule_display) || "",
-    );
-    setEditName(getJobName(job));
-    setEditDeliver(asText(job.deliver) || "local");
-    setEditSkills(Array.isArray(job.skills) ? job.skills.filter(Boolean) : []);
-  }, []);
-
   const loadJobs = useCallback(() => {
     api
       .getCronJobs(selectedProfile)

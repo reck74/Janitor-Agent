@@ -41,10 +41,6 @@ import {
   SelectOption,
 } from "@nous-research/ui/ui/components/select";
 import { Checkbox } from "@nous-research/ui/ui/components/checkbox";
-import {
-  Select,
-  SelectOption,
-} from "@nous-research/ui/ui/components/select";
 import { useI18n } from "@/i18n";
 import { usePageHeader } from "@/contexts/usePageHeader";
 import { cn, themedBody } from "@/lib/utils";
