@@ -134,6 +134,7 @@ git checkout HEAD -- .github/workflows/
 - [ ] **Janitor dependency pins intactos**: verificar que ningún merge revirtió pins requeridos por features Janitor — ver §4.4 para la lista canónica y comandos de validación
 - [ ] **Monkey-patch signatures (directiva #14)**: `janitor_cli.py` monkey-patchea funciones upstream. Si upstream cambió la firma de alguna, el wrapper se rompe en runtime. Validación automática: `python -m pytest tests/test_janitor_monkeypatch_signatures.py -v`. Si falla, actualizar la firma del wrapper en `janitor_cli.py` para calzar con la firma upstream actual — NO debilitar el test. Ver §4.5 para el procedimiento de auditoría manual.
 - [ ] **Duplicate method audit (directiva #15)**: un merge `-X theirs` puede dejar dos definiciones del mismo método en un archivo core (una del fork, otra de upstream) en zonas no conflictivas del archivo. Python "last definition wins" silenciosamente pisa la primera con la segunda — puede cambiar un método de `async` a `sync` mientras los callers siguen usando `await`, produciendo `TypeError: object NoneType can't be used in 'await' expression` en runtime. Validación automática: `python -m pytest tests/test_janitor_no_duplicate_methods.py -v`. Si falla, identificar cuál definición es la correcta (usualmente la del fork Janitor, con la lógica más completa) y borrar la otra — NO debilitar el test. Ver §4.6 para el procedimiento de auditoría manual.
+- [ ] **Web dashboard gate**: si el sync toca `web/`, `hermes_cli/main.py`, `hermes_cli/web_server.py`, `package.json`, `package-lock.json` o workflows JS, ejecutar el gate completo de §4.7 y verificar que `janitor-ci.yml` sobrevive la poda de `upstream-sync.yml`.
 
 ### 4.2 Gates del TUI (obligatorios si se toca `ui-tui/`)
 
@@ -314,6 +315,32 @@ ejemplo, manejo de 4-tuple cache entries en `_refresh_agent_cache_message_count`
 `await` de los callers. Si se conserva la async, asegurar que las llamadas
 a métodos ahora-sync (como `SessionDB.get_session`) usen `asyncio.to_thread`.
 NO debilitar el test. Ver directiva #15 en `AGENTS.md`.
+
+### 4.7 Gate del dashboard web
+
+Este gate es obligatorio cuando un sync toca `web/`, el arranque/servido del
+dashboard, metadata npm raíz o workflows relacionados. `npm run typecheck`
+debe atravesar las project references; un exit 0 vacío no es evidencia.
+
+```bash
+npm run typecheck --workspace web
+npm run check --workspace web
+npm run build --workspace web
+test -f hermes_cli/web_dist/index.html
+```
+
+Después de compilar, validar el camino real on-demand en loopback:
+
+```bash
+janitor dashboard --host 127.0.0.1 --port 9119 --no-open
+janitor dashboard --status
+janitor dashboard --stop
+```
+
+Antes de aprobar el sync, el job `Janitor CI / web-tests` debe estar verde y
+`.github/workflows/upstream-sync.yml` debe preservar explícitamente
+`janitor-ci.yml`, `tests.yml` y `upstream-sync.yml`. `hermes_cli/web_dist/` es
+salida ignorada de build; no se añade al commit.
 
 ---
 

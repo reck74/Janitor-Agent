@@ -60,7 +60,11 @@ jobs:
           fi
 
           # 4. Poda de CI (Commit SEPARADO para no corromper el merge)
-          find .github/workflows -type f ! -name 'tests.yml' ! -name 'upstream-sync.yml' -exec git rm -f {} + || true
+          find .github/workflows -type f \
+            ! -name 'tests.yml' \
+            ! -name 'upstream-sync.yml' \
+            ! -name 'janitor-ci.yml' \
+            -exec git rm -f {} + || true
           git commit -m "chore: prune upstream workflows" || true
 
           # 5. ESCUDO DE TRIPLE VERIFICACIÓN

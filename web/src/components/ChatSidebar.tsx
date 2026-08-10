@@ -184,24 +184,6 @@ export function ChatSidebar({
     setVersion((v) => v + 1);
   }, [scopeKey]);
 
-  // Profile or PTY channel change tears down both WebSockets. Bump `version`
-  // (same path as the manual Reconnect button) so the gateway client is
-  // recreated and the events feed resubscribes — otherwise the old events
-  // socket's close handler can leave a stale error banner after a switch.
-  const scopeKey = `${channel}\0${profile ?? ""}`;
-  const prevScopeKey = useRef<string | null>(null);
-  useEffect(() => {
-    if (prevScopeKey.current === null) {
-      prevScopeKey.current = scopeKey;
-      return;
-    }
-    if (prevScopeKey.current === scopeKey) return;
-    prevScopeKey.current = scopeKey;
-    setError(null);
-    setTools([]);
-    setVersion((v) => v + 1);
-  }, [scopeKey]);
-
   useEffect(() => {
     let cancelled = false;
     queueMicrotask(() => {
