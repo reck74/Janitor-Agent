@@ -272,6 +272,45 @@ async def discover_mcp_server(name: str, profile: Optional[str] = None):
     }
 
 
+@router.get("/api/mcp/servers/{name}/logs")
+async def get_mcp_server_logs(
+    name: str,
+    tail: int = 200,
+    profile: Optional[str] = None,
+):
+    """Return the tail of the most-recent run's stderr for one MCP server.
+
+    Reads from the shared ``~/.hermes/logs/mcp-stderr.log`` (single file for
+    all servers — see ``tools/mcp_tool._write_stderr_log_header``), slices
+    by per-server header, returns the most recent matching block.
+
+    Never returns 404: a server that was configured but never started has
+    legitimately no logs (the workspace's Logs button must not error in
+    that case). The response carries ``available=False`` instead.
+
+    Error contract: 400 invalid tail; 500 unexpected. Never 404.
+
+    SECURITY: the absolute log file path is never echoed in the response
+    (audit §6).
+    """
+    from hermes_cli.mcp_config import _slice_mcp_log_for_server
+    from hermes_constants import get_hermes_home
+
+    if not (0 <= tail <= 1000):
+        raise HTTPException(
+            status_code=400,
+            detail="tail must be between 0 and 1000",
+        )
+
+    with _profile_scope(profile):
+        log_path = get_hermes_home() / "logs" / "mcp-stderr.log"
+        result = _slice_mcp_log_for_server(name, log_path, tail=tail)
+
+    # Belt-and-braces: never echo the absolute path in the response.
+    result.pop("path", None)
+    return {"name": name, **result}
+
+
 @router.post("/api/mcp/servers/{name}/auth")
 async def auth_mcp_server(name: str, request: Request, profile: Optional[str] = None):
     """Start MCP OAuth and hand the authorization URL to the dashboard browser."""

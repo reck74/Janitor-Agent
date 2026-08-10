@@ -145,3 +145,122 @@ def test_slice_pure_helper_large_file_only_reads_tail(tmp_path):
         f.write("x" * 600_000 + "\n")  # > 256KB of filler pushes alpha out of tail
     result = _slice_mcp_log_for_server("alpha", log_path, tail=200)
     assert result["available"] is False
+
+
+# === Task 4: route tests ===
+
+
+def _client():
+    """TestClient configured with the dashboard's loopback session token."""
+    from starlette.testclient import TestClient
+    from hermes_cli.web_server import app, _SESSION_HEADER_NAME, _SESSION_TOKEN
+
+    client = TestClient(app)
+    client.headers[_SESSION_HEADER_NAME] = _SESSION_TOKEN
+    return client
+
+
+@pytest.fixture(autouse=True)
+def _clear_state_for_route():
+    """Auth loopback + reset auth_required between tests."""
+    from hermes_cli import web_server
+    web_server.app.state.auth_required = False
+    yield
+    web_server.app.state.auth_required = False
+
+
+def test_logs_returns_per_server_slice(tmp_path, monkeypatch):
+    import hermes_constants
+    monkeypatch.setattr(hermes_constants, "get_hermes_home", lambda: tmp_path)
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    log_path = log_dir / "mcp-stderr.log"
+    _write_log(log_path, [
+        ("alpha", ["alpha line 1", "alpha line 2"]),
+        ("beta", ["beta line 1"]),
+    ])
+
+    client = _client()
+    resp = client.get("/api/mcp/servers/alpha/logs")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["name"] == "alpha"
+    assert body["available"] is True
+    assert "alpha line 1" in body["lines"]
+    assert "alpha line 2" in body["lines"]
+    assert not any("beta" in line for line in body["lines"])
+
+
+def test_logs_200_unknown_server_empty_result(tmp_path, monkeypatch):
+    import hermes_constants
+    monkeypatch.setattr(hermes_constants, "get_hermes_home", lambda: tmp_path)
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    log_path = log_dir / "mcp-stderr.log"
+    _write_log(log_path, [("alpha", ["alpha line"])])
+
+    client = _client()
+    resp = client.get("/api/mcp/servers/never-started/logs")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["available"] is False
+    assert body["lines"] == []
+
+
+def test_logs_200_missing_log_file(tmp_path, monkeypatch):
+    import hermes_constants
+    monkeypatch.setattr(hermes_constants, "get_hermes_home", lambda: tmp_path)
+
+    client = _client()
+    resp = client.get("/api/mcp/servers/any/logs")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["available"] is False
+    assert body["lines"] == []
+    assert body["size_bytes"] == 0
+
+
+def test_logs_400_invalid_tail(tmp_path, monkeypatch):
+    import hermes_constants
+    monkeypatch.setattr(hermes_constants, "get_hermes_home", lambda: tmp_path)
+
+    client = _client()
+    resp_hi = client.get("/api/mcp/servers/any/logs?tail=9999")
+    assert resp_hi.status_code == 400
+    resp_lo = client.get("/api/mcp/servers/any/logs?tail=-1")
+    assert resp_lo.status_code == 400
+
+
+def test_logs_does_not_leak_file_path(tmp_path, monkeypatch):
+    """Response body must not contain the absolute filesystem path (audit §6)."""
+    import hermes_constants
+    monkeypatch.setattr(hermes_constants, "get_hermes_home", lambda: tmp_path)
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    log_path = log_dir / "mcp-stderr.log"
+    _write_log(log_path, [("alpha", ["alpha line"])])
+
+    client = _client()
+    resp = client.get("/api/mcp/servers/alpha/logs")
+    body_text = resp.text
+    assert str(tmp_path) not in body_text
+    assert "/tmp/" not in body_text  # regression guard for accidental path echo
+
+
+def test_logs_tail_query_param_clamps(tmp_path, monkeypatch):
+    import hermes_constants
+    monkeypatch.setattr(hermes_constants, "get_hermes_home", lambda: tmp_path)
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    log_path = log_dir / "mcp-stderr.log"
+    _write_log(log_path, [("alpha", ["a1", "a2", "a3"])])
+
+    client = _client()
+    resp = client.get("/api/mcp/servers/alpha/logs?tail=1")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["lines"] == ["a3"]
