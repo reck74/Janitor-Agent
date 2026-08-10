@@ -365,6 +365,12 @@ def _probe_single_server(
                         details["resources"] = len(result.resources)
                     except Exception:
                         pass
+            # NEW (Task 1): when caller requested rich tool objects, capture
+            # them. Existing callers don't set this key → no behavior change.
+            # Used by the /discover dashboard route to expose inputSchema,
+            # which the truncated (name, desc) tuples above cannot carry.
+            if details is not None and "rich_tools" in details:
+                details["rich_tools"] = list(server._tools)
         finally:
             await server.shutdown()
 
