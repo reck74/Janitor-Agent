@@ -1,0 +1,91 @@
+# NocoDB — Self-hosted local instance for Janitor
+# Stack: 4 containers (nocodb, worker, postgres, redis)
+# Port: 127.0.0.1:1980 (localhost-only)
+# Deploy: bash ~/.janitor/skills/devops/janitor-nocodb/scripts/deploy.sh
+#
+# Bundled in janitor-nocodb skill — deploy.sh locates this file via SCRIPT_DIR.
+# Credentials live in ~/.janitor/docker/nocodb.env (chmod 600, generated at deploy time)
+
+services:
+  nocodb:
+    image: nocodb/nocodb:latest
+    container_name: janitor-nocodb
+    restart: unless-stopped
+    env_file: nocodb.env
+    environment:
+      NC_WORKER_MODE_ENABLED: "false"
+    ports:
+      - "127.0.0.1:1980:8080"
+    volumes:
+      - nocodb_data:/usr/app/data
+    depends_on:
+      nocodb-db:
+        condition: service_healthy
+      nocodb-redis:
+        condition: service_healthy
+    networks:
+      - janitor-nocodb-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  nocodb-worker:
+    image: nocodb/nocodb:latest
+    container_name: janitor-nocodb-worker
+    restart: unless-stopped
+    env_file: nocodb.env
+    environment:
+      NC_WORKER_MODE_ENABLED: "true"
+    depends_on:
+      nocodb-db:
+        condition: service_healthy
+      nocodb-redis:
+        condition: service_healthy
+    networks:
+      - janitor-nocodb-network
+
+  nocodb-db:
+    image: postgres:16-alpine
+    container_name: janitor-nocodb-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${NOCODB_DB_NAME:-nocodb}
+      POSTGRES_USER: ${NOCODB_DB_USER:-nocodb}
+      POSTGRES_PASSWORD: ${NOCODB_DB_PASSWORD}
+    volumes:
+      - nocodb_pg:/var/lib/postgresql/data
+    networks:
+      - janitor-nocodb-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${NOCODB_DB_USER:-nocodb} -d ${NOCODB_DB_NAME:-nocodb}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  nocodb-redis:
+    image: redis:7-alpine
+    container_name: janitor-nocodb-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - nocodb_redis:/data
+    networks:
+      - janitor-nocodb-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  nocodb_data:
+  nocodb_pg:
+  nocodb_redis:
+
+networks:
+  janitor-nocodb-network:
+    driver: bridge
