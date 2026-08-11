@@ -194,6 +194,123 @@ async def test_mcp_server(name: str, profile: Optional[str] = None):
     }
 
 
+@router.post("/api/mcp/servers/{name}/discover")
+async def discover_mcp_server(name: str, profile: Optional[str] = None):
+    """Connect to the server, list its tools WITH their inputSchema, disconnect.
+
+    Differs from /test in two ways:
+    1. Returns the full MCP tool descriptor (name, description, inputSchema)
+       so the workspace UI's Discover button can show the JSON Schema.
+    2. Does not gate on OAuth token presence — discover is a "what does this
+       server expose?" question, distinct from "can we actually call it?"
+       (/test gates because some servers answer tools/list anonymously but
+       require auth for actual calls).
+
+    Error contract: 404 unknown, 409 disabled, 502 unreachable, 504 timeout, 500 other.
+    """
+    from hermes_cli.mcp_config import (
+        _get_mcp_servers,
+        _probe_single_server,
+        _unwrap_exception_group,
+    )
+
+    with _profile_scope(profile):
+        servers = _get_mcp_servers()
+    if name not in servers:
+        raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
+    cfg = servers[name]
+    if cfg.get("enabled") is False:
+        raise HTTPException(status_code=409, detail=f"Server '{name}' is disabled")
+
+    details: Dict[str, Any] = {"rich_tools": []}
+
+    def _probe_scoped():
+        # Home-only scope (contextvar), NOT _profile_scope — see the 14-line
+        # comment in test_mcp_server for why the skills lock must not be held
+        # across a probe.
+        with _config_profile_scope(profile):
+            tools = _probe_single_server(name, cfg, details=details)
+            return tools, details.get("rich_tools", [])
+
+    try:
+        _, rich_tools = await asyncio.to_thread(_probe_scoped)
+    except BaseException as exc:
+        root = _unwrap_exception_group(exc)
+        import asyncio as _aio
+        if isinstance(root, _aio.TimeoutError):
+            raise HTTPException(
+                status_code=504,
+                detail=f"MCP server '{name}' timed out on tools/list",
+            ) from root
+        if isinstance(root, (ConnectionError, OSError)):
+            raise HTTPException(
+                status_code=502,
+                detail=f"MCP server '{name}' unreachable: {root}",
+            ) from root
+        _log.exception("discover_mcp_server failed for %s", name)
+        raise HTTPException(
+            status_code=500,
+            detail=f"discover failed: {root}",
+        ) from root
+
+    return {
+        "name": name,
+        "tools": [
+            {
+                "name": getattr(t, "name", "<unnamed>"),
+                "description": getattr(t, "description", "") or "",
+                # MCP SDK uses inputSchema (camelCase) per the spec, but some
+                # older versions expose input_schema (snake_case). Try both.
+                "inputSchema": getattr(t, "inputSchema", None)
+                                or getattr(t, "input_schema", None),
+            }
+            for t in rich_tools
+        ],
+        "count": len(rich_tools),
+        "prompts": details.get("prompts", 0),
+        "resources": details.get("resources", 0),
+    }
+
+
+@router.get("/api/mcp/servers/{name}/logs")
+async def get_mcp_server_logs(
+    name: str,
+    tail: int = 200,
+    profile: Optional[str] = None,
+):
+    """Return the tail of the most-recent run's stderr for one MCP server.
+
+    Reads from the shared ``~/.hermes/logs/mcp-stderr.log`` (single file for
+    all servers — see ``tools/mcp_tool._write_stderr_log_header``), slices
+    by per-server header, returns the most recent matching block.
+
+    Never returns 404: a server that was configured but never started has
+    legitimately no logs (the workspace's Logs button must not error in
+    that case). The response carries ``available=False`` instead.
+
+    Error contract: 400 invalid tail; 500 unexpected. Never 404.
+
+    SECURITY: the absolute log file path is never echoed in the response
+    (audit §6).
+    """
+    from hermes_cli.mcp_config import _slice_mcp_log_for_server
+    from hermes_constants import get_hermes_home
+
+    if not (0 <= tail <= 1000):
+        raise HTTPException(
+            status_code=400,
+            detail="tail must be between 0 and 1000",
+        )
+
+    with _profile_scope(profile):
+        log_path = get_hermes_home() / "logs" / "mcp-stderr.log"
+        result = _slice_mcp_log_for_server(name, log_path, tail=tail)
+
+    # Belt-and-braces: never echo the absolute path in the response.
+    result.pop("path", None)
+    return {"name": name, **result}
+
+
 @router.post("/api/mcp/servers/{name}/auth")
 async def auth_mcp_server(name: str, request: Request, profile: Optional[str] = None):
     """Start MCP OAuth and hand the authorization URL to the dashboard browser."""

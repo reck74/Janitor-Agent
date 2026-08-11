@@ -1,6 +1,7 @@
 name: Tests
 
 on:
+  workflow_call:
   workflow_dispatch:
   push:
     branches: [main]
@@ -106,6 +107,8 @@ jobs:
             tests/skills/test_janitor_firecrawl_skill.py \
             tests/test_janitor_monkeypatch_signatures.py \
             tests/test_janitor_no_duplicate_methods.py \
+            tests/hermes_cli/test_mcp_router_discover.py \
+            tests/hermes_cli/test_mcp_router_logs.py \
             --tb=short -v
         env:
           OPENROUTER_API_KEY: ""

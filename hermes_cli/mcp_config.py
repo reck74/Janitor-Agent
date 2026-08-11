@@ -13,6 +13,7 @@ import logging
 import os
 import re
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from hermes_cli.config import (
@@ -365,6 +366,12 @@ def _probe_single_server(
                         details["resources"] = len(result.resources)
                     except Exception:
                         pass
+            # NEW (Task 1): when caller requested rich tool objects, capture
+            # them. Existing callers don't set this key → no behavior change.
+            # Used by the /discover dashboard route to expose inputSchema,
+            # which the truncated (name, desc) tuples above cannot carry.
+            if details is not None and "rich_tools" in details:
+                details["rich_tools"] = list(server._tools)
         finally:
             await server.shutdown()
 
@@ -408,6 +415,96 @@ def _unwrap_exception_group(exc: BaseException) -> Exception:
     if isinstance(exc, Exception):
         return exc
     return RuntimeError(str(exc))
+
+
+# Maximum bytes of mcp-stderr.log to read from the end when slicing per-server.
+# Bounds memory regardless of total file size (the file can grow to hundreds of
+# MB). 256KB is generous: a server producing >256KB of stderr since its last
+# start is itself a signal that something is wrong.
+_MCP_LOG_TAIL_READ_BYTES = 256 * 1024
+
+# Regex matching a per-server start header as written by
+# tools/mcp_tool.py:_write_stderr_log_header. The generic form is used to find
+# the END of the requested server's block (the next header, of any server).
+_MCP_SERVER_HEADER_RE = re.compile(
+    r"^===== \[[^\]]*\] starting MCP server '(?P<name>[^']*)' =====$"
+)
+
+
+def _slice_mcp_log_for_server(
+    name: str,
+    log_path: Path,
+    tail: int = 200,
+) -> dict:
+    """Return the per-server slice of the shared ``mcp-stderr.log``.
+
+    The file is a single shared stream of all MCP servers' stderr, with each
+    server start marked by a header (see
+    ``tools.mcp_tool._write_stderr_log_header``)::
+
+        ===== [2026-08-09 15:42:16] starting MCP server 'minimax' =====
+        <stderr lines for minimax until the next header>
+        ===== [2026-08-09 15:42:17] starting MCP server 'other' =====
+
+    Args:
+        name: exact server name (regex-escaped, quoted match — no substrings).
+        log_path: path to mcp-stderr.log.
+        tail: return at most this many lines from the most recent matching block.
+
+    Returns:
+        ``{"available": bool, "lines": list[str], "size_bytes": int}``.
+
+        - log_path missing   → ``available=False, lines=[], size_bytes=0``
+        - no header match    → ``available=False, lines=[], size_bytes=<st_size>``
+        - match found        → ``available=True,  lines=<last `tail` lines>``,
+          ``size_bytes=<st_size>``
+
+    The most recent matching block is returned (servers commonly restart; the
+    operator wants the current run, not a concatenation of every historical
+    run).
+
+    The absolute filesystem path is NEVER included in the return value —
+    callers must not echo it back to clients (audit security requirement).
+    """
+    if not log_path.exists():
+        return {"available": False, "lines": [], "size_bytes": 0}
+
+    size_bytes = log_path.stat().st_size
+
+    read_bytes = min(size_bytes, _MCP_LOG_TAIL_READ_BYTES)
+    with log_path.open("rb") as f:
+        if read_bytes < size_bytes:
+            f.seek(-read_bytes, 2)  # 2 = seek from end
+        raw = f.read()
+    text = raw.decode("utf-8", errors="replace")
+
+    # Build a header regex anchored to the exact escaped name so 'minimax'
+    # does not match 'minimax-coding'.
+    name_re = re.compile(
+        r"^===== \[[^\]]*\] starting MCP server '" + re.escape(name) + r"' =====$"
+    )
+
+    lines = text.splitlines()
+    # Find ALL matching header indices (we want the LAST one = most recent run).
+    match_indices = [i for i, line in enumerate(lines) if name_re.match(line)]
+    if not match_indices:
+        return {"available": False, "lines": [], "size_bytes": size_bytes}
+
+    last_match = match_indices[-1]
+    # Slice runs from the line AFTER the matched header to the line before the
+    # next header (any server) or EOF.
+    end = len(lines)
+    for j in range(last_match + 1, len(lines)):
+        if _MCP_SERVER_HEADER_RE.match(lines[j]):
+            end = j
+            break
+
+    slice_lines = lines[last_match + 1:end]
+    return {
+        "available": True,
+        "lines": slice_lines[-tail:] if tail > 0 else [],
+        "size_bytes": size_bytes,
+    }
 
 
 # ─── hermes mcp add ──────────────────────────────────────────────────────────
