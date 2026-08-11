@@ -1,0 +1,54 @@
+# n8n — Self-hosted local instance for Janitor
+# Source (skill-bundled): skills/devops/janitor-n8n/scripts/n8n-compose.yml
+# Runtime copy:           ~/.janitor/docker/n8n-compose.yml
+# Deploy: docker compose -f ~/.janitor/docker/n8n-compose.yml --env-file ~/.janitor/docker/n8n.env up -d
+#
+# Architecture decisions:
+#   - No Traefik/HTTPS: localhost-only, agent internal use
+#   - SQLite (not Postgres): sufficient for local agent workflows
+#   - Isolated network: consistent with Firecrawl/Honcho pattern
+#   - 127.0.0.1 bind: no external exposure
+
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: janitor-n8n
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      # Core
+      - N8N_HOST=127.0.0.1
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODE_ENV=production
+      - WEBHOOK_URL=http://127.0.0.1:5678/
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE:-America/Mexico_City}
+      - TZ=${GENERIC_TIMEZONE:-America/Mexico_City}
+      # Security
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      # File access restriction
+      - N8N_RESTRICT_FILE_ACCESS_TO=/files
+      # Disable built-in user management signup (we set owner manually)
+      - N8N_SECURE_COOKIE=false
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./local-files:/files:ro
+    networks:
+      - janitor-n8n-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5678/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  n8n_data:
+    name: janitor-n8n-data
+
+networks:
+  janitor-n8n-network:
+    name: janitor-n8n-network
+    driver: bridge

@@ -1,0 +1,67 @@
+# janitor-waha — WhatsApp HTTP API
+# Plantilla bundled con el skill janitor-waha.
+#
+# Este archivo es la fuente de verdad de la configuración del servicio.
+# El script deploy.sh lo lee y lo materializa en
+#   ~/.janitor/docker/waha-compose.yml
+# resolviendo los volúmenes a paths absolutos basados en JANITOR_HOME
+# (= ${HERMES_HOME:-$HOME/.janitor}).
+#
+# https://waha.devlike.pro/docs/how-to/install/
+#
+# Decisiones de arquitectura (vs. compose oficial):
+#  - Imagen core (devlikeapro/waha:latest) en lugar de waha-plus (pagada)
+#  - Engine NOWEB (Node, sin Chromium) en lugar de WEBJS (Chromium pesado) — sin
+#    el bug de pairing-code que tiene GOWS en WAHA 2026.7.2 (~355MB RAM idle)
+#  - Paths absolutos para volúmenes (insertados por deploy.sh en tiempo de
+#    generación; el compose vive en ~/.janitor/docker/, las sesiones viven en
+#    ~/.janitor/docker/waha/sessions)
+#  - DNS 1.1.1.1/8.8.8.8 explícitos para resolver web.whatsapp.com en redes restrictivas
+#  - Solo loopback en 127.0.0.1:3000 — no expuesto al exterior
+#  - Sin Postgres/Mongo/MinIO — sesiones y media en volúmenes locales
+#  - Log rotation: 100MB x 10 archivos (idéntico a defaults oficiales)
+#  - container_name fijo: janitor-waha (para scripting)
+#
+# ⚠️  WAHA usa un cliente WhatsApp Web no oficial. WhatsApp puede banear cuentas que
+#     detecte automatización. Es responsabilidad del operador. Documentado en skill.
+
+services:
+  waha:
+    restart: unless-stopped
+    container_name: janitor-waha
+
+    # Core image (gratis). Cambiar a devlikeapro/waha-plus solo si se compra licencia.
+    image: devlikeapro/waha:latest
+
+    # Fix para resolución de web.whatsapp.com en redes restrictivas
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '100m'
+        max-file: '10'
+
+    ports:
+      # Solo loopback — accesible desde Janitor agent y localhost, no desde LAN
+      - '127.0.0.1:3000:3000/tcp'
+
+    volumes:
+      # Sesiones (auth de WhatsApp) — persistir entre reinicios del contenedor.
+      # Paths absolutos resueltos por deploy.sh desde JANITOR_HOME.
+      - '__JANITOR_HOME__/docker/waha/sessions:/app/.sessions'
+      # Media descargada (imágenes, videos, audio recibidos)
+      - '__JANITOR_HOME__/docker/waha/media:/app/.media'
+
+    env_file:
+      - __JANITOR_HOME__/docker/waha.env
+
+    # Healthcheck: WAHA /health requiere API key cuando WAHA_API_KEY está set
+    healthcheck:
+      test: ['CMD', 'sh', '-c', 'wget -qO- --header="X-Api-Key: $WAHA_API_KEY" http://127.0.0.1:3000/health | grep -q .']
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s

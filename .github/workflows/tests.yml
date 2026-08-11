@@ -105,6 +105,7 @@ jobs:
             tests/gateway/test_telegram_janitor_branding.py \
             tests/skills/test_janitor_config_audit_skill.py \
             tests/skills/test_janitor_firecrawl_skill.py \
+            tests/skills/test_janitor_lightrag_skill.py \
             tests/test_janitor_monkeypatch_signatures.py \
             tests/test_janitor_no_duplicate_methods.py \
             tests/hermes_cli/test_mcp_router_discover.py \
