@@ -11,6 +11,11 @@ JANITOR_SOURCE_DIR="${HOME}/.janitor/janitor-core"
 JANITOR_VENV_DIR="${JANITOR_SOURCE_DIR}/.venv"
 JANITOR_INSTALL_SCRIPT="${JANITOR_SOURCE_DIR}/scripts/janitor-install.sh"
 
+# Janitor aísla su estado bajo ~/.janitor (no ~/.hermes). Lo exportamos antes
+# de invocar la librería compartida node-bootstrap.sh para que Node se
+# instale en ~/.janitor/node, consistente con el resto del fork.
+export HERMES_HOME="${HOME}/.janitor"
+
 # ============================================================
 # 1. Banner silencioso
 # ============================================================
@@ -88,26 +93,6 @@ if ! command -v uv &>/dev/null; then
 fi
 
 # ============================================================
-# Sanitización de Node.js (Mitigación Cross-OS WSL2)
-# ============================================================
-NPM_PATH=$(command -v npm 2>/dev/null || echo "missing")
-if [[ "$NPM_PATH" == "missing" ]] || [[ "$NPM_PATH" == *".exe" ]] || [[ "$NPM_PATH" == *"/mnt/c/"* ]]; then
-    echo "⚠️ NPM nativo no encontrado o versión de Windows detectada."
-    echo "📦 Instalando Node.js nativo (v20) aislado vía NVM (cero sudo)..."
-    export NVM_DIR="$HOME/.nvm"
-    if [ ! -s "$NVM_DIR/nvm.sh" ]; then
-        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash > /dev/null 2>&1
-    fi
-    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-    nvm install 20 > /dev/null 2>&1
-    nvm use 20 > /dev/null 2>&1
-    export PATH="$NVM_DIR/versions/node/$(nvm current)/bin:$PATH"
-    echo "✓ Node.js nativo instalado y activado."
-else
-    echo "✓ NPM nativo detectado: $NPM_PATH"
-fi
-
-# ============================================================
 # 3. Clonación o pull
 # ============================================================
 mkdir -p "${HOME}/.janitor"
@@ -118,6 +103,36 @@ if [ -d "${JANITOR_SOURCE_DIR}/.git" ]; then
 else
     echo "Clonando Janitor..."
     git clone --depth 1 "${JANITOR_REPO_URL}" "${JANITOR_SOURCE_DIR}"
+fi
+
+# ============================================================
+# 3b. Node.js — delegar al helper compartido de Hermes
+# ============================================================
+# El root package.json exige node >=22.22.0 y npm "<11.10.0 || >=11.17.0".
+# Una versión previa de este bootstrap hardcodeaba `nvm install 20`, que
+# NUNCA puede cumplir engines.node y mataba el `npm install` del TUI con
+# EBADENGINE. Peor, el PATH exportado solo vivía dentro del sub-bash del
+# curl, así que la shell de login del usuario veía `npm: command not found`
+# apenas terminara el instalador.
+#
+# node-bootstrap.sh resuelve los tres problemas:
+#   1. instala Node major 22 (HERMES_NODE_TARGET_MAJOR=22),
+#   2. crea symlinks en /usr/local/bin (root) o ~/.local/bin (user),
+#      que SÍ sobreviven al sub-bash porque están en PATH estándar,
+#   3. respeta un Node existente en PATH si cumple la versión mínima,
+#      y como fallback descarga un tarball pinneado de nodejs.org.
+NODE_HELPER="${JANITOR_SOURCE_DIR}/scripts/lib/node-bootstrap.sh"
+if [ ! -s "$NODE_HELPER" ]; then
+    echo "FATAL: $NODE_HELPER no encontrado tras el clone."
+    echo "       El repo está corrupto o el clone se cortó. Reintenta el install."
+    exit 1
+fi
+# shellcheck source=scripts/lib/node-bootstrap.sh
+source "$NODE_HELPER"
+if ! ensure_node; then
+    echo "FATAL: no se pudo provisionar Node >= 22.22.0."
+    echo "       Instálalo manualmente (https://nodejs.org/) y reejecuta este script."
+    exit 1
 fi
 
 # ============================================================
