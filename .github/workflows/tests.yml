@@ -121,7 +121,7 @@ jobs:
           NOUS_API_KEY: ""
 
   # Stub: kept for forward-compatibility. The Janitor test suite is small
-  # enough (13 files) that per-file duration tracking is unnecessary. When
+  # enough (14 files) that per-file duration tracking is unnecessary. When
   # the suite grows past ~20 files, reintroduce the matrix slicing here
   # using the same pattern as upstream's prior version of this file.
   save-durations:
@@ -130,7 +130,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: No-op (Janitor test suite is too small to need slicing)
-        run: echo "Janitor test suite uses 13 files; no duration merge needed."
+        run: echo "Janitor test suite uses 14 files; no duration merge needed."
 
   # Full upstream test suite, run on demand or after every sync commit.
   # See AGENTS.md "Fork Directive #11 — Test Pruning" for rationale.

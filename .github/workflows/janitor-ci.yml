@@ -570,7 +570,7 @@ jobs:
         run: uv cache prune --ci
 
       - name: Run Janitor tests (macOS)
-        # Same 13-file list as the PR gate, dispatched through Janitor's
+        # Same 14-file list as the PR gate, dispatched through Janitor's
         # runner so per-file subprocess isolation + venv/TZ/env blanks are
         # honored. Wrapper / skin / HOME assertions live inside these tests;
         # running them on macOS proves the Janitor-specific code paths work
@@ -604,7 +604,7 @@ jobs:
         # Direct .venv/Scripts/python.exe -m pytest invocation (per the human
         # amendment in task-11-brief.md) — scripts/run_tests_parallel.py uses
         # POSIX-only process-group handling and does not work natively on
-        # Windows. The ordered 13-file list and the env blanks / verbosity
+        # Windows. The ordered 14-file list and the env blanks / verbosity
         # options are identical to the macOS leg.
         if: matrix.os == 'windows-latest'
         shell: bash
