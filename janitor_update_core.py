@@ -2,22 +2,48 @@
 """
 Janitor update core — the canonical update flow shared by both entry points.
 
-Aligned with the official Hermes ``_cmd_update_impl`` in ``hermes_cli/main.py``.
-Both ``janitor update`` (early intercept in ``janitor_cli.py``) and the
-monkey-patched ``cmd_update`` (also in ``janitor_cli.py``) delegate here.
+Aligned with the official Hermes ``_cmd_update_impl`` in
+``hermes_cli/update_cmd.py``. Both ``janitor update`` (early intercept in
+``janitor_cli.py``) and the monkey-patched ``cmd_update`` (also in
+``janitor_cli.py``) delegate here.
 
-Helpers are imported lazily inside each phase so a partially-broken venv
-(after a failed pull, mid-update crash, etc.) can still recover without
-importing every Hermes module at startup. When a helper import fails the
-core falls back to a local minimal implementation that preserves the
-original ``janitor_update_bootstrap`` behavior for that one helper.
+The 11-step pipeline:
 
-Per JANITOR FORK DIRECTIVE #12: any change to the update flow lives here,
+  1. Hangup protection (captures IO state for restore on exit)
+  2. Pre-update backup (optional via ``_run_pre_update_backup``)
+  3. Fetch + branch detection + auto-stash + branch switch
+  4. Behind-count: if HEAD == origin/branch, skip pull/deps/lazy refresh
+     and continue to step 8 (Node repair) for the "already up to date" path.
+  5. Pull with ``--ff-only`` fallback to ``reset --hard origin/<branch>``;
+     post-pull syntax/import validation; auto-rollback to captured pre-pull SHA
+     on syntax failure.
+  6. Invalidate update cache + clear stale ``__pycache__``.
+  7. Python dependency install via uv/pip + lazy-feature/bootstrap refresh.
+  8. Node repair (``_update_node_dependencies`` + TUI build). Failures
+     write ``update-incomplete.json`` with ``failed_step="node_deps"`` and
+     exit 1 — no success banner, no stash restore.
+  9. Fresh-wrapper config migration phase (``_run_config_check_fresh`` +
+     conditional ``_run_migrate_config_fresh(interactive=False, quiet=True)``).
+     Migrate only when both versions are integers and ``current < latest``;
+     warn and leave config untouched otherwise. Failures write the marker
+     with ``failed_step="config_migration"`` and exit 1.
+ 10. Desktop receipt via ``_print_update_completion("✓ Update complete!")``.
+ 11. Marker cleanup, stash restore LAST, success banner.
+
+Helpers from ``hermes_cli.update_cmd`` (``_run_config_check_fresh``,
+``_run_migrate_config_fresh``, ``_print_update_completion``) and from
+``hermes_cli.main`` (the legacy helpers) are imported lazily so a
+partially-broken venv can still recover. The marker file lives at
+``get_hermes_home() / "update-incomplete.json"`` — profile-safe, never at a
+hardcoded ``$HERMES_HOME``.
+
+Per JANITOR FORK DIRECTIVE #13: any change to the update flow lives here,
 not inline in ``janitor_cli.py`` or ``janitor_update_bootstrap.py``.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -46,6 +72,10 @@ _is_termux_env: Optional[Callable] = None
 _is_android_python: Optional[Callable] = None
 _install_psutil_android_compat: Optional[Callable] = None
 _ensure_uv_for_termux: Optional[Callable] = None
+# Fresh-wrapper helpers from hermes_cli.update_cmd.
+_run_config_check_fresh: Optional[Callable] = None
+_run_migrate_config_fresh: Optional[Callable] = None
+_print_update_completion: Optional[Callable] = None
 
 
 # Lazy-import cache: only try each helper once per process.
@@ -53,23 +83,30 @@ _HELPER_CACHE: dict[str, Any] = {}
 
 
 def _try_import(name: str) -> Any:
-    """Lazy-import a single helper from ``hermes_cli.main``.
+    """Lazy-import a single helper from ``hermes_cli.main`` or
+    ``hermes_cli.update_cmd``.
 
     Returns the helper or ``None`` if the import fails. Cached.
     """
     if name in _HELPER_CACHE:
         return _HELPER_CACHE[name]
-    try:
-        import hermes_cli.main as _main_mod
-        helper = getattr(_main_mod, name, None)
-    except Exception:
-        helper = None
+    helper: Any = None
+    for module_name in ("hermes_cli.update_cmd", "hermes_cli.main"):
+        try:
+            import importlib
+            mod = importlib.import_module(module_name)
+            candidate = getattr(mod, name, None)
+            if candidate is not None:
+                helper = candidate
+                break
+        except Exception:
+            continue
     _HELPER_CACHE[name] = helper
     return helper
 
 
 def _ensure_loaded() -> None:
-    """Populate module-level sentinels from hermes_cli.main on first use.
+    """Populate module-level sentinels from hermes_cli on first use.
 
     Tests can override any of these via monkeypatch.setattr() before the
     first call. If a helper is None (e.g. venv partially broken), the
@@ -97,6 +134,9 @@ def _ensure_loaded() -> None:
         "_is_android_python",
         "_install_psutil_android_compat",
         "_ensure_uv_for_termux",
+        "_run_config_check_fresh",
+        "_run_migrate_config_fresh",
+        "_print_update_completion",
     ):
         if globals().get(name) is None:
             globals()[name] = _try_import(name)
@@ -217,6 +257,24 @@ def _git_cmd() -> list[str]:
     if sys.platform == "win32":
         base = ["git", "-c", "windows.appendAtomically=false"]
     return base
+
+
+# ---------------------------------------------------------------------------
+# Profile-safe path helper
+# ---------------------------------------------------------------------------
+
+
+def get_hermes_home() -> Path:
+    """Profile-safe Janitor/Hermes home directory.
+
+    Imports lazily so a partially-broken venv can still call this helper
+    without loading the full ``hermes_constants`` module eagerly.
+    """
+    try:
+        from hermes_constants import get_hermes_home as _h
+        return Path(_h())
+    except Exception:
+        return Path(os.environ.get("HERMES_HOME", str(Path.home() / ".janitor")))
 
 
 # ---------------------------------------------------------------------------
@@ -492,7 +550,11 @@ def _install_python_dependencies(project_root: Path) -> None:
 
 
 def _install_node_dependencies(project_root: Path) -> None:
-    """Build the TUI (Janitor-specific) + run upstream node update helper."""
+    """Build the TUI (Janitor-specific) + run upstream node update helper.
+
+    Raises on failure so the caller can write the incomplete marker and
+    abort the update.
+    """
     _call(
         "_update_node_dependencies",
         fallback=lambda: None,
@@ -509,13 +571,129 @@ def _install_node_dependencies(project_root: Path) -> None:
         )
 
 
+def _run_fresh_config_migration_phase() -> dict:
+    """Run the fresh-wrapper config migration phase after a successful pull.
+
+    Uses ``hermes_cli.update_cmd._run_config_check_fresh`` and
+    ``_run_migrate_config_fresh`` so the freshly-pulled config modules are
+    read — not the stale cached ones from before the pull.
+
+    Behavior contract:
+
+    - Migrate only when both versions are integers and ``current < latest``.
+    - Warn and leave config untouched for invalid version values.
+    - Warn and leave config untouched on downgrade (``current > latest``).
+    - On ``current == latest``, no-op (no warning).
+    - Consume ``results.get("warnings", [])`` defensively (a support-floor
+      refusal is not an exception).
+    - Run a fresh post-check after a supported migration.
+
+    Returns the migration results dict (or ``{}`` on no-op).
+    """
+    check_fn = globals().get("_run_config_check_fresh")
+    if check_fn is None:
+        return {}
+
+    try:
+        version_tuple = check_fn()
+    except Exception as exc:
+        print(f"  ⚠ Config version check failed: {exc}")
+        return {}
+
+    if not (isinstance(version_tuple, tuple) and len(version_tuple) == 2):
+        return {}
+
+    current_ver, latest_ver = version_tuple
+    if not (isinstance(current_ver, int) and isinstance(latest_ver, int)):
+        print(
+            f"  ⚠ Config version check returned non-integer values: "
+            f"{current_ver!r}, {latest_ver!r}"
+        )
+        return {}
+
+    if current_ver > latest_ver:
+        print(
+            f"  ⚠ Config version {current_ver} > latest {latest_ver} — "
+            f"leaving config untouched (downgrade detected)."
+        )
+        return {}
+
+    if current_ver == latest_ver:
+        return {}
+
+    migrate_fn = globals().get("_run_migrate_config_fresh")
+    if migrate_fn is None:
+        return {}
+
+    print()
+    print(f"  → Migrating config v{current_ver} → v{latest_ver}...")
+    results = migrate_fn(interactive=False, quiet=True)
+
+    if not isinstance(results, dict):
+        results = {}
+
+    for warning in results.get("warnings", []) or []:
+        if warning:
+            print(f"  ⚠ {warning}")
+
+    # Fresh post-check after a supported migration.
+    try:
+        post = check_fn()
+        if isinstance(post, tuple) and len(post) == 2:
+            cur, lat = post
+            if (
+                isinstance(cur, int)
+                and isinstance(lat, int)
+                and cur < lat
+            ):
+                print(
+                    f"  ⚠ Config still at v{cur} (target v{lat}) after migration; "
+                    f"a manual step may be required."
+                )
+    except Exception as exc:
+        print(f"  ⚠ Post-migration config check failed: {exc}")
+
+    return results
+
+
+def _write_incomplete_marker(failed_step: str, stash_ref: Optional[str]) -> None:
+    """Write ``update-incomplete.json`` at ``get_hermes_home()``.
+
+    Profile-safe location; not at a hardcoded ``$HERMES_HOME``. The marker
+    records the stash ref, the failed step, and a UTC ISO 8601 timestamp with
+    ``Z`` suffix. A later successful rerun removes this file (see
+    ``_clear_incomplete_marker``).
+    """
+    marker = get_hermes_home() / "update-incomplete.json"
+    payload = {
+        "stash_ref": stash_ref,
+        "failed_step": failed_step,
+        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    try:
+        marker.write_text(json.dumps(payload))
+    except OSError as exc:
+        print(f"  ⚠ Could not write incomplete-update marker: {exc}")
+
+
+def _clear_incomplete_marker() -> None:
+    """Remove ``update-incomplete.json`` if present."""
+    marker = get_hermes_home() / "update-incomplete.json"
+    try:
+        marker.unlink()
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        print(f"  ⚠ Could not remove incomplete-update marker: {exc}")
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
 
 def run_janitor_update(args) -> int:
-    """Canonical Janitor update flow. Mirrors ``_cmd_update_impl``.
+    """Canonical Janitor update flow.
 
     Args:
         args: argparse Namespace from the CLI. Recognised attributes:
@@ -539,6 +717,9 @@ def run_janitor_update(args) -> int:
         fallback=lambda **kw: {},
     )
 
+    auto_stash_ref: Optional[str] = None
+    project_root: Optional[Path] = None
+    git_cmd: Optional[list[str]] = None
     try:
         if getattr(args, "check", False):
             return _check_only(branch)
@@ -561,7 +742,6 @@ def run_janitor_update(args) -> int:
             return 1
 
         current_branch = _current_branch(git_cmd, project_root)
-        auto_stash_ref: Optional[str] = None
 
         if current_branch != branch:
             label = (
@@ -574,7 +754,7 @@ def run_janitor_update(args) -> int:
                 "_stash_local_changes_if_needed",
                 git_cmd,
                 project_root,
-                fallback=_local_stash,
+                fallback=lambda *a, **kw: _local_stash(git_cmd, a[1]),
             )
             subprocess.run(
                 git_cmd + ["checkout", branch],
@@ -588,45 +768,90 @@ def run_janitor_update(args) -> int:
                 "_stash_local_changes_if_needed",
                 git_cmd,
                 project_root,
-                fallback=_local_stash,
+                fallback=lambda *a, **kw: _local_stash(git_cmd, a[1]),
             )
 
         commit_count = _behind_count(git_cmd, project_root, branch)
-        if commit_count == 0:
+        already_current = (commit_count == 0)
+
+        if already_current:
             _call("_invalidate_update_cache", fallback=lambda: None)
             print("✓ Already up to date.")
-            return 0
+            # Still run Node repair, fresh-wrapper config migration, Desktop
+            # receipt, marker cleanup, and stash restore per the spec.
+        else:
+            update_succeeded = _pull_with_fallback(git_cmd, project_root, branch)
+            if not update_succeeded:
+                if auto_stash_ref:
+                    print(
+                        f"  ℹ️  Local changes preserved in stash (ref: {auto_stash_ref})"
+                    )
+                    print("  Restore manually with: git stash apply")
+                return 1
 
-        update_succeeded = _pull_with_fallback(git_cmd, project_root, branch)
-        if not update_succeeded:
-            if auto_stash_ref:
+            _call("_invalidate_update_cache", fallback=lambda: None)
+
+            removed = _call(
+                "_clear_bytecode_cache",
+                project_root,
+                fallback=lambda _r: 0,
+            )
+            if removed:
                 print(
-                    f"  ℹ️  Local changes preserved in stash (ref: {auto_stash_ref})"
+                    f"  ✓ Cleared {removed} stale __pycache__ director{'y' if removed == 1 else 'ies'}"
                 )
-                print("  Restore manually with: git stash apply")
-            return 1
 
-        _call("_invalidate_update_cache", fallback=lambda: None)
+            _install_python_dependencies(project_root)
 
-        removed = _call(
-            "_clear_bytecode_cache",
-            project_root,
-            fallback=lambda _r: 0,
-        )
-        if removed:
-            print(
-                f"  ✓ Cleared {removed} stale __pycache__ director{'y' if removed == 1 else 'ies'}"
+            _call(
+                "_refresh_active_lazy_features",
+                fallback=lambda: None,
             )
 
-        _install_python_dependencies(project_root)
+        # Node repair — fail-loud. Failure writes the incomplete marker,
+        # prints no success banner, and does NOT restore the stash.
+        print("→ Repairing Node.js dependencies...")
+        try:
+            _install_node_dependencies(project_root)
+        except Exception as node_exc:
+            print(f"  ⚠ Node.js dependency refresh failed: {node_exc}")
+            print(
+                "  Stash is preserved for manual recovery — re-run\n"
+                "  `janitor update` after repairing the install."
+            )
+            _write_incomplete_marker("node_deps", auto_stash_ref)
+            return 1
 
+        # Fresh-wrapper config migration phase. Migrate only when both
+        # versions are integers and current < latest. Failures here write
+        # the incomplete marker with failed_step="config_migration" and
+        # exit 1 (no success banner, no stash restore).
+        print("→ Running fresh config migration check...")
+        try:
+            _run_fresh_config_migration_phase()
+        except Exception as mig_exc:
+            print(f"  ⚠ Config migration failed: {mig_exc}")
+            print(
+                "  Manual recovery: re-run `janitor update` or run the\n"
+                "  bundled migration script directly:\n"
+                "    bash scripts/migrate-janitor-v0.20.1.sh"
+            )
+            _write_incomplete_marker("config_migration", auto_stash_ref)
+            return 1
+
+        # Desktop receipt (only after Node repair + config migration succeeded).
         _call(
-            "_refresh_active_lazy_features",
-            fallback=lambda: None,
+            "_print_update_completion",
+            "✓ Update complete!",
+            fallback=lambda _msg: None,
         )
 
-        _install_node_dependencies(project_root)
+        # Marker cleanup (safe — only deletes the marker if no failure
+        # occurred above).
+        _clear_incomplete_marker()
 
+        # Stash restore LAST — after Node repair, config migration,
+        # fresh-wrapper config phase, receipt, and marker cleanup.
         if auto_stash_ref:
             _call(
                 "_restore_stashed_changes",
@@ -645,7 +870,7 @@ def run_janitor_update(args) -> int:
 
     except KeyboardInterrupt:
         print("\n✗ Update cancelled.")
-        if auto_stash_ref:
+        if auto_stash_ref and git_cmd is not None and project_root is not None:
             _call(
                 "_restore_stashed_changes",
                 git_cmd,
@@ -658,7 +883,7 @@ def run_janitor_update(args) -> int:
         return 130
     except subprocess.CalledProcessError as e:
         print(f"\n❌ Update failed at step: {e.cmd}")
-        if auto_stash_ref:
+        if auto_stash_ref and git_cmd is not None and project_root is not None:
             _call(
                 "_restore_stashed_changes",
                 git_cmd,

@@ -1,11 +1,22 @@
-"""Tests for the minimal Janitor update bootstrap helper."""
+"""Tests for the thin Janitor update bootstrap shell.
 
-import subprocess
-from pathlib import Path
+Per JANITOR FORK DIRECTIVE #13, ``janitor_update_bootstrap`` may ONLY print
+its branding banner, build the default namespace, and delegate to
+``janitor_update_core.run_janitor_update``. All update flow logic lives in
+``janitor_update_core``. The git/stash/bytecode helpers previously defined
+here have been removed and now live (and are tested) in
+``tests/test_janitor_update_core.py``.
+"""
+
+from __future__ import annotations
+
 import tomllib
+from pathlib import Path
+from unittest.mock import patch
 
 
 def test_bootstrap_module_is_packaged_for_janitor_entrypoint():
+    """The bootstrap module is listed in pyproject's py-modules."""
     pyproject = tomllib.loads(Path("pyproject.toml").read_text())
     py_modules = pyproject["tool"]["setuptools"]["py-modules"]
 
@@ -13,6 +24,7 @@ def test_bootstrap_module_is_packaged_for_janitor_entrypoint():
 
 
 def test_update_intercept_runs_before_hermes_imports():
+    """The early ``update`` intercept fires before any Hermes import in janitor_cli.py."""
     source = Path("janitor_cli.py").read_text()
     intercept = source.index('if len(sys.argv) > 1 and sys.argv[1] == "update":')
     hermes_config = source.index("from hermes_cli.config import DEFAULT_CONFIG")
@@ -21,95 +33,71 @@ def test_update_intercept_runs_before_hermes_imports():
     assert intercept < prompt_builder
 
 
-def test_stash_returns_none_on_clean_tree(tmp_path):
+def test_bootstrap_run_update_prints_branding(capsys):
+    """``run_update()`` prints the Janitor branding banner before delegating."""
     import janitor_update_bootstrap as jub
 
-    _init_git_repo(tmp_path)
-    assert jub._stash_local_changes_if_needed(tmp_path) is None
+    with patch.object(jub.janitor_update_core, "run_janitor_update",
+                      return_value=0) as mock_delegate:
+        rc = jub.run_update()
+
+    out = capsys.readouterr().out
+    assert "THE JANITOR" in out
+    assert rc == 0
+    mock_delegate.assert_called_once()
 
 
-def test_stash_includes_tracked_and_untracked_changes(tmp_path):
+def test_bootstrap_run_update_builds_default_namespace():
+    """The bootstrap builds a default argparse.Namespace with the contract keys
+    ``janitor_update_core`` recognises and passes it to ``run_janitor_update``.
+    """
     import janitor_update_bootstrap as jub
 
-    _init_git_repo(tmp_path)
-    tracked = tmp_path / "file.txt"
-    tracked.write_text("changed")
-    untracked = tmp_path / "assets" / "janitor" / "SOUL.md"
-    untracked.parent.mkdir(parents=True)
-    untracked.write_text("local soul")
+    captured: dict = {}
 
-    stash_ref = jub._stash_local_changes_if_needed(tmp_path)
-    assert stash_ref
-    assert _status(tmp_path) == ""
+    def fake_run(args):
+        captured["args"] = args
+        return 0
 
-    assert jub._restore_stash(tmp_path, stash_ref)
-    status = _status(tmp_path)
-    assert "file.txt" in status
-    assert "assets/" in status
-    assert untracked.exists()
+    with patch.object(jub.janitor_update_core, "run_janitor_update",
+                      side_effect=fake_run):
+        jub.run_update()
+
+    args = captured["args"]
+    # Recognised attributes per the core's contract (all default False / None).
+    assert args.check is False
+    assert args.gateway is False
+    assert args.backup is False
+    assert args.no_backup is False
+    assert args.branch is None
 
 
-def test_restore_stash_by_hash_when_not_top_of_stack(tmp_path):
+def test_bootstrap_run_update_delegates_to_janitor_update_core():
+    """``run_update()`` delegates exactly once to ``janitor_update_core.run_janitor_update``."""
     import janitor_update_bootstrap as jub
 
-    _init_git_repo(tmp_path)
-    (tmp_path / "first.txt").write_text("first")
-    first_ref = jub._stash_local_changes_if_needed(tmp_path)
+    with patch.object(jub.janitor_update_core, "run_janitor_update",
+                      return_value=0) as mock_delegate:
+        rc = jub.run_update()
 
-    (tmp_path / "second.txt").write_text("second")
-    second_ref = jub._stash_local_changes_if_needed(tmp_path)
-
-    assert first_ref and second_ref and first_ref != second_ref
-    assert jub._restore_stash(tmp_path, first_ref)
-
-    status = _status(tmp_path)
-    assert "first.txt" in status
-    assert "second.txt" not in status
-    assert jub._stash_selector_for_ref(tmp_path, first_ref) is None
-    assert jub._stash_selector_for_ref(tmp_path, second_ref) is not None
+    assert rc == 0
+    assert mock_delegate.call_count == 1
 
 
-def test_restore_stash_returns_false_for_missing_ref(tmp_path):
+def test_bootstrap_does_not_define_obsolete_helpers():
+    """The bootstrap file no longer carries _git_cmd, _stash_local_changes_if_needed,
+    _restore_stash, _clear_bytecode_cache. Those moved to janitor_update_core.
+    """
     import janitor_update_bootstrap as jub
 
-    _init_git_repo(tmp_path)
-    assert not jub._restore_stash(tmp_path, "0" * 40)
-
-
-def test_clear_bytecode_cache_removes_real_dirs_and_skips_symlink(tmp_path):
-    import janitor_update_bootstrap as jub
-
-    real_pycache = tmp_path / "pkg" / "__pycache__"
-    real_pycache.mkdir(parents=True)
-    external = tmp_path / "external"
-    external.mkdir()
-    symlink = tmp_path / "linked" / "__pycache__"
-    symlink.parent.mkdir()
-    symlink.symlink_to(external, target_is_directory=True)
-
-    removed = jub._clear_bytecode_cache(tmp_path)
-
-    assert removed == 1
-    assert not real_pycache.exists()
-    assert symlink.exists()
-    assert external.exists()
-
-
-def _init_git_repo(path: Path) -> None:
-    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=path, check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=path, check=True, capture_output=True)
-    (path / "file.txt").write_text("hello")
-    subprocess.run(["git", "add", "."], cwd=path, check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-m", "init"], cwd=path, check=True, capture_output=True)
-
-
-def _status(path: Path) -> str:
-    return subprocess.run(
-        ["git", "status", "--porcelain"],
-        cwd=path,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-
+    for name in (
+        "_git_cmd",
+        "_stash_local_changes_if_needed",
+        "_restore_stash",
+        "_clear_bytecode_cache",
+        "_stash_selector_for_ref",
+    ):
+        assert not hasattr(jub, name), (
+            f"janitor_update_bootstrap must not define {name!r}; "
+            f"that helper belongs in janitor_update_core"
+        )

@@ -399,3 +399,316 @@ def test_feature_branch_switches_to_main_before_pull(monkeypatch, tmp_path, caps
     assert len(checkout_calls) == 1
     out = capsys.readouterr().out
     assert "experiment/audio-check" in out
+
+
+# ---------------------------------------------------------------------------
+# Post-redesign contract tests (Task 10): the 11-step pipeline behavior
+# ---------------------------------------------------------------------------
+
+
+def _stub_pipeline_helpers(monkeypatch, tmp_path):
+    """Wire the additional helpers the redesigned pipeline needs.
+
+    Builds on ``_stub_helpers`` (sets PROJECT_ROOT to tmp_path and stubs the
+    legacy lazy-imported helpers) plus the fresh-wrapper helpers used after
+    the pull (config check / migrate / Desktop receipt) and the marker
+    location via ``get_hermes_home()``.
+    """
+    _stub_helpers(monkeypatch, tmp_path)
+
+    # Fresh config wrappers — both no-ops by default so tests can swap them.
+    monkeypatch.setattr(juc, "_run_config_check_fresh", lambda: (33, 34))
+    monkeypatch.setattr(
+        juc,
+        "_run_migrate_config_fresh",
+        lambda *, interactive=False, quiet=True: {
+            "env_added": [],
+            "config_added": [],
+            "warnings": [],
+        },
+    )
+    monkeypatch.setattr(juc, "_print_update_completion", lambda message: None)
+
+    # Marker location must be profile-safe (uses hermes_constants.get_hermes_home).
+    monkeypatch.setattr(juc, "get_hermes_home", lambda: tmp_path)
+
+    # _refresh_active_lazy_features may not exist on juc yet; create a default
+    # no-op binding so _ensure_loaded does not leave it None.
+    if not hasattr(juc, "_refresh_active_lazy_features"):
+        monkeypatch.setattr(juc, "_refresh_active_lazy_features", lambda: None)
+
+
+def test_post_pull_syntax_check_occurs_before_python_dependency_install(
+    monkeypatch, tmp_path
+):
+    """post-pull syntax/import validation runs BEFORE Python deps install.
+
+    The pipeline runs ``_validate_critical_files_syntax`` (called inside
+    the pull helper) before ``_install_python_dependencies``. When syntax
+    breaks, the install helpers must not be invoked.
+    """
+    _stub_helpers(monkeypatch, tmp_path, syntax_break_in="janitor_cli.py")
+    side_effect, _ = _make_side_effect()
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    install_calls: list[bool] = []
+
+    def fake_install_python_dependencies(root):
+        install_calls.append(True)
+
+    monkeypatch.setattr(juc, "_install_python_dependencies", fake_install_python_dependencies)
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    assert rc == 1
+    assert install_calls == [], "Python deps must not be installed when syntax breaks"
+
+
+def test_fresh_config_wrappers_only_called_after_pull(monkeypatch, tmp_path):
+    """Fresh config check / migrate wrappers are invoked AFTER git pull.
+
+    The merged ``_run_config_check_fresh()`` and
+    ``_run_migrate_config_fresh(...)`` wrappers reload their modules
+    internally; calling them before the pull would defeat the point. The
+    initial check is followed by a fresh post-check after supported
+    migration (2 calls total).
+    """
+    _stub_helpers(monkeypatch, tmp_path)
+    side_effect, recorded = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    check_calls = 0
+    migrate_calls: list[dict] = []
+
+    def fake_check_fresh():
+        nonlocal check_calls
+        check_calls += 1
+        return (33, 34)
+
+    def fake_migrate_fresh(*, interactive=False, quiet=True):
+        migrate_calls.append({"interactive": interactive, "quiet": quiet})
+        return {"env_added": [], "config_added": [], "warnings": []}
+
+    monkeypatch.setattr(juc, "_run_config_check_fresh", fake_check_fresh)
+    monkeypatch.setattr(juc, "_run_migrate_config_fresh", fake_migrate_fresh)
+
+    juc.run_janitor_update(SimpleNamespace())
+
+    pull_index = next(
+        (
+            i
+            for i, c in enumerate(recorded)
+            if any("--ff-only" in x for x in c)
+        ),
+        -1,
+    )
+    assert pull_index >= 0
+    assert check_calls == 2
+    assert len(migrate_calls) == 1
+
+
+def test_success_order_python_deps_lazy_node_repair_migration_receipt_stash(
+    monkeypatch, tmp_path
+):
+    """Successful run order:
+
+    Python deps → lazy-feature/bootstrap refresh → Node repair →
+    config check → config migration → fresh post-check →
+    Desktop receipt → stash restore → success banner.
+    """
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    call_log: list[str] = []
+
+    def fake_python_deps(root):
+        call_log.append("python_deps")
+
+    def fake_lazy_refresh():
+        call_log.append("lazy_refresh")
+
+    def fake_node_repair():
+        call_log.append("node_repair")
+
+    def fake_check_fresh():
+        call_log.append("config_check")
+        return (33, 34)
+
+    def fake_migrate_fresh(*, interactive=False, quiet=True):
+        call_log.append("config_migrate")
+        return {"env_added": [], "config_added": [], "warnings": []}
+
+    def fake_receipt(message):
+        call_log.append(f"receipt:{message}")
+
+    monkeypatch.setattr(juc, "_install_python_dependencies", fake_python_deps)
+    monkeypatch.setattr(juc, "_refresh_active_lazy_features", fake_lazy_refresh)
+    monkeypatch.setattr(juc, "_update_node_dependencies", fake_node_repair)
+    monkeypatch.setattr(juc, "_run_config_check_fresh", fake_check_fresh)
+    monkeypatch.setattr(juc, "_run_migrate_config_fresh", fake_migrate_fresh)
+    monkeypatch.setattr(juc, "_print_update_completion", fake_receipt)
+
+    stash_ref = "fake-stash-ref"
+    monkeypatch.setattr(
+        juc, "_stash_local_changes_if_needed", lambda *a, **kw: stash_ref
+    )
+
+    restore_calls: list[str | None] = []
+
+    def fake_restore(*a, **kw):
+        restore_calls.append(kw.get("stash_ref") or (a[2] if len(a) > 2 else None))
+        return True
+
+    monkeypatch.setattr(juc, "_restore_stashed_changes", fake_restore)
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    assert rc == 0
+    assert call_log == [
+        "python_deps",
+        "lazy_refresh",
+        "node_repair",
+        "config_check",
+        "config_migrate",
+        "config_check",
+        "receipt:✓ Update complete!",
+    ]
+    # Stash restore is the LAST post-receipt action before the success banner.
+    assert restore_calls == [stash_ref]
+
+
+def test_already_current_checkout_runs_node_repair_and_config_migration(
+    monkeypatch, tmp_path
+):
+    """When HEAD already matches origin/main, Node repair and config migration still run."""
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, recorded = _make_side_effect(commit_count="0")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    call_log: list[str] = []
+
+    def fake_node_repair():
+        call_log.append("node_repair")
+
+    def fake_check_fresh():
+        call_log.append("config_check")
+        return (33, 34)
+
+    def fake_migrate_fresh(*, interactive=False, quiet=True):
+        call_log.append("config_migrate")
+        return {"env_added": [], "config_added": [], "warnings": []}
+
+    monkeypatch.setattr(juc, "_update_node_dependencies", fake_node_repair)
+    monkeypatch.setattr(juc, "_run_config_check_fresh", fake_check_fresh)
+    monkeypatch.setattr(juc, "_run_migrate_config_fresh", fake_migrate_fresh)
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    # No pull ran (no --ff-only command)
+    assert all("--ff-only" not in c for c in recorded)
+    # Node repair and config migration still ran
+    assert "node_repair" in call_log
+    assert "config_check" in call_log
+    assert "config_migrate" in call_log
+    assert rc == 0
+
+
+def test_npm_failure_writes_marker_no_banner_no_stash_restore(monkeypatch, tmp_path):
+    """When Node deps fail, the update:
+
+    - returns non-zero,
+    - does NOT emit the success banner,
+    - does NOT restore the stash (kept for manual recovery),
+    - writes ``update-incomplete.json`` at ``get_hermes_home()``.
+    """
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    def failing_node_repair():
+        raise RuntimeError("simulated npm failure")
+
+    monkeypatch.setattr(juc, "_update_node_dependencies", failing_node_repair)
+
+    stash_ref = "fake-stash-ref"
+    monkeypatch.setattr(
+        juc, "_stash_local_changes_if_needed", lambda *a, **kw: stash_ref
+    )
+
+    restore_calls: list[str | None] = []
+
+    def fake_restore(*a, **kw):
+        restore_calls.append("called")
+        return True
+
+    monkeypatch.setattr(juc, "_restore_stashed_changes", fake_restore)
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    assert rc == 1
+    assert restore_calls == [], "stash must NOT be restored on failure"
+
+    marker = tmp_path / "update-incomplete.json"
+    assert marker.exists(), "update-incomplete.json must be written on node_deps failure"
+    payload = __import__("json").loads(marker.read_text())
+    assert payload["failed_step"] == "node_deps"
+    assert payload["stash_ref"] == stash_ref
+    assert payload["timestamp"].endswith("Z")
+
+
+def test_pre_dependency_syntax_failure_rolls_back_to_captured_sha(
+    monkeypatch, tmp_path, capsys
+):
+    """Syntax failure before deps rolls back to the captured pre-pull SHA."""
+    _stub_helpers(monkeypatch, tmp_path, syntax_break_in="janitor_cli.py")
+    side_effect, recorded = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    out = capsys.readouterr().out
+    assert rc == 1
+    rollback_calls = [
+        c
+        for c in recorded
+        if "reset" in c and "--hard" in c and "abc123def456" in c
+    ]
+    assert len(rollback_calls) == 1
+    assert "SyntaxError" in out or "syntax" in out
+
+
+def test_later_successful_rerun_removes_marker_and_restores_stash_last(
+    monkeypatch, tmp_path
+):
+    """A successful rerun removes the incomplete marker and restores stash last."""
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    stash_ref = "persisted-stash-ref"
+    monkeypatch.setattr(
+        juc, "_stash_local_changes_if_needed", lambda *a, **kw: stash_ref
+    )
+
+    marker = tmp_path / "update-incomplete.json"
+    marker.write_text(
+        __import__("json").dumps(
+            {"stash_ref": stash_ref, "failed_step": "node_deps",
+             "timestamp": "20260816T150000Z"}
+        )
+    )
+
+    call_log: list[str] = []
+
+    def fake_restore(*a, **kw):
+        call_log.append("stash_restored")
+        return True
+
+    monkeypatch.setattr(juc, "_restore_stashed_changes", fake_restore)
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    assert rc == 0
+    assert call_log == ["stash_restored"]
+    assert not marker.exists(), "marker must be removed on successful rerun"
