@@ -59,6 +59,23 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 
+# Janitor-fork critical files validated by the post-pull syntax guard.
+# Upstream's ``_UPDATE_CRITICAL_FILES`` (hermes_cli/update_cmd.py) only lists
+# Hermes core files; the fork's entry chain is equally boot-critical for the
+# ``janitor`` command — a syntax error here bricks the CLI exactly like a
+# broken ``hermes_cli/main.py`` (Task 16 gate A.7 CRITICAL finding). Kept as
+# an explicit tuple mirroring upstream's convention. Missing files are
+# skipped, so the list stays safe if a fork file is ever retired.
+_JANITOR_CRITICAL_FILES = (
+    "janitor_cli.py",
+    "janitor_update_core.py",
+    "janitor_update_bootstrap.py",
+    "janitor_version.py",
+    "janitor_ext/__init__.py",
+    "janitor_ext/tips_es.py",
+)
+
+
 # Module-level sentinels so tests can monkeypatch.setattr() before any import
 # error fires. Real values are loaded lazily via _try_import().
 PROJECT_ROOT: Optional[Path] = None
@@ -111,6 +128,61 @@ def _try_import(name: str) -> Any:
     return helper
 
 
+
+def _validate_janitor_files_syntax(
+    root,
+) -> tuple[bool, Optional[str], Optional[str]]:
+    """py_compile each Janitor-fork critical file under ``root``.
+
+    Fork-side twin of upstream's ``_validate_critical_files_syntax``
+    (hermes_cli/update_cmd.py), restricted to the ``janitor_*`` entry
+    chain. Same semantics: compile to a throwaway cfile in a temp dir,
+    missing file -> skip, returns ``(ok, failing_path, error_message)``.
+    """
+    import py_compile
+    import tempfile
+
+    root = Path(root)
+    with tempfile.TemporaryDirectory(prefix="janitor-syntax-check-") as tmpdir:
+        for relpath in _JANITOR_CRITICAL_FILES:
+            path = root / relpath
+            if not path.exists():
+                continue
+            cfile = Path(tmpdir) / (relpath.replace("/", "__") + "c")
+            try:
+                py_compile.compile(str(path), cfile=str(cfile), doraise=True)
+            except py_compile.PyCompileError as exc:
+                return False, str(path), str(exc)
+            except OSError as exc:
+                return False, str(path), f"could not read: {exc}"
+    return True, None, None
+
+
+def _make_fork_syntax_validator(upstream: Optional[Callable]) -> Callable:
+    """Wrap the upstream syntax validator to also cover fork files.
+
+    The returned callable first delegates to ``upstream`` (the Hermes core
+    guard) and propagates its failure unchanged; on upstream success it
+    additionally validates ``_JANITOR_CRITICAL_FILES``. When ``upstream``
+    is ``None`` (partially-broken venv / import-order variance observed in
+    gate A.7) the fork files are STILL validated — the fork entry chain is
+    the part whose breakage bricks ``janitor`` outright.
+
+    A ``_janitor_fork_wrapper`` marker attribute makes the wiring in
+    ``_ensure_loaded`` idempotent and lets tests detect the wrapper.
+    """
+
+    def _validate_critical_files_syntax_with_fork_files(root):
+        if upstream is not None:
+            ok, failing_path, error = upstream(root)
+            if not ok:
+                return ok, failing_path, error
+        return _validate_janitor_files_syntax(root)
+
+    _validate_critical_files_syntax_with_fork_files._janitor_fork_wrapper = True  # type: ignore[attr-defined]
+    return _validate_critical_files_syntax_with_fork_files
+
+
 def _ensure_loaded() -> None:
     """Populate module-level sentinels from hermes_cli on first use.
 
@@ -148,6 +220,19 @@ def _ensure_loaded() -> None:
     for name in lazy_helpers:
         if globals().get(name) is None:
             globals()[name] = _try_import(name)
+
+    # Janitor fork extension (Task 16 A.7 fix): upstream's guard only
+    # validates Hermes core files. ALWAYS make the module-level validator
+    # the fork-aware wrapper — including when the upstream helper resolved
+    # to None — so ``janitor_cli.py`` & friends are checked post-pull.
+    # The marker keeps this idempotent across repeated _ensure_loaded()
+    # calls; a pre-set value (test stub) is wrapped, not replaced, so its
+    # failure signal is preserved and the fork files are still checked.
+    syntax_helper = globals().get("_validate_critical_files_syntax")
+    if not getattr(syntax_helper, "_janitor_fork_wrapper", False):
+        globals()["_validate_critical_files_syntax"] = _make_fork_syntax_validator(
+            syntax_helper
+        )
 
     fresh_wrappers = (
         "_run_config_check_fresh",
