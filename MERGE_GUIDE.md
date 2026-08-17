@@ -780,7 +780,11 @@ debe ir acompañado de una corrida verde de este test.
 
 **Wiring CI** (ver §4.1):
 ```yaml
-# .github/workflows/tests.yml, líneas 87-100
+# .github/workflows/tests.yml, líneas 90-114 (PR gate; mirrored in
+# .github/workflows/janitor-ci.yml :: python-tests, líneas 20-40, and
+# janitor-ci.yml :: os-compat for the macOS / Windows portability smoke).
+# AGENTS.md directive #11 is the source of truth for the 13-file list and
+# its order — keep this block in lockstep when adding a new janitor test.
 - name: Run Janitor-specific tests
   run: |
     source .venv/bin/activate
@@ -788,8 +792,16 @@ debe ir acompañado de una corrida verde de este test.
       tests/test_janitor_cli.py \
       tests/test_janitor_update_bootstrap.py \
       tests/test_janitor_update_core.py \
+      tests/test_janitor_bootstrap_node_version.py \
       tests/gateway/test_telegram_janitor_branding.py \
       tests/skills/test_janitor_config_audit_skill.py \
+      tests/skills/test_janitor_firecrawl_skill.py \
+      tests/skills/test_janitor_lightrag_skill.py \
+      tests/test_janitor_monkeypatch_signatures.py \
+      tests/test_janitor_no_duplicate_methods.py \
+      tests/test_janitor_migrate_v0201.py \
+      tests/hermes_cli/test_mcp_router_discover.py \
+      tests/hermes_cli/test_mcp_router_logs.py \
       --tb=short -v
 ```
 
