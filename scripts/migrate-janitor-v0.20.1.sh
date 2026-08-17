@@ -71,17 +71,24 @@ if [ ! -f "$CONFIG" ]; then
     exit 1
 fi
 
-# Determine UTC timestamp for the backup filename. Nanosecond
-# precision (Linux) prevents timestamp collisions on rapid successive
-# invocations — without it the idempotency test (twice-run) would
-# silently overwrite the first backup.
-TIMESTAMP=$(date -u +%Y%m%dT%H%M%S%NZ 2>/dev/null || date -u +%Y%m%dT%H%M%SZ)
+# Determine UTC timestamp for the backup filename. The exact portable
+# shape ``YYYYMMDDTHHMMSSZ`` is required by the recovery contract; we
+# do NOT use nanoseconds because the migrate-once-then-idempotent
+# contract guarantees at most one backup per actual migration run,
+# so second-precision is sufficient for collision avoidance inside a
+# single second (the migrate wrapper exits non-zero on error before any
+# second backup could be made).
+TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
 BACKUP="$CONFIG.bak.$TIMESTAMP"
 
 # Source raw version from the canonical ``hermes_cli.__version__`` literal
 # and derive the display form via ``janitor_version.display_version``. This
 # keeps the script in lockstep with the version the Python source declares
-# (single source of truth) instead of duplicating a hardcoded string.
+# (single source of truth) instead of duplicating a hardcoded string. The
+# canonical path uses a direct ``import hermes_cli`` (no source-reading)
+# so a future ``hermes_cli.__version__`` refactor still works. The repo
+# root is PREPENDED to (not overwriting) the caller's ``PYTHONPATH`` so
+# tests can inject a sentinel hermes_cli.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 if [ -x "$REPO_ROOT/.venv/bin/python3" ]; then
@@ -93,36 +100,36 @@ elif [ -x "$REPO_ROOT/venv/bin/python3" ]; then
 else
     _VERSION_PYTHON="python3"
 fi
+_VERSION_PYTHONPATH="${PYTHONPATH:-}${REPO_ROOT:+:$REPO_ROOT}"
 
-RAW_VERSION="$("$_VERSION_PYTHON" - "$REPO_ROOT" <<'PYEOF'
-import importlib.util
-import re
-import sys
-from pathlib import Path
-
-repo_root = Path(sys.argv[1])
-sys.path.insert(0, str(repo_root))
-spec = importlib.util.find_spec("hermes_cli")
-if spec is None or spec.origin is None:
-    sys.exit("could not locate hermes_cli", 2)
-source = Path(spec.origin).read_text()
-m = re.search(r'^__version__\s*=\s*"([^"]+)"', source, re.MULTILINE)
-if m is None:
-    sys.exit("hermes_cli.__version__ literal not found", 2)
-print(m.group(1))
-PYEOF
-)"
+RAW_VERSION="$(
+    PYTHONPATH="$_VERSION_PYTHONPATH" "$_VERSION_PYTHON" -c "
+import hermes_cli
+print(hermes_cli.__version__)
+" 2>/dev/null
+)" || {
+    echo "Failed to import hermes_cli.__version__" >&2
+    exit 2
+}
 if [ -z "$RAW_VERSION" ]; then
-    echo "Failed to derive raw version from hermes_cli.__version__" >&2
+    echo "Empty raw version returned by hermes_cli.__version__" >&2
     exit 2
 fi
 
-DISPLAY_VERSION="$(printf '%s' "$RAW_VERSION" | "$_VERSION_PYTHON" -c "
-import sys
-sys.path.insert(0, '$REPO_ROOT')
-from janitor_version import display_version
-print(display_version(sys.stdin.read().strip()))
-")"
+DISPLAY_VERSION="$(
+    PYTHONPATH="$_VERSION_PYTHONPATH" "$_VERSION_PYTHON" -c "
+import hermes_cli as _hc
+import janitor_version
+print(janitor_version.display_version(_hc.__version__))
+" 2>/dev/null
+)" || {
+    echo "Failed to derive display version via janitor_version.display_version" >&2
+    exit 2
+}
+if [ -z "$DISPLAY_VERSION" ]; then
+    echo "Empty display version" >&2
+    exit 2
+fi
 
 # Detect v33 inputs from the raw file (no YAML parsing yet — only string
 # matches). v33 detection:
@@ -364,10 +371,21 @@ POST_CHECK_RC=$?
 set -e
 
 if [ "$POST_CHECK_RC" != "0" ]; then
+    # Round 2/5 Oracle finding 8: do NOT falsely claim the live config
+    # is byte-identical to the pre-migration backup. The migrate step
+    # has already mutated the config (the post-check ran AFTER the
+    # migrate call). The backup is the pre-migration snapshot; the
+    # live config is the post-migration state. Rollback via cp would
+    # revert the migration. Be truthful about the actual state.
     echo
     echo "Post-migration check failed (exit $POST_CHECK_RC)."
-    echo "Your live config is byte-identical to: $BACKUP"
-    echo "To rollback: cp $BACKUP $CONFIG"
+    echo "The migration ran; the live config reflects the post-migration"
+    echo "state and is NOT byte-identical to the pre-migration backup at"
+    echo "$BACKUP."
+    echo
+    echo "To revert the migration: cp $BACKUP $CONFIG"
+    echo "To inspect the live config: $CONFIG"
+    echo "To inspect the pre-migration backup: $BACKUP"
     exit "$POST_CHECK_RC"
 fi
 

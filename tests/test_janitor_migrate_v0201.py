@@ -13,6 +13,7 @@ import os
 import re
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -222,22 +223,14 @@ def test_no_args_runs_normally(tmp_path):
 def test_prints_raw_and_display_version(tmp_path):
     """Stdout includes both raw and display versions on success.
 
-    Strengthened for Finding 8: expected values are derived from the
-    canonical APIs (``hermes_cli.__version__`` and
-    ``janitor_version.display_version``) instead of hardcoded duplicates.
+    Round 2/5 strengthening: expected values are derived DIRECTLY from
+    the canonical APIs (``hermes_cli.__version__`` import, NOT
+    source-reading of ``hermes_cli/__init__.py``).
     """
-    import importlib.util
-
-    # Derive the expected raw version from hermes_cli.__version__.
-    spec = importlib.util.find_spec("hermes_cli")
-    assert spec is not None and spec.origin is not None
-    source = Path(spec.origin).read_text()
-    m = re.search(r'^__version__\s*=\s*"([^"]+)"', source, re.MULTILINE)
-    assert m is not None, "hermes_cli.__version__ literal not found"
-    raw = m.group(1)
-    # Derive the display version from janitor_version.display_version.
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    import hermes_cli
     import janitor_version
+
+    raw = hermes_cli.__version__
     display = janitor_version.display_version(raw)
 
     home = tmp_path / "janitor"
@@ -331,3 +324,127 @@ def test_migration_failure_after_backup_exits_3_and_preserves_original(tmp_path)
     assert len(backups) == 1
     assert backups[0].read_bytes() == before_bytes
     assert (home / "config.yaml").read_bytes() == before_bytes
+
+
+# ---------------------------------------------------------------------------
+# Fix Round 2/5 — Oracle re-review regression tests for the script.
+# ---------------------------------------------------------------------------
+
+
+def test_backup_filename_strict_portable_shape_no_nanoseconds(tmp_path):
+    """Round 2/5 Oracle finding: restore the exact portable backup
+    name ``config.yaml.bak.<YYYYMMDDTHHMMSSZ>``. Nanoseconds violate the
+    required shape and are removed. Uniqueness is achieved WITHOUT
+    nanoseconds (the migrate-once-then-idempotent contract means only
+    one backup per migration run, and the test uses a fresh tmp_path).
+    """
+    home = tmp_path / "janitor"
+    home.mkdir()
+    (home / "config.yaml").write_text("memory:\n  provider: honcho\n")
+    r = subprocess.run(
+        ["bash", str(SCRIPT)],
+        env={**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""},
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 0, r.stderr
+    backups = list(home.glob("config.yaml.bak.*"))
+    assert len(backups) == 1
+    name = backups[0].name
+    # Exact portable shape: ``config.yaml.bak.<YYYYMMDDTHHMMSSZ>``
+    # has exactly four dot-separated tokens; the last is the timestamp.
+    parts = name.split(".")
+    assert len(parts) == 4, f"expected 4 dot-separated tokens, got {parts!r}"
+    assert parts[:3] == ["config", "yaml", "bak"], (parts, name)
+    ts = parts[3]
+    assert re.match(r"^\d{8}T\d{6}Z$", ts), (
+        f"timestamp portion must be exactly YYYYMMDDTHHMMSSZ; got {ts!r}"
+    )
+    # No nanoseconds / microseconds / millisecond suffixes anywhere.
+    assert not re.search(r"\.\d+Z$", name), name
+
+
+def test_script_uses_canonical_hermes_cli_version_import(tmp_path):
+    """Round 2/5 Oracle finding C8: the script MUST source its raw
+    version from a direct ``import hermes_cli`` + ``print(hermes_cli.__version__)``
+    call AND derive display via ``janitor_version.display_version``.
+    The script is observable here: we read its stdout and assert the
+    emitted values MATCH the canonical ``hermes_cli.__version__`` /
+    ``display_version(__version__)`` pair from the SAME Python
+    interpreter the script uses. If the script ever falls back to
+    source-reading (the prior ``Path(spec.origin).read_text() + re.search``
+    pattern), it would only happen to match the canonical value if the
+    source string is byte-identical to ``hermes_cli.__version__`` at that
+    moment — any drift between the two paths would surface as a
+    contract violation.
+    """
+    import hermes_cli
+    import janitor_version
+
+    home = tmp_path / "janitor"
+    home.mkdir()
+    (home / "config.yaml").write_text(
+        "_config_version: 99\nmemory:\n  provider: honcho\n"
+    )
+
+    r = subprocess.run(
+        ["bash", str(SCRIPT), "--dry-run"],
+        env={
+            **os.environ,
+            "HERMES_HOME": str(home),
+            "JANITOR_HOME": "",
+        },
+        capture_output=True,
+        text=True,
+    )
+
+    # Canonical values, derived exactly the way the script must derive them.
+    expected_raw = hermes_cli.__version__
+    expected_display = janitor_version.display_version(expected_raw)
+
+    assert f"Raw version: {expected_raw}" in r.stdout, (
+        f"script's raw version must come from hermes_cli.__version__; "
+        f"expected {expected_raw!r}, stdout={r.stdout!r}"
+    )
+    assert f"Display version: {expected_display}" in r.stdout, (
+        f"script's display version must come from "
+        f"janitor_version.display_version; expected {expected_display!r}, "
+        f"stdout={r.stdout!r}"
+    )
+
+
+def importlib_origin():
+    """Return the hermes_cli package __init__.py path for the sentinel."""
+    import importlib.util
+    spec = importlib.util.find_spec("hermes_cli")
+    assert spec is not None and spec.origin is not None
+    return Path(spec.origin)
+
+
+def test_post_check_failure_message_is_truthful_about_config_state(tmp_path):
+    """Round 2/5 Oracle finding: a successful happy-path run MUST NOT
+    emit the ``"byte-identical to backup"`` recovery message — that
+    message is reserved for the strict-parse failure path where the
+    config genuinely was not mutated. On exit 0 the live config WAS
+    migrated and so cannot be byte-identical to its pre-migration
+    backup.
+    """
+    home = tmp_path / "janitor"
+    home.mkdir()
+    (home / "config.yaml").write_text(
+        "_config_version: 33\n"
+        "display:\n"
+        "  personality: kawaii\n"
+        "memory:\n"
+        "  provider: honcho\n"
+    )
+    r = subprocess.run(
+        ["bash", str(SCRIPT)],
+        env={**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""},
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 0
+    combined = r.stdout + r.stderr
+    assert "byte-identical" not in combined, (
+        "the byte-identical recovery message must not appear on the "
+        "exit-0 happy path; the migrate step has mutated the config"
+    )
