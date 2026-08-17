@@ -1354,23 +1354,26 @@ def test_post_check_still_behind_with_support_floor_warnings_is_allowed(
     monkeypatch, tmp_path
 ):
     """A still-behind post-check is allowed ONLY when the migration results
-    returned warnings that explicitly explain a support-floor refusal. In
-    that case: no marker, exit 0, receipt + cleanup + stash restore.
+    returned warnings that match the real upstream ``support_floor_message()``
+    text (not fabricated substrings). In that case: no marker, exit 0,
+    receipt + cleanup + stash restore. The warning here is the actual text
+    returned by ``hermes_cli.config_migrations.support_floor_message()`` so
+    the contract is exercised against reality, not a fabricated proxy.
     """
+    import hermes_cli.config_migrations as upstream_migrations
+
     _stub_pipeline_helpers(monkeypatch, tmp_path)
     side_effect, _ = _make_side_effect(commit_count="3")
     monkeypatch.setattr(juc.subprocess, "run", side_effect)
 
     monkeypatch.setattr(juc, "_run_config_check_fresh", lambda: (32, 34))
+    real_floor_warning = upstream_migrations.support_floor_message()
     monkeypatch.setattr(
         juc, "_run_migrate_config_fresh",
         lambda *, interactive=False, quiet=True: {
             "env_added": [],
             "config_added": [],
-            "warnings": [
-                "hermes config: support floor: configs below v12 must be "
-                "manually migrated before updates can continue."
-            ],
+            "warnings": [real_floor_warning],
         },
     )
 
@@ -1398,3 +1401,433 @@ def test_get_hermes_home_uses_canonical_helper_when_importable(
     resolved = juc.get_hermes_home()
     canonical_resolved = Path(canonical_home())
     assert resolved.resolve() == canonical_resolved.resolve()
+
+
+# ---------------------------------------------------------------------------
+# Fix Round 2/5 — Oracle re-review regression tests
+# ---------------------------------------------------------------------------
+
+
+def test_seam_rebinds_from_freshly_loaded_module_after_evicting_sys_modules(
+    monkeypatch, tmp_path
+):
+    """The seam MUST evict ``hermes_cli.update_cmd`` from ``sys.modules``
+    before re-binding, otherwise ``importlib.import_module`` returns the
+    stale cached module and the rebound callables come from cached code
+    (not refreshed disk code). This is a behavior test that proves the
+    rebound wrappers were obtained from a freshly-loaded module — not a
+    mock-away.
+
+    Procedure:
+      1. Capture the real upstream wrapper.
+      2. Patch ``hermes_cli.update_cmd._run_config_check_fresh`` to a
+         sentinel that the seam CANNOT mistake for real.
+      3. Run the seam. The patched sentinel is in ``sys.modules``.
+      4. Verify the sentinel is gone (replaced) and the rebound is the
+         real upstream wrapper (NOT the sentinel).
+    """
+    import sys
+
+    _stub_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    # Force hermes_cli.update_cmd to be loaded and capture its real wrapper.
+    import hermes_cli.update_cmd as real_update_cmd_mod  # noqa: F401
+    real_check_fn = real_update_cmd_mod._run_config_check_fresh
+    # Sanity: real_check_fn must NOT be the sentinel we are about to install.
+    assert callable(real_check_fn)
+
+    sentinel = lambda: ("STALE_PATCH", 0)
+    real_update_cmd_mod._run_config_check_fresh = sentinel
+    # The sentinel is now live in sys.modules; the seam's _try_import
+    # would return this same stale binding unless it evicts first.
+    assert sys.modules["hermes_cli.update_cmd"]._run_config_check_fresh is sentinel
+
+    # Run a real update path so the seam is reached (the seam itself runs
+    # *before* Node repair / config migration; we use a no-op node repair
+    # and stub config migration to a no-op migrate with no post-check
+    # still-behind so the run completes).
+    monkeypatch.setattr(juc, "_update_node_dependencies", lambda: [])
+    check_calls = []
+
+    def fresh_check_fresh():
+        check_calls.append("called")
+        # If the seam evicted + reloaded, this is a fresh module's
+        # function (different binding than the sentinel).
+        return real_check_fn()
+
+    monkeypatch.setattr(juc, "_run_config_check_fresh", fresh_check_fresh)
+    monkeypatch.setattr(
+        juc, "_run_migrate_config_fresh",
+        lambda *, interactive=False, quiet=True: {
+            "env_added": [],
+            "config_added": [],
+            "warnings": [],
+        },
+    )
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+    assert rc == 0
+
+    # The sentinel that was in sys.modules is gone: hermes_cli.update_cmd
+    # has been evicted and the seam's re-import produced a fresh binding.
+    fresh_update_cmd = sys.modules.get("hermes_cli.update_cmd")
+    assert fresh_update_cmd is not None
+    assert fresh_update_cmd._run_config_check_fresh is not sentinel, (
+        "seam did not evict sys.modules['hermes_cli.update_cmd']; "
+        "the sentinel binding is still live"
+    )
+
+
+def test_seam_loads_seam_when_helper_module_already_evicted(
+    monkeypatch, tmp_path
+):
+    """Behavioral contract: the seam clears and reloads the helper
+    module whether or not a sentinel is currently cached in
+    ``sys.modules``. The pre-seam sentinel installed directly in
+    ``hermes_cli.update_cmd._run_config_check_fresh`` MUST be gone
+    after the seam — otherwise a stale cached binding would survive
+    invalidation.
+    """
+    import sys
+
+    _stub_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    import hermes_cli.update_cmd as real_update_cmd_mod  # noqa: F401
+
+    pre_seam_sentinel = lambda *a, **kw: ("STALE_PRE_SEAM", 0)
+    real_update_cmd_mod._run_config_check_fresh = pre_seam_sentinel
+
+    monkeypatch.setattr(juc, "_update_node_dependencies", lambda: [])
+
+    monkeypatch.setattr(juc, "_run_migrate_config_fresh",
+        lambda *, interactive=False, quiet=True: {
+            "env_added": [],
+            "config_added": [],
+            "warnings": [],
+        })
+    monkeypatch.setattr(juc, "_run_config_check_fresh", lambda: (34, 34))
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+    # Exit code is irrelevant for this test — what matters is that the
+    # seam evicted and re-imported the module.
+    assert rc in (0, 1)
+    # After the seam, the fresh module's binding is NOT the pre-seam
+    # sentinel (it must come from a freshly loaded module).
+    fresh_module = sys.modules["hermes_cli.update_cmd"]
+    assert fresh_module._run_config_check_fresh is not pre_seam_sentinel
+
+
+def test_persisted_marker_stash_ref_preserved_across_repeated_failure(
+    monkeypatch, tmp_path
+):
+    """A repeated failure (a second failed run with no new local stash)
+    must NOT overwrite the persisted ``stash_ref`` on disk. The marker
+    is the recovery contract; losing the prior ref loses user work.
+    """
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    # First run: produces an auto_stash_ref and node_deps failure.
+    persisted_ref = "persisted-ref-from-first-failure"
+    marker = tmp_path / "update-incomplete.json"
+    marker.write_text(json.dumps({
+        "stash_ref": persisted_ref,
+        "failed_step": "node_deps",
+        "timestamp": "20260817T150000Z",
+    }))
+
+    # No new local stash this run (already in failure-loop), so the
+    # recovered marker must preserve the prior ref.
+    monkeypatch.setattr(
+        juc, "_stash_local_changes_if_needed", lambda *a, **kw: None
+    )
+
+    def still_failing():
+        return ["ui-tui, web workspaces"]
+
+    monkeypatch.setattr(juc, "_update_node_dependencies", still_failing)
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    # The failure path still writes a marker (failure happened), but the
+    # prior persisted_stash_ref is preserved on disk.
+    assert rc == 1
+    assert marker.exists()
+    payload = json.loads(marker.read_text())
+    assert payload["failed_step"] == "node_deps"
+    assert payload["stash_ref"] == persisted_ref, (
+        f"persisted_stash_ref was clobbered: {payload['stash_ref']!r}"
+    )
+
+
+def test_restore_both_auto_and_persisted_stash_refs_when_both_exist(
+    monkeypatch, tmp_path
+):
+    """When the current run produced a NEW auto_stash_ref AND a
+    persisted marker carries a different stash_ref, BOTH must be
+    restored — the persisted one LAST. Losing either loses user work.
+    """
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    persisted_ref = "persisted-ref-on-disk"
+    marker = tmp_path / "update-incomplete.json"
+    marker.write_text(json.dumps({
+        "stash_ref": persisted_ref,
+        "failed_step": "node_deps",
+        "timestamp": "20260817T150000Z",
+    }))
+
+    auto_ref = "auto-ref-this-run"
+
+    def stash_new(*a, **kw):
+        return auto_ref
+
+    monkeypatch.setattr(juc, "_stash_local_changes_if_needed", stash_new)
+
+    restore_calls: list[str] = []
+    monkeypatch.setattr(
+        juc, "_restore_stashed_changes",
+        lambda *a, **kw: (
+            restore_calls.append(
+                kw.get("stash_ref") or (a[2] if len(a) > 2 else None)
+            )
+            or True
+        ),
+    )
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    assert rc == 0
+    # Both refs must be restored; the persisted one LAST.
+    assert auto_ref in restore_calls
+    assert persisted_ref in restore_calls
+    auto_idx = restore_calls.index(auto_ref)
+    persisted_idx = restore_calls.index(persisted_ref)
+    assert auto_idx < persisted_idx, (
+        f"persisted_stash_ref must be restored LAST; got {restore_calls!r}"
+    )
+
+
+def test_post_check_malformed_tuple_fails_loudly(monkeypatch, tmp_path):
+    """A post-check that returns a malformed value (None / wrong type /
+    wrong arity) is non-success — never silently ignored. Round 2/5
+    Oracle finding C5 disallows the prior permissive swallow.
+    """
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    monkeypatch.setattr(juc, "_update_node_dependencies", lambda: [])
+    monkeypatch.setattr(
+        juc, "_run_migrate_config_fresh",
+        lambda *, interactive=False, quiet=True: {
+            "env_added": [],
+            "config_added": [],
+            "warnings": [],
+        },
+    )
+
+    # Post-check returns None — not a (current, latest) tuple.
+    monkeypatch.setattr(juc, "_run_config_check_fresh", lambda: None)
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    assert rc == 1
+    marker = tmp_path / "update-incomplete.json"
+    assert marker.exists()
+    payload = json.loads(marker.read_text())
+    assert payload["failed_step"] == "config_migration"
+
+
+def test_post_check_non_int_versions_fails_loudly(monkeypatch, tmp_path):
+    """Post-check returning non-int versions (str, None, float) is
+    non-success — never silently a no-op.
+    """
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    monkeypatch.setattr(juc, "_update_node_dependencies", lambda: [])
+    monkeypatch.setattr(
+        juc, "_run_migrate_config_fresh",
+        lambda *, interactive=False, quiet=True: {
+            "env_added": [],
+            "config_added": [],
+            "warnings": [],
+        },
+    )
+
+    monkeypatch.setattr(
+        juc, "_run_config_check_fresh", lambda: ("33", "34")
+    )
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    assert rc == 1
+    assert (tmp_path / "update-incomplete.json").exists()
+
+
+def test_post_check_current_strictly_greater_than_latest_fails_loudly(
+    monkeypatch, tmp_path
+):
+    """When ``current > latest`` at the post-check, the pipeline is
+    non-success — Round 2/5 C5 disallows silently accepting a downgrade
+    as a no-op after migration. The initial check may legitimately
+    observe a downgrade (the config is newer than what the wrapper
+    knows about); only the post-check downgrade is a HARD failure.
+    """
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    monkeypatch.setattr(juc, "_update_node_dependencies", lambda: [])
+    monkeypatch.setattr(
+        juc, "_run_migrate_config_fresh",
+        lambda *, interactive=False, quiet=True: {
+            "env_added": [],
+            "config_added": [],
+            "warnings": [],
+        },
+    )
+
+    # First call (initial check): v33 → migrate runs. Second call
+    # (post-check): simulate a downgrade where current exceeded latest
+    # after migration (impossible in upstream, but a must-fail scenario).
+    counter = [0]
+    def check_fresh_with_downgrade():
+        counter[0] += 1
+        if counter[0] == 1:
+            return (33, 34)  # initial check: needs migration
+        return (40, 34)  # post-check: downgrade to simulate failure
+
+    monkeypatch.setattr(juc, "_run_config_check_fresh", check_fresh_with_downgrade)
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    assert rc == 1
+    marker = tmp_path / "update-incomplete.json"
+    assert marker.exists()
+    payload = json.loads(marker.read_text())
+    assert payload["failed_step"] == "config_migration"
+
+
+def test_support_floor_real_upstream_message_is_only_allowed_still_behind(
+    monkeypatch, tmp_path
+):
+    """The only allowed still-behind post-check is when the upstream
+    ``support_floor_message()`` text appears in the migration warnings.
+    Any other warning (even one that contains the fabricated substring
+    ``"support floor"`` outside the real contract) is non-success.
+    """
+    import hermes_cli.config_migrations as upstream_migrations
+
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    monkeypatch.setattr(juc, "_update_node_dependencies", lambda: [])
+
+    # First call returns (32, 34) → migrate should run. Post-check also
+    # returns (32, 34) → still behind. Warnings contain an UNRELATED
+    # string with the words "support floor" but NOT the real upstream
+    # message — this must be non-success.
+    monkeypatch.setattr(juc, "_run_config_check_fresh", lambda: (32, 34))
+    monkeypatch.setattr(
+        juc, "_run_migrate_config_fresh",
+        lambda *, interactive=False, quiet=True: {
+            "env_added": [],
+            "config_added": [],
+            "warnings": [
+                "fabricated message about support floor policy that is not the "
+                "real upstream contract"
+            ],
+        },
+    )
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    real_floor = upstream_migrations.support_floor_message()
+    assert real_floor not in (
+        "fabricated message about support floor policy that is not the real "
+        "upstream contract"
+    ), (
+        "the fabricated warning must not match support_floor_message(); that "
+        "would mean we accidentally contract to fabricated text"
+    )
+
+    assert rc == 1
+    marker = tmp_path / "update-incomplete.json"
+    assert marker.exists()
+    payload = json.loads(marker.read_text())
+    assert payload["failed_step"] == "config_migration"
+
+
+def test_get_hermes_home_falls_back_to_hermes_home_env_when_constants_breaks(
+    monkeypatch, tmp_path
+):
+    """When ``hermes_constants`` cannot be imported (venv partially
+    broken), ``get_hermes_home`` must fall back to a non-empty
+    ``HERMES_HOME`` env var. No hardcoded ``~/.janitor`` and no
+    ``Path.home()`` fallback.
+    """
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "fallback_home"))
+
+    # Force a controlled ImportError on every import attempt.
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "hermes_constants" or name.startswith("hermes_constants."):
+            raise ImportError("simulated broken venv")
+        return real_import(name, globals, locals, fromlist, level)
+
+    import builtins
+    real_import = builtins.__import__
+    builtins.__import__ = fake_import
+    try:
+        resolved = juc.get_hermes_home()
+    finally:
+        builtins.__import__ = real_import
+
+    assert resolved.resolve() == (tmp_path / "fallback_home").resolve()
+    # No fallback to ~/.janitor or $HOME — the only fall back path
+    # observed here is HERMES_HOME.
+    assert not str(resolved).endswith("/.janitor")
+    assert not str(resolved).endswith("/.hermes")
+
+
+def test_get_hermes_home_raises_when_hermes_constants_breaks_and_hermes_home_unset(
+    monkeypatch, tmp_path
+):
+    """Without a usable HERMES_HOME env var AND a broken hermes_constants,
+    ``get_hermes_home`` raises — never silently substitutes Path.home()
+    or a hardcoded ``~/.janitor``.
+    """
+    monkeypatch.delenv("HERMES_HOME", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "no_default_home"))
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "hermes_constants" or name.startswith("hermes_constants."):
+            raise ImportError("simulated broken venv")
+        return real_import(name, globals, locals, fromlist, level)
+
+    import builtins
+    real_import = builtins.__import__
+    builtins.__import__ = fake_import
+    try:
+        raised = False
+        try:
+            juc.get_hermes_home()
+        except (ImportError, RuntimeError):
+            raised = True
+    finally:
+        builtins.__import__ = real_import
+
+    assert raised, (
+        "get_hermes_home must raise when both hermes_constants is broken "
+        "AND HERMES_HOME is unset"
+    )

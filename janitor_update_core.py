@@ -290,12 +290,25 @@ def get_hermes_home() -> Path:
     """Profile-safe Janitor/Hermes home directory.
 
     Imports lazily so a partially-broken venv can still call this helper
-    without loading the full ``hermes_constants`` module eagerly. No
-    hardcoded ``$HOME/.janitor`` fallback: the canonical helper is the
-    single source of truth for profile resolution.
+    without loading the full ``hermes_constants`` module eagerly. The
+    canonical ``hermes_constants.get_hermes_home()`` is the primary path.
+    Falls back to a non-empty ``$HERMES_HOME`` env var when
+    ``hermes_constants`` cannot be imported (a partially-broken venv);
+    this is the ONLY fallback — no hardcoded ``$HOME/.janitor`` or
+    ``Path.home()`` substitution. Raises when both paths fail so a
+    silent wrong-directory write cannot lose user work.
     """
-    from hermes_constants import get_hermes_home as _h
-    return Path(_h())
+    try:
+        from hermes_constants import get_hermes_home as _h
+        return Path(_h())
+    except Exception:
+        hermes_home = os.environ.get("HERMES_HOME", "").strip()
+        if hermes_home:
+            return Path(hermes_home)
+        raise RuntimeError(
+            "get_hermes_home failed: hermes_constants is not importable "
+            "and HERMES_HOME env var is unset or empty"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -604,50 +617,42 @@ def _install_node_dependencies(project_root: Path) -> list[str]:
     return failures
 
 
-# Markers that explicitly explain a support-floor refusal (i.e. a pre-v12
-# config that the floor policy refuses to auto-migrate). A still-behind
-# post-check may legitimately remain behind when one of these strings is
+# Substrings that the real upstream ``hermes_cli.config_migrations.support_floor_message()``
+# is guaranteed to contain. We do NOT invent marker tokens here: the contract
+# is grounded in the upstream function's actual text. A still-behind
+# post-check may legitimately remain behind when ONE of these substrings is
 # in the returned warnings — every other still-behind / failure case is
 # non-success.
-_SUPPORT_FLOOR_WARNING_MARKERS = (
-    "support floor",
-    "must be manually migrated",
+#
+# See ``hermes_cli.config_migrations.support_floor_message()``.
+_SUPPORT_FLOOR_WARNING_SUBSTRINGS = (
+    "predates version",
+    "no longer be auto-migrated",
 )
 
 
 def _support_floor_warning_explains_still_behind(warnings: list) -> bool:
+    """True iff at least one upstream warning text includes a phrase that
+    matches the real ``support_floor_message()`` contract.
+    """
     if not warnings:
         return False
     for warning in warnings:
         if not warning:
             continue
         text = str(warning).lower()
-        if any(marker in text for marker in _SUPPORT_FLOOR_WARNING_MARKERS):
+        if any(marker in text for marker in _SUPPORT_FLOOR_WARNING_SUBSTRINGS):
             return True
     return False
 
 
-def _run_fresh_config_migration_phase() -> dict:
-    """Run the fresh-wrapper config migration phase after a successful pull.
+def _read_config_version(call_check: Callable[[], tuple]) -> tuple:
+    """Call the check wrapper and validate the tuple shape.
 
-    Uses ``hermes_cli.update_cmd._run_config_check_fresh`` and
-    ``_run_migrate_config_fresh`` so the freshly-pulled config modules are
-    read — not the stale cached ones from before the pull.
-
-    Behavior contract:
-
-    - Migrate only when both versions are integers and ``current < latest``.
-    - Warn and leave config untouched for invalid version values.
-    - Warn and leave config untouched on downgrade (``current > latest``).
-    - On ``current == latest``, no-op (no warning).
-    - Consume ``results.get("warnings", [])`` defensively.
-    - Run a fresh post-check after a supported migration.
-    - Raise ``RuntimeError`` on any failure path so the caller takes the
-      config_migration non-success path: missing helpers, initial check
-      exception, migration exception, post-check exception, or a
-      still-behind post-check WITHOUT an explicit support-floor warning.
-
-    Returns the migration results dict (or ``{}`` on a clean no-op).
+    Returns (current_ver, latest_ver) on success. Raises RuntimeError
+    on any non-success: missing wrapper, exception, malformed tuple,
+    non-integer versions, current > latest (the last is a failure ONLY
+    during a post-check; callers control the exception policy).
     """
     check_fn = globals().get("_run_config_check_fresh")
     if check_fn is None:
@@ -656,7 +661,7 @@ def _run_fresh_config_migration_phase() -> dict:
         )
 
     try:
-        version_tuple = check_fn()
+        version_tuple = call_check()
     except Exception as exc:
         raise RuntimeError(f"config version check raised: {exc}") from exc
 
@@ -671,9 +676,43 @@ def _run_fresh_config_migration_phase() -> dict:
             f"config version check returned non-integer values: "
             f"{current_ver!r}, {latest_ver!r}"
         )
+    return current_ver, latest_ver
+
+
+def _run_fresh_config_migration_phase() -> dict:
+    """Run the fresh-wrapper config migration phase after a successful pull.
+
+    Uses ``hermes_cli.update_cmd._run_config_check_fresh`` and
+    ``_run_migrate_config_fresh`` so the freshly-pulled config modules are
+    read — not the stale cached ones from before the pull.
+
+    Behavior contract:
+
+    - Initial check: ``current > latest`` is a benign no-op (warn only;
+      no migration, no failure). Config already at a newer version than
+      the wrapper knows about is left alone.
+    - Initial check: migrate only when ``current < latest`` and both are
+      integers.
+    - Post-check: ``current > latest`` is a HARD failure (migration
+      should have put us AT latest, never over — a downgrade must not
+      be silently accepted).
+    - Post-check: ``current == latest`` is a no-op (success branch).
+    - Post-check: ``current < latest`` is a still-behind. Allowed ONLY
+      when the warnings explicitly explain a support-floor refusal; every
+      other still-behind / failure case is non-success.
+    - Consume ``results.get("warnings", [])`` defensively.
+    - Raise ``RuntimeError`` on every non-success path: missing helpers,
+      initial / post-check exception, malformed tuple, non-int
+      versions, post-check downgrade, post-check still-behind without a
+      recognised support-floor warning.
+
+    Returns the migration results dict (or ``{}`` on a clean no-op).
+    """
+    check_fn = globals().get("_run_config_check_fresh")
+    current_ver, latest_ver = _read_config_version(check_fn)
 
     if current_ver > latest_ver:
-        # Downgrade is a benign no-op (warn but no migration, no failure).
+        # Initial check — downgrade is a benign no-op.
         print(
             f"  ⚠ Config version {current_ver} > latest {latest_ver} — "
             f"leaving config untouched (downgrade detected)."
@@ -704,37 +743,36 @@ def _run_fresh_config_migration_phase() -> dict:
         if warning:
             print(f"  ⚠ {warning}")
 
-    # Fresh post-check after a supported migration. Any exception is a
-    # config_migration failure (non-success). A still-behind post-check is
-    # allowed ONLY when the warnings explicitly explain a support-floor
-    # refusal; otherwise it is a non-success failure.
+    # Fresh post-check after a supported migration.
     try:
-        post = check_fn()
-    except Exception as exc:
-        raise RuntimeError(
-            f"post-migration config check raised: {exc}"
-        ) from exc
+        post_cur, post_lat = _read_config_version(check_fn)
+    except RuntimeError:
+        raise
 
-    if not (isinstance(post, tuple) and len(post) == 2):
-        raise RuntimeError(
-            f"post-migration config check returned non-tuple: {post!r}"
-        )
-
-    cur, lat = post
-    if (
-        isinstance(cur, int)
-        and isinstance(lat, int)
-        and cur < lat
-    ):
-        if not _support_floor_warning_explains_still_behind(warnings):
+    # POST-check ``current > latest`` is a HARD failure: migration should
+    # have moved us AT or PAST the wrapper's latest version, never over
+    # to a wrap-around / downgrade state. Silently accepting it would
+    # leave the user with a config the wrapper thinks is at a future
+    # version — refuse loudly.
+    if isinstance(post_cur, int) and isinstance(post_lat, int):
+        if post_cur > post_lat:
             raise RuntimeError(
-                f"config still at v{cur} (target v{lat}) after migration; "
-                f"warnings did not explain a support-floor refusal"
+                f"post-migration config version {post_cur} > latest "
+                f"{post_lat}; the migration result exceeded the wrapper's "
+                f"latest version — refusing silently"
             )
-        print(
-            f"  ⚠ Config still at v{cur} (target v{lat}) after migration; "
-            f"support-floor refusal — manual step required."
-        )
+        if post_cur < post_lat:
+            if not _support_floor_warning_explains_still_behind(warnings):
+                raise RuntimeError(
+                    f"config still at v{post_cur} (target v{post_lat}) "
+                    f"after migration; warnings did not explain a "
+                    f"support-floor refusal"
+                )
+            print(
+                f"  ⚠ Config still at v{post_cur} (target v{post_lat}) "
+                f"after migration; support-floor refusal — manual step "
+                f"required."
+            )
 
     return results
 
@@ -743,10 +781,11 @@ def _reload_helper_modules_after_pull() -> None:
     """Post-pull helper / module reload seam.
 
     After a successful ``git pull`` (or the equivalent already-current
-    path), invalidate importlib caches, clear the in-process helper
-    cache, clear the three fresh-wrapper sentinels, and rebind the fresh
-    wrappers from the freshly-loaded modules so the next phase reads the
-    updated code.
+    path), evict the helper modules from ``sys.modules`` (so a stale
+    cached copy cannot be served), invalidate ``importlib``'s caches,
+    clear the in-process helper cache and the three fresh-wrapper
+    sentinels, and rebind the fresh wrappers from the freshly-loaded
+    modules so the next phase reads the updated code.
     """
     importlib.invalidate_caches()
     _HELPER_CACHE.clear()
@@ -759,6 +798,22 @@ def _reload_helper_modules_after_pull() -> None:
     globals().pop("_run_config_check_fresh", None)
     globals().pop("_run_migrate_config_fresh", None)
     globals().pop("_print_update_completion", None)
+
+    # EVICT the helper modules from ``sys.modules``. ``importlib.invalidate_caches``
+    # alone is NOT enough: ``importlib.import_module`` returns the cached
+    # entry from ``sys.modules`` if present, so a stale copy would survive
+    # invalidation. The seam MUST also del the module entry to force a
+    # genuine re-import from disk.
+    for mod_name in (
+        "hermes_cli.update_cmd",
+        "hermes_cli.config_migrations",
+        "hermes_cli.config",
+        "hermes_cli.config_defaults",
+        "hermes_cli.main",
+        "hermes_cli",
+    ):
+        sys.modules.pop(mod_name, None)
+
     # Re-resolve via the existing lazy-import path so the new code is loaded.
     for name in (
         "_run_config_check_fresh",
@@ -819,11 +874,21 @@ def _write_incomplete_marker(failed_step: str, stash_ref: Optional[str]) -> None
     """Write ``update-incomplete.json`` at ``get_hermes_home()``.
 
     Profile-safe location; not at a hardcoded ``$HERMES_HOME``. The marker
-    records the stash ref, the failed step, and a UTC ISO 8601 timestamp with
-    ``Z`` suffix. A later successful rerun removes this file (see
+    records the stash ref, the failed step, and a UTC ISO 8601 timestamp
+    with ``Z`` suffix. A later successful rerun removes this file (see
     ``_clear_incomplete_marker``).
+
+    The persisted marker schema is fixed at three keys — no expansion.
+    When ``stash_ref`` is ``None`` (this run produced no new autostash),
+    the prior persisted ``stash_ref`` is preserved on disk so repeated
+    failures across reruns do not lose user work. The
+    ``failed_step`` / ``timestamp`` fields reflect THIS run.
     """
     marker = get_hermes_home() / "update-incomplete.json"
+    if stash_ref is None:
+        prior = _read_persisted_marker_raw(marker)
+        if prior is not None:
+            stash_ref = prior
     payload = {
         "stash_ref": stash_ref,
         "failed_step": failed_step,
@@ -833,6 +898,20 @@ def _write_incomplete_marker(failed_step: str, stash_ref: Optional[str]) -> None
         marker.write_text(json.dumps(payload))
     except OSError as exc:
         print(f"  ⚠ Could not write incomplete-update marker: {exc}")
+
+
+def _read_persisted_marker_raw(marker_path: Path) -> Optional[str]:
+    """Read the prior marker's stash_ref without validation, for the
+    preserve-on-write path. Returns ``None`` if absent or malformed.
+    """
+    try:
+        payload = json.loads(marker_path.read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    stash_ref = payload.get("stash_ref")
+    return stash_ref if isinstance(stash_ref, (str, type(None))) else None
 
 
 def _clear_incomplete_marker() -> bool:
@@ -1038,12 +1117,25 @@ def run_janitor_update(args) -> int:
             )
             return 1
 
-        # Stash restore LAST. When this run did not produce a new stash
-        # but a well-formed marker carries a persisted stash_ref, restore
-        # THAT ref so the user does not lose the prior run's autostash.
-        # Restore failure → return 1 and skip the success banner.
-        stash_to_restore = auto_stash_ref or persisted_stash_ref
-        if stash_to_restore:
+        # Stash restore LAST. When this run AND a persisted marker
+        # both carry a stash_ref, restore BOTH — the current run's
+        # ``auto_stash_ref`` first (in run order), then the persisted
+        # one LAST. The persisted marker is the recovery contract from
+        # a prior failed run; the current run's stash is the live
+        # workspace snapshot. Restoring both preserves user work across
+        # repeated reruns. Restore failure → return 1 and skip the
+        # success banner.
+        restore_sequence = []
+        if auto_stash_ref:
+            restore_sequence.append(auto_stash_ref)
+        if (
+            persisted_stash_ref
+            and persisted_stash_ref != auto_stash_ref
+        ):
+            # Persisted LAST — per marker contract.
+            restore_sequence.append(persisted_stash_ref)
+
+        for stash_to_restore in restore_sequence:
             restored = _call(
                 "_restore_stashed_changes",
                 git_cmd,
