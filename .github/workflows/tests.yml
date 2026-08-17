@@ -35,10 +35,11 @@ jobs:
     # Upstream's CI already validates its test suite before any commit
     # reaches the Janitor fork. Re-running the same ~17k tests in the
     # fork on every PR is redundant work that adds wall-clock cost and
-    # noise. The 8 Janitor-specific test files below cover the fork's
+    # noise. The 13 Janitor-specific test files below cover the fork's
     # actual customizations: Janitor CLI, update flow (bootstrap + core),
     # Telegram branding, monkey-patch signature invariants, duplicate
-    # definition audit, and the config-audit + firecrawl skills.
+    # definition audit, v0.20.1 migration, the config-audit +
+    # firecrawl + lightrag skills, and the two MCP router tests.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -109,6 +110,7 @@ jobs:
             tests/skills/test_janitor_lightrag_skill.py \
             tests/test_janitor_monkeypatch_signatures.py \
             tests/test_janitor_no_duplicate_methods.py \
+            tests/test_janitor_migrate_v0201.py \
             tests/hermes_cli/test_mcp_router_discover.py \
             tests/hermes_cli/test_mcp_router_logs.py \
             --tb=short -v
@@ -118,7 +120,7 @@ jobs:
           NOUS_API_KEY: ""
 
   # Stub: kept for forward-compatibility. The Janitor test suite is small
-  # enough (8 files) that per-file duration tracking is unnecessary. When
+  # enough (13 files) that per-file duration tracking is unnecessary. When
   # the suite grows past ~20 files, reintroduce the matrix slicing here
   # using the same pattern as upstream's prior version of this file.
   save-durations:
@@ -127,7 +129,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: No-op (Janitor test suite is too small to need slicing)
-        run: echo "Janitor test suite uses 8 files; no duration merge needed."
+        run: echo "Janitor test suite uses 13 files; no duration merge needed."
 
   # Full upstream test suite, run on demand or after every sync commit.
   # See AGENTS.md "Fork Directive #11 — Test Pruning" for rationale.

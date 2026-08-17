@@ -34,6 +34,7 @@ jobs:
             tests/skills/test_janitor_lightrag_skill.py \
             tests/test_janitor_monkeypatch_signatures.py \
             tests/test_janitor_no_duplicate_methods.py \
+            tests/test_janitor_migrate_v0201.py \
             tests/hermes_cli/test_mcp_router_discover.py \
             tests/hermes_cli/test_mcp_router_logs.py \
             --tb=short -v
@@ -84,3 +85,160 @@ jobs:
           test -f hermes_cli/web_dist/index.html
           test -d hermes_cli/web_dist/assets
           test -n "$(find hermes_cli/web_dist/assets -type f -print -quit)"
+
+  installer-e2e:
+    # Minimal-install smoke for the checked-out Janitor branch. Adapted from
+    # upstream tag v2026.8.13's install-e2e.yml — Janitor does not publish
+    # release tags, so the upstream "install from N prior releases" matrix is
+    # dropped. We instead point at the current branch, assert janitor --version
+    # prints THE JANITOR banner (per AGENTS.md directive #12), run the minimal
+    # janitor-install.sh against an isolated scratch dir, and verify the base
+    # install does NOT bring up any opt-in service containers (Honcho local,
+    # Firecrawl, Browser, Computer Use, voice/wake) — see AGENTS.md directive
+    # #9 (OPTIONAL SKILLS ARE EXPLICIT) and directive #5 (janitor- prefix for
+    # every container / network / volume / service Janitor owns). Any Docker
+    # resource the installer creates here must carry the janitor- prefix.
+    name: Janitor minimal-install smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync --locked --python 3.11 --extra all --extra dev
+
+      - name: Assert janitor --version prints the Janitor banner
+        # Per AGENTS.md directive #12 (TEST ASSERTION BRANDING) the version
+        # banner must say THE JANITOR, not Hermes Agent.
+        run: |
+          set -euo pipefail
+          out="$(uv run janitor --version)"
+          echo "$out"
+          echo "$out" | grep -qE '^THE JANITOR v'
+
+      - name: Run minimal Janitor installer non-interactively
+        # JANITOR_HOME points at an isolated scratch dir. HONCHO_API_KEY is set
+        # so the installer takes the "cloud" path (no local Honcho container
+        # brought up). Stdin is closed so any prompt aborts the script — we
+        # want a deterministic minimal install, not an interactive one.
+        env:
+          JANITOR_HOME: ${{ runner.temp }}/janitor-e2e
+          HERMES_HOME: ${{ runner.temp }}/janitor-e2e
+          HONCHO_API_KEY: ci-placeholder-honcho-key
+        run: |
+          set -euo pipefail
+          JANITOR_HOME="$JANITOR_HOME" HERMES_HOME="$HERMES_HOME" \
+            bash scripts/janitor-install.sh < /dev/null
+
+      - name: Assert minimal base artifacts were deployed
+        run: |
+          set -euo pipefail
+          JH="${{ runner.temp }}/janitor-e2e"
+          test -f "$JH/.env"
+          test -f "$JH/config.yaml"
+          test -f "$JH/SOUL.md"
+          test -f "$JH/skins/sentry-janitor.yaml"
+          test -d "$JH/skills"
+          test -d "$JH/sessions"
+          test -d "$JH/logs"
+          echo "Minimal install artifacts: OK"
+
+      - name: Assert NO opt-in skills or service containers were deployed
+        # AGENTS.md directive #9 (OPTIONAL SKILLS ARE EXPLICIT) — Firecrawl,
+        # Browser, Computer Use, voice/wake are opt-in. The minimal installer
+        # must NOT bring any of them up. Also AGENTS.md directive #5 — any
+        # container/network/volume/service Janitor creates must carry the
+        # janitor- prefix, so we explicitly check for janitor-honcho etc.
+        run: |
+          set -euo pipefail
+          JH="${{ runner.temp }}/janitor-e2e"
+          # No opt-in skill deployment markers in the user's home
+          [ ! -d "$JH/skills/janitor-firecrawl" ]  || { echo "FAIL: janitor-firecrawl deployed by minimal install"; exit 1; }
+          [ ! -d "$JH/skills/janitor-browser" ]    || { echo "FAIL: janitor-browser deployed by minimal install"; exit 1; }
+          # No Docker containers named janitor-honcho (cloud path was used)
+          if command -v docker >/dev/null 2>&1; then
+            if docker ps -a --filter name=janitor-honcho --format '{{.Names}}' | grep -q .; then
+              echo "FAIL: janitor-honcho container running"
+              exit 1
+            fi
+          fi
+          echo "Opt-in skills & service containers absent: OK"
+
+  os-compat:
+    # OS-specific portability smoke for the Janitor test list. Adapted from
+    # upstream tag v2026.8.13's tests-os.yml — preserves the macOS + Windows
+    # matrix and the uv / Python 3.11 / extras setup semantics, but routes
+    # the actual test invocation through Janitor's canonical runner
+    # (scripts/run_tests.sh) instead of pytest's OS-marker selector. Reason:
+    # Janitor's tests are platform-agnostic Python — wrapper/skin/home
+    # assertions in test_janitor_cli.py and friends are exactly what we want
+    # to prove survive on macOS and Windows. AGENTS.md directive #11
+    # requires both this list and tests.yml :: test carry the same 13 files,
+    # which `tests.yml` already enforces on ubuntu-latest.
+    name: Janitor tests on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync --locked --python 3.11 --extra all --extra dev
+
+      - name: Run Janitor tests via scripts/run_tests.sh
+        # Same 13-file list as the PR gate, dispatched through Janitor's runner
+        # so per-file subprocess isolation + venv/TZ/env blanks are honored.
+        # Wrapper / skin / HOME assertions live inside these tests; running
+        # them on macOS and Windows proves the Janitor-specific code paths
+        # work outside ubuntu-latest.
+        env:
+          OPENROUTER_API_KEY: ""
+          OPENAI_API_KEY: ""
+          NOUS_API_KEY: ""
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/run_tests.sh \
+            tests/test_janitor_cli.py \
+            tests/test_janitor_update_bootstrap.py \
+            tests/test_janitor_update_core.py \
+            tests/test_janitor_bootstrap_node_version.py \
+            tests/gateway/test_telegram_janitor_branding.py \
+            tests/skills/test_janitor_config_audit_skill.py \
+            tests/skills/test_janitor_firecrawl_skill.py \
+            tests/skills/test_janitor_lightrag_skill.py \
+            tests/test_janitor_monkeypatch_signatures.py \
+            tests/test_janitor_no_duplicate_methods.py \
+            tests/test_janitor_migrate_v0201.py \
+            tests/hermes_cli/test_mcp_router_discover.py \
+            tests/hermes_cli/test_mcp_router_logs.py \
+            -v
