@@ -186,16 +186,36 @@ jobs:
             local err="${file}.err" body="${file}.body"
             : > "$err"; : > "$body"
             # uv pip show exits non-zero for both "package absent" and
-            # "uv broken / env broken". ONLY confirmed-absent (stderr says
-            # "warning: Package(s) not found for: <pkg>") is allowed to
-            # produce an ABSENT snapshot. Any other non-zero exit
-            # (including broken PATH, broken venv, parse error) is an
-            # OPERATIONAL failure that must propagate under set -e — we
-            # do NOT collapse it to an empty file, because that would
-            # silently hide a CI environment problem.
+            # "uv broken / env broken". ONLY the package-specific
+            # absence sentinel — stderr is EXACTLY
+            # "warning: Package(s) not found for: <pkg>" after command
+            # substitution strips the trailing newline (no extra error
+            # lines, no different warning wording, no
+            # "for: <other-pkg>" mismatch) — is allowed to produce
+            # STATUS=ABSENT. Anything else (different package name in
+            # stderr, mixed warning + error, broken PATH, broken venv,
+            # parse error) is an OPERATIONAL failure that must
+            # propagate under set -e — we do NOT collapse it to
+            # STATUS=ABSENT, because that would silently hide a CI
+            # environment problem or a legitimate
+            # warning-on-top-of-error condition.
+            #
+            # On the success branch, uv pip show stdout must contain
+            # EXACTLY ONE "Name: <name>" line AND EXACTLY ONE
+            # "Version: <version>" line. Anything else (missing Name,
+            # missing Version, duplicate Name, duplicate Version, or
+            # other malformed fields) fails closed under set -e.
             if uv pip show "$pkg" > "$body" 2> "$err"; then
+              local name_count version_count state
+              name_count=$(grep -cE '^Name:' "$body") || name_count=0
+              version_count=$(grep -cE '^Version:' "$body") || version_count=0
+              if [ "$name_count" -ne 1 ] || [ "$version_count" -ne 1 ]; then
+                echo "::error::uv pip show $pkg output must contain exactly one Name and one Version line (got Name=$name_count Version=$version_count):" >&2
+                cat "$body" >&2
+                rm -f "$body" "$err"; exit 1
+              fi
               if ! state=$(grep -E '^(Name|Version):' "$body" | LC_ALL=C sort -k1,1); then
-                echo "::error::failed to parse Name/Version from uv pip show $pkg output:" >&2
+                echo "::error::failed to extract Name/Version from uv pip show $pkg output:" >&2
                 cat "$body" >&2
                 rm -f "$body" "$err"; exit 1
               fi
@@ -205,14 +225,26 @@ jobs:
               } > "$file"
               rm -f "$body" "$err"
             else
-              if grep -qE 'warning:[[:space:]]*Package\(s\) not found' "$err"; then
-                # Confirmed absent — only this case writes STATUS=ABSENT.
+              local actual expected
+              actual="$(cat "$err")"
+              expected="warning: Package(s) not found for: $pkg"
+              if [ "$expected" = "$actual" ]; then
+                # Confirmed absent — only this exact stderr shape (one
+                # line, package-specific, no extras) writes
+                # STATUS=ABSENT. Command substitution's trailing-newline
+                # stripping gives a clean equality test against the
+                # expected diagnostic; any second stderr line keeps
+                # actual != expected and routes to the operational-error
+                # branch below.
                 printf 'STATUS=ABSENT\n' > "$file"
                 rm -f "$body" "$err"
               else
-                # Operational error: bad uv, broken env, parse failure, etc.
-                echo "::error::uv pip show $pkg failed (treating as operational error):" >&2
-                cat "$err" >&2
+                # Operational error: different pkg in stderr, extra
+                # stderr lines (mixed warning + error), broken uv,
+                # broken env, parse failure, etc.
+                echo "::error::uv pip show $pkg stderr does not match package-specific absence sentinel (treating as operational error):" >&2
+                echo "  expected: '$expected'" >&2
+                echo "  actual:   '$actual'" >&2
                 rm -f "$body" "$err"; exit 1
               fi
             fi
@@ -334,16 +366,36 @@ jobs:
             local err="${file}.err" body="${file}.body"
             : > "$err"; : > "$body"
             # uv pip show exits non-zero for both "package absent" and
-            # "uv broken / env broken". ONLY confirmed-absent (stderr says
-            # "warning: Package(s) not found for: <pkg>") is allowed to
-            # produce an ABSENT snapshot. Any other non-zero exit
-            # (including broken PATH, broken venv, parse error) is an
-            # OPERATIONAL failure that must propagate under set -e — we
-            # do NOT collapse it to an empty file, because that would
-            # silently hide a CI environment problem.
+            # "uv broken / env broken". ONLY the package-specific
+            # absence sentinel — stderr is EXACTLY
+            # "warning: Package(s) not found for: <pkg>" after command
+            # substitution strips the trailing newline (no extra error
+            # lines, no different warning wording, no
+            # "for: <other-pkg>" mismatch) — is allowed to produce
+            # STATUS=ABSENT. Anything else (different package name in
+            # stderr, mixed warning + error, broken PATH, broken venv,
+            # parse error) is an OPERATIONAL failure that must
+            # propagate under set -e — we do NOT collapse it to
+            # STATUS=ABSENT, because that would silently hide a CI
+            # environment problem or a legitimate
+            # warning-on-top-of-error condition.
+            #
+            # On the success branch, uv pip show stdout must contain
+            # EXACTLY ONE "Name: <name>" line AND EXACTLY ONE
+            # "Version: <version>" line. Anything else (missing Name,
+            # missing Version, duplicate Name, duplicate Version, or
+            # other malformed fields) fails closed under set -e.
             if uv pip show "$pkg" > "$body" 2> "$err"; then
+              local name_count version_count state
+              name_count=$(grep -cE '^Name:' "$body") || name_count=0
+              version_count=$(grep -cE '^Version:' "$body") || version_count=0
+              if [ "$name_count" -ne 1 ] || [ "$version_count" -ne 1 ]; then
+                echo "::error::uv pip show $pkg output must contain exactly one Name and one Version line (got Name=$name_count Version=$version_count):" >&2
+                cat "$body" >&2
+                rm -f "$body" "$err"; exit 1
+              fi
               if ! state=$(grep -E '^(Name|Version):' "$body" | LC_ALL=C sort -k1,1); then
-                echo "::error::failed to parse Name/Version from uv pip show $pkg output:" >&2
+                echo "::error::failed to extract Name/Version from uv pip show $pkg output:" >&2
                 cat "$body" >&2
                 rm -f "$body" "$err"; exit 1
               fi
@@ -353,14 +405,26 @@ jobs:
               } > "$file"
               rm -f "$body" "$err"
             else
-              if grep -qE 'warning:[[:space:]]*Package\(s\) not found' "$err"; then
-                # Confirmed absent — only this case writes STATUS=ABSENT.
+              local actual expected
+              actual="$(cat "$err")"
+              expected="warning: Package(s) not found for: $pkg"
+              if [ "$expected" = "$actual" ]; then
+                # Confirmed absent — only this exact stderr shape (one
+                # line, package-specific, no extras) writes
+                # STATUS=ABSENT. Command substitution's trailing-newline
+                # stripping gives a clean equality test against the
+                # expected diagnostic; any second stderr line keeps
+                # actual != expected and routes to the operational-error
+                # branch below.
                 printf 'STATUS=ABSENT\n' > "$file"
                 rm -f "$body" "$err"
               else
-                # Operational error: bad uv, broken env, parse failure, etc.
-                echo "::error::uv pip show $pkg failed (treating as operational error):" >&2
-                cat "$err" >&2
+                # Operational error: different pkg in stderr, extra
+                # stderr lines (mixed warning + error), broken uv,
+                # broken env, parse failure, etc.
+                echo "::error::uv pip show $pkg stderr does not match package-specific absence sentinel (treating as operational error):" >&2
+                echo "  expected: '$expected'" >&2
+                echo "  actual:   '$actual'" >&2
                 rm -f "$body" "$err"; exit 1
               fi
             fi
