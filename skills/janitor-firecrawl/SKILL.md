@@ -2,6 +2,8 @@
 name: janitor-firecrawl
 description: "Deploy Firecrawl web scraping service locally for Janitor."
 version: 1.1.0
+author: Janitor Agent
+license: MIT
 platforms: [linux, macos]
 
 metadata:

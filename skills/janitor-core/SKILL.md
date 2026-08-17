@@ -2,6 +2,8 @@
 name: janitor-core
 description: Clean stale caches and corrupted artifacts from the agent.
 version: 1.0.0
+author: Janitor Agent
+license: MIT
 platforms: [linux, macos]
 
 metadata:

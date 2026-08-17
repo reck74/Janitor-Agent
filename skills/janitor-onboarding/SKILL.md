@@ -2,6 +2,8 @@
 name: janitor-onboarding
 description: "Janitor orientation and capability selector."
 version: 2.1.0
+author: Janitor Agent
+license: MIT
 platforms: [linux, macos]
 
 metadata:
