@@ -174,14 +174,47 @@ jobs:
             | LC_ALL=C sort -u > "$ART/docker-volumes.before.txt"
           docker network ls --filter name=janitor- --format '{{.Name}}' \
             | LC_ALL=C sort -u > "$ART/docker-networks.before.txt"
-          # Optional-capability Python packages. The `if` lets `uv pip show`
-          # exit non-zero (package absent) without tripping set -e.
+          # Optional-capability Python packages. capture_pkg_state writes
+          # STATUS=PRESENT + sorted Name/Version lines when uv pip show
+          # succeeds, STATUS=ABSENT only when uv pip show returns the
+          # "warning: Package(s) not found" sentinel (confirmed absence).
+          # Any other uv/grep/parse failure is operational and propagates
+          # via set -e — it must NOT collapse to an empty file (which
+          # would mask a broken venv or broken uv).
           capture_pkg_state() {
             local pkg="$1" file="$2"
-            if state=$(uv pip show "$pkg" 2>/dev/null | grep -E '^(Name|Version):' | LC_ALL=C sort); then
-              printf '%s\n' "$state" > "$file"
+            local err="${file}.err" body="${file}.body"
+            : > "$err"; : > "$body"
+            # uv pip show exits non-zero for both "package absent" and
+            # "uv broken / env broken". ONLY confirmed-absent (stderr says
+            # "warning: Package(s) not found for: <pkg>") is allowed to
+            # produce an ABSENT snapshot. Any other non-zero exit
+            # (including broken PATH, broken venv, parse error) is an
+            # OPERATIONAL failure that must propagate under set -e — we
+            # do NOT collapse it to an empty file, because that would
+            # silently hide a CI environment problem.
+            if uv pip show "$pkg" > "$body" 2> "$err"; then
+              if ! state=$(grep -E '^(Name|Version):' "$body" | LC_ALL=C sort -k1,1); then
+                echo "::error::failed to parse Name/Version from uv pip show $pkg output:" >&2
+                cat "$body" >&2
+                rm -f "$body" "$err"; exit 1
+              fi
+              {
+                printf 'STATUS=PRESENT\n'
+                printf '%s\n' "$state"
+              } > "$file"
+              rm -f "$body" "$err"
             else
-              : > "$file"
+              if grep -qE 'warning:[[:space:]]*Package\(s\) not found' "$err"; then
+                # Confirmed absent — only this case writes STATUS=ABSENT.
+                printf 'STATUS=ABSENT\n' > "$file"
+                rm -f "$body" "$err"
+              else
+                # Operational error: bad uv, broken env, parse failure, etc.
+                echo "::error::uv pip show $pkg failed (treating as operational error):" >&2
+                cat "$err" >&2
+                rm -f "$body" "$err"; exit 1
+              fi
             fi
           }
           capture_pkg_state playwright      "$ART/pkg-playwright.before.txt"
@@ -189,12 +222,45 @@ jobs:
           capture_pkg_state openwakeword    "$ART/pkg-openwakeword.before.txt"
           # Filesystem markers for Browser (Playwright cache) and Computer
           # Use (cua-driver home — see hermes_cli/tools_config.py:1142).
+          # capture_dir_listing writes STATUS=PRESENT + sorted listing of
+          # EVERY entry type (file, dir, symlink, etc.) when the directory
+          # exists, or STATUS=ABSENT when it does not. find errors and
+          # partial captures (non-empty stderr) propagate as fail-closed.
           capture_dir_listing() {
             local dir="$1" file="$2"
             if [ -d "$dir" ]; then
-              find "$dir" -type f 2>/dev/null | LC_ALL=C sort > "$file"
+              # PRESENT — capture every entry (file, directory, symlink,
+              # block, char, fifo, socket, etc.), not just regular files.
+              # -mindepth 1 skips the root itself; -printf '%y %p\n' tags
+              # each entry with its type ('f'/'d'/'l'/etc) so a directory-
+              # only or symlink-only tree still produces a deterministic
+              # listing (a present-but-empty directory becomes
+              # "STATUS=PRESENT\n" with an empty body, distinct from
+              # "STATUS=ABSENT"). find errors propagate under set -e
+              # (no 2>/dev/null suppression); we also fail closed if find
+              # emits any stderr output, since a partial capture would
+              # produce a misleading diff downstream.
+              local err="${file}.err" body="${file}.body"
+              : > "$err"; : > "$body"
+              if ! find "$dir" -mindepth 1 -printf '%y %p\n' > "$body" 2> "$err"; then
+                echo "::error::find exited non-zero for $dir:" >&2
+                cat "$err" >&2
+                rm -f "$body" "$err"; exit 1
+              fi
+              if [ -s "$err" ]; then
+                echo "::error::find emitted errors for $dir (partial capture, fail-closed):" >&2
+                cat "$err" >&2
+                rm -f "$body" "$err"; exit 1
+              fi
+              {
+                printf 'STATUS=PRESENT\n'
+                LC_ALL=C sort -k2 "$body"
+              } > "$file"
+              rm -f "$body" "$err"
             else
-              : > "$file"
+              # ABSENT — directory does not exist (or is not a directory).
+              # Sentinel distinguishes from a present-but-empty directory.
+              printf 'STATUS=ABSENT\n' > "$file"
             fi
           }
           capture_dir_listing "$HOME/.cache/ms-playwright" "$ART/fs-ms-playwright.before.txt"
@@ -265,10 +331,38 @@ jobs:
             | LC_ALL=C sort -u > "$ART/docker-networks.after.txt"
           capture_pkg_state() {
             local pkg="$1" file="$2"
-            if state=$(uv pip show "$pkg" 2>/dev/null | grep -E '^(Name|Version):' | LC_ALL=C sort); then
-              printf '%s\n' "$state" > "$file"
+            local err="${file}.err" body="${file}.body"
+            : > "$err"; : > "$body"
+            # uv pip show exits non-zero for both "package absent" and
+            # "uv broken / env broken". ONLY confirmed-absent (stderr says
+            # "warning: Package(s) not found for: <pkg>") is allowed to
+            # produce an ABSENT snapshot. Any other non-zero exit
+            # (including broken PATH, broken venv, parse error) is an
+            # OPERATIONAL failure that must propagate under set -e — we
+            # do NOT collapse it to an empty file, because that would
+            # silently hide a CI environment problem.
+            if uv pip show "$pkg" > "$body" 2> "$err"; then
+              if ! state=$(grep -E '^(Name|Version):' "$body" | LC_ALL=C sort -k1,1); then
+                echo "::error::failed to parse Name/Version from uv pip show $pkg output:" >&2
+                cat "$body" >&2
+                rm -f "$body" "$err"; exit 1
+              fi
+              {
+                printf 'STATUS=PRESENT\n'
+                printf '%s\n' "$state"
+              } > "$file"
+              rm -f "$body" "$err"
             else
-              : > "$file"
+              if grep -qE 'warning:[[:space:]]*Package\(s\) not found' "$err"; then
+                # Confirmed absent — only this case writes STATUS=ABSENT.
+                printf 'STATUS=ABSENT\n' > "$file"
+                rm -f "$body" "$err"
+              else
+                # Operational error: bad uv, broken env, parse failure, etc.
+                echo "::error::uv pip show $pkg failed (treating as operational error):" >&2
+                cat "$err" >&2
+                rm -f "$body" "$err"; exit 1
+              fi
             fi
           }
           capture_pkg_state playwright      "$ART/pkg-playwright.after.txt"
@@ -277,9 +371,38 @@ jobs:
           capture_dir_listing() {
             local dir="$1" file="$2"
             if [ -d "$dir" ]; then
-              find "$dir" -type f 2>/dev/null | LC_ALL=C sort > "$file"
+              # PRESENT — capture every entry (file, directory, symlink,
+              # block, char, fifo, socket, etc.), not just regular files.
+              # -mindepth 1 skips the root itself; -printf '%y %p\n' tags
+              # each entry with its type ('f'/'d'/'l'/etc) so a directory-
+              # only or symlink-only tree still produces a deterministic
+              # listing (a present-but-empty directory becomes
+              # "STATUS=PRESENT\n" with an empty body, distinct from
+              # "STATUS=ABSENT"). find errors propagate under set -e
+              # (no 2>/dev/null suppression); we also fail closed if find
+              # emits any stderr output, since a partial capture would
+              # produce a misleading diff downstream.
+              local err="${file}.err" body="${file}.body"
+              : > "$err"; : > "$body"
+              if ! find "$dir" -mindepth 1 -printf '%y %p\n' > "$body" 2> "$err"; then
+                echo "::error::find exited non-zero for $dir:" >&2
+                cat "$err" >&2
+                rm -f "$body" "$err"; exit 1
+              fi
+              if [ -s "$err" ]; then
+                echo "::error::find emitted errors for $dir (partial capture, fail-closed):" >&2
+                cat "$err" >&2
+                rm -f "$body" "$err"; exit 1
+              fi
+              {
+                printf 'STATUS=PRESENT\n'
+                LC_ALL=C sort -k2 "$body"
+              } > "$file"
+              rm -f "$body" "$err"
             else
-              : > "$file"
+              # ABSENT — directory does not exist (or is not a directory).
+              # Sentinel distinguishes from a present-but-empty directory.
+              printf 'STATUS=ABSENT\n' > "$file"
             fi
           }
           capture_dir_listing "$HOME/.cache/ms-playwright" "$ART/fs-ms-playwright.after.txt"
