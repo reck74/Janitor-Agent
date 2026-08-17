@@ -87,8 +87,9 @@ BACKUP="$CONFIG.bak.$TIMESTAMP"
 # (single source of truth) instead of duplicating a hardcoded string. The
 # canonical path uses a direct ``import hermes_cli`` (no source-reading)
 # so a future ``hermes_cli.__version__`` refactor still works. The repo
-# root is PREPENDED to (not overwriting) the caller's ``PYTHONPATH`` so
-# tests can inject a sentinel hermes_cli.
+# root is also passed to each repository-importing Python subprocess and
+# inserted at ``sys.path[0]``. ``PYTHONPATH`` ordering alone is insufficient:
+# ``python -c`` puts the caller's current directory before ``PYTHONPATH``.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 if [ -x "$REPO_ROOT/.venv/bin/python3" ]; then
@@ -104,9 +105,11 @@ _VERSION_PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:$PYTHONPATH}"
 
 RAW_VERSION="$(
     PYTHONPATH="$_VERSION_PYTHONPATH" "$_VERSION_PYTHON" -c "
+import sys
+sys.path.insert(0, sys.argv[1])
 import hermes_cli
 print(hermes_cli.__version__)
-" 2>/dev/null
+" "$REPO_ROOT" 2>/dev/null
 )" || {
     echo "Failed to import hermes_cli.__version__" >&2
     exit 2
@@ -118,10 +121,12 @@ fi
 
 DISPLAY_VERSION="$(
     PYTHONPATH="$_VERSION_PYTHONPATH" "$_VERSION_PYTHON" -c "
+import sys
+sys.path.insert(0, sys.argv[1])
 import hermes_cli as _hc
 import janitor_version
 print(janitor_version.display_version(_hc.__version__))
-" 2>/dev/null
+" "$REPO_ROOT" 2>/dev/null
 )" || {
     echo "Failed to derive display version via janitor_version.display_version" >&2
     exit 2
@@ -259,8 +264,10 @@ fi
 MIGRATE_WARNINGS_FILE="$(mktemp -t janitor-migrate-warnings.XXXXXX)"
 trap 'rm -f "$MIGRATE_WARNINGS_FILE"' EXIT
 set +e
-"$PYTHON_BIN" - "$CONFIG" 2>>"$MIGRATE_WARNINGS_FILE" <<'PYEOF'
+"$PYTHON_BIN" - "$REPO_ROOT" "$CONFIG" 2>>"$MIGRATE_WARNINGS_FILE" <<'PYEOF'
 import sys
+
+sys.path.insert(0, sys.argv[1])
 
 try:
     from hermes_cli.update_cmd import (
@@ -333,11 +340,12 @@ fi
 # support-floor refusal is a hard failure (rc 3); exceptions raised by
 # the check itself are also non-success.
 set +e
-"$PYTHON_BIN" - "$MIGRATE_WARNINGS_FILE" <<'PYEOF'
+"$PYTHON_BIN" - "$MIGRATE_WARNINGS_FILE" "$REPO_ROOT" <<'PYEOF'
 import os
 import sys
 
 warnings_path = sys.argv[1]
+sys.path.insert(0, sys.argv[2])
 warnings_text = ""
 try:
     with open(warnings_path, encoding="utf-8") as f:
