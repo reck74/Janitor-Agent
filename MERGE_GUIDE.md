@@ -780,11 +780,16 @@ debe ir acompañado de una corrida verde de este test.
 
 **Wiring CI** (ver §4.1):
 ```yaml
-# .github/workflows/tests.yml, líneas 90-114 (PR gate; mirrored in
-# .github/workflows/janitor-ci.yml :: python-tests, líneas 20-40, and
-# janitor-ci.yml :: os-compat for the macOS / Windows portability smoke).
-# AGENTS.md directive #11 is the source of truth for the 13-file list and
-# its order — keep this block in lockstep when adding a new janitor test.
+# Mirror of AGENTS.md directive #11 — kept in lockstep across the three
+# workflows that invoke this list:
+#   * .github/workflows/tests.yml          :: test          (PR gate on ubuntu-latest)
+#   * .github/workflows/janitor-ci.yml     :: python-tests  (mirror on ubuntu-latest)
+#   * .github/workflows/janitor-ci.yml     :: os-compat     (macOS + Windows portability smoke)
+# Line numbers in the source files drift with every change to those workflows;
+# search for the literal test list above and the job names `Run Janitor-specific
+# tests` / `Run Python tests` / `Run Janitor tests` to locate the invocations.
+# Adding a new tests/**/test_*janitor*.py requires updating all four places
+# (the three invocations + directive #11 in AGENTS.md) in the same PR.
 - name: Run Janitor-specific tests
   run: |
     source .venv/bin/activate
