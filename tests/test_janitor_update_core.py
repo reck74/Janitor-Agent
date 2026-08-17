@@ -1677,6 +1677,91 @@ def test_persisted_marker_ref_preserved_on_dirty_new_work_rerun_failure(
     assert payload["failed_step"] == "node_deps"
 
 
+def test_dirty_worktree_with_persisted_stash_aborts_before_second_stash(
+    monkeypatch, tmp_path, capsys
+):
+    """An unresolved persisted stash blocks a dirty-worktree rerun.
+
+    The update must stop before creating another stash or starting any
+    mutating/downstream phase. The existing marker is the durable recovery
+    contract and must remain byte-for-byte untouched.
+    """
+    # Given a valid unresolved marker and new dirty work in the checkout.
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    base_side_effect, recorded = _make_side_effect(commit_count="3")
+
+    def dirty_worktree(cmd, **kwargs):
+        result = base_side_effect(cmd, **kwargs)
+        if cmd[-2:] == ["status", "--porcelain"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=" M user-owned-change.py\n",
+                stderr="",
+            )
+        return result
+
+    monkeypatch.setattr(juc.subprocess, "run", dirty_worktree)
+
+    persisted_ref = "persisted-ref-from-unresolved-update"
+    marker = tmp_path / "update-incomplete.json"
+    marker.write_text(json.dumps({
+        "stash_ref": persisted_ref,
+        "failed_step": "node_deps",
+        "timestamp": "20260817T150000Z",
+    }))
+    marker_before = marker.read_bytes()
+
+    events: list[str] = []
+    monkeypatch.setattr(
+        juc,
+        "_stash_local_changes_if_needed",
+        lambda *a, **kw: events.append("stash") or "second-stash-ref",
+    )
+    monkeypatch.setattr(
+        juc,
+        "_install_python_dependencies",
+        lambda root: events.append("python_deps"),
+    )
+    monkeypatch.setattr(
+        juc,
+        "_update_node_dependencies",
+        lambda: events.append("node_repair") or [],
+    )
+    monkeypatch.setattr(
+        juc,
+        "_run_config_check_fresh",
+        lambda: events.append("config_check") or (34, 34),
+    )
+    monkeypatch.setattr(
+        juc,
+        "_run_migrate_config_fresh",
+        lambda **kwargs: events.append("config_migrate") or {},
+    )
+    monkeypatch.setattr(
+        juc,
+        "_print_update_completion",
+        lambda message: events.append("receipt"),
+    )
+    monkeypatch.setattr(
+        juc,
+        "_clear_incomplete_marker",
+        lambda: events.append("marker_cleanup") or True,
+    )
+
+    # When the user reruns the updater.
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    # Then it fails closed before any second stash or downstream mutation.
+    output = capsys.readouterr().out
+    assert rc == 1
+    assert events == []
+    assert all("--ff-only" not in command for command in recorded)
+    assert marker.read_bytes() == marker_before
+    assert persisted_ref in output
+    assert "git stash apply" in output
+    assert "✓ Janitor Agent updated successfully!" not in output
+
+
 def test_initial_check_invalid_versions_warn_and_no_op(
     monkeypatch, tmp_path
 ):

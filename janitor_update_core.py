@@ -1051,6 +1051,29 @@ def run_janitor_update(args) -> int:
 
         current_branch = _current_branch(git_cmd, project_root)
 
+        if persisted_stash_ref:
+            worktree_status = subprocess.run(
+                git_cmd + ["status", "--porcelain"],
+                cwd=project_root,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            if worktree_status.stdout.strip():
+                print(
+                    "✗ Update recovery is still unresolved and the "
+                    "worktree has new local changes."
+                )
+                print(f"  Existing recovery stash: {persisted_stash_ref}")
+                print(
+                    "  Resolve it before updating again:\n"
+                    "    git stash list\n"
+                    f"    git stash apply {persisted_stash_ref}\n"
+                    "  Then commit or stash the current changes and re-run "
+                    "`janitor update`."
+                )
+                return 1
+
         if current_branch != branch:
             label = (
                 "detached HEAD"
