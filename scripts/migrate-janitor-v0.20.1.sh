@@ -100,7 +100,7 @@ elif [ -x "$REPO_ROOT/venv/bin/python3" ]; then
 else
     _VERSION_PYTHON="python3"
 fi
-_VERSION_PYTHONPATH="${PYTHONPATH:-}${REPO_ROOT:+:$REPO_ROOT}"
+_VERSION_PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:$PYTHONPATH}"
 
 RAW_VERSION="$(
     PYTHONPATH="$_VERSION_PYTHONPATH" "$_VERSION_PYTHON" -c "
@@ -313,10 +313,18 @@ PY_RC=$?
 set -e
 
 if [ "$PY_RC" != "0" ]; then
+    # Round 3/5 Oracle finding 4: the wrapper may have partially mutated
+    # the config before raising. Do NOT falsely claim the live config is
+    # byte-identical to the pre-migration backup. State the live config
+    # may be partially modified; the backup is the pre-migration snapshot.
     echo
     echo "Migration failed (exit $PY_RC)."
-    echo "Your live config is byte-identical to: $BACKUP"
-    echo "To rollback: cp $BACKUP $CONFIG"
+    echo "The migrate wrapper may have partially modified the live config."
+    echo "The backup at $BACKUP is the pre-migration snapshot."
+    echo
+    echo "To revert the migration: cp $BACKUP $CONFIG"
+    echo "To inspect the live config: $CONFIG"
+    echo "To inspect the pre-migration backup: $BACKUP"
     exit "$PY_RC"
 fi
 
@@ -349,12 +357,34 @@ except Exception as exc:
     print(f"Post-check raised: {exc}", file=sys.stderr)
     sys.exit(3)
 
+# Round 3/5 Oracle finding 2: post-check policy is strict. Malformed
+# tuples, non-int versions, AND cur > lat (a downgrade that
+# migration should never have produced) are all non-success.
 if not (isinstance(cur, int) and isinstance(lat, int)):
     print(f"Post-check returned non-integer values: {cur!r}, {lat!r}", file=sys.stderr)
     sys.exit(3)
 
+if cur > lat:
+    # Round 3/5 strict post-check: a downgrade is a HARD failure. The
+    # migration should have moved us AT or PAST the wrapper's latest
+    # version, never over to a wrap-around / downgrade state.
+    print(
+        f"Post-check current > latest ({cur} > {lat}); migration result "
+        f"exceeded the wrapper's latest version — refusing silently.",
+        file=sys.stderr,
+    )
+    sys.exit(3)
+
 if cur < lat:
-    if "support floor" in warnings_text or "must be manually migrated" in warnings_text:
+    # Round 3/5: the substrings the script matches are the real upstream
+    # support_floor_message() phrases, not fabricated tokens. The
+    # canonical substrings are "predates version" and
+    # "no longer be auto-migrated" (see
+    # hermes_cli.config_migrations.support_floor_message).
+    if (
+        "predates version" in warnings_text
+        or "no longer be auto-migrated" in warnings_text
+    ):
         print(
             f"WARNING: config still at v{cur} (target v{lat}) after "
             f"migration; support-floor refusal — manual step required."
