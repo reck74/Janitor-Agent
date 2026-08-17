@@ -92,7 +92,7 @@ class TestJanitorCommand:
             f"stdout: {result.stdout}\nstderr: {result.stderr}"
         )
 
-    def test_janitor_command_available_in_path(self):
+    def test_janitor_command_available_in_path(self, tmp_path):
         """The `janitor` command must be available after installation."""
         python_exec = sys.executable
         result = subprocess.run(
@@ -103,13 +103,19 @@ class TestJanitorCommand:
                 **subprocess.os.environ.copy(),
                 "HERMES_QUIET": "1",
                 "OPENAI_API_KEY": "test-key",
+                "HONCHO_API_KEY": "test-key",
+                # Override HOME so the dotenv loader finds no .env to clobber
+                # the HONCHO_API_KEY we just set with an empty value. The
+                # production OWASP guard itself is unchanged — it sees a
+                # non-empty HONCHO_API_KEY and returns early.
+                "HOME": str(tmp_path),
             },
         )
         assert result.returncode in (0, 2), (
             f"`janitor` command not found. Is the package installed? stderr: {result.stderr}"
         )
 
-    def test_janitor_help_does_not_crash(self):
+    def test_janitor_help_does_not_crash(self, tmp_path):
         """`janitor --help` must execute without errors (exit 0 or 2 for argparse)."""
         python_exec = sys.executable
         result = subprocess.run(
@@ -120,6 +126,12 @@ class TestJanitorCommand:
                 **subprocess.os.environ.copy(),
                 "HERMES_QUIET": "1",
                 "OPENAI_API_KEY": "test-key",
+                "HONCHO_API_KEY": "test-key",
+                # Override HOME so the dotenv loader finds no .env to clobber
+                # the HONCHO_API_KEY we just set with an empty value. The
+                # production OWASP guard itself is unchanged — it sees a
+                # non-empty HONCHO_API_KEY and returns early.
+                "HOME": str(tmp_path),
             },
         )
         assert result.returncode in (0, 2), (
@@ -219,7 +231,7 @@ class TestJanitorVersionDisplay:
 
         assert display_version(__version__) == "0.20.1-janitor.1"
 
-    def test_subprocess_janitor_version_uses_display_form(self):
+    def test_subprocess_janitor_version_uses_display_form(self, tmp_path):
         """The real module entry point honors --version without entering chat."""
         import subprocess
         import sys
@@ -232,6 +244,12 @@ class TestJanitorVersionDisplay:
                 **subprocess.os.environ.copy(),
                 "HERMES_QUIET": "1",
                 "OPENAI_API_KEY": "test-key",
+                "HONCHO_API_KEY": "test-key",
+                # Override HOME so the dotenv loader finds no .env to clobber
+                # the HONCHO_API_KEY we just set with an empty value. The
+                # production OWASP guard itself is unchanged — it sees a
+                # non-empty HONCHO_API_KEY and returns early.
+                "HOME": str(tmp_path),
             },
         )
         combined = result.stdout + result.stderr
