@@ -28,10 +28,28 @@
 
 set -euo pipefail
 
-DRY_RUN=0
-if [ "${1:-}" = "--dry-run" ]; then
-    DRY_RUN=1
-fi
+# Args contract: exactly zero args or exactly "--dry-run". Anything else
+# prints usage to stderr and exits 2 — NO backup, NO mutation.
+ARGS=("$@")
+case "${#ARGS[@]}" in
+    0)
+        DRY_RUN=0
+        ;;
+    1)
+        if [ "${ARGS[0]}" = "--dry-run" ]; then
+            DRY_RUN=1
+        else
+            echo "Usage: $0 [--dry-run]" >&2
+            echo "Unknown argument: ${ARGS[0]}" >&2
+            exit 2
+        fi
+        ;;
+    *)
+        echo "Usage: $0 [--dry-run]" >&2
+        echo "Unexpected extra arguments ($# args given)." >&2
+        exit 2
+        ;;
+esac
 
 # Resolve home: JANITOR_HOME > HERMES_HOME > HOME/.janitor
 if [ -n "${JANITOR_HOME:-}" ]; then
@@ -53,17 +71,58 @@ if [ ! -f "$CONFIG" ]; then
     exit 1
 fi
 
-# Determine UTC timestamp for the backup filename.
-TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
+# Determine UTC timestamp for the backup filename. Nanosecond
+# precision (Linux) prevents timestamp collisions on rapid successive
+# invocations — without it the idempotency test (twice-run) would
+# silently overwrite the first backup.
+TIMESTAMP=$(date -u +%Y%m%dT%H%M%S%NZ 2>/dev/null || date -u +%Y%m%dT%H%M%SZ)
 BACKUP="$CONFIG.bak.$TIMESTAMP"
 
-# Read raw + display version. The Janitor fork stamps its PEP 440 version
-# (`0.20.1+janitor.1`) in `hermes_cli/__init__.py`; the user-facing form
-# replaces the first `+` with `-` (`0.20.1-janitor.1`). We hardcode the
-# strings here so the script is self-contained — the alternative (parsing
-# `hermes_cli/__init__.py`) couples this script to that file's layout.
-RAW_VERSION="0.20.1+janitor.1"
-DISPLAY_VERSION="0.20.1-janitor.1"
+# Source raw version from the canonical ``hermes_cli.__version__`` literal
+# and derive the display form via ``janitor_version.display_version``. This
+# keeps the script in lockstep with the version the Python source declares
+# (single source of truth) instead of duplicating a hardcoded string.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+if [ -x "$REPO_ROOT/.venv/bin/python3" ]; then
+    _VERSION_PYTHON="$REPO_ROOT/.venv/bin/python3"
+elif [ -x "$REPO_ROOT/.venv/bin/python" ]; then
+    _VERSION_PYTHON="$REPO_ROOT/.venv/bin/python"
+elif [ -x "$REPO_ROOT/venv/bin/python3" ]; then
+    _VERSION_PYTHON="$REPO_ROOT/venv/bin/python3"
+else
+    _VERSION_PYTHON="python3"
+fi
+
+RAW_VERSION="$("$_VERSION_PYTHON" - "$REPO_ROOT" <<'PYEOF'
+import importlib.util
+import re
+import sys
+from pathlib import Path
+
+repo_root = Path(sys.argv[1])
+sys.path.insert(0, str(repo_root))
+spec = importlib.util.find_spec("hermes_cli")
+if spec is None or spec.origin is None:
+    sys.exit("could not locate hermes_cli", 2)
+source = Path(spec.origin).read_text()
+m = re.search(r'^__version__\s*=\s*"([^"]+)"', source, re.MULTILINE)
+if m is None:
+    sys.exit("hermes_cli.__version__ literal not found", 2)
+print(m.group(1))
+PYEOF
+)"
+if [ -z "$RAW_VERSION" ]; then
+    echo "Failed to derive raw version from hermes_cli.__version__" >&2
+    exit 2
+fi
+
+DISPLAY_VERSION="$(printf '%s' "$RAW_VERSION" | "$_VERSION_PYTHON" -c "
+import sys
+sys.path.insert(0, '$REPO_ROOT')
+from janitor_version import display_version
+print(display_version(sys.stdin.read().strip()))
+")"
 
 # Detect v33 inputs from the raw file (no YAML parsing yet — only string
 # matches). v33 detection:
@@ -96,7 +155,13 @@ if [ "$HAS_V34_INPUTS" = "0" ]; then
 fi
 
 NEEDS_MIGRATION=0
-if [ "$RAW_CONFIG_VER" = "33" ]; then
+# A valid raw ``_config_version >= 34`` is authoritative no-op — even when
+# a preserved ``agent.system_prompt`` block remains from before the bump,
+# the wrapper will not re-stamp or re-scrub. Treat this as the idempotency
+# anchor.
+if [ -n "$RAW_CONFIG_VER" ] && [ "$RAW_CONFIG_VER" -ge "34" ] 2>/dev/null; then
+    NEEDS_MIGRATION=0
+elif [ "$RAW_CONFIG_VER" = "33" ]; then
     NEEDS_MIGRATION=1
 elif [ "$HAS_V34_INPUTS" = "1" ]; then
     NEEDS_MIGRATION=1
@@ -181,9 +246,13 @@ if [ "$PARSE_RC" != "0" ]; then
 fi
 
 # Invoke the fresh wrappers in an isolated Python subprocess so a partially-
-# broken venv doesn't bleed into the running session.
+# broken venv doesn't bleed into the running session. Warnings emitted by
+# the migrate call are also captured into a tempfile so the post-check
+# can decide whether a still-behind result is a support-floor refusal.
+MIGRATE_WARNINGS_FILE="$(mktemp -t janitor-migrate-warnings.XXXXXX)"
+trap 'rm -f "$MIGRATE_WARNINGS_FILE"' EXIT
 set +e
-"$PYTHON_BIN" - "$CONFIG" <<'PYEOF'
+"$PYTHON_BIN" - "$CONFIG" 2>>"$MIGRATE_WARNINGS_FILE" <<'PYEOF'
 import sys
 
 try:
@@ -228,7 +297,10 @@ except Exception as exc:
 
 for warning in (results.get("warnings", []) if isinstance(results, dict) else []) or []:
     if warning:
+        # Emit to stderr (which is captured into MIGRATE_WARNINGS_FILE
+        # for the post-check) and to the human-facing stderr stream.
         print(f"  WARNING: {warning}", file=sys.stderr)
+        print(f"WARNING_MARKER: {warning}", file=sys.stderr)
 PYEOF
 PY_RC=$?
 set -e
@@ -241,21 +313,63 @@ if [ "$PY_RC" != "0" ]; then
     exit "$PY_RC"
 fi
 
-# Fresh post-check after a supported migration (best-effort).
+# Fresh post-check after a supported migration. Mirrors the core's
+# non-success contract — a still-behind result without an explicit
+# support-floor refusal is a hard failure (rc 3); exceptions raised by
+# the check itself are also non-success.
 set +e
-"$PYTHON_BIN" - <<'PYEOF'
+"$PYTHON_BIN" - "$MIGRATE_WARNINGS_FILE" <<'PYEOF'
+import os
 import sys
+
+warnings_path = sys.argv[1]
+warnings_text = ""
+try:
+    with open(warnings_path, encoding="utf-8") as f:
+        warnings_text = f.read().lower()
+except OSError:
+    pass
+
 try:
     from hermes_cli.update_cmd import _run_config_check_fresh
+except Exception as exc:
+    print(f"Post-check import failed: {exc}", file=sys.stderr)
+    sys.exit(3)
+
+try:
     cur, lat = _run_config_check_fresh()
-    if isinstance(cur, int) and isinstance(lat, int) and cur < lat:
+except Exception as exc:
+    print(f"Post-check raised: {exc}", file=sys.stderr)
+    sys.exit(3)
+
+if not (isinstance(cur, int) and isinstance(lat, int)):
+    print(f"Post-check returned non-integer values: {cur!r}, {lat!r}", file=sys.stderr)
+    sys.exit(3)
+
+if cur < lat:
+    if "support floor" in warnings_text or "must be manually migrated" in warnings_text:
         print(
-            f"WARNING: config still at v{cur} (target v{lat}) after migration."
+            f"WARNING: config still at v{cur} (target v{lat}) after "
+            f"migration; support-floor refusal — manual step required."
         )
-except Exception:
-    pass
+    else:
+        print(
+            f"Config still at v{cur} (target v{lat}) after migration; "
+            f"warnings did not explain a support-floor refusal.",
+            file=sys.stderr,
+        )
+        sys.exit(3)
 PYEOF
+POST_CHECK_RC=$?
 set -e
+
+if [ "$POST_CHECK_RC" != "0" ]; then
+    echo
+    echo "Post-migration check failed (exit $POST_CHECK_RC)."
+    echo "Your live config is byte-identical to: $BACKUP"
+    echo "To rollback: cp $BACKUP $CONFIG"
+    exit "$POST_CHECK_RC"
+fi
 
 echo
 echo "Raw version: $RAW_VERSION"

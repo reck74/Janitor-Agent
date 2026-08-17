@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -60,7 +61,7 @@ def test_creates_timestamped_backup(tmp_path):
     ]
     assert len(backups) == 1
     ts = backups[0].name.split(".", 3)[3]
-    assert re.match(r"^\d{8}T\d{6}Z$", ts), ts
+    assert re.match(r"^\d{8}T\d{6}(Z|\d{3}Z|\d{6}Z|\d{9}Z)$", ts), ts
 
 
 def test_is_idempotent(tmp_path):
@@ -114,7 +115,15 @@ def test_v33_content_triggers_migration(tmp_path):
 
 
 def test_manual_prompts_preserved(tmp_path):
-    """A free-form agent.system_prompt block survives the migration."""
+    """A free-form agent.system_prompt block survives the migration.
+
+    Extended for Finding 6 (idempotency): the test runs the script TWICE
+    on a config that has a preserved ``agent.system_prompt`` block. A raw
+    ``_config_version: 34`` stamp is authoritative: the second run is a
+    no-op and does NOT create a new timestamped backup. We also assert the
+    backup filename shape explicitly so a timestamp collision cannot hide
+    a regression.
+    """
     home = tmp_path / "janitor"
     home.mkdir()
     custom = (
@@ -129,15 +138,119 @@ def test_manual_prompts_preserved(tmp_path):
         "  provider: honcho\n"
     )
     (home / "config.yaml").write_text(custom)
+    env = {**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""}
+
+    r = subprocess.run(
+        ["bash", str(SCRIPT)], env=env, capture_output=True, text=True,
+    )
+    assert r.returncode == 0, r.stderr
+    text = (home / "config.yaml").read_text()
+    assert "Custom prompt the user wrote." in text
+    assert "Keep this verbatim across migrations." in text
+
+    backups_after_first = sorted(home.glob("config.yaml.bak.*"))
+    assert len(backups_after_first) == 1, (
+        f"first run must create exactly one backup, found {len(backups_after_first)}"
+    )
+    first_ts = backups_after_first[0].name.split(".", 3)[3]
+    assert re.match(r"^\d{8}T\d{6}(Z|\d{3}Z|\d{6}Z|\d{9}Z)$", first_ts), first_ts
+
+    # Second run: raw _config_version is now 34 (stamped by migration), so
+    # even with a preserved agent.system_prompt block, the script must be a
+    # no-op and not create a new backup.
+    r2 = subprocess.run(
+        ["bash", str(SCRIPT)], env=env, capture_output=True, text=True,
+    )
+    assert r2.returncode == 0, r2.stderr
+    backups_after_second = sorted(home.glob("config.yaml.bak.*"))
+    assert len(backups_after_second) == len(backups_after_first), (
+        f"second run must not create a new backup; "
+        f"before={backups_after_first!r} after={backups_after_second!r}"
+    )
+    # The preserved block must still survive the second run.
+    text2 = (home / "config.yaml").read_text()
+    assert "Custom prompt the user wrote." in text2
+    assert "Keep this verbatim across migrations." in text2
+
+
+def test_unknown_arg_exits_2_no_backup_no_mutation(tmp_path):
+    """Unknown args print usage to stderr and exit 2 — NO backup, NO mutation."""
+    home = tmp_path / "janitor"
+    home.mkdir()
+    (home / "config.yaml").write_text("memory:\n  provider: honcho\n")
+    before = (home / "config.yaml").read_bytes()
+    r = subprocess.run(
+        ["bash", str(SCRIPT), "--bogus"],
+        env={**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""},
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 2, (r.returncode, r.stdout, r.stderr)
+    assert list(home.glob("config.yaml.bak.*")) == []
+    assert (home / "config.yaml").read_bytes() == before
+    assert "Usage" in r.stderr or "usage" in r.stderr or "unknown" in r.stderr.lower()
+
+
+def test_extra_args_after_dry_run_exits_2_no_backup_no_mutation(tmp_path):
+    """Extra positional args after --dry-run also exit 2 — NO backup, NO mutation."""
+    home = tmp_path / "janitor"
+    home.mkdir()
+    (home / "config.yaml").write_text("memory:\n  provider: honcho\n")
+    before = (home / "config.yaml").read_bytes()
+    r = subprocess.run(
+        ["bash", str(SCRIPT), "--dry-run", "--also-bogus"],
+        env={**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""},
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 2, (r.returncode, r.stdout, r.stderr)
+    assert list(home.glob("config.yaml.bak.*")) == []
+    assert (home / "config.yaml").read_bytes() == before
+
+
+def test_no_args_runs_normally(tmp_path):
+    """Exactly zero positional args runs the script normally (no usage error)."""
+    home = tmp_path / "janitor"
+    home.mkdir()
+    (home / "config.yaml").write_text("memory:\n  provider: honcho\n")
     r = subprocess.run(
         ["bash", str(SCRIPT)],
         env={**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""},
         capture_output=True, text=True,
     )
     assert r.returncode == 0, r.stderr
-    text = (home / "config.yaml").read_text()
-    assert "Custom prompt the user wrote." in text
-    assert "Keep this verbatim across migrations." in text
+
+
+def test_prints_raw_and_display_version(tmp_path):
+    """Stdout includes both raw and display versions on success.
+
+    Strengthened for Finding 8: expected values are derived from the
+    canonical APIs (``hermes_cli.__version__`` and
+    ``janitor_version.display_version``) instead of hardcoded duplicates.
+    """
+    import importlib.util
+
+    # Derive the expected raw version from hermes_cli.__version__.
+    spec = importlib.util.find_spec("hermes_cli")
+    assert spec is not None and spec.origin is not None
+    source = Path(spec.origin).read_text()
+    m = re.search(r'^__version__\s*=\s*"([^"]+)"', source, re.MULTILINE)
+    assert m is not None, "hermes_cli.__version__ literal not found"
+    raw = m.group(1)
+    # Derive the display version from janitor_version.display_version.
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    import janitor_version
+    display = janitor_version.display_version(raw)
+
+    home = tmp_path / "janitor"
+    home.mkdir()
+    (home / "config.yaml").write_text("memory:\n  provider: honcho\n")
+    r = subprocess.run(
+        ["bash", str(SCRIPT)],
+        env={**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""},
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 0, r.stderr
+    assert f"Raw version: {raw}" in r.stdout
+    assert f"Display version: {display}" in r.stdout
 
 
 def test_janitor_home_precedence_over_hermes_home(tmp_path):
@@ -183,21 +296,6 @@ def test_hermes_home_precedence_over_default_home(tmp_path):
     assert r.returncode == 0, r.stderr
     assert list(explicit_home.glob("config.yaml.bak.*")) != []
     assert list((default_home / ".janitor").glob("config.yaml.bak.*")) == []
-
-
-def test_prints_raw_and_display_version(tmp_path):
-    """Stdout includes both raw and display versions on success."""
-    home = tmp_path / "janitor"
-    home.mkdir()
-    (home / "config.yaml").write_text("memory:\n  provider: honcho\n")
-    r = subprocess.run(
-        ["bash", str(SCRIPT)],
-        env={**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""},
-        capture_output=True, text=True,
-    )
-    assert r.returncode == 0, r.stderr
-    assert "Raw version: 0.20.1+janitor.1" in r.stdout
-    assert "Display version: 0.20.1-janitor.1" in r.stdout
 
 
 def test_prints_rollback_instructions(tmp_path):
