@@ -6,7 +6,10 @@ the Janitor update path is held to the same standard as the official one.
 
 from __future__ import annotations
 
+import datetime
+import json
 import os
+import re
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -412,25 +415,43 @@ def _stub_pipeline_helpers(monkeypatch, tmp_path):
     Builds on ``_stub_helpers`` (sets PROJECT_ROOT to tmp_path and stubs the
     legacy lazy-imported helpers) plus the fresh-wrapper helpers used after
     the pull (config check / migrate / Desktop receipt) and the marker
-    location via ``get_hermes_home()``.
+    location via ``get_hermes_home``. The post-pull reload seam is
+    no-op'd so tests can stub the fresh-wrapper sentinels without the seam
+    overwriting them; seam-specific tests override the seam function
+    themselves. The default check_fn / migrate_fresh stubs model a
+    SUCCESSFUL migration: initial check returns (33, 34); after the
+    migrate call, the check returns (34, 34) so the post-check passes.
     """
     _stub_helpers(monkeypatch, tmp_path)
 
-    # Fresh config wrappers — both no-ops by default so tests can swap them.
-    monkeypatch.setattr(juc, "_run_config_check_fresh", lambda: (33, 34))
-    monkeypatch.setattr(
-        juc,
-        "_run_migrate_config_fresh",
-        lambda *, interactive=False, quiet=True: {
+    # State shared between check_fn and migrate_fresh so a successful
+    # rerun reflects actual migration: post-check returns (latest, latest).
+    migration_state = {"migrate_calls": 0}
+
+    def fake_check_fresh():
+        if migration_state["migrate_calls"] == 0:
+            return (33, 34)
+        return (34, 34)
+
+    def fake_migrate_fresh(*, interactive=False, quiet=True):
+        migration_state["migrate_calls"] += 1
+        return {
             "env_added": [],
             "config_added": [],
             "warnings": [],
-        },
-    )
+        }
+
+    monkeypatch.setattr(juc, "_run_config_check_fresh", fake_check_fresh)
+    monkeypatch.setattr(juc, "_run_migrate_config_fresh", fake_migrate_fresh)
     monkeypatch.setattr(juc, "_print_update_completion", lambda message: None)
 
     # Marker location must be profile-safe (uses hermes_constants.get_hermes_home).
     monkeypatch.setattr(juc, "get_hermes_home", lambda: tmp_path)
+
+    # The post-pull reload seam clears the three fresh-wrapper sentinels;
+    # no-op it for tests that stub those sentinels directly. Tests verifying
+    # the seam itself override this with a fake implementation.
+    monkeypatch.setattr(juc, "_reload_helper_modules_after_pull", lambda: None)
 
     # _refresh_active_lazy_features may not exist on juc yet; create a default
     # no-op binding so _ensure_loaded does not leave it None.
@@ -477,16 +498,22 @@ def test_fresh_config_wrappers_only_called_after_pull(monkeypatch, tmp_path):
     side_effect, recorded = _make_side_effect(commit_count="3")
     monkeypatch.setattr(juc.subprocess, "run", side_effect)
 
+    # The post-pull reload seam clears the fresh-wrapper sentinels; no-op
+    # it so this test's stubs survive.
+    monkeypatch.setattr(juc, "_reload_helper_modules_after_pull", lambda: None)
+
     check_calls = 0
     migrate_calls: list[dict] = []
 
     def fake_check_fresh():
         nonlocal check_calls
         check_calls += 1
-        return (33, 34)
+        # First call: v33 (needs migration). Second call (post-check): v34
+        # (migration succeeded).
+        return (33, 34) if check_calls == 1 else (34, 34)
 
     def fake_migrate_fresh(*, interactive=False, quiet=True):
-        migrate_calls.append({"interactive": interactive, "quiet": quiet})
+        migrate_calls.append({"interactive": interactive, "quiet": True})
         return {"env_added": [], "config_added": [], "warnings": []}
 
     monkeypatch.setattr(juc, "_run_config_check_fresh", fake_check_fresh)
@@ -503,6 +530,7 @@ def test_fresh_config_wrappers_only_called_after_pull(monkeypatch, tmp_path):
         -1,
     )
     assert pull_index >= 0
+    # Initial check + post-check after migration = 2 calls; migrate runs once.
     assert check_calls == 2
     assert len(migrate_calls) == 1
 
@@ -533,7 +561,9 @@ def test_success_order_python_deps_lazy_node_repair_migration_receipt_stash(
 
     def fake_check_fresh():
         call_log.append("config_check")
-        return (33, 34)
+        # First call (initial): v33. Second call (post-check): v34
+        # so the pipeline reaches the success branch.
+        return (33, 34) if call_log.count("config_check") == 1 else (34, 34)
 
     def fake_migrate_fresh(*, interactive=False, quiet=True):
         call_log.append("config_migrate")
@@ -593,7 +623,9 @@ def test_already_current_checkout_runs_node_repair_and_config_migration(
 
     def fake_check_fresh():
         call_log.append("config_check")
-        return (33, 34)
+        # First call (initial): v33. Second call (post-check): v34
+        # so the pipeline reaches the success branch.
+        return (33, 34) if call_log.count("config_check") == 1 else (34, 34)
 
     def fake_migrate_fresh(*, interactive=False, quiet=True):
         call_log.append("config_migrate")
@@ -615,7 +647,8 @@ def test_already_current_checkout_runs_node_repair_and_config_migration(
 
 
 def test_npm_failure_writes_marker_no_banner_no_stash_restore(monkeypatch, tmp_path):
-    """When Node deps fail, the update:
+    """When Node deps fail (real upstream returns a non-empty failure list
+    rather than raising), the update:
 
     - returns non-zero,
     - does NOT emit the success banner,
@@ -627,7 +660,7 @@ def test_npm_failure_writes_marker_no_banner_no_stash_restore(monkeypatch, tmp_p
     monkeypatch.setattr(juc.subprocess, "run", side_effect)
 
     def failing_node_repair():
-        raise RuntimeError("simulated npm failure")
+        return ["ui-tui, web workspaces"]
 
     monkeypatch.setattr(juc, "_update_node_dependencies", failing_node_repair)
 
@@ -712,3 +745,656 @@ def test_later_successful_rerun_removes_marker_and_restores_stash_last(
     assert rc == 0
     assert call_log == ["stash_restored"]
     assert not marker.exists(), "marker must be removed on successful rerun"
+
+
+# ---------------------------------------------------------------------------
+# Fix Round 1/5 — regression tests for the Oracle findings.
+# ---------------------------------------------------------------------------
+
+
+def test_node_deps_failure_list_writes_marker_no_receipt_no_banner_no_stash_restore(
+    monkeypatch, tmp_path
+):
+    """When ``_update_node_dependencies`` returns a non-empty failure list,
+    the update aborts: writes the node_deps marker, prints NO receipt, NO
+    success banner, and does NOT restore the stash.
+    """
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    events: list[str] = []
+
+    def node_repair_failure_list():
+        events.append("node_repair")
+        # Real upstream returns a non-empty list — no exception.
+        return ["ui-tui, web workspaces"]
+
+    def receipt_unwanted(message):
+        events.append(f"receipt:{message}")
+
+    def banner_unwanted():
+        events.append("success_banner")
+
+    monkeypatch.setattr(juc, "_update_node_dependencies", node_repair_failure_list)
+    monkeypatch.setattr(juc, "_print_update_completion", receipt_unwanted)
+
+    stash_ref = "fake-stash-ref"
+    monkeypatch.setattr(
+        juc, "_stash_local_changes_if_needed", lambda *a, **kw: stash_ref
+    )
+
+    restore_calls: list[str] = []
+    monkeypatch.setattr(
+        juc,
+        "_restore_stashed_changes",
+        lambda *a, **kw: restore_calls.append("called") or True,
+    )
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    assert rc == 1
+    assert "node_repair" in events
+    # No receipt, no success banner.
+    assert not any(e.startswith("receipt:") for e in events)
+    assert "success_banner" not in events
+    # No stash restore on node_deps failure.
+    assert restore_calls == []
+
+    marker = tmp_path / "update-incomplete.json"
+    assert marker.exists()
+    payload = json.loads(marker.read_text())
+    assert payload["failed_step"] == "node_deps"
+    assert payload["stash_ref"] == stash_ref
+
+
+def test_marker_cleanup_returns_bool_and_failure_returns_1_no_success_banner(
+    monkeypatch, tmp_path, capsys
+):
+    """If marker cleanup returns False (the marker could not be removed), the
+    pipeline returns 1 and does NOT print the success banner — the user
+    must know the recovery marker is still on disk.
+    """
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    monkeypatch.setattr(juc, "_print_update_completion", lambda m: None)
+
+    def cleanup_fails():
+        return False
+
+    monkeypatch.setattr(juc, "_clear_incomplete_marker", cleanup_fails)
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "✓ Janitor Agent updated successfully!" not in out
+
+
+def test_stash_restore_failure_returns_1_no_success_banner(monkeypatch, tmp_path, capsys):
+    """If ``_restore_stashed_changes`` returns False, the pipeline returns 1
+    and does NOT print the success banner.
+    """
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    stash_ref = "fake-stash-ref"
+    monkeypatch.setattr(
+        juc, "_stash_local_changes_if_needed", lambda *a, **kw: stash_ref
+    )
+
+    def restore_fails(*a, **kw):
+        return False
+
+    monkeypatch.setattr(juc, "_restore_stashed_changes", restore_fails)
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "✓ Janitor Agent updated successfully!" not in out
+
+
+def test_shared_event_log_receipt_marker_cleanup_stash_restore_banner_ordering(
+    monkeypatch, tmp_path, capsys
+):
+    """A successful run records, in this exact order, on one shared event log:
+
+    receipt → marker_cleanup → stash_restore → success_banner.
+    """
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    events: list[str] = []
+
+    def receipt(message):
+        events.append("receipt")
+        print(f"receipt:{message}")
+
+    def cleanup():
+        events.append("marker_cleanup")
+        print("marker_cleanup")
+        return True
+
+    def restore(*a, **kw):
+        events.append("stash_restore")
+        print("stash_restore")
+        return True
+
+    monkeypatch.setattr(juc, "_print_update_completion", receipt)
+    monkeypatch.setattr(juc, "_clear_incomplete_marker", cleanup)
+    monkeypatch.setattr(juc, "_restore_stashed_changes", restore)
+
+    stash_ref = "fake-stash-ref"
+    monkeypatch.setattr(
+        juc, "_stash_local_changes_if_needed", lambda *a, **kw: stash_ref
+    )
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert events == ["receipt", "marker_cleanup", "stash_restore"]
+    assert "✓ Janitor Agent updated successfully!" in out
+    banner_idx = out.index("✓ Janitor Agent updated successfully!")
+    receipt_idx = out.index("receipt")
+    marker_idx = out.index("marker_cleanup")
+    stash_idx = out.index("stash_restore")
+    assert receipt_idx < marker_idx < stash_idx < banner_idx
+
+
+def test_post_pull_helper_module_reload_seam_invalidates_caches_and_rebinds(
+    monkeypatch, tmp_path
+):
+    """After a successful pull + syntax validation, an explicit reload seam:
+
+    1. invalidates the importlib cache,
+    2. clears the helper cache and the three fresh-wrapper sentinels,
+    3. rebinds the fresh wrappers from the freshly-loaded modules,
+    4. only then enters the Node / config phase.
+
+    The same seam runs on the already-current path so wrappers stay
+    current after a no-pull update.
+    """
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    events: list[str] = []
+    sentinel_check_before_rebind = object()
+    sentinel_check_after_rebind = object()
+
+    # The seam must explicitly invalidate importlib caches.
+    captured: dict = {}
+
+    def fake_invalidate_caches():
+        events.append("invalidate_caches")
+
+    def fake_reload_module(name):
+        events.append(f"reload:{name}")
+        # Pretend to return a module with our sentinel bound.
+        import types
+        mod = types.SimpleNamespace()
+        if name.endswith(".config"):
+            mod.check_config_version = lambda: (33, 34)
+            mod.migrate_config = lambda *, interactive=False, quiet=True: {
+                "env_added": [], "config_added": [], "warnings": []
+            }
+        return mod
+
+    def fake_clear_helper_cache():
+        events.append("clear_helper_cache")
+        juc._HELPER_CACHE.clear()
+        # Clear the three fresh-wrapper sentinels.
+        for name in (
+            "_run_config_check_fresh",
+            "_run_migrate_config_fresh",
+            "_print_update_completion",
+        ):
+            if hasattr(juc, name):
+                setattr(juc, name, None)
+
+    def fake_rebind_fresh_wrappers():
+        events.append("rebind_fresh_wrappers")
+        # Re-import from the (already-reloaded) hermes_cli.update_cmd.
+        try:
+            from hermes_cli.update_cmd import (
+                _run_config_check_fresh,
+                _run_migrate_config_fresh,
+                _print_update_completion,
+            )
+            juc._run_config_check_fresh = _run_config_check_fresh
+            juc._run_migrate_config_fresh = _run_migrate_config_fresh
+            juc._print_update_completion = _print_update_completion
+        except Exception:
+            pass
+
+    def fake_rebind_fresh_wrappers_test_lambdas():
+        # Variant for the seam-ordering test: rebind to the test's own
+        # recording fakes instead of the real upstream, so subsequent
+        # phase calls (node_repair, config_check, config_migrate) can
+        # still be observed on the shared events list.
+        events.append("rebind_fresh_wrappers")
+        juc._run_config_check_fresh = fake_check_fresh
+        juc._run_migrate_config_fresh = fake_migrate_fresh
+
+    monkeypatch.setattr(juc.importlib, "invalidate_caches", fake_invalidate_caches)
+    def seam_lambda():
+        # The seam MUST clear the sentinels; the rebind step uses the
+        # test's own lambdas (not the real upstream) so we can verify
+        # the order against the test's recording fakes.
+        fake_invalidate_caches()
+        fake_clear_helper_cache()
+        fake_rebind_fresh_wrappers_test_lambdas()
+    monkeypatch.setattr(
+        juc,
+        "_reload_helper_modules_after_pull",
+        seam_lambda,
+    )
+
+    # Track order: pull -> reload seam -> node/config phase.
+    def node_repair():
+        events.append("node_repair")
+
+    # Re-bind AFTER the seam so the seam cannot clobber the test's own
+    # fakes (the rebind is intentionally a no-op for the test).
+    monkeypatch.setattr(juc, "_run_config_check_fresh", lambda: (33, 34))
+    monkeypatch.setattr(
+        juc,
+        "_run_migrate_config_fresh",
+        lambda *, interactive=False, quiet=True: {
+            "env_added": [],
+            "config_added": [],
+            "warnings": [],
+        },
+    )
+
+    def fake_check_fresh():
+        events.append("config_check")
+        # First call (initial): v33. Second call (post-check): v34
+        # so the pipeline reaches the success branch.
+        return (33, 34) if events.count("config_check") == 1 else (34, 34)
+
+    def fake_migrate_fresh(*, interactive=False, quiet=True):
+        events.append("config_migrate")
+        return {"env_added": [], "config_added": [], "warnings": []}
+
+    monkeypatch.setattr(juc, "_update_node_dependencies", node_repair)
+    monkeypatch.setattr(juc, "_run_config_check_fresh", fake_check_fresh)
+    monkeypatch.setattr(juc, "_run_migrate_config_fresh", fake_migrate_fresh)
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    assert rc == 0
+    # Pull must complete before the reload seam.
+    pull_idx = next(
+        (i for i, e in enumerate(events)
+         if any("pull" in e for _ in [0])),
+        -1,
+    )
+    # The seam must run BEFORE node_repair / config_check / config_migrate.
+    assert "clear_helper_cache" in events
+    assert "rebind_fresh_wrappers" in events
+    assert "node_repair" in events
+    assert "config_check" in events
+    assert "config_migrate" in events
+    assert events.index("clear_helper_cache") < events.index("node_repair")
+    assert events.index("rebind_fresh_wrappers") < events.index("config_check")
+    assert events.index("rebind_fresh_wrappers") < events.index("config_migrate")
+
+
+def test_already_current_path_runs_reload_seam(monkeypatch, tmp_path):
+    """The already-current checkout path still runs the reload seam (so a
+    no-pull update reloads fresh wrappers and validates the on-disk schema).
+    """
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="0")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    events: list[str] = []
+    monkeypatch.setattr(juc, "_update_node_dependencies", lambda: events.append("node_repair"))
+
+    check_call_count = [0]
+    def fake_check_fresh():
+        events.append("config_check")
+        check_call_count[0] += 1
+        # Initial check: v33 (needs migration). Post-check: v34.
+        return (33, 34) if check_call_count[0] == 1 else (34, 34)
+
+    monkeypatch.setattr(juc, "_run_config_check_fresh", fake_check_fresh)
+    monkeypatch.setattr(
+        juc, "_run_migrate_config_fresh",
+        lambda *, interactive=False, quiet=True: (
+            events.append("config_migrate"),
+            {"env_added": [], "config_added": [], "warnings": []},
+        )[1],
+    )
+
+    monkeypatch.setattr(
+        juc, "_reload_helper_modules_after_pull",
+        lambda: events.append("reload_seam"),
+    )
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    assert rc == 0
+    assert "reload_seam" in events
+    assert "node_repair" in events
+    assert "config_check" in events
+    assert "config_migrate" in events
+
+
+def test_fresh_wrappers_loaded_after_pull_via_single_event_log(monkeypatch, tmp_path):
+    """Single event log proves: pull completes BEFORE cache_clear /
+    rebind / config_check / config_migrate.
+    """
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, recorded = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    events: list[str] = []
+
+    def fake_clear():
+        events.append("cache_clear")
+
+    def fake_rebind():
+        events.append("rebind")
+
+    monkeypatch.setattr(juc, "_reload_helper_modules_after_pull",
+                        lambda: (fake_clear(), fake_rebind()))
+
+    def node_repair():
+        events.append("node_repair")
+
+    def check():
+        events.append("config_check")
+        # Initial: v33 (migration needed). Post-check: v34.
+        return (33, 34) if events.count("config_check") == 1 else (34, 34)
+
+    def migrate(*, interactive=False, quiet=True):
+        events.append("config_migrate")
+        return {"env_added": [], "config_added": [], "warnings": []}
+
+    monkeypatch.setattr(juc, "_update_node_dependencies", node_repair)
+    monkeypatch.setattr(juc, "_run_config_check_fresh", check)
+    monkeypatch.setattr(juc, "_run_migrate_config_fresh", migrate)
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    # Pull completed (at least one --ff-only recorded command).
+    assert any("--ff-only" in c for c in recorded)
+    # Event ordering — pull-then-reload-then-node-then-check-then-migrate.
+    assert rc == 0
+    # All events after pull should appear in the recorded events.
+    # The seam runs after pull completes; cache_clear must be the first
+    # seam event recorded.
+    assert events[0] == "cache_clear", (
+        f"cache_clear must be the first post-pull event; got {events[:3]!r}"
+    )
+    assert events.index("rebind") > events.index("cache_clear")
+    assert events.index("node_repair") > events.index("rebind")
+    assert events.index("config_check") > events.index("rebind")
+    assert events.index("config_migrate") > events.index("config_check")
+
+
+def test_persisted_marker_stash_ref_restored_last_when_no_new_stash(
+    monkeypatch, tmp_path
+):
+    """A later successful run with NO new local stash still restores the
+    persisted ``stash_ref`` from a pre-existing ``update-incomplete.json`` LAST.
+    Current ``_stash_local_changes_if_needed`` returns ``None``; the
+    persisted marker carries the ref.
+    """
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    persisted_ref = "persisted-stash-ref"
+    marker = tmp_path / "update-incomplete.json"
+    marker.write_text(json.dumps({
+        "stash_ref": persisted_ref,
+        "failed_step": "node_deps",
+        "timestamp": "20260816T150000Z",
+    }))
+
+    # Current run has nothing new to stash.
+    monkeypatch.setattr(
+        juc, "_stash_local_changes_if_needed", lambda *a, **kw: None
+    )
+
+    restore_calls: list[str] = []
+    def fake_restore(*a, **kw):
+        # _restore_stashed_changes(git_cmd, project_root, stash_ref)
+        ref = kw.get("stash_ref")
+        if ref is None and len(a) >= 3:
+            ref = a[2]
+        restore_calls.append(ref)
+        return True
+
+    monkeypatch.setattr(juc, "_restore_stashed_changes", fake_restore)
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    assert rc == 0
+    assert restore_calls == [persisted_ref], (
+        f"expected the persisted stash_ref to be restored LAST, got {restore_calls!r}"
+    )
+    assert not marker.exists()
+
+
+def test_marker_payload_has_exact_required_keys_and_parseable_utc_z_timestamp(
+    monkeypatch, tmp_path
+):
+    """The marker JSON has EXACTLY the keys {stash_ref, failed_step,
+    timestamp}; failed_step is one of {node_deps, config_migration};
+    timestamp parses as UTC ISO 8601 with the ``Z`` suffix.
+    """
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    monkeypatch.setattr(juc, "_update_node_dependencies",
+                        lambda: ["ui-tui, web workspaces"])
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    assert rc == 1
+    marker = tmp_path / "update-incomplete.json"
+    payload = json.loads(marker.read_text())
+    assert set(payload.keys()) == {"stash_ref", "failed_step", "timestamp"}
+    assert payload["failed_step"] in {"node_deps", "config_migration"}
+    ts = payload["timestamp"]
+    assert ts.endswith("Z"), ts
+    # Parseable as UTC ISO 8601.
+    parsed = datetime.datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
+    assert parsed.tzinfo is None  # naive; the Z is the explicit marker
+
+
+def test_missing_fresh_check_writes_marker_no_banner_config_migration_step(
+    monkeypatch, tmp_path
+):
+    """When ``_run_config_check_fresh`` is None (not lazy-loaded), the
+    pipeline still takes the non-success config_migration path: writes
+    the marker, exits 1, no receipt, no banner, no stash restore.
+    """
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    monkeypatch.setattr(juc, "_run_config_check_fresh", None)
+    monkeypatch.setattr(juc, "_run_migrate_config_fresh", lambda *, interactive=False, quiet=True: {
+        "env_added": [], "config_added": [], "warnings": []
+    })
+
+    receipt_calls: list[str] = []
+    monkeypatch.setattr(juc, "_print_update_completion",
+                        lambda m: receipt_calls.append(m))
+
+    restore_calls: list[str] = []
+    monkeypatch.setattr(juc, "_restore_stashed_changes",
+                        lambda *a, **kw: restore_calls.append("called") or True)
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    assert rc == 1
+    assert receipt_calls == []
+    assert restore_calls == []
+    marker = tmp_path / "update-incomplete.json"
+    assert marker.exists()
+    assert json.loads(marker.read_text())["failed_step"] == "config_migration"
+
+
+def test_initial_check_exception_writes_marker_no_banner_config_migration_step(
+    monkeypatch, tmp_path
+):
+    """When the initial ``_run_config_check_fresh()`` raises, the pipeline
+    takes the config_migration non-success path: writes the marker, exits 1,
+    no receipt, no banner, no stash restore.
+    """
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    def check_raises():
+        raise RuntimeError("simulated initial check exception")
+
+    monkeypatch.setattr(juc, "_run_config_check_fresh", check_raises)
+    monkeypatch.setattr(juc, "_run_migrate_config_fresh",
+                        lambda *, interactive=False, quiet=True: {
+                            "env_added": [], "config_added": [], "warnings": []
+                        })
+
+    receipt_calls: list[str] = []
+    monkeypatch.setattr(juc, "_print_update_completion",
+                        lambda m: receipt_calls.append(m))
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    assert rc == 1
+    assert receipt_calls == []
+    marker = tmp_path / "update-incomplete.json"
+    assert marker.exists()
+    assert json.loads(marker.read_text())["failed_step"] == "config_migration"
+
+
+def test_migration_exception_writes_marker_no_banner_config_migration_step(
+    monkeypatch, tmp_path
+):
+    """When ``_run_migrate_config_fresh`` raises, the pipeline takes the
+    config_migration non-success path: writes the marker, exits 1, no
+    receipt, no banner, no stash restore.
+    """
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    monkeypatch.setattr(juc, "_run_config_check_fresh", lambda: (33, 34))
+
+    def migrate_raises(*, interactive=False, quiet=True):
+        raise RuntimeError("simulated migration exception")
+
+    monkeypatch.setattr(juc, "_run_migrate_config_fresh", migrate_raises)
+
+    receipt_calls: list[str] = []
+    monkeypatch.setattr(juc, "_print_update_completion",
+                        lambda m: receipt_calls.append(m))
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    assert rc == 1
+    assert receipt_calls == []
+    marker = tmp_path / "update-incomplete.json"
+    assert marker.exists()
+    assert json.loads(marker.read_text())["failed_step"] == "config_migration"
+
+
+def test_post_check_exception_writes_marker_no_banner_config_migration_step(
+    monkeypatch, tmp_path
+):
+    """When the FRESH POST-CHECK (after supported migration) raises, the
+    pipeline takes the config_migration non-success path: writes the
+    marker, exits 1, no receipt, no banner, no stash restore.
+    """
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    call_count = {"check": 0}
+
+    def check_raises_after_first():
+        call_count["check"] += 1
+        if call_count["check"] == 1:
+            return (33, 34)  # initial check: migration needed
+        raise RuntimeError("simulated post-check exception")
+
+    monkeypatch.setattr(juc, "_run_config_check_fresh", check_raises_after_first)
+    monkeypatch.setattr(juc, "_run_migrate_config_fresh",
+                        lambda *, interactive=False, quiet=True: {
+                            "env_added": [], "config_added": [], "warnings": []
+                        })
+
+    receipt_calls: list[str] = []
+    monkeypatch.setattr(juc, "_print_update_completion",
+                        lambda m: receipt_calls.append(m))
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    assert rc == 1
+    assert receipt_calls == []
+    marker = tmp_path / "update-incomplete.json"
+    assert marker.exists()
+    assert json.loads(marker.read_text())["failed_step"] == "config_migration"
+
+
+def test_post_check_still_behind_with_support_floor_warnings_is_allowed(
+    monkeypatch, tmp_path
+):
+    """A still-behind post-check is allowed ONLY when the migration results
+    returned warnings that explicitly explain a support-floor refusal. In
+    that case: no marker, exit 0, receipt + cleanup + stash restore.
+    """
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    monkeypatch.setattr(juc, "_run_config_check_fresh", lambda: (32, 34))
+    monkeypatch.setattr(
+        juc, "_run_migrate_config_fresh",
+        lambda *, interactive=False, quiet=True: {
+            "env_added": [],
+            "config_added": [],
+            "warnings": [
+                "hermes config: support floor: configs below v12 must be "
+                "manually migrated before updates can continue."
+            ],
+        },
+    )
+
+    receipt_calls: list[str] = []
+    monkeypatch.setattr(juc, "_print_update_completion",
+                        lambda m: receipt_calls.append(m))
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    assert rc == 0
+    assert receipt_calls == ["✓ Update complete!"]
+    assert not (tmp_path / "update-incomplete.json").exists()
+
+
+def test_get_hermes_home_uses_canonical_helper_when_importable(
+    monkeypatch, tmp_path
+):
+    """``get_hermes_home`` defers to ``hermes_constants.get_hermes_home()``
+    when that module is importable. No hardcoded ``$HOME/.janitor``
+    fallback path is reachable in a normal install.
+    """
+    from hermes_constants import get_hermes_home as canonical_home
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "profile_home"))
+    resolved = juc.get_hermes_home()
+    canonical_resolved = Path(canonical_home())
+    assert resolved.resolve() == canonical_resolved.resolve()

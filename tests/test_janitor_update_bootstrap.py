@@ -10,6 +10,8 @@ here have been removed and now live (and are tested) in
 
 from __future__ import annotations
 
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 from unittest.mock import patch
@@ -24,13 +26,58 @@ def test_bootstrap_module_is_packaged_for_janitor_entrypoint():
 
 
 def test_update_intercept_runs_before_hermes_imports():
-    """The early ``update`` intercept fires before any Hermes import in janitor_cli.py."""
-    source = Path("janitor_cli.py").read_text()
-    intercept = source.index('if len(sys.argv) > 1 and sys.argv[1] == "update":')
-    hermes_config = source.index("from hermes_cli.config import DEFAULT_CONFIG")
-    prompt_builder = source.index("from agent import prompt_builder")
-    assert intercept < hermes_config
-    assert intercept < prompt_builder
+    """The early ``update`` intercept fires BEFORE the module-level
+    ``from hermes_cli.config import DEFAULT_CONFIG`` line in ``janitor_cli``.
+
+    Behavioral probe (no source reads): when ``sys.argv == ["janitor", "update"]``,
+    importing ``janitor_cli`` must short-circuit to ``janitor_update_bootstrap.run_update``
+    and ``sys.exit`` BEFORE control reaches the Hermes-import line. We verify
+    by patching ``hermes_cli.config.DEFAULT_CONFIG`` so any attribute access
+    raises; the intercept firing early means we observe ``SystemExit`` (not
+    the sentinel access error).
+    """
+    import types
+
+    sentinel_marker = "SENTINEL_ACCESSED"
+
+    probe = (
+        "import sys, types\n"
+        "sys.argv = ['janitor', 'update']\n"
+        # Pre-load hermes_cli.config and patch its DEFAULT_CONFIG so accessing
+        # ``DEFAULT_CONFIG.setdefault(...)`` raises an obvious marker.
+        "import hermes_cli.config as _cfg_mod\n"
+        "class _Sentinel:\n"
+        "    def setdefault(self, *a, **kw):\n"
+        "        raise RuntimeError('" + sentinel_marker + "')\n"
+        "    def __getattr__(self, name):\n"
+        "        raise RuntimeError('" + sentinel_marker + "')\n"
+        "_cfg_mod.DEFAULT_CONFIG = _Sentinel()\n"
+        "# Stub run_update to sys.exit(42) so we can distinguish exit-via-intercept\n"
+        "# from any other outcome.\n"
+        "import sys as _sys\n"
+        "import janitor_update_bootstrap as _jub\n"
+        "_jub.run_update = lambda: _sys.exit(42)\n"
+        "try:\n"
+        "    import janitor_cli\n"
+        "except SystemExit as exc:\n"
+        "    print('SYSTEMEXIT_CODE=' + str(exc.code))\n"
+        "except RuntimeError as exc:\n"
+        "    print('RUNTIME_ERROR=' + str(exc))\n"
+        "else:\n"
+        "    print('NO_EXIT')\n"
+    )
+    r = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True, text=True,
+    )
+    out = r.stdout
+    assert sentinel_marker not in out, (
+        f"early `update` intercept must fire before Hermes config DEFAULT_CONFIG "
+        f"is touched, but the sentinel was observed: {out!r}"
+    )
+    assert "SYSTEMEXIT_CODE=42" in out, (
+        f"early `update` intercept should sys.exit(42) via run_update(), got: {out!r}"
+    )
 
 
 def test_bootstrap_run_update_prints_branding(capsys):
