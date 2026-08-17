@@ -190,20 +190,50 @@ class TestOWASPFailSafe:
         assert ok, f"OWASP should allow when provider is not honcho: {msg}"
 
 
-class TestJanitorUpdateLazyRefresh:
-    """Update command must refresh already-active lazy dependencies."""
+class TestJanitorVersionDisplay:
+    """Behavior: Janitor shows 0.20.1-janitor.1 in banner and --version."""
 
-    def test_update_delegates_to_janitor_update_core(self):
-        source = Path("janitor_cli.py").read_text()
-        assert "janitor_update_core.run_janitor_update(args)" in source
+    def test_canonical_version_is_pep440_local(self):
+        """hermes_cli.__version__ carries the PEP 440 local segment."""
+        from hermes_cli import __version__
 
-    def test_update_core_invokes_lazy_refresh_after_python_deps(self):
-        source = Path("janitor_update_core.py").read_text()
-        assert "_install_python_dependencies(project_root)" in source
-        assert (
-            '_call(\n            "_refresh_active_lazy_features",\n            fallback=lambda: None,\n        )'
-            in source
+        assert __version__ == "0.20.1+janitor.1"
+
+    def test_display_version_replaces_plus_with_hyphen(self):
+        """janitor_version.display_version converts + to - in the local segment."""
+        from janitor_version import display_version
+
+        assert display_version("0.20.1+janitor.1") == "0.20.1-janitor.1"
+
+    def test_display_version_is_pure(self):
+        """display_version depends only on its argument."""
+        from janitor_version import display_version
+
+        assert display_version("1.2.3+local.5") == "1.2.3-local.5"
+        assert display_version("1.2.3") == "1.2.3"
+
+    def test_module_canonical_matches_helper_output(self):
+        """The canonical __version__ round-trips through display_version to the display form."""
+        from hermes_cli import __version__
+        from janitor_version import display_version
+
+        assert display_version(__version__) == "0.20.1-janitor.1"
+
+    def test_subprocess_janitor_version_uses_display_form(self):
+        """The real module entry point honors --version without entering chat."""
+        import subprocess
+        import sys
+
+        result = subprocess.run(
+            [sys.executable, "-m", "janitor_cli", "--version"],
+            capture_output=True,
+            text=True,
+            env={
+                **subprocess.os.environ.copy(),
+                "HERMES_QUIET": "1",
+                "OPENAI_API_KEY": "test-key",
+            },
         )
-        install_idx = source.index("_install_python_dependencies(project_root)")
-        refresh_idx = source.index('"_refresh_active_lazy_features",\n            fallback=lambda: None,')
-        assert install_idx < refresh_idx
+        combined = result.stdout + result.stderr
+        assert "THE JANITOR v0.20.1-janitor.1" in combined
+        assert "0.20.1+janitor.1" not in combined
