@@ -1218,8 +1218,9 @@ def test_missing_fresh_check_writes_marker_no_banner_config_migration_step(
     monkeypatch, tmp_path
 ):
     """When ``_run_config_check_fresh`` is None (not lazy-loaded), the
-    pipeline still takes the non-success config_migration path: writes
-    the marker, exits 1, no receipt, no banner, no stash restore.
+    INITIAL check returns ``(None, None)`` (warn-and-no-op per Round 3/5
+    brief). No migration runs, no marker is written, the run is a
+    no-op success.
     """
     _stub_pipeline_helpers(monkeypatch, tmp_path)
     side_effect, _ = _make_side_effect(commit_count="3")
@@ -1240,20 +1241,20 @@ def test_missing_fresh_check_writes_marker_no_banner_config_migration_step(
 
     rc = juc.run_janitor_update(SimpleNamespace())
 
-    assert rc == 1
-    assert receipt_calls == []
-    assert restore_calls == []
+    # Initial-check invalid (no wrapper): warn + no-op → rc=0, no marker,
+    # the success path runs (Node repair, receipt, cleanup, stash restore).
+    assert rc == 0
+    assert receipt_calls == ["✓ Update complete!"]
     marker = tmp_path / "update-incomplete.json"
-    assert marker.exists()
-    assert json.loads(marker.read_text())["failed_step"] == "config_migration"
+    assert not marker.exists()
 
 
 def test_initial_check_exception_writes_marker_no_banner_config_migration_step(
     monkeypatch, tmp_path
 ):
-    """When the initial ``_run_config_check_fresh()`` raises, the pipeline
-    takes the config_migration non-success path: writes the marker, exits 1,
-    no receipt, no banner, no stash restore.
+    """When the initial ``_run_config_check_fresh()`` raises, the initial-
+    check policy (Round 3/5) treats this as invalid: warn + no-op
+    migration. The strict failure path is reserved for the post-check.
     """
     _stub_pipeline_helpers(monkeypatch, tmp_path)
     side_effect, _ = _make_side_effect(commit_count="3")
@@ -1274,11 +1275,13 @@ def test_initial_check_exception_writes_marker_no_banner_config_migration_step(
 
     rc = juc.run_janitor_update(SimpleNamespace())
 
-    assert rc == 1
-    assert receipt_calls == []
+    # Initial-check exception: warn + no-op (Round 3/5 policy). The
+    # success path still runs (Node repair, receipt, marker cleanup,
+    # stash restore).
+    assert rc == 0
+    assert receipt_calls == ["✓ Update complete!"]
     marker = tmp_path / "update-incomplete.json"
-    assert marker.exists()
-    assert json.loads(marker.read_text())["failed_step"] == "config_migration"
+    assert not marker.exists()
 
 
 def test_migration_exception_writes_marker_no_banner_config_migration_step(
@@ -1615,10 +1618,128 @@ def test_restore_both_auto_and_persisted_stash_refs_when_both_exist(
     )
 
 
+def test_persisted_marker_ref_preserved_on_dirty_new_work_rerun_failure(
+    monkeypatch, tmp_path
+):
+    """Round 3/5 Oracle finding C1: when a persisted marker carries a
+    stash_ref AND the current run ALSO produced a NEW auto_stash_ref
+    (dirty/new-work), the new run's failure must NOT overwrite the
+    persisted ref on disk. Never overwrite one recoverable ref with
+    another. The exact three-key marker schema is preserved.
+
+    In this test, the prior marker has stash_ref="prior", the new run
+    produces auto_stash_ref="new", and the new run fails. The marker on
+    disk after the failure must still carry the prior ref — the new ref
+    is in memory only and is restored together with the prior on a
+    later successful rerun.
+    """
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    prior_ref = "prior-ref-on-disk"
+    marker = tmp_path / "update-incomplete.json"
+    marker.write_text(json.dumps({
+        "stash_ref": prior_ref,
+        "failed_step": "node_deps",
+        "timestamp": "20260817T150000Z",
+    }))
+
+    new_ref = "new-ref-this-run"
+
+    def stash_new(*a, **kw):
+        return new_ref
+
+    monkeypatch.setattr(juc, "_stash_local_changes_if_needed", stash_new)
+
+    # New run fails in node_deps.
+    def failing_node_repair():
+        return ["ui-tui, web workspaces"]
+
+    monkeypatch.setattr(juc, "_update_node_dependencies", failing_node_repair)
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    assert rc == 1
+    # The persisted marker schema is preserved: exactly three keys.
+    assert marker.exists()
+    payload = json.loads(marker.read_text())
+    assert set(payload.keys()) == {"stash_ref", "failed_step", "timestamp"}
+    # The PRIOR stash_ref is preserved on disk; the new ref is in memory
+    # only (will be restored from in-memory state on a later successful
+    # rerun alongside the prior).
+    assert payload["stash_ref"] == prior_ref, (
+        f"a new run's auto_stash_ref must not overwrite the persisted "
+        f"prior on disk; persisted={prior_ref!r} new={new_ref!r} "
+        f"actual={payload['stash_ref']!r}"
+    )
+    # failed_step / timestamp reflect THIS run.
+    assert payload["failed_step"] == "node_deps"
+
+
+def test_initial_check_invalid_versions_warn_and_no_op(
+    monkeypatch, tmp_path
+):
+    """Round 3/5 Oracle finding C3: the brief requires invalid initial
+    values to warn and leave config untouched, NOT fail. Post-check
+    keeps strict failure for malformed / non-int.
+
+    The initial check may legitimately see invalid version tuples when
+    the on-disk config is broken (e.g., a user hand-edited
+    ``_config_version: 99`` with garbage). The initial check should warn
+    and treat the config as already-at-target — the migrate step does
+    not run, the post-check is not reached, no marker is written, rc=0.
+    """
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    monkeypatch.setattr(juc, "_update_node_dependencies", lambda: [])
+
+    # First call (initial check) returns non-int versions — a malformed
+    # on-disk config.
+    monkeypatch.setattr(juc, "_run_config_check_fresh", lambda: ("33", "34"))
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    # The pipeline warns + leaves config untouched; the success path
+    # still runs (Node repair, receipt, marker cleanup, stash restore).
+    assert rc == 0
+    marker = tmp_path / "update-incomplete.json"
+    assert not marker.exists(), (
+        "no failure occurred; the invalid-initial-values path is a "
+        "no-op, not a failure, so no marker should be written"
+    )
+
+
+def test_initial_check_non_tuple_warn_and_no_op(monkeypatch, tmp_path):
+    """Initial check returning a non-tuple (e.g. None) is also a
+    warn-and-no-op for the same reason as invalid versions — the on-disk
+    config cannot be characterised by the wrapper. No migration, no
+    marker, rc=0.
+    """
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="3")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    monkeypatch.setattr(juc, "_update_node_dependencies", lambda: [])
+    monkeypatch.setattr(juc, "_run_config_check_fresh", lambda: None)
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    assert rc == 0
+    assert not (tmp_path / "update-incomplete.json").exists()
+
+
 def test_post_check_malformed_tuple_fails_loudly(monkeypatch, tmp_path):
     """A post-check that returns a malformed value (None / wrong type /
     wrong arity) is non-success — never silently ignored. Round 2/5
     Oracle finding C5 disallows the prior permissive swallow.
+
+    The initial check is valid (33, 34) so migration runs. The
+    post-check then returns None — a malformed post-check value. The
+    post-check policy is strict (Round 3/5): malformed values fail
+    loudly with a marker, rc=1.
     """
     _stub_pipeline_helpers(monkeypatch, tmp_path)
     side_effect, _ = _make_side_effect(commit_count="3")
@@ -1634,8 +1755,14 @@ def test_post_check_malformed_tuple_fails_loudly(monkeypatch, tmp_path):
         },
     )
 
-    # Post-check returns None — not a (current, latest) tuple.
-    monkeypatch.setattr(juc, "_run_config_check_fresh", lambda: None)
+    counter = [0]
+    def check_fresh():
+        counter[0] += 1
+        if counter[0] == 1:
+            return (33, 34)  # initial check: needs migration
+        return None  # post-check: malformed (not a tuple)
+
+    monkeypatch.setattr(juc, "_run_config_check_fresh", check_fresh)
 
     rc = juc.run_janitor_update(SimpleNamespace())
 
@@ -1648,7 +1775,7 @@ def test_post_check_malformed_tuple_fails_loudly(monkeypatch, tmp_path):
 
 def test_post_check_non_int_versions_fails_loudly(monkeypatch, tmp_path):
     """Post-check returning non-int versions (str, None, float) is
-    non-success — never silently a no-op.
+    non-success — never silently a no-op. Strict (Round 3/5).
     """
     _stub_pipeline_helpers(monkeypatch, tmp_path)
     side_effect, _ = _make_side_effect(commit_count="3")
@@ -1664,9 +1791,14 @@ def test_post_check_non_int_versions_fails_loudly(monkeypatch, tmp_path):
         },
     )
 
-    monkeypatch.setattr(
-        juc, "_run_config_check_fresh", lambda: ("33", "34")
-    )
+    counter = [0]
+    def check_fresh():
+        counter[0] += 1
+        if counter[0] == 1:
+            return (33, 34)  # initial check: valid
+        return ("33", "34")  # post-check: non-int
+
+    monkeypatch.setattr(juc, "_run_config_check_fresh", check_fresh)
 
     rc = juc.run_janitor_update(SimpleNamespace())
 

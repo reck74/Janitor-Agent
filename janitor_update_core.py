@@ -646,13 +646,14 @@ def _support_floor_warning_explains_still_behind(warnings: list) -> bool:
     return False
 
 
-def _read_config_version(call_check: Callable[[], tuple]) -> tuple:
-    """Call the check wrapper and validate the tuple shape.
+def _read_config_version_strict(call_check: Callable[[], tuple]) -> tuple:
+    """Call the check wrapper and validate the tuple shape strictly.
 
     Returns (current_ver, latest_ver) on success. Raises RuntimeError
     on any non-success: missing wrapper, exception, malformed tuple,
     non-integer versions, current > latest (the last is a failure ONLY
-    during a post-check; callers control the exception policy).
+    during a post-check; callers control the exception policy). Use
+    this for POST-CHECK validation where any non-success is a failure.
     """
     check_fn = globals().get("_run_config_check_fresh")
     if check_fn is None:
@@ -679,6 +680,42 @@ def _read_config_version(call_check: Callable[[], tuple]) -> tuple:
     return current_ver, latest_ver
 
 
+def _read_config_version_initial(check_check: Callable[[], tuple]):
+    """Initial-check variant: warn and return ``(None, None)`` for
+    invalid / malformed values instead of raising. The brief requires
+    invalid initial values to warn and leave config untouched, not
+    fail. The post-check policy is strict (see
+    ``_read_config_version_strict``).
+
+    Returns a ``(current_ver, latest_ver)`` tuple of ints on success
+    or ``(None, None)`` on any non-success. A None result triggers the
+    warn-and-no-op branch in the caller.
+    """
+    check_fn = globals().get("_run_config_check_fresh")
+    if check_fn is None:
+        print("  ⚠ Initial config check wrapper unavailable; skipping migration.")
+        return (None, None)
+    try:
+        version_tuple = check_check()
+    except Exception as exc:
+        print(f"  ⚠ Initial config check raised {exc!r}; skipping migration.")
+        return (None, None)
+    if not (isinstance(version_tuple, tuple) and len(version_tuple) == 2):
+        print(
+            f"  ⚠ Initial config check returned non-tuple: "
+            f"{version_tuple!r}; skipping migration."
+        )
+        return (None, None)
+    current_ver, latest_ver = version_tuple
+    if not (isinstance(current_ver, int) and isinstance(latest_ver, int)):
+        print(
+            f"  ⚠ Initial config check returned non-integer values: "
+            f"{current_ver!r}, {latest_ver!r}; skipping migration."
+        )
+        return (None, None)
+    return (current_ver, latest_ver)
+
+
 def _run_fresh_config_migration_phase() -> dict:
     """Run the fresh-wrapper config migration phase after a successful pull.
 
@@ -691,25 +728,33 @@ def _run_fresh_config_migration_phase() -> dict:
     - Initial check: ``current > latest`` is a benign no-op (warn only;
       no migration, no failure). Config already at a newer version than
       the wrapper knows about is left alone.
+    - Initial check: invalid values (non-int / non-tuple / wrapper raises
+      / wrapper unavailable) are a warn-and-no-op — the config is left
+      untouched. (Round 3/5 brief: invalid initial values warn + no-op.)
     - Initial check: migrate only when ``current < latest`` and both are
       integers.
     - Post-check: ``current > latest`` is a HARD failure (migration
       should have put us AT latest, never over — a downgrade must not
       be silently accepted).
+    - Post-check: invalid values / non-int / non-tuple are a HARD
+      failure — strict.
     - Post-check: ``current == latest`` is a no-op (success branch).
-    - Post-check: ``current < latest`` is a still-behind. Allowed ONLY
-      when the warnings explicitly explain a support-floor refusal; every
+    - Post-check: ``current < lat`` is a still-behind. Allowed ONLY when
+      the warnings explicitly explain a support-floor refusal; every
       other still-behind / failure case is non-success.
     - Consume ``results.get("warnings", [])`` defensively.
     - Raise ``RuntimeError`` on every non-success path: missing helpers,
-      initial / post-check exception, malformed tuple, non-int
-      versions, post-check downgrade, post-check still-behind without a
-      recognised support-floor warning.
+      post-check exception, malformed tuple, non-int versions, post-check
+      downgrade, post-check still-behind without a recognised
+      support-floor warning.
 
     Returns the migration results dict (or ``{}`` on a clean no-op).
     """
-    check_fn = globals().get("_run_config_check_fresh")
-    current_ver, latest_ver = _read_config_version(check_fn)
+    initial = _read_config_version_initial(globals().get("_run_config_check_fresh"))
+    current_ver, latest_ver = initial
+    if current_ver is None or latest_ver is None:
+        # Initial check was invalid: warn-and-no-op per Round 3/5 brief.
+        return {}
 
     if current_ver > latest_ver:
         # Initial check — downgrade is a benign no-op.
@@ -743,9 +788,13 @@ def _run_fresh_config_migration_phase() -> dict:
         if warning:
             print(f"  ⚠ {warning}")
 
-    # Fresh post-check after a supported migration.
+    # Fresh post-check after a supported migration. Post-check policy is
+    # strict (Round 3/5 brief): malformed / non-int / wrapper raises /
+    # current > latest are all non-success.
     try:
-        post_cur, post_lat = _read_config_version(check_fn)
+        post_cur, post_lat = _read_config_version_strict(
+            globals().get("_run_config_check_fresh")
+        )
     except RuntimeError:
         raise
 
@@ -879,16 +928,25 @@ def _write_incomplete_marker(failed_step: str, stash_ref: Optional[str]) -> None
     ``_clear_incomplete_marker``).
 
     The persisted marker schema is fixed at three keys — no expansion.
-    When ``stash_ref`` is ``None`` (this run produced no new autostash),
-    the prior persisted ``stash_ref`` is preserved on disk so repeated
-    failures across reruns do not lose user work. The
+    Never overwrite a recoverable stash_ref with another: when a prior
+    stash_ref is already on disk (from a prior failed run), the prior is
+    ALWAYS preserved as the persisted stash_ref on disk. This run's
+    new stash_ref, if any, is held in memory only and is restored at the
+    end of the run alongside the prior (the prior LAST). The
     ``failed_step`` / ``timestamp`` fields reflect THIS run.
+
+    Net effect: the on-disk marker is the persistent recovery contract
+    anchored to the EARLIEST FAILED run's ref. A new failed run adds its
+    ref in memory; the persistent ref is not overwritten.
     """
     marker = get_hermes_home() / "update-incomplete.json"
-    if stash_ref is None:
-        prior = _read_persisted_marker_raw(marker)
-        if prior is not None:
-            stash_ref = prior
+    prior = _read_persisted_marker_raw(marker)
+    if prior is not None:
+        # The prior is ALWAYS preserved on disk — never overwrite one
+        # recoverable ref with another. If this run also has a new ref,
+        # the new ref is in memory only and is restored from
+        # ``auto_stash_ref`` alongside the prior at end-of-run.
+        stash_ref = prior
     payload = {
         "stash_ref": stash_ref,
         "failed_step": failed_step,
