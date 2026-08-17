@@ -780,7 +780,7 @@ debe ir acompañado de una corrida verde de este test.
 
 **Wiring CI** (ver §4.1):
 ```yaml
-# Mirror of AGENTS.md directive #11 — the 13-file list is duplicated in
+# Mirror of AGENTS.md directive #11 — the 14-file list is duplicated in
 # SIX maintenance locations that must stay in lockstep:
 #
 #   1. .github/workflows/tests.yml             :: test          (PR gate on ubuntu-latest)
@@ -804,6 +804,7 @@ debe ir acompañado de una corrida verde de este test.
       tests/test_janitor_update_bootstrap.py \
       tests/test_janitor_update_core.py \
       tests/test_janitor_bootstrap_node_version.py \
+      tests/test_janitor_syntax_guard.py \
       tests/gateway/test_telegram_janitor_branding.py \
       tests/skills/test_janitor_config_audit_skill.py \
       tests/skills/test_janitor_firecrawl_skill.py \

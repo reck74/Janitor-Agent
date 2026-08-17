@@ -104,6 +104,7 @@ jobs:
             tests/test_janitor_update_bootstrap.py \
             tests/test_janitor_update_core.py \
             tests/test_janitor_bootstrap_node_version.py \
+            tests/test_janitor_syntax_guard.py \
             tests/gateway/test_telegram_janitor_branding.py \
             tests/skills/test_janitor_config_audit_skill.py \
             tests/skills/test_janitor_firecrawl_skill.py \
