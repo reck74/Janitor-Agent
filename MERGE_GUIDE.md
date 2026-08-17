@@ -780,16 +780,22 @@ debe ir acompañado de una corrida verde de este test.
 
 **Wiring CI** (ver §4.1):
 ```yaml
-# Mirror of AGENTS.md directive #11 — kept in lockstep across the three
-# workflows that invoke this list:
-#   * .github/workflows/tests.yml          :: test          (PR gate on ubuntu-latest)
-#   * .github/workflows/janitor-ci.yml     :: python-tests  (mirror on ubuntu-latest)
-#   * .github/workflows/janitor-ci.yml     :: os-compat     (macOS + Windows portability smoke)
+# Mirror of AGENTS.md directive #11 — the 13-file list is duplicated in
+# SIX maintenance locations that must stay in lockstep:
+#
+#   1. .github/workflows/tests.yml             :: test          (PR gate on ubuntu-latest)
+#   2. .github/workflows/janitor-ci.yml        :: python-tests  (mirror on ubuntu-latest)
+#   3. .github/workflows/janitor-ci.yml        :: os-compat     (macos-latest leg, scripts/run_tests.sh)
+#   4. .github/workflows/janitor-ci.yml        :: os-compat     (windows-latest leg, .venv/Scripts/python.exe -m pytest)
+#   5. AGENTS.md                               :: directive #11 (source of truth — listed inline)
+#   6. MERGE_GUIDE.md                          :: §11.3 this snippet (reference copy)
+#
 # Line numbers in the source files drift with every change to those workflows;
-# search for the literal test list above and the job names `Run Janitor-specific
+# search for the literal test list below and the job names `Run Janitor-specific
 # tests` / `Run Python tests` / `Run Janitor tests` to locate the invocations.
-# Adding a new tests/**/test_*janitor*.py requires updating all four places
-# (the three invocations + directive #11 in AGENTS.md) in the same PR.
+# Adding a new tests/**/test_*janitor*.py requires updating all SIX places in
+# the same PR (directive #11 is the source of truth — the other five derive
+# from it).
 - name: Run Janitor-specific tests
   run: |
     source .venv/bin/activate

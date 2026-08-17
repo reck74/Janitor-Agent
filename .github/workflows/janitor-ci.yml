@@ -142,60 +142,94 @@ jobs:
           echo "$out"
           echo "$out" | grep -qE '^THE JANITOR v'
 
-      - name: Snapshot janitor-* Docker resources (before install)
+      - name: Snapshot janitor-* Docker + optional-capability state (before install)
         # Per AGENTS.md directive #5 every container / volume / network Janitor
-        # creates must carry the janitor- prefix. We snapshot any pre-existing
-        # janitor-* Docker resources on this runner, run the installer, then
-        # diff after-install snapshots against these and fail if anything new
-        # appears. When Docker is not reachable on the runner (CI hosted Linux
-        # agents without a docker daemon), the before/after files are empty
-        # by design and the diff is trivially empty — but the assertion still
-        # catches every deploy.sh / setup-honcho.sh on a developer machine
-        # where Docker IS reachable.
+        # creates must carry the janitor- prefix. The Docker CLI and a
+        # reachable daemon are REQUIRED — fail-closed here, not fail-open:
+        # if Docker is not available, this job fails, because missing the
+        # verification would silently allow an opt-in service container to
+        # slip through.
+        #
+        # AGENTS.md directive #9 (OPTIONAL SKILLS ARE EXPLICIT): we also
+        # snapshot the state of optional-capability surfaces (Playwright /
+        # Computer Use / voice / wake Python packages and their filesystem
+        # markers). The CI step "Install dependencies" above pulls the full
+        # `[all]` extras; none of these optional packages are in `[all]`
+        # today, but we intentionally compare BEFORE/AFTER state (not
+        # "package absent") so this gate stays valid if a future extras
+        # change adds any of them.
+        env:
+          HOME: ${{ runner.temp }}/janitor-e2e-home
         run: |
           set -euo pipefail
           ART="${RUNNER_TEMP}/janitor-e2e"
           mkdir -p "$ART"
-          if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-            docker ps -a --filter name=janitor- --format '{{.Names}}' \
-              | sort -u > "$ART/docker-containers.before.txt" || true
-            docker volume ls --filter name=janitor- --format '{{.Name}}' \
-              | sort -u > "$ART/docker-volumes.before.txt" || true
-            docker network ls --filter name=janitor- --format '{{.Name}}' \
-              | sort -u > "$ART/docker-networks.before.txt" || true
-          else
-            : > "$ART/docker-containers.before.txt"
-            : > "$ART/docker-volumes.before.txt"
-            : > "$ART/docker-networks.before.txt"
-            echo "Docker daemon not reachable on this runner; before/after diff will be trivially empty."
-          fi
+          # Docker CLI + daemon: required (fail-closed)
+          command -v docker >/dev/null 2>&1 || { echo "::error::docker CLI not found"; exit 1; }
+          docker info >/dev/null 2>&1 || { echo "::error::docker daemon not reachable on this runner"; exit 1; }
+          # janitor-* Docker resources (sorted; no || true)
+          docker ps -a --filter name=janitor- --format '{{.Names}}' \
+            | LC_ALL=C sort -u > "$ART/docker-containers.before.txt"
+          docker volume ls --filter name=janitor- --format '{{.Name}}' \
+            | LC_ALL=C sort -u > "$ART/docker-volumes.before.txt"
+          docker network ls --filter name=janitor- --format '{{.Name}}' \
+            | LC_ALL=C sort -u > "$ART/docker-networks.before.txt"
+          # Optional-capability Python packages. The `if` lets `uv pip show`
+          # exit non-zero (package absent) without tripping set -e.
+          capture_pkg_state() {
+            local pkg="$1" file="$2"
+            if state=$(uv pip show "$pkg" 2>/dev/null | grep -E '^(Name|Version):' | LC_ALL=C sort); then
+              printf '%s\n' "$state" > "$file"
+            else
+              : > "$file"
+            fi
+          }
+          capture_pkg_state playwright      "$ART/pkg-playwright.before.txt"
+          capture_pkg_state faster-whisper  "$ART/pkg-faster-whisper.before.txt"
+          capture_pkg_state openwakeword    "$ART/pkg-openwakeword.before.txt"
+          # Filesystem markers for Browser (Playwright cache) and Computer
+          # Use (cua-driver home — see hermes_cli/tools_config.py:1142).
+          capture_dir_listing() {
+            local dir="$1" file="$2"
+            if [ -d "$dir" ]; then
+              find "$dir" -type f 2>/dev/null | LC_ALL=C sort > "$file"
+            else
+              : > "$file"
+            fi
+          }
+          capture_dir_listing "$HOME/.cache/ms-playwright" "$ART/fs-ms-playwright.before.txt"
+          capture_dir_listing "$HOME/.cua-driver"          "$ART/fs-cua-driver.before.txt"
 
       - name: Run minimal Janitor installer non-interactively
         # HOME / JANITOR_HOME / HERMES_HOME are all redirected to an isolated
         # scratch dir under ${RUNNER_TEMP}. The installer's RC-file injection
         # loop (lines 243-255) writes to ${HOME}/.bashrc / ${HOME}/.zshrc —
         # with HOME redirected, those writes land in the scratch dir and never
-        # touch the runner's real $HOME. HONCHO_API_KEY is set in env so the
-        # installer takes the cloud path (setup_mode=1) and never invokes
-        # scripts/setup-honcho.sh, which would otherwise spin up
-        # janitor-honcho-{api,deriver,database,redis} Docker containers.
+        # touch the runner's real $HOME. setup_mode = "1" (Honcho cloud)
+        # ensures scripts/setup-honcho.sh is NEVER invoked; that script
+        # would otherwise spin up janitor-honcho-{api,deriver,database,redis}
+        # Docker containers, which is a hard opt-in violation.
+        #
         # Every prompt is fed deterministically via stdin in the order the
-        # installer reads them:
-        #   line 1: OPENAI_API_KEY (required, non-empty)
-        #   line 2: MINIMAX_API_KEY (required, retries until non-empty)
-        #   line 3: setup_mode = "1" (cloud Honcho path)
-        #   line 4: HONCHO_API_KEY (empty — only consumed in mode=1)
-        #   line 5: OPENAI_BASE_URL (empty)
+        # installer reads them (scripts/janitor-install.sh lines 70 / 82 /
+        # 102 / 115 / 122):
+        #   line 1: OPENAI_API_KEY    (required, non-empty)
+        #   line 2: MINIMAX_API_KEY   (required, retries until non-empty)
+        #   line 3: setup_mode        (1 = Honcho cloud, never invokes Docker)
+        #   line 4: HONCHO_API_KEY    (cloud placeholder; consumed only in mode=1)
+        #   line 5: OPENAI_BASE_URL   (empty)
+        # The HONCHO_API_KEY env var was REMOVED in round 2: the installer
+        # reads the Honcho key ONLY from stdin (line 115), not from env —
+        # setting it in env: was a no-op.
         # Any failure from the installer propagates to CI (no `|| true`).
         env:
           HOME: ${{ runner.temp }}/janitor-e2e-home
           JANITOR_HOME: ${{ runner.temp }}/janitor-e2e
           HERMES_HOME: ${{ runner.temp }}/janitor-e2e
-          HONCHO_API_KEY: ci-placeholder-honcho-key
         run: |
           set -euo pipefail
           mkdir -p "$HOME" "$JANITOR_HOME"
-          printf 'ci-openai-key-placeholder\nci-minimax-key-placeholder\n1\n\n\n' \
+          printf 'ci-openai-key\nci-minimax-key\n1\nci-placeholder-honcho-key\n\n' \
             | bash scripts/janitor-install.sh
 
       - name: Assert minimal base artifacts were deployed
@@ -211,65 +245,86 @@ jobs:
           test -d "$JH/logs"
           echo "Minimal install artifacts: OK"
 
-      - name: Snapshot janitor-* Docker resources (after install) and assert no new resource was deployed
-        # Computes the diff against the *before* snapshot written by the
-        # earlier step. Any new janitor-* container / volume / network is a
-        # policy violation — the minimal installer must not deploy opt-in
-        # service containers. If Docker is not reachable, the diff is
-        # trivially empty and the assertion still passes.
+      - name: Snapshot state (after install) and assert no new Docker resource and no optional-capability state change
+        # Re-runs the same captures the "before" step wrote, then computes the
+        # diff against the before snapshot files. Any new janitor-*
+        # container / volume / network OR any change in optional-capability
+        # state is a policy violation. `comm` runs under set -euo pipefail
+        # and its non-zero exit (e.g. missing input file) propagates; we do
+        # NOT use `|| true` or `set +e` in this enforcement path.
+        env:
+          HOME: ${{ runner.temp }}/janitor-e2e-home
         run: |
           set -euo pipefail
           ART="${RUNNER_TEMP}/janitor-e2e"
-          if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-            docker ps -a --filter name=janitor- --format '{{.Names}}' \
-              | sort -u > "$ART/docker-containers.after.txt" || true
-            docker volume ls --filter name=janitor- --format '{{.Name}}' \
-              | sort -u > "$ART/docker-volumes.after.txt" || true
-            docker network ls --filter name=janitor- --format '{{.Name}}' \
-              | sort -u > "$ART/docker-networks.after.txt" || true
-          else
-            : > "$ART/docker-containers.after.txt"
-            : > "$ART/docker-volumes.after.txt"
-            : > "$ART/docker-networks.after.txt"
-          fi
-          set +e
-          new_containers=$(comm -13 "$ART/docker-containers.before.txt" "$ART/docker-containers.after.txt")
-          new_volumes=$(comm -13 "$ART/docker-volumes.before.txt" "$ART/docker-volumes.after.txt")
-          new_networks=$(comm -13 "$ART/docker-networks.before.txt" "$ART/docker-networks.after.txt")
-          set -e
-          if [ -n "$new_containers$new_volumes$new_networks" ]; then
-            echo "::error::New janitor-* Docker resources appeared after the minimal install:"
-            echo "  new_containers: ${new_containers:-(none)}"
-            echo "  new_volumes:    ${new_volumes:-(none)}"
-            echo "  new_networks:   ${new_networks:-(none)}"
-            exit 1
-          fi
-          echo "No new janitor-* Docker resources deployed: OK"
-
-      - name: Assert NO opt-in skill or capability markers were deployed
-        # AGENTS.md directive #9 (OPTIONAL SKILLS ARE EXPLICIT) — Firecrawl,
-        # Browser, Computer Use, voice/wake are opt-in. The minimal installer
-        # must NOT bring any of them up. Marker paths come from the actual
-        # deploy scripts in this repo, not invented:
-        #   skills/janitor-firecrawl/scripts/deploy.sh   writes
-        #     ~/.janitor/docker/firecrawl.env, firecrawl-compose.yml
-        #   skills/janitor-browser/scripts/install.sh   installs
-        #     playwright (cache at ~/.cache/ms-playwright/) and chromium
-        #   Computer Use / voice / wake: no janitor-computer-use,
-        #     janitor-voice, janitor-wake skill ships in this fork — the
-        #     janitor-* Docker snapshot above is the only deployment
-        #     surface that could create any such resource, so an empty
-        #     snapshot already covers them.
-        run: |
-          set -euo pipefail
+          docker ps -a --filter name=janitor- --format '{{.Names}}' \
+            | LC_ALL=C sort -u > "$ART/docker-containers.after.txt"
+          docker volume ls --filter name=janitor- --format '{{.Name}}' \
+            | LC_ALL=C sort -u > "$ART/docker-volumes.after.txt"
+          docker network ls --filter name=janitor- --format '{{.Name}}' \
+            | LC_ALL=C sort -u > "$ART/docker-networks.after.txt"
+          capture_pkg_state() {
+            local pkg="$1" file="$2"
+            if state=$(uv pip show "$pkg" 2>/dev/null | grep -E '^(Name|Version):' | LC_ALL=C sort); then
+              printf '%s\n' "$state" > "$file"
+            else
+              : > "$file"
+            fi
+          }
+          capture_pkg_state playwright      "$ART/pkg-playwright.after.txt"
+          capture_pkg_state faster-whisper  "$ART/pkg-faster-whisper.after.txt"
+          capture_pkg_state openwakeword    "$ART/pkg-openwakeword.after.txt"
+          capture_dir_listing() {
+            local dir="$1" file="$2"
+            if [ -d "$dir" ]; then
+              find "$dir" -type f 2>/dev/null | LC_ALL=C sort > "$file"
+            else
+              : > "$file"
+            fi
+          }
+          capture_dir_listing "$HOME/.cache/ms-playwright" "$ART/fs-ms-playwright.after.txt"
+          capture_dir_listing "$HOME/.cua-driver"          "$ART/fs-cua-driver.after.txt"
+          # Compute new Docker resources (no || true, no set +e)
+          comm -13 "$ART/docker-containers.before.txt" "$ART/docker-containers.after.txt" \
+            > "$ART/new-containers.txt"
+          comm -13 "$ART/docker-volumes.before.txt" "$ART/docker-volumes.after.txt" \
+            > "$ART/new-volumes.txt"
+          comm -13 "$ART/docker-networks.before.txt" "$ART/docker-networks.after.txt" \
+            > "$ART/new-networks.txt"
+          # Firecrawl deploy-script markers in $JH (per skills/janitor-firecrawl/scripts/deploy.sh)
           JH="${{ runner.temp }}/janitor-e2e"
-          HOME_DIR="${RUNNER_TEMP}/janitor-e2e-home"
-          # Firecrawl deploy-script markers in $JH
-          [ ! -f "$JH/docker/firecrawl.env" ]        || { echo "::error::Firecrawl .env generated by deploy.sh"; exit 1; }
-          [ ! -f "$JH/docker/firecrawl-compose.yml" ] || { echo "::error::Firecrawl compose copied by deploy.sh"; exit 1; }
-          # Browser / Playwright install-script markers in isolated HOME
-          [ ! -d "$HOME_DIR/.cache/ms-playwright" ]   || { echo "::error::Playwright cache created by janitor-browser/install.sh"; exit 1; }
-          echo "Optional skill / capability deployment markers absent: OK"
+          fail=0
+          if [ -s "$ART/new-containers.txt" ] || [ -s "$ART/new-volumes.txt" ] || [ -s "$ART/new-networks.txt" ]; then
+            echo "::error::New janitor-* Docker resources appeared after the minimal install:"
+            echo "  new_containers: $(tr '\n' ' ' < "$ART/new-containers.txt" 2>/dev/null)none"
+            echo "  new_volumes:    $(tr '\n' ' ' < "$ART/new-volumes.txt" 2>/dev/null)none"
+            echo "  new_networks:   $(tr '\n' ' ' < "$ART/new-networks.txt" 2>/dev/null)none"
+            fail=1
+          fi
+          if [ -f "$JH/docker/firecrawl.env" ] || [ -f "$JH/docker/firecrawl-compose.yml" ]; then
+            echo "::error::Firecrawl deploy.sh markers present in $JH/docker/"
+            ls -la "$JH/docker/" 2>/dev/null || true
+            fail=1
+          fi
+          # Optional-capability surfaces must be UNCHANGED. diff returns 1
+          # when files differ — that is the expected failure we want to
+          # detect, so we wrap it in `if ! ...; then`.
+          for surface in \
+            pkg-playwright \
+            pkg-faster-whisper \
+            pkg-openwakeword \
+            fs-ms-playwright \
+            fs-cua-driver; do
+            if ! diff -q "${ART}/${surface}.before.txt" "${ART}/${surface}.after.txt" >/dev/null 2>&1; then
+              echo "::error::Optional-capability state changed: ${surface}"
+              diff "${ART}/${surface}.before.txt" "${ART}/${surface}.after.txt" || true
+              fail=1
+            fi
+          done
+          [ "$fail" -eq 0 ] || exit 1
+          echo "No new janitor-* Docker resources: OK"
+          echo "No Firecrawl deploy markers in \$JH: OK"
+          echo "Optional-capability state unchanged: OK"
 
   os-compat:
     # OS-specific portability smoke for the Janitor test list. Adapted from
