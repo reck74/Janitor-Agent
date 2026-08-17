@@ -34,13 +34,21 @@
 # Asegúrate de tener el remoto upstream configurado
 git remote add upstream ssh://git@github.com/NousResearch/hermes-agent.git 2>/dev/null || true
 
-# Fetch de ambos remotos
+# Fetch del tag exacto v2026.8.13 (no upstream/main; los commits entre el tag
+# y main pueden romper los gates Janitor sin que tengamos visibilidad).
 git fetch origin main
-git fetch upstream main
+git fetch upstream tag v2026.8.13
 
-# Verifica cuántos commits faltan
-git log --oneline HEAD..upstream/main
+# Verifica cuántos commits faltan desde el tag
+git log --oneline HEAD..v2026.8.13
 ```
+
+> **Estrategia:** resolver cada path en conflicto individualmente según su
+> categoría (§3). Prohibido usar `-X theirs` o `-X ours` globalmente —
+> borra silenciosamente personalizaciones Janitor dentro de archivos upstream
+> sin levantar conflicto de 3 vías (precedente: wholesale adoption
+> `607078d2c` borró toda la zona Telegram). El merge se ejecuta siempre con
+> `git merge v2026.8.13 --no-edit` (default 3-way).
 
 ### 2.2 Checklist previo al merge
 
@@ -51,8 +59,8 @@ git log --oneline HEAD..upstream/main
 ### 2.3 Ejecución del merge
 
 ```bash
-# Merge directo (crea un commit de merge)
-git merge upstream/main --no-edit
+# Merge directo contra el tag exacto (crea un commit de merge)
+git merge v2026.8.13 --no-edit
 
 # Si hay conflictos, resuelve manualmente antes de continuar
 ```
@@ -82,6 +90,12 @@ git checkout HEAD -- .github/workflows/
 - `ui-tui/src/components/branding.tsx`
 - `hermes_cli/main.py` (funciones de versión)
 - `README.md`
+
+> **Telegram:** el path activo es `plugins/platforms/telegram/adapter.py`.
+> La ubicación histórica `gateway/platforms/telegram.py` ya no es el
+> target desde el refactor upstream a plugins/platforms — los símbolos
+> Janitor (`_set_janitor_avatar`, `_handle_start`) viven ahora en el
+> adapter. Ver §11 para el inventario histórico.
 
 **Reglas de resolución**:
 
@@ -891,3 +905,15 @@ la **fuente canónica** del delta Janitor en `telegram.py`. Aplicar con:
 git show 91a891618 -- gateway/platforms/telegram.py | git apply
 ```
 
+
+---
+
+## v2026.8.13 Sync
+
+**Base:** `467ffd02` · **Target:** tag `v2026.8.13` (`f80f453`) · **Version:** `0.20.1+janitor.1`.
+
+**Original 10-path conflict set (resolved by intent):** `gateway/platforms/api_server.py`, `hermes_cli/kanban_db.py`, `tools/cronjob_tools.py`, `tools/image_generation_tool.py`, `scripts/release.py`, `.github/workflows/{tests,docker,skills-index,uv-lockfile-check}.yml`, `uv.lock`. Each resolved file-by-file per §3 (no `-X theirs`/`-X ours` global, ver §2.1).
+
+**PTB pin:** `python-telegram-bot[webhooks]>=22.7,<23` en `pyproject.toml` (messaging + termux); `uv.lock` regenerado con `22.8` locked.
+
+**Deferred to post-merge:** Janitor update-flow files, the final 13-file CI test list (directiva #11), and installer OS-gate jobs — see Tasks 10–11.

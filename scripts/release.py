@@ -1555,6 +1555,8 @@ AUTHOR_MAP = {
     "bsmith@bramarstrategicservices.com": "bcsmith528",  # PR #20589 salvage (register_slack_action_handler plugin API)
     "sunsky.lau@gmail.com": "liuhao1024",  # PR #45494 salvage (claim session slot before auto-resume task; #45456)
     "andrewdmwalker@gmail.com": "capt-marbles",  # PR #38440 salvage (resolve xAI OAuth credentials across profiles; #43589)
+    "ken@kenweiner.com": "kweiner",
+    "prashantjain25@gmail.com": "prashantjain25",
 }
 
 

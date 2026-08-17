@@ -182,8 +182,9 @@ def read_install_method() -> str | None:
 
 def print_fast_version_info() -> None:
     from hermes_cli import __release_date__, __version__
+    from janitor_version import display_version
 
-    print(f"THE JANITOR v{__version__} ({__release_date__})")
+    print(f"THE JANITOR v{display_version(__version__)} ({__release_date__})")
     print(f"Install directory: {project_root_str()}")
     install_method = read_install_method()
     if install_method:
