@@ -121,6 +121,10 @@ def test_compose_no_hardcoded_gateway_ips() -> None:
 # --- deploy.sh checks --------------------------------------------------------
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="bash -n probe for the POSIX deploy script; Windows runtime is WSL2",
+)
 def test_deploy_sh_bash_syntax(deploy_text: str) -> None:
     """Run bash -n on the deploy script."""
     result = subprocess.run(
