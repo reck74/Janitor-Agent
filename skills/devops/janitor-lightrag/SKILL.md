@@ -2,6 +2,8 @@
 name: janitor-lightrag
 description: "Deploy and operate LightRAG self-hosted for Janitor."
 version: 1.0.0
+author: Janitor Agent
+license: MIT
 platforms: [linux]
 
 metadata:

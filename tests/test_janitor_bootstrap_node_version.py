@@ -28,6 +28,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 BOOTSTRAP = REPO_ROOT / "scripts" / "bootstrap.sh"
@@ -56,6 +58,10 @@ def _source_helper_get_var(varname: str) -> str:
     return result.stdout.strip()
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="helper targets POSIX installs; the documented Windows runtime is WSL2",
+)
 def test_node_helper_targets_major_22_by_default():
     """The shared helper must default to Node 22 (satisfies engines >=22.22.0).
 
@@ -84,7 +90,7 @@ def test_bootstrap_does_not_hardcode_node_20():
     historical bug (e.g. "previously hardcoded nvm install 20") without
     re-introducing it. Only an active, uncommented statement fails.
     """
-    text = BOOTSTRAP.read_text()
+    text = BOOTSTRAP.read_text(encoding="utf-8")
     active_lines = [
         line for line in text.splitlines()
         if line.lstrip() and not line.lstrip().startswith("#")
@@ -105,7 +111,7 @@ def test_bootstrap_delegates_to_shared_node_helper():
     disappears, the bootstrap has no Node provisioning (or, worse, has gone
     back to rolling its own nvm block).
     """
-    text = BOOTSTRAP.read_text()
+    text = BOOTSTRAP.read_text(encoding="utf-8")
     assert "node-bootstrap.sh" in text, (
         "scripts/bootstrap.sh must source scripts/lib/node-bootstrap.sh "
         "(the shared Node provisioning helper)."
@@ -116,6 +122,10 @@ def test_bootstrap_delegates_to_shared_node_helper():
     )
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="bash -n probe for the POSIX bootstrap; Windows runtime is WSL2",
+)
 def test_bootstrap_passes_bash_syntax_check():
     """bootstrap.sh must be syntactically valid bash (``bash -n``).
 

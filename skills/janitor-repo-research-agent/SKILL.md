@@ -3,6 +3,7 @@ name: janitor-repo-research-agent
 description: GitHub repository research agent for Janitor.
 version: 1.0.0
 author: Janitor Agent
+license: MIT
 platforms: [linux, macos]
 
 metadata:

@@ -2,6 +2,8 @@
 name: janitor-nocodb
 description: "Deploy and operate NocoDB self-hosted for Janitor."
 version: 1.0.0
+author: Janitor Agent
+license: MIT
 platforms: [linux, macos]
 
 metadata:

@@ -2,6 +2,8 @@
 name: janitor-waha
 description: "Deploy and operate WAHA WhatsApp API for Janitor."
 version: 2.0.0
+author: Janitor Agent
+license: MIT
 platforms: [linux]
 
 metadata:

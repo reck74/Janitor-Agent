@@ -2,6 +2,8 @@
 name: janitor-n8n
 description: "Deploy and operate n8n self-hosted for Janitor."
 version: 1.0.0
+author: Janitor Agent
+license: MIT
 platforms: [linux, macos]
 
 metadata:
@@ -22,7 +24,7 @@ triggering.
 
 ```
 127.0.0.1:5678 → janitor-n8n (docker.n8n.io/n8nio/n8n:latest)
-                  ├── SQLite DB at /home/node/.n8n/database.sqlite
+                  ├── SQLite DB at $HOME/.n8n/database.sqlite
                   ├── Encryption key in ~/.janitor/docker/n8n.env
                   └── Network: janitor-n8n-network (isolated bridge)
 ```

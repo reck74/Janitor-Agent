@@ -2,6 +2,8 @@
 name: janitor-browser
 description: "Install Playwright browser automation for Janitor."
 version: 1.0.0
+author: Janitor Agent
+license: MIT
 platforms: [linux, macos, win32]
 
 metadata:

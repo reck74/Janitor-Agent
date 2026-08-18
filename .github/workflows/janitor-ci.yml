@@ -28,12 +28,14 @@ jobs:
             tests/test_janitor_update_bootstrap.py \
             tests/test_janitor_update_core.py \
             tests/test_janitor_bootstrap_node_version.py \
+            tests/test_janitor_syntax_guard.py \
             tests/gateway/test_telegram_janitor_branding.py \
             tests/skills/test_janitor_config_audit_skill.py \
             tests/skills/test_janitor_firecrawl_skill.py \
             tests/skills/test_janitor_lightrag_skill.py \
             tests/test_janitor_monkeypatch_signatures.py \
             tests/test_janitor_no_duplicate_methods.py \
+            tests/test_janitor_migrate_v0201.py \
             tests/hermes_cli/test_mcp_router_discover.py \
             tests/hermes_cli/test_mcp_router_logs.py \
             --tb=short -v
@@ -84,3 +86,555 @@ jobs:
           test -f hermes_cli/web_dist/index.html
           test -d hermes_cli/web_dist/assets
           test -n "$(find hermes_cli/web_dist/assets -type f -print -quit)"
+
+  installer-e2e:
+    # Minimal-install smoke for the checked-out Janitor branch. Adapted from
+    # upstream tag v2026.8.13's install-e2e.yml — Janitor does not publish
+    # release tags, so the upstream "install from N prior releases" matrix is
+    # dropped. We instead point at the current branch, assert janitor --version
+    # prints THE JANITOR banner (per AGENTS.md directive #12), run the minimal
+    # janitor-install.sh against an isolated HOME scratch dir, and verify the
+    # base install does NOT bring up any opt-in service containers (Honcho
+    # local, Firecrawl, Browser, Computer Use, voice/wake) — see AGENTS.md
+    # directive #9 (OPTIONAL SKILLS ARE EXPLICIT) and directive #5 (janitor-
+    # prefix for every container / network / volume / service Janitor owns).
+    # Any Docker resource the installer creates here must carry the janitor-
+    # prefix and must appear in a snapshot diff to fail the job.
+    name: Janitor minimal-install smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # 8.2.0
+        with:
+          # Pinned for the same reason as upstream tests-os.yml: unpinned,
+          # setup-uv resolves "latest" by fetching a manifest on every job
+          # and a transient fetch failure fails the whole job.
+          version: "0.9.28"
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Set up Python 3.11
+        uses: ./.github/actions/retry
+        with:
+          command: uv python install 3.11
+
+      - name: Install dependencies
+        # Same extras as upstream tests-os.yml so the version of the agent
+        # code paths exercised here matches the one Janitor users run.
+        uses: ./.github/actions/retry
+        with:
+          command: uv sync --locked --python 3.11 --extra all --extra dev --extra anthropic --extra mistral --extra fal --extra modal --extra daytona --extra hindsight --extra parallel-web
+
+      - name: Minimize uv cache
+        run: uv cache prune --ci
+
+      - name: Assert janitor --version prints the Janitor banner
+        # Per AGENTS.md directive #12 (TEST ASSERTION BRANDING) the version
+        # banner must say THE JANITOR, not Hermes Agent.
+        run: |
+          set -euo pipefail
+          out="$(uv run janitor --version)"
+          echo "$out"
+          echo "$out" | grep -qE '^THE JANITOR v'
+
+      - name: Snapshot janitor-* Docker + optional-capability state (before install)
+        # Per AGENTS.md directive #5 every container / volume / network Janitor
+        # creates must carry the janitor- prefix. The Docker CLI and a
+        # reachable daemon are REQUIRED — fail-closed here, not fail-open:
+        # if Docker is not available, this job fails, because missing the
+        # verification would silently allow an opt-in service container to
+        # slip through.
+        #
+        # AGENTS.md directive #9 (OPTIONAL SKILLS ARE EXPLICIT): we also
+        # snapshot the state of optional-capability surfaces (Playwright /
+        # Computer Use / voice / wake Python packages and their filesystem
+        # markers). The CI step "Install dependencies" above pulls the full
+        # `[all]` extras; none of these optional packages are in `[all]`
+        # today, but we intentionally compare BEFORE/AFTER state (not
+        # "package absent") so this gate stays valid if a future extras
+        # change adds any of them.
+        env:
+          HOME: ${{ runner.temp }}/janitor-e2e-home
+        run: |
+          set -euo pipefail
+          ART="${RUNNER_TEMP}/janitor-e2e"
+          mkdir -p "$ART"
+          # Docker CLI + daemon: required (fail-closed)
+          command -v docker >/dev/null 2>&1 || { echo "::error::docker CLI not found"; exit 1; }
+          docker info >/dev/null 2>&1 || { echo "::error::docker daemon not reachable on this runner"; exit 1; }
+          # janitor-* Docker resources (sorted; no || true)
+          docker ps -a --filter name=janitor- --format '{{.Names}}' \
+            | LC_ALL=C sort -u > "$ART/docker-containers.before.txt"
+          docker volume ls --filter name=janitor- --format '{{.Name}}' \
+            | LC_ALL=C sort -u > "$ART/docker-volumes.before.txt"
+          docker network ls --filter name=janitor- --format '{{.Name}}' \
+            | LC_ALL=C sort -u > "$ART/docker-networks.before.txt"
+          # Optional-capability Python packages. capture_pkg_state writes
+          # STATUS=PRESENT + sorted Name/Version lines when uv pip show
+          # succeeds, STATUS=ABSENT only when uv pip show returns the
+          # "warning: Package(s) not found" sentinel (confirmed absence).
+          # Any other uv/grep/parse failure is operational and propagates
+          # via set -e — it must NOT collapse to an empty file (which
+          # would mask a broken venv or broken uv).
+          capture_pkg_state() {
+            local pkg="$1" file="$2"
+            local err="${file}.err" body="${file}.body"
+            : > "$err"; : > "$body"
+            # uv pip show exits non-zero for both "package absent" and
+            # "uv broken / env broken". ONLY the package-specific
+            # absence sentinel — stderr is EXACTLY
+            # "warning: Package(s) not found for: <pkg>" after command
+            # substitution strips the trailing newline (no extra error
+            # lines, no different warning wording, no
+            # "for: <other-pkg>" mismatch) — is allowed to produce
+            # STATUS=ABSENT. Anything else (different package name in
+            # stderr, mixed warning + error, broken PATH, broken venv,
+            # parse error) is an OPERATIONAL failure that must
+            # propagate under set -e — we do NOT collapse it to
+            # STATUS=ABSENT, because that would silently hide a CI
+            # environment problem or a legitimate
+            # warning-on-top-of-error condition.
+            #
+            # On the success branch, uv pip show stdout must contain
+            # EXACTLY ONE "Name: <name>" line AND EXACTLY ONE
+            # "Version: <version>" line. Anything else (missing Name,
+            # missing Version, duplicate Name, duplicate Version, or
+            # other malformed fields) fails closed under set -e.
+            if uv pip show "$pkg" > "$body" 2> "$err"; then
+              local name_count version_count state
+              name_count=$(grep -cE '^Name:' "$body") || name_count=0
+              version_count=$(grep -cE '^Version:' "$body") || version_count=0
+              if [ "$name_count" -ne 1 ] || [ "$version_count" -ne 1 ]; then
+                echo "::error::uv pip show $pkg output must contain exactly one Name and one Version line (got Name=$name_count Version=$version_count):" >&2
+                cat "$body" >&2
+                rm -f "$body" "$err"; exit 1
+              fi
+              if ! state=$(grep -E '^(Name|Version):' "$body" | LC_ALL=C sort -k1,1); then
+                echo "::error::failed to extract Name/Version from uv pip show $pkg output:" >&2
+                cat "$body" >&2
+                rm -f "$body" "$err"; exit 1
+              fi
+              {
+                printf 'STATUS=PRESENT\n'
+                printf '%s\n' "$state"
+              } > "$file"
+              rm -f "$body" "$err"
+            else
+              local actual expected
+              actual="$(cat "$err")"
+              expected="warning: Package(s) not found for: $pkg"
+              if [ "$expected" = "$actual" ]; then
+                # Confirmed absent — only this exact stderr shape (one
+                # line, package-specific, no extras) writes
+                # STATUS=ABSENT. Command substitution's trailing-newline
+                # stripping gives a clean equality test against the
+                # expected diagnostic; any second stderr line keeps
+                # actual != expected and routes to the operational-error
+                # branch below.
+                printf 'STATUS=ABSENT\n' > "$file"
+                rm -f "$body" "$err"
+              else
+                # Operational error: different pkg in stderr, extra
+                # stderr lines (mixed warning + error), broken uv,
+                # broken env, parse failure, etc.
+                echo "::error::uv pip show $pkg stderr does not match package-specific absence sentinel (treating as operational error):" >&2
+                echo "  expected: '$expected'" >&2
+                echo "  actual:   '$actual'" >&2
+                rm -f "$body" "$err"; exit 1
+              fi
+            fi
+          }
+          capture_pkg_state playwright      "$ART/pkg-playwright.before.txt"
+          capture_pkg_state faster-whisper  "$ART/pkg-faster-whisper.before.txt"
+          capture_pkg_state openwakeword    "$ART/pkg-openwakeword.before.txt"
+          # Filesystem markers for Browser (Playwright cache) and Computer
+          # Use (cua-driver home — see hermes_cli/tools_config.py:1142).
+          # capture_dir_listing writes STATUS=PRESENT + sorted listing of
+          # EVERY entry type (file, dir, symlink, etc.) when the directory
+          # exists, or STATUS=ABSENT when it does not. find errors and
+          # partial captures (non-empty stderr) propagate as fail-closed.
+          capture_dir_listing() {
+            local dir="$1" file="$2"
+            if [ -d "$dir" ]; then
+              # PRESENT — capture every entry (file, directory, symlink,
+              # block, char, fifo, socket, etc.), not just regular files.
+              # -mindepth 1 skips the root itself; -printf '%y %p\n' tags
+              # each entry with its type ('f'/'d'/'l'/etc) so a directory-
+              # only or symlink-only tree still produces a deterministic
+              # listing (a present-but-empty directory becomes
+              # "STATUS=PRESENT\n" with an empty body, distinct from
+              # "STATUS=ABSENT"). find errors propagate under set -e
+              # (no 2>/dev/null suppression); we also fail closed if find
+              # emits any stderr output, since a partial capture would
+              # produce a misleading diff downstream.
+              local err="${file}.err" body="${file}.body"
+              : > "$err"; : > "$body"
+              if ! find "$dir" -mindepth 1 -printf '%y %p\n' > "$body" 2> "$err"; then
+                echo "::error::find exited non-zero for $dir:" >&2
+                cat "$err" >&2
+                rm -f "$body" "$err"; exit 1
+              fi
+              if [ -s "$err" ]; then
+                echo "::error::find emitted errors for $dir (partial capture, fail-closed):" >&2
+                cat "$err" >&2
+                rm -f "$body" "$err"; exit 1
+              fi
+              {
+                printf 'STATUS=PRESENT\n'
+                LC_ALL=C sort -k2 "$body"
+              } > "$file"
+              rm -f "$body" "$err"
+            else
+              # ABSENT — directory does not exist (or is not a directory).
+              # Sentinel distinguishes from a present-but-empty directory.
+              printf 'STATUS=ABSENT\n' > "$file"
+            fi
+          }
+          capture_dir_listing "$HOME/.cache/ms-playwright" "$ART/fs-ms-playwright.before.txt"
+          capture_dir_listing "$HOME/.cua-driver"          "$ART/fs-cua-driver.before.txt"
+
+      - name: Run minimal Janitor installer non-interactively
+        # HOME / JANITOR_HOME / HERMES_HOME are all redirected to an isolated
+        # scratch dir under ${RUNNER_TEMP}. The installer's RC-file injection
+        # loop (lines 243-255) writes to ${HOME}/.bashrc / ${HOME}/.zshrc —
+        # with HOME redirected, those writes land in the scratch dir and never
+        # touch the runner's real $HOME. setup_mode = "1" (Honcho cloud)
+        # ensures scripts/setup-honcho.sh is NEVER invoked; that script
+        # would otherwise spin up janitor-honcho-{api,deriver,database,redis}
+        # Docker containers, which is a hard opt-in violation.
+        #
+        # Every prompt is fed deterministically via stdin in the order the
+        # installer reads them (scripts/janitor-install.sh lines 70 / 82 /
+        # 102 / 115 / 122):
+        #   line 1: OPENAI_API_KEY    (required, non-empty)
+        #   line 2: MINIMAX_API_KEY   (required, retries until non-empty)
+        #   line 3: setup_mode        (1 = Honcho cloud, never invokes Docker)
+        #   line 4: HONCHO_API_KEY    (cloud placeholder; consumed only in mode=1)
+        #   line 5: OPENAI_BASE_URL   (empty)
+        # The HONCHO_API_KEY env var was REMOVED in round 2: the installer
+        # reads the Honcho key ONLY from stdin (line 115), not from env —
+        # setting it in env: was a no-op.
+        # Any failure from the installer propagates to CI (no `|| true`).
+        env:
+          HOME: ${{ runner.temp }}/janitor-e2e-home
+          JANITOR_HOME: ${{ runner.temp }}/janitor-e2e
+          HERMES_HOME: ${{ runner.temp }}/janitor-e2e
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME" "$JANITOR_HOME"
+          printf 'ci-openai-key\nci-minimax-key\n1\nci-placeholder-honcho-key\n\n' \
+            | bash scripts/janitor-install.sh
+
+      - name: Assert minimal base artifacts were deployed
+        run: |
+          set -euo pipefail
+          JH="${{ runner.temp }}/janitor-e2e"
+          test -f "$JH/.env"
+          test -f "$JH/config.yaml"
+          test -f "$JH/SOUL.md"
+          test -f "$JH/skins/sentry-janitor.yaml"
+          test -d "$JH/skills"
+          test -d "$JH/sessions"
+          test -d "$JH/logs"
+          echo "Minimal install artifacts: OK"
+
+      - name: Snapshot state (after install) and assert no new Docker resource and no optional-capability state change
+        # Re-runs the same captures the "before" step wrote, then computes the
+        # diff against the before snapshot files. Any new janitor-*
+        # container / volume / network OR any change in optional-capability
+        # state is a policy violation. `comm` runs under set -euo pipefail
+        # and its non-zero exit (e.g. missing input file) propagates; we do
+        # NOT use `|| true` or `set +e` in this enforcement path.
+        env:
+          HOME: ${{ runner.temp }}/janitor-e2e-home
+        run: |
+          set -euo pipefail
+          ART="${RUNNER_TEMP}/janitor-e2e"
+          docker ps -a --filter name=janitor- --format '{{.Names}}' \
+            | LC_ALL=C sort -u > "$ART/docker-containers.after.txt"
+          docker volume ls --filter name=janitor- --format '{{.Name}}' \
+            | LC_ALL=C sort -u > "$ART/docker-volumes.after.txt"
+          docker network ls --filter name=janitor- --format '{{.Name}}' \
+            | LC_ALL=C sort -u > "$ART/docker-networks.after.txt"
+          capture_pkg_state() {
+            local pkg="$1" file="$2"
+            local err="${file}.err" body="${file}.body"
+            : > "$err"; : > "$body"
+            # uv pip show exits non-zero for both "package absent" and
+            # "uv broken / env broken". ONLY the package-specific
+            # absence sentinel — stderr is EXACTLY
+            # "warning: Package(s) not found for: <pkg>" after command
+            # substitution strips the trailing newline (no extra error
+            # lines, no different warning wording, no
+            # "for: <other-pkg>" mismatch) — is allowed to produce
+            # STATUS=ABSENT. Anything else (different package name in
+            # stderr, mixed warning + error, broken PATH, broken venv,
+            # parse error) is an OPERATIONAL failure that must
+            # propagate under set -e — we do NOT collapse it to
+            # STATUS=ABSENT, because that would silently hide a CI
+            # environment problem or a legitimate
+            # warning-on-top-of-error condition.
+            #
+            # On the success branch, uv pip show stdout must contain
+            # EXACTLY ONE "Name: <name>" line AND EXACTLY ONE
+            # "Version: <version>" line. Anything else (missing Name,
+            # missing Version, duplicate Name, duplicate Version, or
+            # other malformed fields) fails closed under set -e.
+            if uv pip show "$pkg" > "$body" 2> "$err"; then
+              local name_count version_count state
+              name_count=$(grep -cE '^Name:' "$body") || name_count=0
+              version_count=$(grep -cE '^Version:' "$body") || version_count=0
+              if [ "$name_count" -ne 1 ] || [ "$version_count" -ne 1 ]; then
+                echo "::error::uv pip show $pkg output must contain exactly one Name and one Version line (got Name=$name_count Version=$version_count):" >&2
+                cat "$body" >&2
+                rm -f "$body" "$err"; exit 1
+              fi
+              if ! state=$(grep -E '^(Name|Version):' "$body" | LC_ALL=C sort -k1,1); then
+                echo "::error::failed to extract Name/Version from uv pip show $pkg output:" >&2
+                cat "$body" >&2
+                rm -f "$body" "$err"; exit 1
+              fi
+              {
+                printf 'STATUS=PRESENT\n'
+                printf '%s\n' "$state"
+              } > "$file"
+              rm -f "$body" "$err"
+            else
+              local actual expected
+              actual="$(cat "$err")"
+              expected="warning: Package(s) not found for: $pkg"
+              if [ "$expected" = "$actual" ]; then
+                # Confirmed absent — only this exact stderr shape (one
+                # line, package-specific, no extras) writes
+                # STATUS=ABSENT. Command substitution's trailing-newline
+                # stripping gives a clean equality test against the
+                # expected diagnostic; any second stderr line keeps
+                # actual != expected and routes to the operational-error
+                # branch below.
+                printf 'STATUS=ABSENT\n' > "$file"
+                rm -f "$body" "$err"
+              else
+                # Operational error: different pkg in stderr, extra
+                # stderr lines (mixed warning + error), broken uv,
+                # broken env, parse failure, etc.
+                echo "::error::uv pip show $pkg stderr does not match package-specific absence sentinel (treating as operational error):" >&2
+                echo "  expected: '$expected'" >&2
+                echo "  actual:   '$actual'" >&2
+                rm -f "$body" "$err"; exit 1
+              fi
+            fi
+          }
+          capture_pkg_state playwright      "$ART/pkg-playwright.after.txt"
+          capture_pkg_state faster-whisper  "$ART/pkg-faster-whisper.after.txt"
+          capture_pkg_state openwakeword    "$ART/pkg-openwakeword.after.txt"
+          capture_dir_listing() {
+            local dir="$1" file="$2"
+            if [ -d "$dir" ]; then
+              # PRESENT — capture every entry (file, directory, symlink,
+              # block, char, fifo, socket, etc.), not just regular files.
+              # -mindepth 1 skips the root itself; -printf '%y %p\n' tags
+              # each entry with its type ('f'/'d'/'l'/etc) so a directory-
+              # only or symlink-only tree still produces a deterministic
+              # listing (a present-but-empty directory becomes
+              # "STATUS=PRESENT\n" with an empty body, distinct from
+              # "STATUS=ABSENT"). find errors propagate under set -e
+              # (no 2>/dev/null suppression); we also fail closed if find
+              # emits any stderr output, since a partial capture would
+              # produce a misleading diff downstream.
+              local err="${file}.err" body="${file}.body"
+              : > "$err"; : > "$body"
+              if ! find "$dir" -mindepth 1 -printf '%y %p\n' > "$body" 2> "$err"; then
+                echo "::error::find exited non-zero for $dir:" >&2
+                cat "$err" >&2
+                rm -f "$body" "$err"; exit 1
+              fi
+              if [ -s "$err" ]; then
+                echo "::error::find emitted errors for $dir (partial capture, fail-closed):" >&2
+                cat "$err" >&2
+                rm -f "$body" "$err"; exit 1
+              fi
+              {
+                printf 'STATUS=PRESENT\n'
+                LC_ALL=C sort -k2 "$body"
+              } > "$file"
+              rm -f "$body" "$err"
+            else
+              # ABSENT — directory does not exist (or is not a directory).
+              # Sentinel distinguishes from a present-but-empty directory.
+              printf 'STATUS=ABSENT\n' > "$file"
+            fi
+          }
+          capture_dir_listing "$HOME/.cache/ms-playwright" "$ART/fs-ms-playwright.after.txt"
+          capture_dir_listing "$HOME/.cua-driver"          "$ART/fs-cua-driver.after.txt"
+          # Compute new Docker resources (no || true, no set +e)
+          comm -13 "$ART/docker-containers.before.txt" "$ART/docker-containers.after.txt" \
+            > "$ART/new-containers.txt"
+          comm -13 "$ART/docker-volumes.before.txt" "$ART/docker-volumes.after.txt" \
+            > "$ART/new-volumes.txt"
+          comm -13 "$ART/docker-networks.before.txt" "$ART/docker-networks.after.txt" \
+            > "$ART/new-networks.txt"
+          # Firecrawl deploy-script markers in $JH (per skills/janitor-firecrawl/scripts/deploy.sh)
+          JH="${{ runner.temp }}/janitor-e2e"
+          fail=0
+          if [ -s "$ART/new-containers.txt" ] || [ -s "$ART/new-volumes.txt" ] || [ -s "$ART/new-networks.txt" ]; then
+            echo "::error::New janitor-* Docker resources appeared after the minimal install:"
+            echo "  new_containers: $(tr '\n' ' ' < "$ART/new-containers.txt" 2>/dev/null)none"
+            echo "  new_volumes:    $(tr '\n' ' ' < "$ART/new-volumes.txt" 2>/dev/null)none"
+            echo "  new_networks:   $(tr '\n' ' ' < "$ART/new-networks.txt" 2>/dev/null)none"
+            fail=1
+          fi
+          if [ -f "$JH/docker/firecrawl.env" ] || [ -f "$JH/docker/firecrawl-compose.yml" ]; then
+            echo "::error::Firecrawl deploy.sh markers present in $JH/docker/"
+            ls -la "$JH/docker/" 2>/dev/null || true
+            fail=1
+          fi
+          # Optional-capability surfaces must be UNCHANGED. diff returns 1
+          # when files differ — that is the expected failure we want to
+          # detect, so we wrap it in `if ! ...; then`.
+          for surface in \
+            pkg-playwright \
+            pkg-faster-whisper \
+            pkg-openwakeword \
+            fs-ms-playwright \
+            fs-cua-driver; do
+            if ! diff -q "${ART}/${surface}.before.txt" "${ART}/${surface}.after.txt" >/dev/null 2>&1; then
+              echo "::error::Optional-capability state changed: ${surface}"
+              diff "${ART}/${surface}.before.txt" "${ART}/${surface}.after.txt" || true
+              fail=1
+            fi
+          done
+          [ "$fail" -eq 0 ] || exit 1
+          echo "No new janitor-* Docker resources: OK"
+          echo "No Firecrawl deploy markers in \$JH: OK"
+          echo "Optional-capability state unchanged: OK"
+
+  os-compat:
+    # OS-specific portability smoke for the Janitor test list. Adapted from
+    # upstream tag v2026.8.13's tests-os.yml — preserves the macOS + Windows
+    # matrix, the uv / Python 3.11 / extras setup, the retry composite, and
+    # the cache-pruning step. The test invocation diverges from upstream on
+    # purpose: upstream runs OS-marked tests via the macos_only /
+    # windows_only pytest markers; Janitor's tests are platform-agnostic
+    # Python, so we want to exercise them on every host. Per the human
+    # amendment (recorded in task-11-brief.md), the two runners dispatch
+    # differently:
+    #   - macos-latest: scripts/run_tests.sh (Janitor's canonical runner —
+    #     per-file subprocess isolation, TZ=UTC, env blanking, venv probe).
+    #   - windows-latest: .venv/Scripts/python.exe -m pytest directly,
+    #     because scripts/run_tests.sh uses POSIX-only process-group handling
+    #     that does not work natively on Windows runners. The ordered 13-file
+    #     list is identical between the two runners.
+    # AGENTS.md directive #11 requires both this list and tests.yml :: test
+    # carry the same 13 files; tests.yml :: test enforces that on
+    # ubuntu-latest.
+    name: Janitor tests on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # 8.2.0
+        with:
+          # Pinned for the same reason as upstream tests-os.yml.
+          version: "0.9.28"
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Set up Python 3.11
+        uses: ./.github/actions/retry
+        with:
+          command: uv python install 3.11
+
+      - name: Install dependencies
+        uses: ./.github/actions/retry
+        with:
+          command: uv sync --locked --python 3.11 --extra all --extra dev --extra anthropic --extra mistral --extra fal --extra modal --extra daytona --extra hindsight --extra parallel-web
+
+      - name: Minimize uv cache
+        run: uv cache prune --ci
+
+      - name: Run Janitor tests (macOS)
+        # Same 14-file list as the PR gate, dispatched through Janitor's
+        # runner so per-file subprocess isolation + venv/TZ/env blanks are
+        # honored. Wrapper / skin / HOME assertions live inside these tests;
+        # running them on macOS proves the Janitor-specific code paths work
+        # outside ubuntu-latest.
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        env:
+          OPENROUTER_API_KEY: ""
+          OPENAI_API_KEY: ""
+          NOUS_API_KEY: ""
+        run: |
+          set -euo pipefail
+          scripts/run_tests.sh \
+            tests/test_janitor_cli.py \
+            tests/test_janitor_update_bootstrap.py \
+            tests/test_janitor_update_core.py \
+            tests/test_janitor_bootstrap_node_version.py \
+            tests/test_janitor_syntax_guard.py \
+            tests/gateway/test_telegram_janitor_branding.py \
+            tests/skills/test_janitor_config_audit_skill.py \
+            tests/skills/test_janitor_firecrawl_skill.py \
+            tests/skills/test_janitor_lightrag_skill.py \
+            tests/test_janitor_monkeypatch_signatures.py \
+            tests/test_janitor_no_duplicate_methods.py \
+            tests/test_janitor_migrate_v0201.py \
+            tests/hermes_cli/test_mcp_router_discover.py \
+            tests/hermes_cli/test_mcp_router_logs.py \
+            -v
+
+      - name: Run Janitor tests (Windows)
+        # Direct .venv/Scripts/python.exe -m pytest invocation (per the human
+        # amendment in task-11-brief.md) — scripts/run_tests_parallel.py uses
+        # POSIX-only process-group handling and does not work natively on
+        # Windows. The ordered 14-file list and the env blanks / verbosity
+        # options are identical to the macOS leg.
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        env:
+          OPENROUTER_API_KEY: ""
+          OPENAI_API_KEY: ""
+          NOUS_API_KEY: ""
+        run: |
+          set -euo pipefail
+          # Windows Python defaults to cp1252 for Path.read_text() without an
+          # explicit encoding; the fork's scripts/tests carry UTF-8 (arrows,
+          # emoji). UTF-8 mode makes every read_text() site decode as UTF-8.
+          export PYTHONUTF8=1
+          # Put Git Bash ahead of System32 so pytest subprocesses spawning
+          # `bash` get Git Bash instead of the WSL launcher (which exits 1
+          # with "no installed distributions" on hosted runners).
+          export PATH="/c/Program Files/Git/bin:$PATH"
+          .venv/Scripts/python.exe -m pytest \
+            tests/test_janitor_cli.py \
+            tests/test_janitor_update_bootstrap.py \
+            tests/test_janitor_update_core.py \
+            tests/test_janitor_bootstrap_node_version.py \
+            tests/test_janitor_syntax_guard.py \
+            tests/gateway/test_telegram_janitor_branding.py \
+            tests/skills/test_janitor_config_audit_skill.py \
+            tests/skills/test_janitor_firecrawl_skill.py \
+            tests/skills/test_janitor_lightrag_skill.py \
+            tests/test_janitor_monkeypatch_signatures.py \
+            tests/test_janitor_no_duplicate_methods.py \
+            tests/test_janitor_migrate_v0201.py \
+            tests/hermes_cli/test_mcp_router_discover.py \
+            tests/hermes_cli/test_mcp_router_logs.py \
+            --tb=short -v

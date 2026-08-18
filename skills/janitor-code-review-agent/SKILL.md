@@ -3,6 +3,7 @@ name: janitor-code-review-agent
 description: Code review agent for Janitor.
 version: 1.0.0
 author: Janitor Agent
+license: MIT
 platforms: [linux, macos]
 
 metadata:

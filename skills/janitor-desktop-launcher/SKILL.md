@@ -2,6 +2,8 @@
 name: janitor-desktop-launcher
 description: "Launch the compiled Janitor Desktop AppImage."
 version: 1.1.0
+author: Janitor Agent
+license: MIT
 platforms: [linux]
 
 metadata:
@@ -81,7 +83,7 @@ bash skills/janitor-desktop-launcher/scripts/launch.sh
 bash skills/janitor-desktop-launcher/scripts/launch.sh --print-path
 
 # Custom HERMES_HOME (e.g., multi-profile setup)
-HERMES_HOME=/home/me/.janitor-prod bash skills/janitor-desktop-launcher/scripts/launch.sh
+HERMES_HOME=$HOME/.janitor-prod bash skills/janitor-desktop-launcher/scripts/launch.sh
 
 # Faster: run the unpacked binary (dev only)
 bash skills/janitor-desktop-launcher/scripts/launch.sh --unpacked
