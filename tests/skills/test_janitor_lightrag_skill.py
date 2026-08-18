@@ -27,6 +27,7 @@ import os
 import re
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -61,6 +62,9 @@ def skill_text() -> str:
 # --- File presence + permissions --------------------------------------------
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="NTFS carries no executable bit; X_OK is POSIX-only"
+)
 def test_deploy_sh_exists_and_is_executable() -> None:
     assert DEPLOY_SH.is_file(), f"deploy.sh missing at {DEPLOY_SH}"
     mode = DEPLOY_SH.stat().st_mode

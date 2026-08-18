@@ -614,6 +614,14 @@ jobs:
           NOUS_API_KEY: ""
         run: |
           set -euo pipefail
+          # Windows Python defaults to cp1252 for Path.read_text() without an
+          # explicit encoding; the fork's scripts/tests carry UTF-8 (arrows,
+          # emoji). UTF-8 mode makes every read_text() site decode as UTF-8.
+          export PYTHONUTF8=1
+          # Put Git Bash ahead of System32 so pytest subprocesses spawning
+          # `bash` get Git Bash instead of the WSL launcher (which exits 1
+          # with "no installed distributions" on hosted runners).
+          export PATH="/c/Program Files/Git/bin:$PATH"
           .venv/Scripts/python.exe -m pytest \
             tests/test_janitor_cli.py \
             tests/test_janitor_update_bootstrap.py \

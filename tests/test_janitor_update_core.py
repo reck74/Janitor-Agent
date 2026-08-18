@@ -156,7 +156,11 @@ def test_ff_only_failure_falls_back_to_reset_hard_origin_main(monkeypatch, tmp_p
 
     reset_calls = [c for c in recorded if "reset" in c and "--hard" in c]
     assert len(reset_calls) == 1
-    assert reset_calls[0] == ["git", "reset", "--hard", "origin/main"]
+    # Windows prepends `-c windows.appendAtomically=false` before the
+    # subcommand; assert the invariant (a hard reset to origin/main)
+    # without pinning platform-specific `-c` config flags.
+    argv = reset_calls[0]
+    assert argv[argv.index("reset") :] == ["reset", "--hard", "origin/main"]
     assert "Fast-forward not possible" in capsys.readouterr().out
     assert rc == 0  # fallback succeeded
 

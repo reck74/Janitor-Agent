@@ -96,7 +96,9 @@ class TestJanitorCommand:
         """The `janitor` command must be available after installation."""
         python_exec = sys.executable
         result = subprocess.run(
-            [python_exec, "-c", "from janitor_cli import main; main()"],
+            [python_exec, "-c",
+             "import sys; sys.argv = ['janitor', '--version']; "
+             "from janitor_cli import main; main()"],
             capture_output=True,
             text=True,
             env={
@@ -119,7 +121,9 @@ class TestJanitorCommand:
         """`janitor --help` must execute without errors (exit 0 or 2 for argparse)."""
         python_exec = sys.executable
         result = subprocess.run(
-            [python_exec, "-c", "from janitor_cli import main; main()"],
+            [python_exec, "-c",
+             "import sys; sys.argv = ['janitor', '--help']; "
+             "from janitor_cli import main; main()"],
             capture_output=True,
             text=True,
             env={
