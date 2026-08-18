@@ -6,7 +6,7 @@ const RELEVANT_ENV = [
   'HERMES_TUI_BACKGROUND',
   'COLORFGBG',
   'COLORTERM',
-  'TERM_PROGRAM',
+  'TERM_PROGRAM'
 ] as const
 
 async function importThemeWithEnv(env: Partial<Record<(typeof RELEVANT_ENV)[number], string>> = {}) {
@@ -32,16 +32,19 @@ describe('Janitor skin integration', () => {
   it('janitor branding can be injected via fromSkin', async () => {
     const { fromSkin } = await importThemeWithCleanEnv()
 
-    const theme = fromSkin({
-      banner_border: '#00FF41',
-      banner_title: '#00FF41',
-      banner_accent: '#39FF14',
-      banner_dim: '#0D3D0D',
-      banner_text: '#00FF41',
-    }, {
-      agent_name: 'Janitor',
-      prompt_symbol: '▓',
-    })
+    const theme = fromSkin(
+      {
+        banner_border: '#00FF41',
+        banner_title: '#00FF41',
+        banner_accent: '#39FF14',
+        banner_dim: '#0D3D0D',
+        banner_text: '#00FF41'
+      },
+      {
+        agent_name: 'Janitor',
+        prompt_symbol: '▓'
+      }
+    )
 
     expect(theme.brand.name).toBe('Janitor')
     expect(theme.brand.prompt).toBe('▓')
@@ -50,16 +53,19 @@ describe('Janitor skin integration', () => {
   it('janitor colors are applied via fromSkin', async () => {
     const { fromSkin } = await importThemeWithCleanEnv()
 
-    const theme = fromSkin({
-      banner_title: '#00FF41',
-      banner_border: '#00FF41',
-      banner_accent: '#39FF14',
-      banner_dim: '#0D3D0D',
-      banner_text: '#00FF41',
-      ui_error: '#FF073A',
-    }, {
-      agent_name: 'Janitor',
-    })
+    const theme = fromSkin(
+      {
+        banner_title: '#00FF41',
+        banner_border: '#00FF41',
+        banner_accent: '#39FF14',
+        banner_dim: '#0D3D0D',
+        banner_text: '#00FF41',
+        ui_error: '#FF073A'
+      },
+      {
+        agent_name: 'Janitor'
+      }
+    )
 
     expect(theme.color.primary).toBe('#00FF41')
   })
@@ -84,7 +90,7 @@ describe('Janitor skin integration', () => {
       banner_dim: '#0D3D0D',
       banner_text: '#00FF41',
       ui_error: '#FF073A',
-      ui_warn: '#FFE135',
+      ui_warn: '#FFE135'
     }
 
     const theme = fromSkin(janitorSkin, {})

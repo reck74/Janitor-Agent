@@ -1183,7 +1183,8 @@ export function TextInput({
       const actionDeleteWord = (mod && inp === 'w') || isMacActionFallback(k, inp, 'w')
       const range = selRange()
       const delFwd = k.delete || fwdDel.current
-      const isPrintableInput = (event.keypress.isPasted || inp.length > 0) && PRINTABLE.test(inp.replace(BRACKET_PASTE, ''))
+      const isPrintableInput =
+        (event.keypress.isPasted || inp.length > 0) && PRINTABLE.test(inp.replace(BRACKET_PASTE, ''))
 
       if (!isPrintableInput) {
         flushKeyBurst()

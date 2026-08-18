@@ -239,20 +239,20 @@ export const JANITOR_BRAND: ThemeBrand = {
 // Janitor dark palette — Sentry Dark IDE + Cyberpunk Flamethrower
 export const JANITOR_DARK_THEME: Theme = {
   color: {
-    primary: '#c2ef4e',      // Lime Green: títulos y CTA
-    accent: '#6a5fc1',       // Sentry Purple: enlaces y focus
-    border: '#362d59',      // Border Purple: líneas estructurales
-    text: '#e5e7eb',         // Light Gray: texto secundario
-    muted: '#79628c',        // Muted Purple: secundario
+    primary: '#c2ef4e', // Lime Green: títulos y CTA
+    accent: '#6a5fc1', // Sentry Purple: enlaces y focus
+    border: '#362d59', // Border Purple: líneas estructurales
+    text: '#e5e7eb', // Light Gray: texto secundario
+    muted: '#79628c', // Muted Purple: secundario
     completionBg: '#150f23', // Darker Purple (Background)
     completionCurrentBg: mix('#150f23', '#c2ef4e', 0.25),
     completionMetaBg: '#150f23',
     completionMetaCurrentBg: mix('#150f23', '#c2ef4e', 0.25),
 
-    label: '#dcdcaa',         // Code Yellow: etiquetas técnicas
-    ok: '#c2ef4e',           // Lime Green: éxito
-    error: '#fa7faa',        // Pink: errores críticos
-    warn: '#ffb287',         // Coral: advertencias
+    label: '#dcdcaa', // Code Yellow: etiquetas técnicas
+    ok: '#c2ef4e', // Lime Green: éxito
+    error: '#fa7faa', // Pink: errores críticos
+    warn: '#ffb287', // Coral: advertencias
 
     tool: '#6a5fc1',
     thinking: '#79628c',
@@ -261,23 +261,23 @@ export const JANITOR_DARK_THEME: Theme = {
     syntaxKeyword: '#362d59',
     syntaxComment: '#79628c',
 
-    prompt: '#c2ef4e',       // Lime Green: input activo
+    prompt: '#c2ef4e', // Lime Green: input activo
     sessionLabel: '#6a5fc1', // Sentry Purple
     sessionBorder: '#362d59', // Border Purple
 
-    statusBg: '#0A0A0A',    // Near black
-    statusFg: '#c2ef4e',     // Lime Green
+    statusBg: '#0A0A0A', // Near black
+    statusFg: '#c2ef4e', // Lime Green
     statusGood: '#c2ef4e',
     statusWarn: '#FFE135',
     statusBad: '#fa7faa',
     statusCritical: '#FF073A',
-    selectionBg: '#422082',   // Deep Violet
+    selectionBg: '#422082', // Deep Violet
 
     diffAdded: 'rgb(220,255,220)',
     diffRemoved: 'rgb(255,220,220)',
     diffAddedWord: 'rgb(36,138,61)',
     diffRemovedWord: 'rgb(207,34,46)',
-    shellDollar: '#fa7faa'  // Pink: $ en bloques de código
+    shellDollar: '#fa7faa' // Pink: $ en bloques de código
   },
 
   brand: JANITOR_BRAND,
@@ -289,11 +289,11 @@ export const JANITOR_DARK_THEME: Theme = {
 // Janitor light palette: darker variants for white backgrounds
 export const JANITOR_LIGHT_THEME: Theme = {
   color: {
-    primary: '#5a8a1e',      // Darker lime
-    accent: '#4a44a1',       // Darker purple
-    border: '#2a2244',       // Darker purple border
-    text: '#1a1a2e',         // Near-black
-    muted: '#5a4478',        // Darker muted purple
+    primary: '#5a8a1e', // Darker lime
+    accent: '#4a44a1', // Darker purple
+    border: '#2a2244', // Darker purple border
+    text: '#1a1a2e', // Near-black
+    muted: '#5a4478', // Darker muted purple
     completionBg: '#F0EFF5',
     completionCurrentBg: mix('#F0EFF5', '#5a8a1e', 0.25),
     completionMetaBg: '#F0EFF5',

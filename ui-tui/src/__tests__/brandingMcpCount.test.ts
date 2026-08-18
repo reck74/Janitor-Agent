@@ -52,6 +52,7 @@ const baseInfo = (mcp_servers: McpServerStatus[]): SessionInfo => ({
 
 async function renderOutput(node: Parameters<typeof renderSync>[0], columns: number): Promise<string> {
   const streams = makeStreams(columns)
+
   const instance = renderSync(node, {
     patchConsole: false,
     stderr: streams.stderr as NodeJS.WriteStream,
