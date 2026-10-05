@@ -4,139 +4,158 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#07080a">
-<title>BOX BOX — SEPANG LIVE</title>
+<title>BOX BOX — SEPANG GP</title>
 <style>
-  html, body {
-    margin: 0;
-    height: 100%;
-    background: #07080a;
-    overflow: hidden;
-    touch-action: none;
-    overscroll-behavior: none;
-    user-select: none;
-    -webkit-user-select: none;
-  }
-  body {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  canvas {
-    touch-action: none;
-    background: #14181d;
-    image-rendering: pixelated;
-    image-rendering: crisp-edges;
-  }
+  html, body { margin: 0; height: 100%; background: #07080a; overflow: hidden; touch-action: none; overscroll-behavior: none; user-select: none; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { touch-action: none; background: #10140f; }
 </style>
 </head>
 <body>
 <canvas id="c" width="390" height="844"></canvas>
 <script>
+
 'use strict';
 
 /* BOX BOX — SEPANG LIVE
-   Side-view straight. The sky lies: a shower can die in 3s or sit for 20s.
-   The dip in the radar is NOT a tell — it is uncorrelated with the truth.
-   Waiting out the 5s is a stay. There is no look-then-decide line. */
+   Full Sepang GP centerline (OSM / f1-circuits my-1999), local metres, north-up.
+   You start P20. Rivals can pit too, and a good stop from them costs you places.
+   Rain is 3s, ~22s, or a 42–62s storm. The radar dip is not a tell. */
 
-const W = 390;
-const H = 844;
-const TRACK_TOP = 308;
-const TRACK_BOT = 424;
-const TRACK_Y = 366;
-const PIT_TOP = 424;
-const PIT_Y = 492;
-const RADIO_Y = 558;
-const BTN_Y = 724;
-const RUN_V = 52;
+const W = 390, H = 844;
+const HUD_H = 60;
+const MAP = { x: 8, y: 64, w: 374, h: 400 };
+const BOARD_Y = 470;
+const RADIO_Y = 592;
+const BTN_Y = 716;
+const PIT_ENTRY = 5000;
+const PIT_EXIT = 240;
+const SF = 5050;
+const SCALE_TIME = 2.35;
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-
 const params = new URLSearchParams(location.search);
 const PAUSE = params.has('pause');
 const FAST = Math.max(1, Number(params.get('fast')) || 1);
 
-const boxBtn = { id: 'box', x: 14, y: BTN_Y, w: 176, h: 78 };
-const stayBtn = { id: 'stay', x: 200, y: BTN_Y, w: 176, h: 78 };
-const sndBtn = { id: 'snd', x: 318, y: 812, w: 58, h: 24 };
+const boxBtn = { id: 'box', x: 14, y: BTN_Y, w: 176, h: 72 };
+const stayBtn = { id: 'stay', x: 200, y: BTN_Y, w: 176, h: 72 };
+const sndBtn = { id: 'snd', x: 318, y: 802, w: 58, h: 22 };
 
-const drops = Array.from({ length: 96 }, () => ({
-  x: Math.random() * W,
-  y: 120 + Math.random() * 420,
-  v: 260 + Math.random() * 220,
-  len: 7 + Math.random() * 9,
+const LIVERIES = [
+  { n: 1, body: '#16325c', accent: '#f0d060', dark: '#0c1c36' },
+  { n: 4, body: '#ff7a18', accent: '#141414', dark: '#c45a00' },
+  { n: 81, body: '#ff9340', accent: '#1a1a1a', dark: '#d06a10' },
+  { n: 16, body: '#d00000', accent: '#f7f7f7', dark: '#7c0000' },
+  { n: 44, body: '#e10600', accent: '#ffe14a', dark: '#8a0400' },
+  { n: 63, body: '#dfe6ee', accent: '#00c2b2', dark: '#8e98a4' },
+  { n: 12, body: '#f2f5f8', accent: '#222222', dark: '#b0b8c0' },
+  { n: 14, body: '#0d7a45', accent: '#d6ff4a', dark: '#064e2c' },
+  { n: 18, body: '#14915a', accent: '#f4f4f4', dark: '#0c5c38' },
+  { n: 10, body: '#ff4f9a', accent: '#1b1b1b', dark: '#c43774' },
+  { n: 31, body: '#2f6bff', accent: '#f4f4f4', dark: '#1a3f99' },
+  { n: 23, body: '#14307a', accent: '#8fd4ff', dark: '#0c1c4c' },
+  { n: 55, body: '#102a78', accent: '#f0c400', dark: '#081848' },
+  { n: 27, body: '#0e3d8a', accent: '#f5f5f5', dark: '#082456' },
+  { n: 77, body: '#b00000', accent: '#111111', dark: '#6a0000' },
+  { n: 5, body: '#1c1c1c', accent: '#e10600', dark: '#050505' },
+  { n: 22, body: '#3c424a', accent: '#f2f2f2', dark: '#22262c' },
+  { n: 6, body: '#6b2cff', accent: '#f4e27a', dark: '#3d188f' },
+  { n: 87, body: '#0e6e8a', accent: '#f7f7f7', dark: '#084456' },
+  { n: 20, body: '#f7f8fa', accent: '#e10600', dark: '#c5ced8', you: true },
+];
+const STYLES = ['early','gamble','early','late','stay','early','gamble','late','gamble','stay','early','late','gamble','stay','early','late','gamble','stay','early'];
+const CORNERS = [[-484,7,'1'],[-388,14,'2'],[-428,116,'3'],[59,489,'4'],[162,185,'5'],[275,170,'6'],[412,248,'7'],[665,1,'8'],[632,-108,'9'],[158,-165,'10'],[243,-262,'11'],[180,-460,'12'],[-84,-271,'13'],[-376,-237,'14'],[512,-13,'15']];
+
+const LAP=5549;
+const TRACK=[[-148,-24],[-164,-26],[-180,-27],[-196,-28],[-212,-30],[-228,-31],[-244,-32],[-260,-34],[-276,-35],[-292,-36],[-308,-38],[-324,-39],[-340,-40],[-356,-41],[-372,-43],[-388,-44],[-404,-45],[-419,-47],[-435,-48],[-451,-49],[-467,-46],[-480,-36],[-487,-22],[-488,-7],[-483,8],[-471,19],[-455,24],[-440,20],[-425,15],[-409,10],[-394,9],[-382,19],[-380,35],[-384,50],[-393,63],[-403,75],[-414,88],[-422,102],[-428,116],[-432,132],[-435,147],[-435,163],[-434,179],[-433,195],[-431,211],[-430,227],[-425,242],[-420,258],[-413,272],[-406,286],[-396,299],[-385,310],[-373,321],[-360,330],[-346,339],[-332,345],[-316,350],[-301,355],[-286,360],[-271,365],[-256,370],[-240,375],[-225,380],[-210,385],[-195,390],[-180,395],[-165,401],[-150,407],[-135,413],[-120,418],[-105,424],[-90,430],[-76,436],[-61,443],[-46,449],[-32,455],[-17,462],[-2,468],[12,475],[27,481],[42,488],[57,489],[69,480],[73,465],[76,449],[79,433],[81,417],[84,402],[87,386],[90,370],[93,354],[96,339],[100,323],[103,307],[107,292],[111,276],[114,261],[118,245],[125,231],[131,216],[141,203],[152,192],[165,182],[179,174],[193,167],[208,163],[224,162],[240,162],[256,164],[271,169],[286,175],[299,184],[311,194],[322,206],[333,218],[344,229],[358,237],[373,242],[388,247],[404,248],[420,247],[436,244],[451,238],[464,228],[475,217],[486,205],[496,193],[507,181],[517,169],[528,157],[538,145],[549,133],[559,121],[570,109],[581,97],[591,85],[602,73],[612,61],[623,49],[633,37],[644,25],[654,13],[665,1],[672,-13],[668,-28],[662,-43],[656,-58],[649,-72],[642,-87],[636,-101],[626,-113],[611,-118],[595,-119],[579,-119],[563,-120],[547,-121],[531,-122],[515,-123],[499,-124],[483,-125],[467,-126],[451,-127],[435,-128],[419,-129],[403,-131],[387,-133],[371,-135],[355,-137],[339,-138],[324,-140],[308,-142],[292,-144],[276,-146],[260,-148],[244,-150],[228,-153],[213,-155],[197,-158],[181,-160],[165,-163],[152,-170],[148,-185],[157,-198],[171,-206],[185,-214],[199,-221],[213,-229],[226,-238],[237,-249],[244,-264],[250,-279],[253,-294],[253,-310],[252,-326],[250,-342],[247,-358],[244,-373],[238,-388],[232,-403],[224,-417],[215,-430],[206,-444],[195,-455],[180,-460],[165,-459],[151,-451],[138,-441],[126,-431],[114,-421],[101,-411],[89,-401],[77,-390],[64,-380],[52,-370],[40,-360],[27,-350],[15,-340],[3,-329],[-10,-319],[-22,-309],[-35,-299],[-47,-289],[-59,-278],[-74,-272],[-90,-271],[-105,-273],[-120,-278],[-135,-285],[-149,-292],[-163,-300],[-177,-307],[-192,-314],[-207,-319],[-222,-323],[-238,-325],[-254,-325],[-270,-323],[-286,-320],[-301,-316],[-316,-310],[-330,-303],[-343,-293],[-353,-281],[-362,-268],[-370,-254],[-375,-239],[-377,-223],[-369,-209],[-355,-202],[-340,-197],[-324,-194],[-308,-192],[-293,-189],[-277,-186],[-261,-183],[-245,-180],[-230,-177],[-214,-174],[-198,-171],[-182,-168],[-167,-166],[-151,-163],[-135,-160],[-119,-157],[-104,-154],[-88,-151],[-72,-148],[-56,-145],[-41,-142],[-25,-139],[-9,-137],[6,-134],[22,-131],[38,-128],[54,-125],[69,-122],[85,-119],[101,-116],[117,-113],[132,-111],[148,-108],[164,-105],[180,-102],[195,-99],[211,-96],[227,-93],[242,-90],[258,-87],[274,-84],[290,-82],[305,-79],[321,-76],[337,-73],[353,-70],[368,-67],[384,-64],[400,-61],[416,-58],[431,-56],[447,-53],[463,-50],[479,-47],[494,-42],[504,-31],[511,-16],[509,-1],[499,12],[487,20],[471,22],[455,22],[439,21],[423,19],[407,18],[391,17],[375,16],[359,15],[343,13],[327,12],[311,11],[295,10],[280,8],[264,7],[248,6],[232,5],[216,4],[200,2],[184,1],[168,0],[152,-1],[136,-3],[120,-4],[104,-5],[88,-6],[72,-7],[56,-9],[40,-10],[24,-11],[8,-12],[-8,-14],[-24,-15],[-40,-16],[-55,-17],[-71,-18],[-87,-20],[-103,-21],[-119,-22],[-135,-23]];
+const PIT=[[478,15],[440,9],[401,0],[381,-2],[365,-3],[349,-4],[333,-6],[317,-7],[301,-8],[285,-9],[269,-10],[253,-12],[237,-13],[221,-14],[205,-15],[189,-17],[173,-18],[157,-19],[141,-20],[125,-21],[109,-23],[93,-24],[77,-25],[62,-26],[46,-28],[30,-29],[14,-30],[-2,-31],[-18,-32],[-34,-34],[-50,-35],[-66,-36],[-82,-37],[-98,-39],[-114,-40],[-130,-41],[-146,-42],[-162,-44],[-178,-45],[-194,-46],[-210,-47],[-225,-49],[-241,-50],[-257,-51],[-273,-53],[-289,-54],[-305,-55],[-321,-57],[-337,-58],[-353,-59],[-369,-61],[-385,-62],[-396,-61],[-427,-58],[-459,-54]];
+
+let LAP_M = LAP;
+let TRACK_CUM = [];
+let PIT_CUM = [];
+let PIT_TOTAL = 1;
+let BOX_U = 1;
+let BOUNDS = null;
+let MAP_SCALE = 1;
+
+const drops = Array.from({ length: 70 }, () => ({
+  x: Math.random() * W, y: 70 + Math.random() * 400, v: 260 + Math.random() * 180, len: 6 + Math.random() * 8,
 }));
 
-const clouds = [
-  { x: 30, y: 150, s: 1.05, sp: 0.12 },
-  { x: 150, y: 168, s: 1.35, sp: 0.18 },
-  { x: 270, y: 146, s: 0.9, sp: 0.1 },
-  { x: 80, y: 196, s: 0.72, sp: 0.22 },
-  { x: 210, y: 188, s: 0.8, sp: 0.16 },
-];
-
-const rivals = [
-  { x: 120, y: 338, v: 68, body: '#8e98a6', compound: 'slick', sc: 0.56 },
-  { x: 250, y: 402, v: 40, body: '#a89090', compound: 'inter', sc: 0.56 },
-];
-
 const S = {
-  phase: 'title',
-  time: 0,
-  world: 0,
-  lap: 1,
-  pos: 5,
-  posPop: 0,
-  compound: 'slick',
-  rain: 0,
-  rainTarget: 0,
-  cloud: 0.12,
-  cloudTarget: 0.12,
-  car: { x: 150, y: TRACK_Y, angle: 0, lift: 0 },
-  wheel: 0,
-  calm: 0,
-  nextCalm: 8,
-  cloudDur: 2,
-  event: null,
-  pit: null,
-  spinT: 0,
-  heatT: 0,
-  lost: 0,
-  hits: 0,
-  calls: 0,
-  stamp: null,
-  shake: 0,
-  flash: 0,
-  muted: false,
-  hold: null,
-  parts: [],
-  force: null,
+  phase: 'title', time: 0, pos: 20, field: [], you: null,
+  compound: 'slick', rain: 0, rainTarget: 0, cloud: 0.12, cloudTarget: 0.12,
+  calm: 0, nextCalm: 8, cloudDur: 2, event: null,
+  lost: 0, hits: 0, calls: 0, stamp: null, shake: 0, flash: 0,
+  muted: false, hold: null, feed: '', feedT: 0, wheel: 0, force: null, posPop: 0,
 };
 
-let actx = null;
-let lastTs = 0;
+let actx = null, lastTs = 0;
 
 function rand(a, b) { return a + Math.random() * (b - a); }
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 function lerp(a, b, t) { return a + (b - a) * t; }
-function ease(t) { return t * t * (3 - 2 * t); }
-function damp(cur, target, dt, speed) {
-  return cur + (target - cur) * (1 - Math.exp(-speed * dt));
+function heavy(ev) { return !!(ev && ev.length !== 'short'); }
+function dist2(a, b) { const dx = a[0] - b[0], dy = a[1] - b[1]; return Math.hypot(dx, dy); }
+
+function buildCum(pts, closed) {
+  const c = [0];
+  for (let i = 1; i < pts.length; i++) c.push(c[i - 1] + dist2(pts[i - 1], pts[i]));
+  c.total = c[c.length - 1] + (closed ? dist2(pts[pts.length - 1], pts[0]) : 0);
+  return c;
 }
-function wrap(v, m) { return ((v % m) + m) % m; }
-function hit(r, x, y) {
-  return x >= r.x && y >= r.y && x <= r.x + r.w && y <= r.y + r.h;
+function pointOn(pts, cum, dist, closed) {
+  const total = cum.total || 1;
+  let d = dist;
+  if (closed) { d = ((d % total) + total) % total; }
+  else d = clamp(d, 0, total);
+  let i = 0;
+  const n = pts.length;
+  const last = closed ? n : n - 1;
+  while (i < last - 1 && cum[i + 1] < d) i++;
+  const i2 = closed ? (i + 1) % n : Math.min(i + 1, n - 1);
+  const span = Math.max(1e-6, (closed && i2 === 0 ? total : cum[Math.min(i + 1, cum.length - 1)]) - cum[i]);
+  const t = clamp((d - cum[i]) / span, 0, 1);
+  return [lerp(pts[i][0], pts[i2][0], t), lerp(pts[i][1], pts[i2][1], t)];
 }
-function hex(c) {
-  const n = c.replace('#', '');
-  return [parseInt(n.slice(0, 2), 16), parseInt(n.slice(2, 4), 16), parseInt(n.slice(4, 6), 16)];
+function headingScreen(pts, cum, dist, closed) {
+  const a = pointOn(pts, cum, dist, closed);
+  const b = pointOn(pts, cum, dist + 14, closed);
+  return Math.atan2(-(b[1] - a[1]), b[0] - a[0]);
 }
-function mix(a, b, t) {
-  const A = hex(a);
-  const B = hex(b);
-  const u = clamp(t, 0, 1);
-  return 'rgb(' + A.map((v, i) => Math.round(v + (B[i] - v) * u)).join(',') + ')';
+function curvature(s) {
+  const h1 = Math.atan2(pointOn(TRACK, TRACK_CUM, s + 16, true)[1] - pointOn(TRACK, TRACK_CUM, s, true)[1], pointOn(TRACK, TRACK_CUM, s + 16, true)[0] - pointOn(TRACK, TRACK_CUM, s, true)[0]);
+  const h2 = Math.atan2(pointOn(TRACK, TRACK_CUM, s + 34, true)[1] - pointOn(TRACK, TRACK_CUM, s + 18, true)[1], pointOn(TRACK, TRACK_CUM, s + 34, true)[0] - pointOn(TRACK, TRACK_CUM, s + 18, true)[0]);
+  let dh = h2 - h1;
+  while (dh > Math.PI) dh -= Math.PI * 2;
+  while (dh < -Math.PI) dh += Math.PI * 2;
+  return Math.abs(dh) / 18;
+}
+function initGeom() {
+  TRACK_CUM = buildCum(TRACK, true);
+  PIT_CUM = buildCum(PIT, false);
+  LAP_M = TRACK_CUM.total;
+  PIT_TOTAL = PIT_CUM.total;
+  BOX_U = PIT_TOTAL * 0.46;
+  let minx = Infinity, maxx = -Infinity, miny = Infinity, maxy = -Infinity;
+  TRACK.concat(PIT).forEach(p => {
+    minx = Math.min(minx, p[0]); maxx = Math.max(maxx, p[0]);
+    miny = Math.min(miny, p[1]); maxy = Math.max(maxy, p[1]);
+  });
+  const sx = (MAP.w - 28) / (maxx - minx);
+  const sy = (MAP.h - 28) / (maxy - miny);
+  MAP_SCALE = Math.min(sx, sy);
+  const dw = (maxx - minx) * MAP_SCALE;
+  const dh = (maxy - miny) * MAP_SCALE;
+  BOUNDS = { minx, maxx, miny, maxy, ox: MAP.x + (MAP.w - dw) / 2, oy: MAP.y + (MAP.h - dh) / 2 };
+}
+function worldToScreen(p) {
+  return [
+    BOUNDS.ox + (p[0] - BOUNDS.minx) * MAP_SCALE,
+    BOUNDS.oy + (BOUNDS.maxy - p[1]) * MAP_SCALE,
+  ];
 }
 
 function font(px) {
@@ -146,8 +165,6 @@ function font(px) {
 function txt(s, x, y, size, color, align) {
   font(size);
   ctx.textAlign = align || 'left';
-  ctx.fillStyle = 'rgba(0,0,0,0.45)';
-  ctx.fillText(s, x + 1, y + 1);
   ctx.fillStyle = color;
   ctx.fillText(s, x, y);
 }
@@ -160,18 +177,6 @@ function panel(x, y, w, h, border) {
   ctx.lineWidth = 2;
   ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
 }
-function puff(x, y, color, n) {
-  for (let i = 0; i < n; i++) {
-    if (S.parts.length > 90) S.parts.shift();
-    S.parts.push({
-      x: x, y: y,
-      vx: rand(-40, 40), vy: rand(-70, -8),
-      life: rand(0.25, 0.7), age: 0,
-      color: color, s: rand(2, 5),
-    });
-  }
-}
-
 function ac() {
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return null;
@@ -182,8 +187,7 @@ function ac() {
 function tone(freq, dur, type, vol, delay) {
   if (S.muted) return;
   try {
-    const c = ac();
-    if (!c) return;
+    const c = ac(); if (!c) return;
     const t0 = c.currentTime + (delay || 0);
     const o = c.createOscillator();
     const g = c.createGain();
@@ -191,125 +195,139 @@ function tone(freq, dur, type, vol, delay) {
     o.frequency.setValueAtTime(freq, t0);
     g.gain.setValueAtTime(vol, t0);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    o.connect(g);
-    g.connect(c.destination);
-    o.start(t0);
-    o.stop(t0 + dur + 0.02);
-  } catch (e) { /* autoplay */ }
-}
-function noise(dur, vol) {
-  if (S.muted) return;
-  try {
-    const c = ac();
-    if (!c) return;
-    const n = Math.floor(c.sampleRate * dur);
-    const buf = c.createBuffer(1, n, c.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < n; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / n);
-    const src = c.createBufferSource();
-    src.buffer = buf;
-    const filter = c.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.value = 420;
-    const g = c.createGain();
-    g.gain.value = vol;
-    src.connect(filter);
-    filter.connect(g);
-    g.connect(c.destination);
-    src.start();
-  } catch (e) { /* ignore */ }
+    o.connect(g); g.connect(c.destination);
+    o.start(t0); o.stop(t0 + dur + 0.02);
+  } catch (e) {}
 }
 function sfx(kind) {
   if (kind === 'radio') { tone(880, 0.07, 'square', 0.04); tone(660, 0.09, 'square', 0.04, 0.09); }
   else if (kind === 'tick') tone(520, 0.05, 'square', 0.03);
   else if (kind === 'urgent') tone(196, 0.08, 'square', 0.05);
-  else if (kind === 'box') tone(146, 0.12, 'square', 0.05);
-  else if (kind === 'stay') tone(494, 0.08, 'square', 0.04);
-  else if (kind === 'good') { tone(523, 0.08, 'square', 0.04); tone(659, 0.08, 'square', 0.04, 0.08); tone(784, 0.12, 'square', 0.04, 0.16); }
-  else if (kind === 'bad') { tone(220, 0.1, 'square', 0.05); tone(140, 0.16, 'square', 0.05, 0.1); }
-  else if (kind === 'spin') noise(0.35, 0.08);
-  else if (kind === 'swap') tone(740, 0.06, 'square', 0.04);
-}
-function buzz(ms) {
-  try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) { /* ignore */ }
+  else if (kind === 'good') { tone(523, 0.08, 'square', 0.04); tone(784, 0.1, 'square', 0.04, 0.09); }
+  else if (kind === 'bad') { tone(200, 0.1, 'square', 0.05); tone(130, 0.14, 'square', 0.05, 0.1); }
+  else if (kind === 'box') tone(150, 0.1, 'square', 0.05);
 }
 
-function setPos(p) {
-  if (S.pos !== p) S.posPop = 1;
+function fromSF(s) {
+  return (s - SF + LAP_M) % LAP_M;
+}
+function progress(c) {
+  if (c.mode === 'pit' || c.mode === 'stop') return c.anchor;
+  return c.lap * LAP_M + fromSF(c.s);
+}
+function standings() {
+  return S.field.slice().sort((a, b) => progress(b) - progress(a) || a.n - b.n);
+}
+function place() {
+  const i = standings().findIndex(c => c.you);
+  return i < 0 ? 20 : i + 1;
+}
+function refreshPos() {
+  const p = place();
+  if (p !== S.pos) S.posPop = 1;
   S.pos = p;
+  if (S.you) S.compound = S.you.compound;
 }
 function stamp(title, sub, good) {
-  S.stamp = { title: title, sub: sub, t: 3.3, good: good };
+  S.stamp = { title, sub, t: 3.4, good };
 }
-function judge(correct, title, sub) {
-  const ev = S.event;
-  if (!ev || ev.judged) return;
-  ev.judged = true;
-  S.calls += 1;
-  if (correct) {
-    S.hits += 1;
-    setPos(3);
-    sfx('good');
-  } else {
-    setPos(8);
-    if (ev.choice === 'box') S.lost += 3;
-    sfx('bad');
-  }
-  stamp(title, sub, correct);
+function feed(msg) { S.feed = msg; S.feedT = 3.2; }
+
+function makeCar(L, slot) {
+  const front = 19 - slot;
+  return {
+    n: L.n, body: L.body, accent: L.accent, dark: L.dark, you: !!L.you,
+    s: 5120 + front * 14,
+    lap: 1,
+    compound: 'slick',
+    mode: 'track',
+    pitU: 0,
+    anchor: 0,
+    stopT: 0,
+    stopDur: L.you ? 3 : (STYLES[slot] === 'early' ? 2.45 : STYLES[slot] === 'late' ? 3.15 : 2.8),
+    wantsPit: false,
+    nextTire: 'inter',
+    style: L.you ? 'you' : STYLES[slot],
+    willBox: false,
+    boxAt: 999,
+    armed: false,
+    wetTime: 0,
+    spinT: 0,
+    pace: L.you ? 1 : 1.01 - slot * 0.00085,
+    outPit: 0,
+  };
+}
+function buildField() {
+  S.field = LIVERIES.map((L, i) => makeCar(L, i));
+  S.you = S.field.find(c => c.you);
+  S.compound = 'slick';
+  S.pos = 20;
 }
 
+function rollWeather() {
+  const r = Math.random();
+  if (r < 0.28) return { length: 'short', seconds: 3 };
+  if (r < 0.62) return { length: 'long', seconds: Math.round(rand(18, 28)) };
+  return { length: 'storm', seconds: Math.round(rand(42, 64)) };
+}
+function makeEvent(kind) {
+  let rolled = rollWeather();
+  if (S.force && S.force.kind === kind) {
+    const length = S.force.length;
+    rolled = {
+      length,
+      seconds: S.force.seconds || (length === 'short' ? 3 : length === 'storm' ? 52 : 22),
+    };
+    S.force = null;
+  }
+  return {
+    kind, length: rolled.length, seconds: rolled.seconds,
+    stage: 'call', age: 0, choice: null, decidedAt: 0, truthAge: 0,
+    judged: false, fakeAt: Math.random() < 0.7 ? rand(1.1, 3.4) : -99, lastSec: 6,
+  };
+}
 function beginIdle() {
   S.event = null;
-  S.pit = null;
-  if (S.phase !== 'pit' && S.phase !== 'spin' && S.phase !== 'heat') S.phase = 'run';
   S.calm = 0;
   if (S.compound === 'inter') {
     S.nextCalm = rand(8, 12);
     S.cloudDur = 0;
   } else {
     const total = rand(8, 12);
-    S.cloudDur = rand(1.7, 2.5);
-    S.nextCalm = Math.max(5.6, total - S.cloudDur);
+    S.cloudDur = rand(1.7, 2.4);
+    S.nextCalm = Math.max(5.5, total - S.cloudDur);
   }
   S.rainTarget = 0;
   S.cloudTarget = 0.08;
+  S.field.forEach(c => { c.wetTime = 0; });
 }
-
-function makeEvent(kind) {
-  let length = Math.random() < 0.5 ? 'short' : 'long';
-  if (S.force && S.force.kind === kind) {
-    length = S.force.length;
-    S.force = null;
-  }
-  return {
-    kind: kind,
-    length: length,
-    stage: 'call',
-    age: 0,
-    choice: null,
-    decidedAt: 0,
-    truthAge: 0,
-    judged: false,
-    spun: false,
-    expired: false,
-    // Visual bait. Intentionally NOT tied to length.
-    fakeAt: Math.random() < 0.72 ? rand(1.05, 3.45) : -99,
-    lastSec: 6,
-    cloudDur: S.cloudDur || 2.1,
-  };
+function armRivals(ev) {
+  let named = 0;
+  S.field.forEach(c => {
+    if (c.you) return;
+    c.armed = false;
+    c.willBox = false;
+    c.wantsPit = false;
+    const vulnerable = (ev.kind === 'wet' && c.compound === 'slick') || (ev.kind === 'dry' && c.compound === 'inter');
+    let p = c.style === 'early' ? 0.82 : c.style === 'late' ? 0.58 : c.style === 'gamble' ? 0.5 : 0.18;
+    if (!vulnerable) p = 0.12;
+    if (Math.random() < p) {
+      c.willBox = true;
+      c.boxAt = c.style === 'early' ? rand(0.25, 2.2) : c.style === 'late' ? rand(4.4, 8.5) : rand(0.8, 5.5);
+      c.nextTire = ev.kind === 'wet' ? 'inter' : 'slick';
+      named++;
+    }
+  });
+  if (named) feed(named + (named === 1 ? ' rival va a parar' : ' rivales van a parar'));
 }
-
 function startCloud() {
   const ev = makeEvent('wet');
   ev.stage = 'cloud';
   ev.age = 0;
   S.event = ev;
-  S.phase = 'run';
-  // Gray the moment the warning starts — the radio must not outrun the sky.
-  S.cloud = Math.max(S.cloud, 0.72);
+  S.cloud = Math.max(S.cloud, 0.7);
   S.cloudTarget = 1;
-  S.rain = Math.max(S.rain, 12);
-  S.rainTarget = Math.max(S.rainTarget, 18);
+  S.rainTarget = 16;
 }
 function openCall(ev) {
   ev.stage = 'call';
@@ -317,70 +335,18 @@ function openCall(ev) {
   ev.lastSec = 6;
   S.event = ev;
   S.phase = 'call';
+  armRivals(ev);
   sfx('radio');
-  buzz(28);
 }
-
-function beginPit() {
+function judgeCall(correct, title, sub) {
   const ev = S.event;
-  let fromX = S.car.x;
-  if (fromX > 250) fromX -= (W + 50);
-  const dist = Math.abs(318 - fromX);
-  S.phase = 'pit';
-  S.pit = {
-    t: 0,
-    stage: 'enter',
-    fromX: fromX,
-    fromY: S.car.y,
-    swapped: false,
-    enterDur: clamp(dist / 300, 0.55, 1.2),
-    nextTire: ev && ev.kind === 'dry' ? 'slick' : 'inter',
-  };
-  S.car.x = fromX;
-  S.car.angle = 0;
-  S.car.lift = 0;
+  if (!ev || ev.judged) return;
+  ev.judged = true;
+  S.calls++;
+  if (correct) { S.hits++; sfx('good'); }
+  else sfx('bad');
+  stamp(title, sub, correct);
 }
-function beginSpin() {
-  const ev = S.event;
-  if (!ev || ev.spun) return;
-  ev.spun = true;
-  if (!ev.judged) {
-    ev.judged = true;
-    S.calls += 1;
-  }
-  S.lost += 3;
-  setPos(8);
-  S.phase = 'spin';
-  S.spinT = 0;
-  S.shake = 7;
-  if (S.car.x < 90 || S.car.x > W - 110) S.car.x = 176;
-  S.car.y = TRACK_Y;
-  stamp('¡TROMPO!', 'Más de 5s con slicks. +3.0s y al muro. P8', false);
-  sfx('bad');
-  sfx('spin');
-  buzz(70);
-  puff(S.car.x, S.car.y, '#d7dde6', 10);
-}
-function beginHeat() {
-  const ev = S.event;
-  if (!ev || ev.spun) return;
-  ev.spun = true;
-  if (!ev.judged) {
-    ev.judged = true;
-    S.calls += 1;
-  }
-  S.lost += 3;
-  setPos(8);
-  S.phase = 'heat';
-  S.heatT = 0;
-  S.shake = 4;
-  if (S.car.x < 90 || S.car.x > W - 110) S.car.x = 176;
-  S.car.y = TRACK_Y;
-  stamp('SIN AGARRE', 'Intermedios en seco. +3.0s. P8', false);
-  sfx('bad');
-  buzz(40);
-}
-
 function choose(which) {
   const ev = S.event;
   if (!ev || ev.stage !== 'call' || ev.choice) return;
@@ -389,60 +355,141 @@ function choose(which) {
   ev.stage = 'truth';
   ev.truthAge = 0;
   S.hold = { id: which, t: 0.14 };
+  S.phase = 'run';
+  const you = S.you;
   if (which === 'box') {
     sfx('box');
-    buzz(18);
-    if (ev.length === 'long' && ev.kind === 'wet') {
-      judge(true, '¡BOX BOX!', 'Lluvia de 20s. Intermedios puestos. P3');
-    } else if (ev.length === 'short' && ev.kind === 'wet') {
-      judge(false, 'PARADA DE MÁS', 'Eran 3 segundos. Pierdes el sitio. P8');
-    } else if (ev.length === 'long' && ev.kind === 'dry') {
-      judge(true, 'SLICKS', 'La seca es larga. Buena parada. P3');
-    } else {
-      judge(false, 'TE ENGAÑÓ', 'El sol duró 3s. Otra vez agua. P8');
-    }
-    beginPit();
+    you.wantsPit = true;
+    you.nextTire = ev.kind === 'wet' ? 'inter' : 'slick';
+    you.stopDur = 3;
+    if (heavy(ev) && ev.kind === 'wet') judgeCall(true, '¡BOX BOX!', 'Agua de ' + ev.seconds + 's. Ojo: ellos también paran.');
+    else if (ev.kind === 'wet') judgeCall(false, 'PARADA DE MÁS', 'Eran 3 segundos. Regalas la vuelta.');
+    else if (heavy(ev)) judgeCall(true, 'SLICKS', 'Seca de ' + ev.seconds + 's.');
+    else judgeCall(false, 'TE ENGAÑÓ', 'El sol duró 3s. Ellos se quedan.');
   } else {
-    sfx('stay');
-    buzz(12);
-    S.phase = 'run';
-    if (ev.decidedAt >= 5 && ev.length === 'long') {
-      if (ev.kind === 'wet' && S.compound === 'slick') beginSpin();
-      if (ev.kind === 'dry' && S.compound === 'inter') beginHeat();
-    }
+    you.wantsPit = false;
+    if (!heavy(ev) && ev.kind === 'wet') judgeCall(true, 'AGUANTA', 'Si alguien para, te lo comes.');
+    else if (!heavy(ev)) judgeCall(true, 'QUÉDATE', 'El seco era corto.');
   }
 }
-
 function startGame() {
   ac();
+  buildField();
   S.phase = 'run';
   S.time = 0;
-  S.world = 0;
-  S.lap = 1;
-  S.pos = 5;
-  S.posPop = 0;
-  S.compound = 'slick';
-  S.rain = 0;
-  S.rainTarget = 0;
-  S.cloud = 0.1;
-  S.cloudTarget = 0.1;
-  S.car.x = 110;
-  S.car.y = TRACK_Y;
-  S.car.angle = 0;
-  S.car.lift = 0;
-  S.lost = 0;
-  S.hits = 0;
-  S.calls = 0;
-  S.stamp = null;
-  S.spinT = 0;
-  S.heatT = 0;
-  S.parts.length = 0;
+  S.rain = 0; S.rainTarget = 0;
+  S.cloud = 0.1; S.cloudTarget = 0.1;
+  S.lost = 0; S.hits = 0; S.calls = 0;
+  S.stamp = null; S.feed = ''; S.feedT = 0;
   beginIdle();
-  // First sky change stays inside the 8–12s window, but arrives on the early side
-  // so the straight is not a long wait before the first call.
   const total = rand(8, 10.5);
-  S.cloudDur = rand(1.8, 2.4);
-  S.nextCalm = Math.max(5.6, total - S.cloudDur);
+  S.cloudDur = rand(1.8, 2.3);
+  S.nextCalm = Math.max(5.4, total - S.cloudDur);
+}
+
+function crossed(prev, now, mark) {
+  if (now >= prev) return prev < mark && now >= mark;
+  return mark > prev || mark <= now;
+}
+function distToEntry(s) {
+  let d = PIT_ENTRY - s;
+  if (d < 0) d += LAP_M;
+  return d;
+}
+function speedMs(car) {
+  if (car.mode === 'stop' || car.mode === 'spin') return 0;
+  if (car.mode === 'pit') return 50 * SCALE_TIME;
+  const k = curvature(car.s);
+  const straight = Math.exp(-k * 48);
+  let v = (34 + (84 - 34) * straight) * car.pace;
+  const ev = S.event;
+  const pouring = ev && ev.kind === 'wet' && heavy(ev) && ev.stage === 'truth' && visualRain() > 50;
+  const baking = ev && ev.kind === 'dry' && heavy(ev) && ev.stage === 'truth';
+  if (pouring && car.compound === 'slick') v *= car.wantsPit ? 0.74 : 0.56;
+  if (baking && car.compound === 'inter') v *= 0.82;
+  if (!pouring && S.rain < 20 && car.compound === 'inter') v *= 0.94;
+  return v * SCALE_TIME;
+}
+function enterPit(car) {
+  car.anchor = car.lap * LAP_M + fromSF(car.s);
+  car.mode = 'pit';
+  car.pitU = 0;
+  car.didStop = false;
+  if (!car.you && S.feedT < 1.2) feed('EL ' + car.n + ' ENTRA AL PIT');
+}
+function exitPit(car) {
+  const prevPlace = car.you ? S.pos : null;
+  car.mode = 'track';
+  car.wantsPit = false;
+  car.outPit = 5;
+  if (fromSF(PIT_EXIT) < fromSF(PIT_ENTRY)) car.lap += 1;
+  car.s = PIT_EXIT;
+  car.compound = car.nextTire;
+  if (car.you) S.compound = car.compound;
+  if (!car.you) {
+    const after = place();
+    if (prevPlace != null && after > prevPlace) feed('EL ' + car.n + ' TE ADELANTA DESDE EL BOX');
+  }
+}
+function tickCar(car, dt) {
+  if (car.outPit > 0) car.outPit -= dt;
+  if (car.mode === 'spin') {
+    car.spinT += dt;
+    if (car.spinT >= 3) { car.mode = 'track'; car.spinT = 0; }
+    return;
+  }
+  if (car.mode === 'stop') {
+    car.stopT += dt;
+    if (car.stopT >= car.stopDur) {
+      car.mode = 'pit';
+      car.didStop = true;
+    }
+    return;
+  }
+  if (car.mode === 'pit') {
+    car.pitU += speedMs(car) * dt;
+    if (!car.didStop && car.pitU >= BOX_U) {
+      car.mode = 'stop';
+      car.stopT = 0;
+      car.pitU = BOX_U;
+      return;
+    }
+    if (car.pitU >= PIT_TOTAL) exitPit(car);
+    return;
+  }
+  const prev = car.s;
+  car.s += speedMs(car) * dt;
+  let wrapped = false;
+  if (car.s >= LAP_M) { car.s -= LAP_M; wrapped = true; }
+  const crossedLine = wrapped ? (SF > prev || SF <= car.s) : (prev < SF && car.s >= SF);
+  if (crossedLine) car.lap += 1;
+  if (car.wantsPit && car.mode === 'track' && crossed(prev, car.s, PIT_ENTRY)) enterPit(car);
+}
+
+function visualRain() {
+  const ev = S.event;
+  if (!ev || ev.kind !== 'wet') return S.rain;
+  if (ev.stage === 'call') return Math.max(S.rain, 76);
+  if (ev.stage === 'truth' && heavy(ev)) {
+    const clock = ev.decidedAt + ev.truthAge;
+    if (clock < ev.seconds - 2.5) return Math.max(S.rain, ev.length === 'storm' ? 96 : 88);
+  }
+  return S.rain;
+}
+function weatherIcon() {
+  const ev = S.event;
+  if (!ev) return 'sun';
+  if (ev.kind === 'wet') {
+    if (ev.stage === 'cloud') return 'cloud';
+    if (ev.stage === 'truth' && ev.length === 'short' && ev.decidedAt + ev.truthAge >= 3) return 'sun';
+    if (ev.stage === 'truth' && heavy(ev) && ev.decidedAt + ev.truthAge >= ev.seconds - 1.5) return 'cloud';
+    return 'rain';
+  }
+  if (ev.stage === 'truth' && ev.length === 'short') {
+    const clock = ev.decidedAt + ev.truthAge;
+    if (clock >= 3 && clock < 5.8) return 'rain';
+  }
+  return 'sun';
 }
 
 function tickEvent(dt) {
@@ -450,32 +497,30 @@ function tickEvent(dt) {
   if (!ev) {
     S.calm += dt;
     S.rainTarget = 0;
-    S.cloudTarget = 0.08 + Math.sin(S.time * 0.6) * 0.05;
-    if (S.calm >= S.nextCalm) {
+    S.cloudTarget = 0.08 + Math.sin(S.time * 0.5) * 0.05;
+    if (S.phase !== 'title' && S.calm >= S.nextCalm) {
       if (S.compound === 'inter') openCall(makeEvent('dry'));
       else startCloud();
     }
     return;
   }
-
   if (ev.stage === 'cloud') {
     ev.age += dt;
-    const u = clamp(ev.age / ev.cloudDur, 0, 1);
-    S.cloudTarget = lerp(0.25, 1, u);
-    S.rainTarget = lerp(4, 36, u);
+    const u = clamp(ev.age / (S.cloudDur || 2), 0, 1);
+    S.cloudTarget = lerp(0.3, 1, u);
+    S.rainTarget = lerp(6, 34, u);
     if (ev.age >= ev.cloudDur) openCall(ev);
     return;
   }
-
   if (ev.stage === 'call') {
     ev.age += dt;
     const dip = Math.abs(ev.age - ev.fakeAt) < 0.48;
     if (ev.kind === 'wet') {
       S.cloudTarget = 1;
-      S.rainTarget = dip ? 10 : 84 + Math.sin(S.time * 7) * 7;
+      S.rainTarget = dip ? 14 : 84 + Math.sin(S.time * 7) * 6;
     } else {
-      S.cloudTarget = dip ? 0.92 : 0.06;
-      S.rainTarget = dip ? 28 : 2;
+      S.cloudTarget = dip ? 0.9 : 0.05;
+      S.rainTarget = dip ? 26 : 2;
     }
     const sec = Math.ceil(Math.max(0, 5 - ev.age));
     if (sec !== ev.lastSec) {
@@ -483,176 +528,85 @@ function tickEvent(dt) {
       if (sec > 0 && sec <= 4) sfx(sec <= 2 ? 'urgent' : 'tick');
     }
     if (ev.age >= 5 && !ev.choice) choose('stay');
-    if (ev.stage !== 'truth') return;
+    if (ev.stage !== 'truth') {
+      armClock(ev.age);
+      return;
+    }
   }
-
   if (ev.stage === 'truth') {
     ev.truthAge += dt;
     const clock = ev.decidedAt + ev.truthAge;
+    armClock(clock);
     if (ev.kind === 'wet') {
       if (ev.length === 'short') {
-        const f = clock >= 3 ? 1 : clamp((clock - 2.15) / 0.85, 0, 1);
-        S.rainTarget = lerp(92, 0, f);
+        const f = clock >= 3 ? 1 : clamp((clock - 2.1) / 0.9, 0, 1);
+        S.rainTarget = lerp(90, 0, f);
         S.cloudTarget = lerp(1, 0.08, f);
       } else {
-        const f = clamp((clock - 17) / 3, 0, 1);
-        S.rainTarget = lerp(100, 0, f);
-        S.cloudTarget = lerp(1, 0.12, f);
-        if (S.rain > 72 && Math.random() < dt * 0.55) S.flash = 0.16;
+        const f = clamp((clock - (ev.seconds - 3)) / 3, 0, 1);
+        S.rainTarget = lerp(ev.length === 'storm' ? 100 : 94, 0, f);
+        S.cloudTarget = lerp(1, 0.1, f);
+        if (S.rain > 70 && Math.random() < dt * (ev.length === 'storm' ? 0.7 : 0.35)) S.flash = 0.18;
       }
     } else if (ev.length === 'short') {
-      if (clock < 3) {
-        S.cloudTarget = 0.05;
-        S.rainTarget = 0;
-      } else {
+      if (clock < 3) { S.cloudTarget = 0.05; S.rainTarget = 0; }
+      else {
         const u = clamp((clock - 3) / 0.7, 0, 1);
-        const end = clamp((clock - 5.1) / 0.9, 0, 1);
+        const end = clamp((clock - 5.2) / 0.9, 0, 1);
         S.cloudTarget = lerp(0.95, 0.15, end);
-        S.rainTarget = lerp(0, 88, u) * (1 - end);
+        S.rainTarget = lerp(0, 86, u) * (1 - end);
       }
-    } else {
-      S.cloudTarget = 0.04;
-      S.rainTarget = 0;
-    }
+    } else { S.cloudTarget = 0.04; S.rainTarget = 0; }
 
-    if (ev.choice === 'stay' && ev.length === 'long' && !ev.spun && clock >= 5) {
-      if (ev.kind === 'wet' && S.compound === 'slick') beginSpin();
-      if (ev.kind === 'dry' && S.compound === 'inter') beginHeat();
-    }
     if (ev.choice === 'stay' && ev.length === 'short' && !ev.judged && clock >= 3) {
-      if (ev.kind === 'wet') judge(true, 'AGUANTA', 'Chaparrón de 3s. Los slicks viven. P3');
-      else judge(true, 'QUÉDATE', 'Se volvió a mojar a los 3s. P3');
+      if (ev.kind === 'wet') judgeCall(true, 'AGUANTA', 'Chaparrón de 3s. Quien pare, pierde.');
+      else judgeCall(true, 'QUÉDATE', 'El agua vuelve enseguida.');
     }
-
-    const endClock = ev.length === 'long' ? 20 : (ev.kind === 'wet' ? 3.7 : 6.3);
-    if (clock >= endClock) {
-      if (S.phase === 'run' || S.phase === 'call') beginIdle();
-      else ev.expired = true;
-    }
+    const endClock = heavy(ev) ? ev.seconds : (ev.kind === 'wet' ? 3.7 : 6.3);
+    if (clock >= endClock) beginIdle();
   }
 }
-
-function moveCar(dt) {
-  S.car.x += RUN_V * dt;
-  S.car.y = TRACK_Y + Math.sin(S.time * 18) * 1.1;
-  S.car.angle *= 0.8;
-  S.car.lift = 0;
-  S.wheel += dt * 15;
-  S.world += dt * 320;
-  // Wrap while the car is still partly in frame so the straight never goes empty.
-  if (S.car.x > W + 18) {
-    S.car.x = -28;
-    S.lap += 1;
-  }
-}
-function moveRivals(dt) {
-  for (let i = 0; i < rivals.length; i++) {
-    const r = rivals[i];
-    const slow = (S.phase === 'pit' && S.pit && S.pit.stage === 'stop') ? 1 : 1;
-    r.x += r.v * dt * slow;
-    if (r.x > W + 18) r.x = -28;
-  }
-}
-
-function updatePit(dt) {
-  const p = S.pit;
-  if (!p) return;
-  p.t += dt;
-  if (p.stage === 'enter') {
-    const u = clamp(p.t / p.enterDur, 0, 1);
-    const e = ease(u);
-    S.car.x = lerp(p.fromX, 318, e);
-    const du = clamp((u - 0.28) / 0.72, 0, 1);
-    S.car.y = lerp(p.fromY, PIT_Y, ease(du));
-    S.car.angle = du * 0.04;
-    S.wheel += dt * 12 * (1 - u);
-    S.world += dt * lerp(220, 30, u);
-    if (u >= 1) { p.stage = 'stop'; p.t = 0; }
-  } else if (p.stage === 'stop') {
-    S.car.x = 318;
-    S.car.y = PIT_Y;
-    S.car.angle = 0;
-    const up = clamp(p.t / 0.22, 0, 1);
-    const down = p.t > 2.65 ? clamp((3 - p.t) / 0.35, 0, 1) : 1;
-    S.car.lift = 5 * up * down;
-    if (!p.swapped && p.t >= 1.35) {
-      p.swapped = true;
-      S.compound = p.nextTire;
-      sfx('swap');
-      puff(300, PIT_Y + 6, p.nextTire === 'inter' ? '#7fd4ff' : '#ff8d86', 8);
-      puff(336, PIT_Y + 6, p.nextTire === 'inter' ? '#7fd4ff' : '#ff8d86', 8);
+function armClock(t) {
+  const ev = S.event;
+  if (!ev) return;
+  S.field.forEach(c => {
+    if (c.you || !c.willBox || c.armed) return;
+    if (t >= c.boxAt) {
+      c.armed = true;
+      c.wantsPit = true;
+      if (c.mode === 'track' && distToEntry(c.s) < 40) enterPit(c);
     }
-    if (p.t >= 3) { p.stage = 'exit'; p.t = 0; S.car.lift = 0; }
-  } else {
-    const u = clamp(p.t / 0.62, 0, 1);
-    const e = ease(u);
-    S.car.x = lerp(318, W + 36, e);
-    S.car.y = lerp(PIT_Y, TRACK_Y, e);
-    S.car.angle = 0;
-    S.wheel += dt * 14;
-    S.world += dt * 180;
-    if (u >= 1) {
-      S.phase = 'run';
-      S.car.x = 64;
-      S.car.y = TRACK_Y;
-      S.car.lift = 0;
+  });
+}
+function tickWetDanger(car, dt) {
+  const ev = S.event;
+  if (!ev || ev.stage !== 'truth' || !heavy(ev) || ev.kind !== 'wet') { car.wetTime = 0; return; }
+  if (car.compound !== 'slick' || car.wantsPit || car.mode !== 'track') return;
+  car.wetTime += dt;
+  if (car.wetTime > 5 && car.mode === 'track') {
+    car.mode = 'spin';
+    car.spinT = 0;
+    S.shake = car.you ? 7 : S.shake;
+    if (car.you) {
+      S.lost += 3;
+      stamp('¡TROMPO!', 'Más de 5s con slicks en Sepang. +3s. Los que pararon te comen.', false);
+      sfx('bad');
     }
   }
 }
-function updateSpin(dt) {
-  S.spinT += dt;
-  const u = S.spinT / 3;
-  S.car.angle = u * Math.PI * 4;
-  const drift = Math.sin(clamp(u * 1.35, 0, 1) * Math.PI);
-  S.car.y = TRACK_Y - drift * 34;
-  S.car.x = clamp(S.car.x + dt * 10, 80, W - 90);
-  if (Math.random() < 0.9) puff(S.car.x - 6, S.car.y + 12, '#1a1c20', 1);
-  S.wheel += dt * 4;
-  S.world += dt * 36;
-  if (u > 0.22 && u < 0.42) {
-    S.shake = Math.max(S.shake, 5);
-    if (Math.random() < 0.7) puff(S.car.x + 10, S.car.y - 16, '#ffe38a', 2);
-  }
-  if (S.spinT >= 3) {
-    S.phase = 'run';
-    S.car.angle = 0;
-    S.car.y = TRACK_Y;
-  }
-}
-function updateHeat(dt) {
-  S.heatT += dt;
-  S.car.angle = Math.sin(S.heatT * 10) * 0.22;
-  S.car.x = clamp(S.car.x + dt * 8, 80, W - 90);
-  S.car.y = TRACK_Y + Math.sin(S.heatT * 16) * 2;
-  S.world += dt * 40;
-  if (Math.random() < 0.85) puff(S.car.x - 8 + Math.random() * 24, S.car.y + 8, '#f2f4f7', 1);
-  if (S.heatT >= 3) {
-    S.phase = 'run';
-    S.car.angle = 0;
-    S.car.y = TRACK_Y;
-  }
-}
-
-function updateParts(dt) {
-  for (let i = S.parts.length - 1; i >= 0; i--) {
-    const p = S.parts[i];
-    p.age += dt;
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
-    p.vy += 30 * dt;
-    if (p.age >= p.life) S.parts.splice(i, 1);
-  }
-}
-function updateDrops(dt) {
-  const level = visualRain();
-  if (level < 48) return;
-  const k = 0.45 + level / 140;
-  for (let i = 0; i < drops.length; i++) {
-    const d = drops[i];
-    d.y += d.v * dt * k;
-    if (d.y > PIT_TOP - 4) {
-      d.y = 118 + Math.random() * 16;
-      d.x = Math.random() * W;
+function tickHeat(car, dt) {
+  const ev = S.event;
+  if (!ev || ev.stage !== 'truth' || !heavy(ev) || ev.kind !== 'dry') return;
+  if (car.compound !== 'inter' || car.wantsPit || car.mode !== 'track') return;
+  car.wetTime += dt;
+  if (car.wetTime > 5) {
+    car.mode = 'spin';
+    car.spinT = 0;
+    car.wetTime = 0;
+    if (car.you) {
+      S.lost += 3;
+      stamp('SIN AGARRE', 'Intermedios en seco. +3s. Alguien montó slicks.', false);
+      sfx('bad');
     }
   }
 }
@@ -660,617 +614,320 @@ function updateDrops(dt) {
 function update(dt) {
   dt = Math.min(0.05, dt);
   S.time += dt;
-  if (S.shake > 0) S.shake = Math.max(0, S.shake - dt * 12);
-  if (S.posPop > 0) S.posPop = Math.max(0, S.posPop - dt * 1.8);
+  S.wheel += dt * 10;
+  if (S.posPop > 0) S.posPop = Math.max(0, S.posPop - dt * 1.6);
   if (S.flash > 0) S.flash = Math.max(0, S.flash - dt);
-  if (S.stamp) {
-    S.stamp.t -= dt;
-    if (S.stamp.t <= 0) S.stamp = null;
-  }
-  if (S.hold) {
-    S.hold.t -= dt;
-    if (S.hold.t <= 0) S.hold = null;
-  }
-  updateParts(dt);
-  updateDrops(dt);
-
+  if (S.stamp) { S.stamp.t -= dt; if (S.stamp.t <= 0) S.stamp = null; }
+  if (S.feedT > 0) { S.feedT -= dt; if (S.feedT <= 0) S.feed = ''; }
+  if (S.hold) { S.hold.t -= dt; if (S.hold.t <= 0) S.hold = null; }
   if (S.phase === 'title') {
-    S.world += dt * 90;
-    S.car.x += dt * 46;
-    S.car.y = TRACK_Y + Math.sin(S.time * 16) * 1;
-    S.wheel += dt * 8;
-    if (S.car.x > W + 56) S.car.x = -72;
-    S.cloudTarget = 0.18 + Math.sin(S.time * 0.45) * 0.12;
-    S.rainTarget = 0;
-    S.cloud = damp(S.cloud, S.cloudTarget, dt, 1.2);
-    moveRivals(dt * 0.6);
+    S.cloudTarget = 0.16 + Math.sin(S.time * 0.4) * 0.08;
+    S.cloud = S.cloud + (S.cloudTarget - S.cloud) * (1 - Math.exp(-dt));
     return;
   }
-
+  const before = S.pos;
   tickEvent(dt);
-  if (S.phase === 'pit') updatePit(dt);
-  else if (S.phase === 'spin') updateSpin(dt);
-  else if (S.phase === 'heat') updateHeat(dt);
-  else moveCar(dt);
-  moveRivals(dt);
-
-  S.rain = clamp(damp(S.rain, S.rainTarget, dt, 6.5), 0, 100);
-  S.cloud = damp(S.cloud, S.cloudTarget, dt, 2.4);
-
-  if (S.event && S.event.expired && S.phase === 'run') beginIdle();
-}
-
-// Drops stay on screen during a wet call even when the radar bar dips.
-// The bar is allowed to lie. The duration (3s vs 20s) is the real secret.
-function visualRain() {
-  const ev = S.event;
-  if (!ev || ev.kind !== 'wet') return S.rain;
-  if (ev.stage === 'call') return Math.max(S.rain, 76);
-  if (ev.stage === 'truth' && ev.length === 'long') {
-    const clock = ev.decidedAt + ev.truthAge;
-    if (clock < 17.5) return Math.max(S.rain, 88);
+  S.field.forEach(c => {
+    tickWetDanger(c, dt);
+    tickHeat(c, dt);
+    tickCar(c, dt);
+  });
+  if (!Number.isFinite(S.rain)) S.rain = 0;
+  if (!Number.isFinite(S.rainTarget)) S.rainTarget = 0;
+  S.rain = clamp(S.rain + (S.rainTarget - S.rain) * (1 - Math.exp(-6.5 * dt)), 0, 100);
+  S.cloud = S.cloud + (S.cloudTarget - S.cloud) * (1 - Math.exp(-2.4 * dt));
+  refreshPos();
+  if (S.pos > before && !S.stamp) {
+    const jumper = S.field.find(c => !c.you && c.outPit > 3.2);
+    if (jumper) feed('EL ' + jumper.n + ' TE PERJUDICA — salió del box');
   }
-  return S.rain;
-}
-
-function weatherIcon() {
-  const ev = S.event;
-  if (!ev) return 'sun';
-  if (ev.kind === 'wet') {
-    if (ev.stage === 'cloud') return 'cloud';
-    if (ev.stage === 'truth' && ev.length === 'short') {
-      const clock = ev.decidedAt + ev.truthAge;
-      if (clock >= 3.05) return 'sun';
-    }
-    if (ev.stage === 'truth' && ev.length === 'long') {
-      const clock = ev.decidedAt + ev.truthAge;
-      if (clock >= 19) return 'cloud';
-    }
-    return 'rain';
-  }
-  if (ev.stage === 'truth' && ev.length === 'short') {
-    const clock = ev.decidedAt + ev.truthAge;
-    if (clock >= 3 && clock < 5.6) return 'rain';
-  }
-  if (ev.stage === 'call' && Math.abs(ev.age - ev.fakeAt) < 0.48) return 'cloud';
-  return 'sun';
-}
-
-function drawCloudBlob(x, y, s, color) {
-  ctx.fillStyle = color;
-  const blobs = [[0, 0, 16], [14, 4, 12], [-14, 5, 11], [6, -8, 10], [-6, -6, 9]];
-  for (let i = 0; i < blobs.length; i++) {
-    const b = blobs[i];
-    ctx.beginPath();
-    ctx.arc(Math.round(x + b[0] * s), Math.round(y + b[1] * s), b[2] * s, 0, Math.PI * 2);
-    ctx.fill();
+  for (let i = 0; i < drops.length; i++) {
+    if (visualRain() < 48) break;
+    const d = drops[i];
+    d.y += d.v * dt;
+    if (d.y > BOARD_Y) { d.y = 70; d.x = Math.random() * W; }
   }
 }
-function drawMiniWeather(id, x, y, on) {
-  ctx.save();
-  if (on) {
-    ctx.fillStyle = '#f0c400';
-    ctx.fillRect(x - 2, y - 2, 26, 22);
-    ctx.fillStyle = '#101418';
-    ctx.fillRect(x, y, 22, 18);
+
+function strokePath(pts, closed, width, color) {
+  ctx.beginPath();
+  const p0 = worldToScreen(pts[0]);
+  ctx.moveTo(p0[0], p0[1]);
+  for (let i = 1; i < pts.length; i++) {
+    const p = worldToScreen(pts[i]);
+    ctx.lineTo(p[0], p[1]);
   }
-  if (id === 'sun') {
-    ctx.fillStyle = on ? '#ffd84a' : '#6d6240';
-    ctx.beginPath();
-    ctx.arc(x + 11, y + 9, 5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillRect(x + 10, y + 1, 2, 3);
-    ctx.fillRect(x + 10, y + 15, 2, 3);
-    ctx.fillRect(x + 2, y + 8, 3, 2);
-    ctx.fillRect(x + 17, y + 8, 3, 2);
-  } else if (id === 'cloud') {
-    ctx.fillStyle = on ? '#e7edf3' : '#8b949e';
-    ctx.beginPath();
-    ctx.arc(x + 8, y + 11, 4, 0, Math.PI * 2);
-    ctx.arc(x + 14, y + 10, 5, 0, Math.PI * 2);
-    ctx.arc(x + 11, y + 7, 3.5, 0, Math.PI * 2);
-    ctx.fill();
-  } else {
-    ctx.fillStyle = on ? '#e7edf3' : '#8b949e';
-    ctx.beginPath();
-    ctx.arc(x + 11, y + 6, 4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = on ? '#49b0ff' : '#3d6f99';
-    ctx.fillRect(x + 6, y + 11, 2, 6);
-    ctx.fillRect(x + 11, y + 12, 2, 5);
-    ctx.fillRect(x + 15, y + 11, 2, 6);
-  }
-  ctx.restore();
-}
-function drawTireIcon(x, y, compound) {
-  const col = compound === 'inter' ? '#1493e0' : '#e10600';
-  ctx.fillStyle = '#111';
-  ctx.beginPath();
-  ctx.arc(x, y, 13, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = col;
-  ctx.beginPath();
-  ctx.arc(x, y, 8, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#f4f7fb';
-  ctx.beginPath();
-  ctx.arc(x, y, 3, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-function drawCar(x, y, angle, scale, compound, body, lift) {
-  ctx.save();
-  ctx.translate(Math.round(x), Math.round(y - (lift || 0)));
-  ctx.rotate(angle || 0);
-  ctx.scale(scale || 1, scale || 1);
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
-  ctx.beginPath();
-  ctx.ellipse(2, 18, 30, 4, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  const tire = compound === 'inter' ? '#1493e0' : '#e10600';
-  const rim = compound === 'inter' ? '#d9f4ff' : '#ffd0cb';
-
-  ctx.fillStyle = '#111';
-  ctx.fillRect(-42, -18, 3, 26);
-  ctx.fillRect(-48, -18, 16, 3);
-  ctx.fillRect(-48, -8, 16, 2);
-
-  ctx.fillStyle = body;
-  ctx.fillRect(-38, -10, 60, 14);
-  ctx.fillStyle = '#161616';
-  ctx.fillRect(-30, -10, 16, 8);
-  ctx.fillStyle = '#14b8a6';
-  ctx.fillRect(-38, -2, 52, 3);
-
-  ctx.fillStyle = body;
-  ctx.fillRect(20, -8, 18, 8);
-  ctx.fillRect(36, -6, 8, 4);
-  ctx.fillStyle = '#111';
-  ctx.fillRect(40, -1, 14, 3);
-  ctx.fillRect(52, -10, 3, 16);
-
-  ctx.fillStyle = '#222';
-  ctx.fillRect(-8, -18, 16, 9);
-  ctx.fillStyle = '#08332e';
-  ctx.fillRect(-6, -16, 12, 6);
-  ctx.fillStyle = '#f2c14b';
-  ctx.beginPath();
-  ctx.arc(0, -14, 3.2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = '#111';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(0, -12, 9, Math.PI * 1.08, Math.PI * 1.92);
+  if (closed) ctx.closePath();
+  ctx.lineWidth = width;
+  ctx.strokeStyle = color;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
   ctx.stroke();
-
-  function wheel(wx) {
-    ctx.fillStyle = '#111';
-    ctx.beginPath();
-    ctx.arc(wx, 8, 8, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = tire;
-    ctx.beginPath();
-    ctx.arc(wx, 8, 5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = rim;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    const a = S.wheel;
-    ctx.moveTo(wx + Math.cos(a) * 2, 8 + Math.sin(a) * 2);
-    ctx.lineTo(wx - Math.cos(a) * 2, 8 - Math.sin(a) * 2);
-    ctx.moveTo(wx + Math.cos(a + 1.6) * 2, 8 + Math.sin(a + 1.6) * 2);
-    ctx.lineTo(wx - Math.cos(a + 1.6) * 2, 8 - Math.sin(a + 1.6) * 2);
-    ctx.stroke();
-  }
-  wheel(-20);
-  wheel(18);
-  ctx.restore();
 }
-
-function drawSky() {
-  const wet = clamp(Math.max(S.cloud, visualRain() / 120), 0, 1);
-  for (let i = 0; i < 10; i++) {
-    const t = i / 9;
-    ctx.fillStyle = mix(mix('#7ec8ea', '#66788a', wet), mix('#d5eef8', '#a9bac6', wet), t);
-    const y0 = 118;
-    const y1 = TRACK_TOP;
-    ctx.fillRect(0, Math.floor(y0 + (y1 - y0) * i / 10), W, Math.ceil((y1 - y0) / 10) + 1);
-  }
+function drawMap() {
+  ctx.fillStyle = '#1c3d28';
+  ctx.fillRect(MAP.x, MAP.y, MAP.w, MAP.h);
+  ctx.fillStyle = '#245233';
+  ctx.fillRect(MAP.x + 6, MAP.y + 6, MAP.w - 12, MAP.h - 12);
   if (S.flash > 0) {
-    ctx.fillStyle = 'rgba(255,255,255,' + (S.flash * 1.4) + ')';
-    ctx.fillRect(0, 118, W, TRACK_TOP - 118);
+    ctx.fillStyle = 'rgba(255,255,255,' + (S.flash * 0.35) + ')';
+    ctx.fillRect(MAP.x, MAP.y, MAP.w, MAP.h);
   }
-  const sunA = 1 - clamp(S.cloud * 1.15, 0, 1);
-  if (sunA > 0.05) {
-    ctx.globalAlpha = sunA;
-    ctx.fillStyle = '#ffe56a';
-    ctx.beginPath();
-    ctx.arc(332, 162, 16, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#fff4b0';
-    ctx.beginPath();
-    ctx.arc(332, 162, 8, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-  }
-  const col = mix('#f7fbff', '#4a525a', S.cloud);
-  for (let i = 0; i < clouds.length; i++) {
-    const c = clouds[i];
-    const x = wrap(c.x - S.world * c.sp, W + 180) - 50;
-    drawCloudBlob(x, c.y, c.s, col);
-  }
+  strokePath(TRACK, true, 12, '#d7a106');
+  strokePath(TRACK, true, 8, visualRain() > 45 ? '#2a3038' : '#3a4048');
+  strokePath(PIT, false, 4, '#6a727c');
+  strokePath(PIT, false, 1.5, '#f0c400');
+  const sf = worldToScreen(pointOn(TRACK, TRACK_CUM, 80, true));
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(sf[0] - 1, sf[1] - 7, 2, 14);
+  ctx.fillStyle = '#111';
+  ctx.fillRect(sf[0] + 1, sf[1] - 7, 2, 6);
+  ctx.fillRect(sf[0] + 1, sf[1] + 1, 2, 6);
+  CORNERS.forEach(c => {
+    const p = worldToScreen([c[0], c[1]]);
+    txt(c[2], p[0] - 3, p[1] - 10, 8, 'rgba(255,255,255,0.8)');
+  });
+  txt('SEPANG', MAP.x + 8, MAP.y + 6, 10, 'rgba(255,255,255,0.85)');
+  const km = S.you ? (distToEntry(S.you.s) / 1000) : 0;
+  txt(S.you && S.you.wantsPit ? ('BOX ' + km.toFixed(1) + ' km') : ('Pit ' + km.toFixed(1) + ' km'), MAP.x + MAP.w - 8, MAP.y + 6, 10, '#ffd000', 'right');
+  if (S.feed) txt(S.feed, MAP.x + MAP.w / 2, MAP.y + MAP.h - 16, 11, '#ffd000', 'center');
 }
-
-function drawStands() {
-  const base = -wrap(S.world * 0.28, 52);
-  for (let i = -1; i < 10; i++) {
-    const x = Math.round(base + i * 52);
-    ctx.fillStyle = (i % 2 === 0) ? '#8d939b' : '#7e858e';
-    ctx.fillRect(x, 214, 48, 94);
-    ctx.fillStyle = '#5e656e';
-    ctx.fillRect(x, 206, 48, 12);
-    ctx.fillStyle = '#b7bec6';
-    ctx.fillRect(x + 4, 222, 40, 78);
-    for (let r = 0; r < 6; r++) {
-      for (let c = 0; c < 6; c++) {
-        const flick = (Math.floor(S.time * 2) + i + r + c) % 11 === 0;
-        const pal = ['#e8e8e8', '#c0392b', '#2471a3', '#f4d03f', '#d5d8dc', '#7d3c98', '#f5f5f5'];
-        ctx.fillStyle = pal[(i * 3 + r * 5 + c + (flick ? 2 : 0)) % pal.length];
-        ctx.fillRect(x + 7 + c * 6, 228 + r * 12, 3, 4);
-      }
-    }
-  }
-  // Control tower, fixed landmark on the left of the straight.
-  ctx.fillStyle = '#6d747d';
-  ctx.fillRect(8, 168, 28, 140);
-  ctx.fillStyle = '#4e555e';
-  ctx.fillRect(4, 160, 36, 12);
-  ctx.fillStyle = '#dce3ea';
-  for (let r = 0; r < 5; r++) ctx.fillRect(14, 176 + r * 16, 16, 8);
-  ctx.fillStyle = '#e10600';
-  ctx.fillRect(18, 150, 4, 12);
-
-  // Gantry over the straight.
-  ctx.fillStyle = '#4c545e';
-  ctx.fillRect(78, 300, 6, 28);
-  ctx.fillRect(300, 300, 6, 28);
-  ctx.fillRect(78, 294, 228, 10);
-  txt('SEPANG', 196, 295, 9, '#ffd000', 'center');
-}
-
-function drawTrack() {
-  ctx.fillStyle = visualRain() > 45 ? '#1c2128' : '#2a2e33';
-  ctx.fillRect(0, TRACK_TOP, W, TRACK_BOT - TRACK_TOP);
-  // Barrier / muro.
-  ctx.fillStyle = '#8b929a';
-  ctx.fillRect(0, TRACK_TOP - 12, W, 12);
-  ctx.fillStyle = '#d5dbe2';
-  for (let x = 0; x < W; x += 8) ctx.fillRect(x, TRACK_TOP - 20, 2, 10);
-  ctx.fillStyle = '#c0392b';
-  ctx.fillRect(0, TRACK_TOP - 12, W, 3);
-
-  const kerb = wrap(S.world, 18);
-  for (let x = -18; x < W + 18; x += 18) {
-    const alt = Math.floor((x + S.world) / 18) % 2 === 0;
-    ctx.fillStyle = alt ? '#f0c400' : '#141414';
-    ctx.fillRect(Math.round(x - kerb), TRACK_TOP, 18, 7);
-    ctx.fillRect(Math.round(x - kerb), TRACK_BOT - 7, 18, 7);
-  }
-  const dash = wrap(S.world, 34);
-  ctx.fillStyle = '#f2f2f2';
-  for (let x = -34; x < W + 34; x += 34) {
-    ctx.fillRect(Math.round(x - dash), 362, 16, 3);
-  }
-  // Start/finish board every so often.
-  const sf = wrap(900 - wrap(S.world, 900), 900);
-  if (sf < W) {
-    for (let i = 0; i < 8; i++) {
-      ctx.fillStyle = ((i + Math.floor(S.world / 8)) % 2 === 0) ? '#fff' : '#111';
-      ctx.fillRect(Math.round(sf), TRACK_TOP + 8 + i * 12, 8, 12);
-    }
-  }
-  if (visualRain() > 40) {
-    ctx.fillStyle = 'rgba(190,210,225,0.16)';
-    ctx.fillRect(0, TRACK_TOP + 16, W, 3);
-    ctx.fillRect(0, TRACK_TOP + 40, W, 2);
-    ctx.fillRect(0, TRACK_TOP + 70, W, 2);
-  }
-}
-
-function drawPit() {
-  ctx.fillStyle = '#14181d';
-  ctx.fillRect(0, PIT_TOP, W, 548 - PIT_TOP);
-  ctx.fillStyle = '#f0c400';
-  ctx.fillRect(0, PIT_TOP, W, 3);
-  ctx.fillStyle = '#2a3138';
-  const off = wrap(S.world * 0.2, 24);
-  for (let x = -24; x < W; x += 24) ctx.fillRect(Math.round(x - off), PIT_TOP + 16, 12, 2);
-
-  // Garage on the right — the box the car drives into.
-  ctx.fillStyle = '#3c444d';
-  ctx.fillRect(236, 436, 146, 108);
-  ctx.fillStyle = '#22272d';
-  ctx.fillRect(248, 452, 122, 78);
-  ctx.fillStyle = '#101317';
-  ctx.fillRect(258, 462, 102, 58);
-  ctx.fillStyle = '#f0c400';
-  ctx.fillRect(286, 438, 46, 12);
-  txt('BOX', 309, 439, 10, '#171c22', 'center');
-  txt('PIT LANE', 16, 438, 11, '#9aa3ad', 'left');
-
-  if (S.phase === 'pit') {
-    ctx.fillStyle = '#f0c400';
-    ctx.globalAlpha = 0.35 + Math.sin(S.time * 10) * 0.15;
-    ctx.fillRect(258, 462, 102, 4);
-    ctx.globalAlpha = 1;
-    drawMech(268, 508);
-    drawMech(360, 508);
-    if (S.pit && S.pit.stage === 'stop') {
-      ctx.fillStyle = '#f0c400';
-      ctx.fillRect(292, PIT_Y + 12, 6, 8);
-      ctx.fillRect(338, PIT_Y + 12, 6, 8);
-    }
-  }
-}
-function drawMech(x, y) {
-  ctx.fillStyle = '#f0c400';
+function drawF1(screen, ang, car) {
+  ctx.save();
+  ctx.translate(screen[0], screen[1]);
+  ctx.rotate(ang);
+  const sc = car.you ? 1.35 : 1;
+  ctx.scale(sc, sc);
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
   ctx.beginPath();
-  ctx.arc(x, y - 14, 4, 0, Math.PI * 2);
+  ctx.ellipse(1.2, 1.6, 7, 3.1, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = '#1c1c1c';
-  ctx.fillRect(x - 4, y - 10, 8, 9);
-  ctx.fillRect(x - 6, y, 4, 6);
-  ctx.fillRect(x + 2, y, 4, 6);
+  ctx.fillStyle = '#111';
+  ctx.fillRect(-8.2, -4.6, 2.4, 9.2);
+  ctx.fillStyle = car.dark;
+  ctx.fillRect(-7.4, -3.3, 2.2, 1.5);
+  ctx.fillRect(-7.4, 1.8, 2.2, 1.5);
+  ctx.fillStyle = car.body;
+  ctx.beginPath();
+  ctx.moveTo(-6, -3.1);
+  ctx.lineTo(-1.5, -3.5);
+  ctx.lineTo(3.5, -2.3);
+  ctx.lineTo(7.2, -1.2);
+  ctx.lineTo(7.2, 1.2);
+  ctx.lineTo(3.5, 2.3);
+  ctx.lineTo(-1.5, 3.5);
+  ctx.lineTo(-6, 3.1);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = car.accent;
+  ctx.fillRect(-3.5, -0.7, 7, 1.4);
+  ctx.fillStyle = '#071016';
+  ctx.beginPath();
+  ctx.ellipse(-0.4, 0, 1.7, 1.15, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = car.accent;
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.arc(-0.2, 0, 1.5, Math.PI * 0.15, Math.PI * 0.85);
+  ctx.stroke();
+  ctx.fillStyle = car.dark;
+  ctx.fillRect(6.6, -3.5, 1.8, 7);
+  ctx.fillStyle = car.compound === 'inter' ? '#1493e0' : '#141414';
+  [[-3.2, -4.1], [-3.2, 2.6], [3.4, -3.7], [3.4, 2.2]].forEach(w => {
+    ctx.fillRect(w[0], w[1], 2.3, 1.6);
+  });
+  if (car.mode === 'pit' || car.mode === 'stop' || car.wantsPit) {
+    ctx.fillStyle = '#ffd000';
+    ctx.fillRect(-2, -7.5, 4, 2);
+  }
+  ctx.restore();
+  if (car.you) {
+    ctx.fillStyle = '#ffd000';
+    ctx.fillRect(screen[0] - 1, screen[1] - 16, 2, 5);
+    ctx.beginPath();
+    ctx.moveTo(screen[0], screen[1] - 8);
+    ctx.lineTo(screen[0] - 3.5, screen[1] - 12);
+    ctx.lineTo(screen[0] + 3.5, screen[1] - 12);
+    ctx.fill();
+  }
 }
-
+function drawCars() {
+  const list = S.field.slice().sort((a, b) => {
+    const pa = carScreen(a)[1], pb = carScreen(b)[1];
+    return pa - pb;
+  });
+  list.forEach(c => {
+    const p = carScreen(c);
+    const ang = carAngle(c);
+    if (p[0] < MAP.x - 20 || p[0] > MAP.x + MAP.w + 20 || p[1] < MAP.y - 20 || p[1] > MAP.y + MAP.h + 20) return;
+    drawF1(p, ang, c);
+  });
+}
+function carScreen(c) {
+  if (c.mode === 'pit' || c.mode === 'stop') return worldToScreen(pointOn(PIT, PIT_CUM, c.pitU, false));
+  return worldToScreen(pointOn(TRACK, TRACK_CUM, c.s, true));
+}
+function carAngle(c) {
+  if (c.mode === 'spin') return c.spinT * 8;
+  if (c.mode === 'pit' || c.mode === 'stop') return headingScreen(PIT, PIT_CUM, c.pitU, false);
+  return headingScreen(TRACK, TRACK_CUM, c.s, true);
+}
 function drawRain() {
-  const level = visualRain();
-  if (level < 48) return;
-  const n = Math.floor(drops.length * clamp(level / 100, 0, 1));
-  ctx.fillStyle = 'rgba(214,232,255,0.8)';
+  if (visualRain() < 48) return;
+  const n = Math.floor(drops.length * clamp(visualRain() / 100, 0, 1));
+  ctx.fillStyle = 'rgba(220,235,255,0.75)';
   for (let i = 0; i < n; i++) {
     const d = drops[i];
-    ctx.fillRect(Math.round(d.x), Math.round(d.y), 2, d.len);
-  }
-  if ((S.phase === 'run' || S.phase === 'call') && level > 40) {
-    ctx.fillStyle = 'rgba(210,225,235,0.55)';
-    for (let i = 0; i < 4; i++) {
-      ctx.fillRect(Math.round(S.car.x - 28 - i * 5), Math.round(S.car.y + 6 + Math.sin(S.time * 24 + i) * 2), 2, 2);
-    }
+    if (d.y > MAP.y && d.y < MAP.y + MAP.h) ctx.fillRect(d.x, d.y, 2, d.len);
   }
 }
-function drawParts() {
-  for (let i = 0; i < S.parts.length; i++) {
-    const p = S.parts[i];
-    ctx.globalAlpha = clamp(1 - p.age / p.life, 0, 1);
-    ctx.fillStyle = p.color;
-    ctx.fillRect(Math.round(p.x), Math.round(p.y), p.s, p.s);
-  }
-  ctx.globalAlpha = 1;
-}
-
 function drawHUD() {
   ctx.fillStyle = '#10141a';
-  ctx.fillRect(0, 0, W, 116);
+  ctx.fillRect(0, 0, W, HUD_H);
   ctx.fillStyle = '#f0c400';
-  ctx.fillRect(0, 116, W, 2);
-
-  txt('BOX BOX', 14, 8, 18, '#ffd000');
-  txt('SEPANG LIVE', 14, 30, 11, '#d5dbe3');
-  const spd = speedNow();
-  txt(String(spd), 376, 8, 20, spd === 300 ? '#ffffff' : '#ff5a5a', 'right');
-  txt('KM/H', 376, 30, 10, '#9aa3ad', 'right');
-  txt('VUELTA ' + S.lap, 300, 30, 10, '#9aa3ad', 'right');
-
-  const pcol = S.pos <= 3 ? '#3ddc84' : S.pos >= 8 ? '#ff4d4d' : '#ffd000';
-  const pop = S.posPop;
-  txt('P' + S.pos, 14, 50 - pop * 3, 40, pcol);
-
-  drawTireIcon(168, 74, S.compound);
-  txt(S.compound === 'inter' ? 'INTER' : 'SLICKS', 188, 58, 13, S.compound === 'inter' ? '#7fd4ff' : '#ff8d86');
-  txt(S.compound === 'inter' ? 'AZULES' : 'ROJOS', 188, 74, 11, '#c5ccd4');
-
-  txt('LLUVIA', 14, 96, 10, '#9aa3ad');
-  const icon = weatherIcon();
-  drawMiniWeather('sun', 78, 94, icon === 'sun');
-  drawMiniWeather('cloud', 108, 94, icon === 'cloud');
-  drawMiniWeather('rain', 138, 94, icon === 'rain');
-
-  const pct = Math.round(clamp(S.rain, 0, 100));
-  drawBar(172, 98, 150, 12, pct);
-  txt(pct + '%', 376, 94, 12, '#ffffff', 'right');
-}
-function drawBar(x, y, w, h, pct) {
+  ctx.fillRect(0, HUD_H, W, 2);
+  txt('BOX BOX', 8, 4, 12, '#ffd000');
+  txt('SEPANG', 8, 20, 9, '#d5dbe3');
+  const you = S.you;
+  const spd = S.phase === 'title' || !you ? 0 : Math.round(speedMs(you) / SCALE_TIME * 3.6);
+  txt(String(spd), W - 8, 2, 16, '#fff', 'right');
+  txt('KM/H', W - 8, 20, 9, '#9aa3ad', 'right');
+  const lapN = you ? you.lap : 1;
+  const pcol = S.pos <= 3 ? '#3ddc84' : S.pos >= 15 ? '#ff5a5a' : '#ffd000';
+  txt('P' + S.pos, 86, 2, 24, pcol);
+  txt('/20', 150, 12, 11, '#9aa3ad');
+  txt('V' + lapN, 186, 16, 11, '#d5dbe3');
+  ctx.fillStyle = S.compound === 'inter' ? '#1493e0' : '#e10600';
+  ctx.beginPath(); ctx.arc(210, 22, 7, 0, Math.PI * 2); ctx.fill();
+  txt(S.compound === 'inter' ? 'INTER' : 'SLICK', 222, 14, 11, '#fff');
+  const pct = Math.round(S.rain);
+  txt('LLUVIA', 10, 42, 9, '#9aa3ad');
   ctx.fillStyle = '#07090c';
-  ctx.fillRect(x, y, w, h);
-  const fw = Math.round(w * pct / 100);
-  ctx.fillStyle = pct > 70 ? '#3aa0ff' : pct > 28 ? '#f0c400' : '#2f9e7a';
-  if (fw > 0) ctx.fillRect(x, y, fw, h);
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
-  for (let i = 1; i < 10; i++) ctx.fillRect(x + Math.round(w * i / 10), y, 1, h);
-  ctx.strokeStyle = '#d7dde6';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  ctx.fillRect(58, 44, 250, 8);
+  ctx.fillStyle = pct > 70 ? '#3aa0ff' : pct > 25 ? '#f0c400' : '#2f9e7a';
+  ctx.fillRect(58, 44, Math.round(250 * pct / 100), 8);
+  txt(pct + '%', W - 10, 40, 11, '#fff', 'right');
 }
-function speedNow() {
-  if (S.phase === 'title') return 300;
-  if (S.phase === 'spin' || S.phase === 'heat') return 0;
-  if (S.phase === 'pit' && S.pit && S.pit.stage === 'stop') return 0;
-  if (S.phase === 'pit') return 110;
-  return 300;
+function drawBoard() {
+  const list = standings();
+  ctx.fillStyle = '#12171d';
+  ctx.fillRect(0, BOARD_Y, W, RADIO_Y - BOARD_Y);
+  txt('PARRILLA', 8, BOARD_Y + 2, 9, '#f0c400');
+  const boxing = S.field.filter(c => !c.you && (c.mode === 'pit' || c.mode === 'stop' || c.wantsPit)).length;
+  txt(boxing ? (boxing + ' en boxes') : '20 coches', W - 8, BOARD_Y + 2, 9, boxing ? '#ffb15a' : '#9aa3ad', 'right');
+  for (let i = 0; i < 20; i++) {
+    const col = i < 10 ? 0 : 1;
+    const row = i % 10;
+    const x = 6 + col * 192;
+    const y = BOARD_Y + 16 + row * 10.4;
+    const c = list[i];
+    if (c.you) { ctx.fillStyle = '#f0c400'; ctx.fillRect(x - 2, y - 1, 186, 11); }
+    const ink = c.you ? '#141414' : '#d7dde6';
+    txt('P' + (i + 1), x, y, 9, ink);
+    ctx.fillStyle = c.body;
+    ctx.fillRect(x + 28, y + 1, 8, 8);
+    const tag = c.you ? 'TÚ' : String(c.n);
+    txt(tag, x + 40, y, 9, ink);
+    const leader = progress(list[0]);
+    const gap = (leader - progress(c)) / (70 * SCALE_TIME);
+    const label = i === 0 ? 'LÍDER' : '+' + Math.max(0, gap).toFixed(1);
+    const pitTag = (c.mode === 'pit' || c.mode === 'stop') ? ' BOX' : '';
+    txt(label + pitTag, x + 78, y, 9, c.you ? '#141414' : '#9aa3ad');
+  }
 }
-
 function radioVM() {
   const ev = S.event;
-  if (S.phase === 'pit' && S.pit) {
-    if (S.pit.stage === 'stop') {
-      return {
-        tag: 'BOX',
-        l1: 'Coche parado en el box.',
-        l2: 'Cambio ' + S.pit.t.toFixed(1) + ' / 3.0s',
-        l3: S.pit.swapped ? 'Neumático nuevo montado.' : 'Levantando el coche…',
-        timer: null,
-      };
+  const you = S.you;
+  if (you && (you.mode === 'stop' || you.mode === 'pit')) {
+    if (you.mode === 'stop') {
+      return { tag: 'BOX', l1: 'Parados en el pit de Sepang.', l2: 'Cambio ' + you.stopT.toFixed(1) + ' / ' + you.stopDur.toFixed(1) + 's', l3: 'Los rivales siguen en pista.', timer: null };
     }
-    if (S.pit.stage === 'enter') {
-      return { tag: 'BOX', l1: 'Entrando a boxes.', l2: 'Por la derecha de la recta.', l3: 'Tres segundos parados.', timer: null };
-    }
-    return { tag: 'BOX', l1: 'Saliendo del box.', l2: 'Vuelve a la recta.', l3: '', timer: null };
+    return { tag: 'BOX', l1: 'En el pit lane.', l2: 'Límite de velocidad. Ellos no te esperan.', l3: '', timer: null };
   }
-  if (S.phase === 'spin') {
-    return { tag: 'MURO', l1: '¡Se ha ido al muro!', l2: 'Trompo en la recta principal.', l3: 'Pierde 3.0 segundos.', timer: null };
+  if (you && you.mode === 'spin') {
+    return { tag: 'MURO', l1: 'Trompo en el circuito.', l2: 'Quien haya parado te adelanta.', l3: '', timer: null };
   }
-  if (S.phase === 'heat') {
-    return { tag: 'SECO', l1: 'Los intermedios patinan.', l2: 'Demasiado seco para ese neumático.', l3: 'Pierde 3.0 segundos.', timer: null };
-  }
-  if (ev && ev.stage === 'cloud') {
-    return { tag: 'NUBES', l1: 'Las nubes se ponen grises.', l2: 'Puede caer agua en la recta.', l3: 'El piloto todavía no llama.', timer: null };
-  }
+  if (ev && ev.stage === 'cloud') return { tag: 'NUBES', l1: 'Nubes grises sobre Sepang.', l2: 'Puede caer agua en cualquier curva.', l3: 'El piloto todavía no llama.', timer: null };
   if (ev && ev.stage === 'call') {
     const left = Math.max(0, 5 - ev.age);
-    if (ev.kind === 'wet') {
-      return {
-        tag: 'LLUVIA',
-        l1: 'Jefe, ¿paramos?',
-        l2: 'Está lloviendo fuerte',
-        l3: 'El radar miente. Elige ya.',
-        timer: left,
-      };
-    }
-    return {
-      tag: 'SECO',
-      l1: 'Jefe, ¿paramos?',
-      l2: 'La pista se está secando',
-      l3: 'El sol también miente.',
-      timer: left,
-    };
+    if (ev.kind === 'wet') return { tag: 'LLUVIA', l1: 'Jefe, ¿paramos?', l2: 'Está lloviendo fuerte', l3: 'Si ellos paran y tú no, te comen.', timer: left };
+    return { tag: 'SECO', l1: 'Jefe, ¿paramos?', l2: 'La pista se está secando', l3: 'Un rival a slicks te puede saltar.', timer: left };
   }
   if (ev && ev.stage === 'truth') {
-    const clock = ev.decidedAt + ev.truthAge;
-    if (ev.kind === 'wet' && ev.length === 'long' && ev.choice === 'stay') {
-      if (ev.spun) {
-        return { tag: 'LLUVIA', l1: 'El trompo ya está hecho.', l2: 'Sigues con slicks bajo el agua.', l3: 'Lluvia ' + clock.toFixed(1) + 's de 20.', timer: null };
-      }
-      return { tag: 'LLUVIA', l1: 'Sigue cayendo fuerte.', l2: 'Los slicks no aguantan 5s.', l3: 'Reloj de agua ' + clock.toFixed(1) + 's', timer: null };
+    if (ev.kind === 'wet' && heavy(ev)) {
+      const clock = ev.decidedAt + ev.truthAge;
+      return { tag: ev.length === 'storm' ? 'TEMPORAL' : 'LLUVIA', l1: ev.length === 'storm' ? 'Temporal largo en Sepang.' : 'Lluvia de verdad.', l2: Math.round(clock) + 's de ' + ev.seconds + 's.', l3: 'Mira quién entra al pit.', timer: null };
     }
-    if (ev.kind === 'wet' && ev.length === 'short') {
-      return { tag: 'LLUVIA', l1: 'Se abre el cielo.', l2: 'Era un chaparrón de 3 segundos.', l3: '', timer: null };
-    }
-    if (ev.kind === 'wet') {
-      return { tag: 'LLUVIA', l1: 'Lluvia larga en Sepang.', l2: 'Veinte segundos de agua.', l3: '', timer: null };
-    }
-    if (ev.length === 'short' && clock >= 3) {
-      return { tag: 'LLUVIA', l1: 'El seco era mentira.', l2: 'El agua ha vuelto.', l3: '', timer: null };
-    }
-    return { tag: 'SECO', l1: 'La recta sigue seca.', l2: 'Los intermedios se cocinan.', l3: '', timer: null };
+    if (ev.kind === 'wet') return { tag: 'LLUVIA', l1: 'Se abre el cielo.', l2: 'Chaparrón de 3 segundos.', l3: '', timer: null };
   }
-  return {
-    tag: 'RADIO',
-    l1: 'Recta principal despejada.',
-    l2: '300 km/h, vuelta tras vuelta.',
-    l3: S.compound === 'inter' ? 'Llevas intermedios azules.' : 'Llevas slicks rojos.',
-    timer: null,
-  };
+  const where = you ? cornerName(you.s) : '';
+  return { tag: 'RADIO', l1: where ? ('Vas por la curva ' + where + '.') : 'Vuelta en curso.', l2: '300 km/h en recta. Sales desde el fondo.', l3: S.compound === 'inter' ? 'Intermedios puestos.' : 'Slicks puestos. P' + S.pos + '.', timer: null };
 }
-
+function cornerName(s) {
+  const marks = [382, 488, 608, 1298, 1628, 1748, 1912, 2272, 2392, 2872, 3022, 3248, 3578, 3922, 4868];
+  let best = 1, bd = 1e9;
+  for (let i = 0; i < marks.length; i++) {
+    let d = Math.abs(s - marks[i]);
+    d = Math.min(d, LAP_M - d);
+    if (d < bd) { bd = d; best = i + 1; }
+  }
+  return bd < 140 ? ('T' + best) : '';
+}
 function drawRadio() {
   const vm = radioVM();
   const calling = S.event && S.event.stage === 'call';
-  panel(12, RADIO_Y, 366, 154, calling ? '#ff5a3c' : '#f0c400');
+  panel(10, RADIO_Y, 370, 116, calling ? '#ff5a3c' : '#f0c400');
   ctx.fillStyle = calling ? '#ff5a3c' : '#f0c400';
-  ctx.fillRect(22, RADIO_Y + 12, 8, 8);
-  txt(vm.tag, 36, RADIO_Y + 8, 12, '#f0c400');
-  if (vm.timer != null) {
-    const urgent = vm.timer <= 2;
-    txt(vm.timer.toFixed(1), 364, RADIO_Y + 6, 22, urgent ? '#ff5a3c' : '#ffffff', 'right');
-  }
-  txt(vm.l1, 22, RADIO_Y + 36, 18, '#ffffff');
-  txt(vm.l2, 22, RADIO_Y + 60, 16, '#d7dde6');
-  if (vm.timer != null) {
-    const frac = clamp(vm.timer / 5, 0, 1);
-    ctx.fillStyle = '#07090c';
-    ctx.fillRect(22, RADIO_Y + 92, 336, 12);
-    ctx.fillStyle = vm.timer <= 2 ? '#ff5a3c' : '#f0c400';
-    ctx.fillRect(22, RADIO_Y + 92, Math.round(336 * frac), 12);
-    txt(vm.l3, 22, RADIO_Y + 112, 12, '#9aa3ad');
-  } else {
-    txt(vm.l3, 22, RADIO_Y + 92, 13, '#9aa3ad');
-  }
-  const pen = 'Penalización ' + S.lost.toFixed(1) + 's';
-  const acc = S.calls ? ('Aciertos ' + S.hits + '/' + S.calls) : 'Sin llamadas';
-  txt(pen, 22, RADIO_Y + 132, 11, '#c5ccd4');
-  txt(acc, 250, RADIO_Y + 132, 11, '#c5ccd4');
+  ctx.fillRect(20, RADIO_Y + 8, 7, 7);
+  txt(vm.tag, 32, RADIO_Y + 5, 11, '#f0c400');
+  if (vm.timer != null) txt(vm.timer.toFixed(1), 368, RADIO_Y + 2, 18, vm.timer <= 2 ? '#ff5a3c' : '#fff', 'right');
+  txt(vm.l1, 18, RADIO_Y + 26, 15, '#fff');
+  txt(vm.l2, 18, RADIO_Y + 46, 13, '#d7dde6');
+  txt(vm.l3, 18, RADIO_Y + 68, 11, '#9aa3ad');
+  txt('Penalización ' + S.lost.toFixed(0) + 's', 18, RADIO_Y + 92, 10, '#c5ccd4');
+  txt(S.calls ? ('Aciertos ' + S.hits + '/' + S.calls) : 'Sin llamadas', 250, RADIO_Y + 92, 10, '#c5ccd4');
 }
-
 function drawButton(r, label, sub, enabled, color) {
   const down = S.hold && S.hold.id === r.id;
-  const x = r.x + (down ? 2 : 0);
-  const y = r.y + (down ? 2 : 0);
+  const x = r.x + (down ? 2 : 0), y = r.y + (down ? 2 : 0);
   ctx.fillStyle = '#000';
-  ctx.fillRect(r.x + 4, r.y + 4, r.w, r.h);
+  ctx.fillRect(r.x + 3, r.y + 3, r.w, r.h);
   ctx.fillStyle = enabled ? color : '#2a3038';
   ctx.fillRect(x, y, r.w, r.h);
-  ctx.strokeStyle = enabled ? '#ffffff' : '#4a525c';
+  ctx.strokeStyle = enabled ? '#fff' : '#555';
   ctx.lineWidth = 2;
   ctx.strokeRect(x + 2, y + 2, r.w - 4, r.h - 4);
-  txt(label, x + r.w / 2, y + 16, 18, enabled ? '#ffffff' : '#8b949e', 'center');
-  txt(sub, x + r.w / 2, y + 42, 11, enabled ? '#ffe9a8' : '#6c7580', 'center');
+  txt(label, x + r.w / 2, y + 14, 16, enabled ? '#fff' : '#8b949e', 'center');
+  txt(sub, x + r.w / 2, y + 38, 10, enabled ? '#ffe9a8' : '#6c7580', 'center');
 }
 function drawButtons() {
   const on = !!(S.event && S.event.stage === 'call' && !S.event.choice);
-  drawButton(boxBtn, 'BOX BOX', on ? 'PARAR 3s' : 'BOX CERRADO', on, '#c45500');
+  drawButton(boxBtn, 'BOX BOX', on ? 'PARAR' : 'CERRADO', on, '#c45500');
   drawButton(stayBtn, 'QUEDARSE', on ? 'SEGUIR' : 'EN PISTA', on, '#1f7a45');
-  txt(S.muted ? 'SND OFF' : 'SND', 372, 816, 11, '#9aa3ad', 'right');
+  txt(S.muted ? 'SND OFF' : 'SND', 372, 804, 10, '#9aa3ad', 'right');
 }
-
 function drawStamp() {
   if (!S.stamp) return;
   const s = S.stamp;
-  const a = s.t < 0.35 ? s.t / 0.35 : 1;
-  ctx.globalAlpha = a;
-  panel(28, 132, 334, 62, s.good ? '#3ddc84' : '#ff4d4d');
-  txt(s.title, 195, 140, 20, s.good ? '#3ddc84' : '#ff6b6b', 'center');
-  txt(s.sub, 195, 168, 11, '#f4f7fb', 'center');
+  ctx.globalAlpha = s.t < 0.35 ? s.t / 0.35 : 1;
+  panel(16, MAP.y + 28, 358, 52, s.good ? '#3ddc84' : '#ff4d4d');
+  txt(s.title, 195, MAP.y + 34, 16, s.good ? '#3ddc84' : '#ff6b6b', 'center');
+  txt(s.sub, 195, MAP.y + 56, 10, '#f4f7fb', 'center');
   ctx.globalAlpha = 1;
 }
-
-function drawYouPin(x, y) {
-  const px = Math.round(x);
-  const py = Math.round(y) - 46;
-  ctx.fillStyle = '#ffd000';
-  ctx.fillRect(px - 1, py, 3, 7);
-  ctx.fillRect(px - 4, py + 7, 9, 3);
-}
-
-function drawScene() {
-  drawSky();
-  drawStands();
-  drawTrack();
-  drawPit();
-  for (let i = 0; i < rivals.length; i++) {
-    const r = rivals[i];
-    drawCar(r.x, r.y, 0, r.sc, r.compound, r.body, 0);
-  }
-  drawCar(S.car.x, S.car.y, S.car.angle, 1, S.compound, '#f4f4f4', S.car.lift);
-  drawYouPin(S.car.x, S.car.y - (S.car.lift || 0));
-  drawRain();
-  drawParts();
-}
-
 function drawTitle() {
-  ctx.fillStyle = 'rgba(7,8,10,0.55)';
-  ctx.fillRect(0, 470, W, H - 470);
-  panel(16, 488, 358, 336, '#f0c400');
-  txt('BOX BOX', 195, 508, 36, '#ffd000', 'center');
-  txt('SEPANG LIVE', 195, 550, 16, '#ffffff', 'center');
-  txt('Recta principal · 300 km/h', 195, 584, 13, '#d7dde6', 'center');
-  txt('El cielo cambia cada 8–12s.', 195, 612, 13, '#d7dde6', 'center');
-  txt('A veces llueve 3 segundos.', 195, 634, 13, '#9fd0ff', 'center');
-  txt('A veces llueve 20.', 195, 656, 13, '#ffb0a4', 'center');
-  txt('No hay llamada segura.', 195, 684, 14, '#ffd000', 'center');
-  txt('Con intermedios, el sol miente.', 195, 706, 12, '#c5ccd4', 'center');
-  const b = { x: 48, y: 734, w: 294, h: 64 };
+  ctx.fillStyle = 'rgba(6,8,10,0.72)';
+  ctx.fillRect(0, 430, W, H - 430);
+  panel(16, 448, 358, 360, '#f0c400');
+  txt('BOX BOX', 195, 464, 32, '#ffd000', 'center');
+  txt('SEPANG GP', 195, 502, 16, '#fff', 'center');
+  txt('El circuito entero. 15 curvas.', 195, 534, 13, '#d7dde6', 'center');
+  txt('Largas último: P20 de 20.', 195, 556, 13, '#ffb0a4', 'center');
+  txt('A veces llueve 3 segundos.', 195, 580, 13, '#9fd0ff', 'center');
+  txt('A veces el agua pasa de 40s.', 195, 602, 13, '#ffb0a4', 'center');
+  txt('Los rivales también paran.', 195, 628, 14, '#ffd000', 'center');
+  txt('Si aciertan el box, te adelantan.', 195, 650, 12, '#c5ccd4', 'center');
+  const b = { x: 48, y: 700, w: 294, h: 64 };
   ctx.fillStyle = '#000';
   ctx.fillRect(b.x + 4, b.y + 4, b.w, b.h);
   ctx.fillStyle = '#c45500';
@@ -1278,28 +935,23 @@ function drawTitle() {
   ctx.strokeStyle = '#fff';
   ctx.lineWidth = 2;
   ctx.strokeRect(b.x + 2, b.y + 2, b.w - 4, b.h - 4);
-  txt('SALIR A PISTA', 195, b.y + 20, 18, '#ffffff', 'center');
+  txt('SALIR A PISTA', 195, b.y + 20, 18, '#fff', 'center');
 }
-
 function draw() {
-  const sx = S.shake ? (Math.random() - 0.5) * S.shake : 0;
-  const sy = S.shake ? (Math.random() - 0.5) * S.shake : 0;
   ctx.setTransform(canvas._m || 1, 0, 0, canvas._m || 1, 0, 0);
-  ctx.imageSmoothingEnabled = false;
+  ctx.imageSmoothingEnabled = true;
   ctx.fillStyle = '#07080a';
   ctx.fillRect(0, 0, W, H);
-  ctx.save();
-  ctx.translate(sx, sy);
-  drawScene();
-  ctx.restore();
   drawHUD();
+  drawMap();
+  drawCars();
+  drawRain();
   if (S.phase !== 'title') {
+    drawBoard();
     drawStamp();
     drawRadio();
     drawButtons();
-  } else {
-    drawTitle();
-  }
+  } else drawTitle();
 }
 
 function resize() {
@@ -1313,93 +965,63 @@ function resize() {
   canvas.height = Math.floor(cssH * dpr);
   canvas._m = scale * dpr;
   ctx.setTransform(canvas._m, 0, 0, canvas._m, 0, 0);
-  ctx.imageSmoothingEnabled = false;
 }
-
 function localPos(e) {
   const r = canvas.getBoundingClientRect();
-  return {
-    x: (e.clientX - r.left) / r.width * W,
-    y: (e.clientY - r.top) / r.height * H,
-  };
+  return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H };
 }
+function hit(r, x, y) { return x >= r.x && y >= r.y && x <= r.x + r.w && y <= r.y + r.h; }
 function onPointer(x, y) {
-  if (S.phase === 'title') {
-    startGame();
-    return;
-  }
-  if (hit(sndBtn, x, y)) {
-    S.muted = !S.muted;
-    if (!S.muted) ac();
-    return;
-  }
+  if (S.phase === 'title') { startGame(); return; }
+  if (hit(sndBtn, x, y)) { S.muted = !S.muted; if (!S.muted) ac(); return; }
   if (S.event && S.event.stage === 'call' && !S.event.choice) {
     if (hit(boxBtn, x, y)) choose('box');
     else if (hit(stayBtn, x, y)) choose('stay');
   }
 }
-
-canvas.addEventListener('pointerdown', function (e) {
-  e.preventDefault();
-  const p = localPos(e);
-  onPointer(p.x, p.y);
-});
-canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
-window.addEventListener('keydown', function (e) {
-  if (e.key === ' ' || e.key === 'Enter') {
-    e.preventDefault();
-    if (S.phase === 'title') startGame();
-  } else if (e.key === 'b' || e.key === 'B' || e.key === '1') {
-    if (S.phase !== 'title') choose('box');
-  } else if (e.key === 's' || e.key === 'S' || e.key === '2') {
-    if (S.phase !== 'title') choose('stay');
-  } else if (e.key === 'm' || e.key === 'M') {
-    S.muted = !S.muted;
-  }
+canvas.addEventListener('pointerdown', e => { e.preventDefault(); const p = localPos(e); onPointer(p.x, p.y); });
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+window.addEventListener('keydown', e => {
+  if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (S.phase === 'title') startGame(); }
+  else if (e.key === 'b' || e.key === 'B' || e.key === '1') { if (S.phase !== 'title') choose('box'); }
+  else if (e.key === 's' || e.key === 'S' || e.key === '2') { if (S.phase !== 'title') choose('stay'); }
+  else if (e.key === 'm' || e.key === 'M') S.muted = !S.muted;
 });
 window.addEventListener('resize', resize);
-window.addEventListener('error', function (e) { window.__ERR = String(e.message || e); });
+window.addEventListener('error', e => { window.__ERR = String(e.message || e); });
 
 function frame(ts) {
   const raw = lastTs ? Math.min(0.05, (ts - lastTs) / 1000) : 0.016;
   lastTs = ts;
-  if (!PAUSE) {
-    const steps = FAST;
-    for (let i = 0; i < steps; i++) update(raw);
-  }
+  if (!PAUSE) for (let i = 0; i < FAST; i++) update(raw);
   draw();
   requestAnimationFrame(frame);
 }
 
+initGeom();
+buildField();
 resize();
 requestAnimationFrame(frame);
 
 window.__BOX = {
-  S: S,
-  start: startGame,
-  choose: choose,
-  tick: function (dt) {
-    const step = 0.05;
+  S, start: startGame, choose, standings, place, progress,
+  tick(dt) {
     let left = dt;
-    while (left > 0) {
-      const d = Math.min(step, left);
-      update(d);
-      left -= d;
-    }
+    while (left > 0) { const d = Math.min(0.05, left); update(d); left -= d; }
     draw();
   },
-  forceEvent: function (kind, length) {
-    S.force = null;
+  forceEvent(kind, length, seconds) {
+    S.force = { kind, length, seconds };
     const ev = makeEvent(kind);
-    ev.kind = kind;
-    ev.length = length;
     ev.stage = 'call';
     ev.age = 0;
     S.event = ev;
     S.phase = 'call';
+    armRivals(ev);
   },
-  setCompound: function (c) { S.compound = c; },
+  setS(v) { if (S.you) S.you.s = v; },
 };
+
 </script>
 </body>
 </html>
