@@ -1,6 +1,7 @@
 """Backups and skill relocation never discard committed state or personalized skills."""
 import hashlib
 import json
+import os
 import sqlite3
 from pathlib import Path
 
@@ -22,7 +23,8 @@ def test_snapshot_includes_wal_data_profiles_and_verifiable_hashes(tmp_path):
     assert {entry["path"] for entry in manifest["files"]} >= {"state.db", "profiles/work/.env"}
     assert all(entry["sha256"] == hashlib.sha256((backup / entry["path"]).read_bytes()).hexdigest()
                for entry in manifest["files"])
-    assert (backup / "profiles/work/.env").stat().st_mode & 0o777 == 0o600
+    if os.name != "nt":  # Windows uses ACLs; chmod cannot express POSIX private mode.
+        assert (backup / "profiles/work/.env").stat().st_mode & 0o777 == 0o600
 
 
 def test_dry_run_does_not_create_backup_or_modify_files(tmp_path):
@@ -108,7 +110,8 @@ def test_snapshot_covers_private_state_and_nested_sqlite_without_following_links
     for entry in manifest["files"]:
         saved = backup / entry["path"]
         assert hashlib.sha256(saved.read_bytes()).hexdigest() == entry["sha256"]
-        assert saved.stat().st_mode & 0o777 == 0o600
+        if os.name != "nt":  # Windows uses ACLs, not POSIX permission bits.
+            assert saved.stat().st_mode & 0o777 == 0o600
         if entry["path"] in expected:
             assert saved.read_bytes() == (home / entry["path"]).read_bytes()
 
@@ -153,7 +156,8 @@ def test_snapshot_restores_durable_docker_credentials_and_bind_mount_data(tmp_pa
     restore_snapshot(backup, restored)
     for relative, content in expected.items():
         assert (restored / relative).read_text() == content
-        assert (restored / relative).stat().st_mode & 0o777 == 0o600
+        if os.name != "nt":  # Windows uses ACLs, not POSIX permission bits.
+            assert (restored / relative).stat().st_mode & 0o777 == 0o600
 
 
 def test_honcho_dump_is_registered_verified_and_not_restored_as_profile_file(tmp_path):
@@ -173,3 +177,28 @@ def test_honcho_dump_is_registered_verified_and_not_restored_as_profile_file(tmp
     with pytest.raises(ValueError, match='checksum'):
         restore_snapshot(backup, tmp_path / 'corrupt-restored')
     assert not (tmp_path / 'corrupt-restored').exists()
+
+
+def test_nested_external_artifact_has_portable_manifest_path_and_replaces_its_entry(tmp_path):
+    from janitor_ext.migrate import record_backup_artifact, restore_snapshot
+
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".env").write_text("KEY=preserved\n")
+    backup = snapshot(home)
+    artifact = backup / "services" / "honcho.dump"
+    artifact.parent.mkdir()
+    artifact.write_bytes(b"PGDMP-first")
+    record_backup_artifact(backup, artifact, kind="postgres-dump")
+    artifact.write_bytes(b"PGDMP-replaced")
+    record_backup_artifact(backup, artifact, kind="postgres-dump")
+
+    entries = json.loads((backup / "manifest.json").read_text())["files"]
+    external = [entry for entry in entries if entry.get("kind") == "postgres-dump"]
+    assert external == [{"path": "services/honcho.dump", "kind": "postgres-dump",
+                         "sha256": hashlib.sha256(b"PGDMP-replaced").hexdigest()}]
+    restored = tmp_path / "restored"
+    report = restore_snapshot(backup, restored)
+    assert report["externalArtifacts"] == ["services/honcho.dump"]
+    assert (restored / ".env").read_text() == "KEY=preserved\n"
+    assert not (restored / "services").exists()

@@ -52,8 +52,9 @@ if ! curl -sS --connect-timeout 5 --max-time 15 -o /dev/null -w '%{http_code}' -
 fi
 
 # Reuse live sessions. A repeated pairing command must never log out a healthy device.
+# Omit Python line endings: command substitution strips LF, but leaves Windows CR.
 EXISTING_STATUS=$(curl -fsS --connect-timeout 5 --max-time 15 -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/api/sessions?all=true" | \
-    "$JANITOR_SERVICE_PYTHON" -c "import sys, json; ss=json.load(sys.stdin); print(next((s.get('status', 'UNKNOWN') for s in ss if s['name']=='$SESSION_NAME'), 'ABSENT'))")
+    "$JANITOR_SERVICE_PYTHON" -c "import sys, json; ss=json.load(sys.stdin); print(next((s.get('status', 'UNKNOWN') for s in ss if s['name']=='$SESSION_NAME'), 'ABSENT'), end='')")
 
 CREATE_SESSION=true
 case "$EXISTING_STATUS" in
@@ -108,7 +109,7 @@ fi
 log_info "Esperando estado SCAN_QR_CODE (max 15s)..."
 for i in $(seq 1 15); do
     STATUS=$(curl -fsS --connect-timeout 5 --max-time 15 -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/api/sessions/$SESSION_NAME" | \
-        "$JANITOR_SERVICE_PYTHON" -c "import sys, json; print(json.load(sys.stdin).get('status','?'))" 2>/dev/null)
+        "$JANITOR_SERVICE_PYTHON" -c "import sys, json; print(json.load(sys.stdin).get('status','?'), end='')" 2>/dev/null)
     if [ "$STATUS" = "WORKING" ]; then
         log_info "Sesión '$SESSION_NAME' ya está vinculada y WORKING."
         exit 0
@@ -170,7 +171,7 @@ else
         -d "{\"phoneNumber\":\"$PHONE\"}" \
         "$BASE_URL/api/$SESSION_NAME/auth/request-code")
 
-    CODE=$(echo "$CODE_RESP" | "$JANITOR_SERVICE_PYTHON" -c "import sys, json; print(json.load(sys.stdin).get('code','?'))" 2>/dev/null)
+    CODE=$(echo "$CODE_RESP" | "$JANITOR_SERVICE_PYTHON" -c "import sys, json; print(json.load(sys.stdin).get('code','?'), end='')" 2>/dev/null)
 
     if [ -z "$CODE" ] || [ "$CODE" = "?" ]; then
         log_err "No se pudo obtener código. Respuesta:"
@@ -196,7 +197,7 @@ else
     echo "  Waiting for WORKING transition (max 90s)..."
     for i in $(seq 1 18); do
         STATUS=$(curl -fsS --connect-timeout 5 --max-time 15 -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/api/sessions/$SESSION_NAME" | \
-            "$JANITOR_SERVICE_PYTHON" -c "import sys, json; print(json.load(sys.stdin).get('status','?'))" 2>/dev/null)
+            "$JANITOR_SERVICE_PYTHON" -c "import sys, json; print(json.load(sys.stdin).get('status','?'), end='')" 2>/dev/null)
         if [ "$STATUS" = "WORKING" ]; then
             log_info "Sesión WORKING (en $((i*5))s)"
             ME=$(curl -fsS --connect-timeout 5 --max-time 15 -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/api/sessions/$SESSION_NAME/me" 2>/dev/null)

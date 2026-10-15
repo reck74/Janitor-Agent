@@ -73,7 +73,7 @@ def snapshot(home: Path, *, include_profiles: bool = True) -> Path:
         else:
             shutil.copy2(source, target)
         target.chmod(0o600)
-        manifest.append({"path": str(relative), "sha256": hashlib.sha256(target.read_bytes()).hexdigest()})
+        manifest.append({"path": relative.as_posix(), "sha256": hashlib.sha256(target.read_bytes()).hexdigest()})
     (destination / "manifest.json").write_text(json.dumps({"schema": 1, "files": manifest}, indent=2) + "\n")
     (destination / "manifest.json").chmod(0o600)
     return destination
@@ -86,8 +86,8 @@ def record_backup_artifact(backup: Path, artifact: Path, *, kind: str) -> None:
     artifact.chmod(0o600)
     path = backup / "manifest.json"
     manifest = json.loads(path.read_text())
-    manifest["files"] = [entry for entry in manifest["files"] if entry["path"] != str(relative)]
-    manifest["files"].append({"path": str(relative), "kind": kind,
+    manifest["files"] = [entry for entry in manifest["files"] if entry["path"] != relative.as_posix()]
+    manifest["files"].append({"path": relative.as_posix(), "kind": kind,
                               "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest()})
     from janitor_ext.install import private_write
     private_write(path, json.dumps(manifest, indent=2) + "\n")

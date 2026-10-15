@@ -299,28 +299,28 @@ def test_verify_pgcron_script_uses_correct_env_file() -> None:
 
 
 @pytest.mark.parametrize('payload,exit_code,expected', [('', 22, 1), ('{"success":false,"error":"private-fixture"}', 0, 1), ('{"success":true,"data":{}}', 0, 1), ('{"success":true,"data":{"markdown":"Example Domain"}}', 0, 0)])
-def test_scrape_verification_propagates_failure_and_requires_content(tmp_path, payload, exit_code, expected):
+def test_scrape_verification_propagates_failure_and_requires_content(tmp_path, payload, exit_code, expected, janitor_bash):
     import subprocess
     binary = tmp_path / 'bin'
     binary.mkdir()
     curl = binary / 'curl'
-    curl.write_text('#!/bin/sh\nprintf "%s" "$FIXTURE_PAYLOAD"\nexit "$FIXTURE_EXIT"\n')
+    curl.write_text('#!/bin/sh\nprintf "%s" "$FIXTURE_PAYLOAD"\nexit "$FIXTURE_EXIT"\n', encoding='utf-8', newline='\n')
     curl.chmod(0o755)
     sleep = binary / 'sleep'
-    sleep.write_text('#!/bin/sh\nexit 0\n')
+    sleep.write_text('#!/bin/sh\nexit 0\n', encoding='utf-8', newline='\n')
     sleep.chmod(0o755)
     # Source all production functions, omitting only the automatic main dispatch.
     source = DEPLOY_SH.read_text().rsplit('main "$@"', 1)[0] + '\nverify_scrape\n'
     fixture = tmp_path / 'verify.sh'
-    fixture.write_text(source)
-    result = subprocess.run(['bash', str(fixture)], env=dict(os.environ, PATH=str(binary) + os.pathsep + os.environ['PATH'],
-        JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON=sys.executable, FIXTURE_PAYLOAD=payload, FIXTURE_EXIT=str(exit_code)),
+    fixture.write_text(source, encoding='utf-8', newline='\n')
+    result = subprocess.run([janitor_bash, fixture.as_posix()], env=dict(os.environ, PATH=binary.as_posix() + os.pathsep + os.environ['PATH'],
+        JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON=Path(sys.executable).as_posix(), FIXTURE_PAYLOAD=payload, FIXTURE_EXIT=str(exit_code)),
         capture_output=True, text=True, timeout=15, check=False)
     assert (result.returncode != 0) == bool(expected), result.stdout + result.stderr
     assert 'private-fixture' not in result.stdout + result.stderr
 
 
-def test_deploy_main_does_not_activate_or_announce_success_after_scrape_failure(tmp_path):
+def test_deploy_main_does_not_activate_or_announce_success_after_scrape_failure(tmp_path, janitor_bash):
     import subprocess
     source = DEPLOY_SH.read_text().rsplit('main "$@"', 1)[0]
     source += '''
@@ -335,9 +335,9 @@ print_summary() { echo FALSE_SUCCESS; }
 main
 '''
     script = tmp_path / 'deploy-fixture.sh'
-    script.write_text(source)
-    result = subprocess.run(['bash', str(script)], env=dict(os.environ, HERMES_HOME=str(tmp_path),
-        JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON=sys.executable), capture_output=True, text=True, check=False)
+    script.write_text(source, encoding='utf-8', newline='\n')
+    result = subprocess.run([janitor_bash, script.as_posix()], env=dict(os.environ, HERMES_HOME=tmp_path.as_posix(),
+        JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON=Path(sys.executable).as_posix()), capture_output=True, text=True, check=False)
     assert result.returncode != 0
     assert not (tmp_path / 'activated').exists()
     assert 'FALSE_SUCCESS' not in result.stdout

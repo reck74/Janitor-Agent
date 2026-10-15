@@ -9,7 +9,7 @@
   },
   "classification_note": "Active names indicate ownership/consumers, not completed live acceptance. Consumer entries include declared command/discovery interfaces. Legacy retained in place is explicitly identified.",
   "counts": {
-    "active": 349,
+    "active": 350,
     "experimental": 7,
     "legacy": 40,
     "replaced_by_upstream": 126
@@ -142,7 +142,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "9de90cd4762f88b0705654c226c7b12637e8da5b45ef5d2474c2f36955579569",
+      "sha256": "3a87f389392b85e8706f1cadd516c3a31de88bbcbce1b38f8a5eae5a5d0c5f0b",
       "classification": "active",
       "consumers": [
         "GitHub Actions",
@@ -279,7 +279,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "aba26cabb42e588e05f48023f6bea81fb6abbbcabf1d3c33eba0b7495d668673",
+      "sha256": "2677235c7c74556171c300fb338fd0e39ae6b06523dd6e8e60a9c5121076b510",
       "classification": "active",
       "consumers": [
         "GitHub Actions",
@@ -673,7 +673,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "c2c648e0c5322e177486d79465072687de86631d39ebb185685968df6be965c7",
+      "sha256": "ae6e823d1d67783507f87ac274d2337e8eb37ceabeb59159f3c2102c7d5df8e8",
       "classification": "active",
       "consumers": [
         "repository documentation entrypoint"
@@ -3380,7 +3380,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "3bc0757bf9486a18c9e272d87aaf60002603bef8f956f6febca615a82431f523",
+      "sha256": "c9330cf49c7c2c7050d381f267025789cb6df2c205f0fdf18525efe05bd09a62",
       "classification": "active",
       "consumers": [
         "scripts/migrate-janitor-1.0.sh"
@@ -5451,7 +5451,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "f9f8fcda20efac5823a7937655a02bd3aa657e1f73dcdea0dc6036cd57f573b3",
+      "sha256": "40ec02016d56d78d85decdba8bd6e9864beeebe0a2509bb62630db384c7e0bf1",
       "classification": "active",
       "consumers": [
         "skills/janitor-waha/SKILL.md",
@@ -5891,6 +5891,19 @@
       "replacement": null
     },
     {
+      "path": "tests/skills/conftest.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "01ab854120e8f5069f2ce3578b1817ac44d904a62ebc2b88380ebcc879c5708f",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
       "path": "tests/skills/test_janitor_config_audit_skill.py",
       "historical_fork_delta": true,
       "current_engine_delta": true,
@@ -5908,7 +5921,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "a3c0725d8a76550118e5d05004edde2ac20b4edc45c7cadb07a4ce2e2c146aca",
+      "sha256": "c364f93c654ae6620b89281ddcab052c8bd60763df146fcb72b44e7f2cbd5d4c",
       "classification": "active",
       "consumers": [
         ".github/janitor-tests.txt"
@@ -5921,7 +5934,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "390f30fcf33a7609def96dc6ad756f7ab6f161338fc87a501ba463dda0cd3a19",
+      "sha256": "293f15932825119beecf42eee0f3fe626ed3684234285f8b3471cd59ed2c0a5b",
       "classification": "active",
       "consumers": [
         ".github/janitor-tests.txt"
@@ -5934,7 +5947,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "cdfa68c51851bae6e8de65d0dad0c68447563b63ccac612bf281ebd89534ac20",
+      "sha256": "132647f987f1ff2db3b004939f20812be68f1340aaf183c3d30023d7573ccd58",
       "classification": "active",
       "consumers": [
         ".github/janitor-tests.txt"
@@ -5947,7 +5960,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "a288767097245b9028addbf840ee455c8710bad14ab76a998d988c806813b163",
+      "sha256": "368c37ef6e0fdaf42c7a17fc53a2111ce275d37d1dd65191f4ca51f2d475b22d",
       "classification": "active",
       "consumers": [
         ".github/janitor-tests.txt"
@@ -5973,7 +5986,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "f5a09c649d0c90961c050b72a0b3f59fe4c879b6df87fb82387aed46ed635ad3",
+      "sha256": "b960cec0ae7b216041b7a1cb8d8d09167621d943142c8b826eb09e1bd11dfd28",
       "classification": "active",
       "consumers": [
         ".github/janitor-tests.txt"
@@ -5986,7 +5999,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "36a55e07d49b4206f37328998d8714ed3e06f1fe677c0c1033c488de25160431",
+      "sha256": "5f8d902835b029da08a8d4af6810a967ba3b864ac0887638d17d3bfb8ca94285",
       "classification": "active",
       "consumers": [
         ".github/janitor-tests.txt"
@@ -6012,7 +6025,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "fd6cd70ec280fd48531d1c2afbb7b72d15fbae396a61bf0de8abaf7df4848b46",
+      "sha256": "7313ddc0aafcf6187738711a0a00d29ff6482caf98b0627eac0ed0630c5b7e3e",
       "classification": "active",
       "consumers": [
         ".github/janitor-tests.txt"
@@ -6051,7 +6064,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "8fcc7d860577165cca7b1df9dbec04d4ee4b84367584f55248f280d815a57379",
+      "sha256": "cb4821fbc48b8f13e264be119b7285a92b8fe60fe48722a2042b198240554941",
       "classification": "active",
       "consumers": [
         ".github/janitor-tests.txt"

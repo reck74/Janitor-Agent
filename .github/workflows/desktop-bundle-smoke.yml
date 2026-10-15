@@ -245,7 +245,7 @@ jobs:
     name: Windows install and chat
     needs: validate
     if: inputs.platform == 'win32'
-    runs-on: ${{ inputs.arch == 'arm64' && '${{ vars.JANITOR_WINDOWS_ARM_RUNNER || 'windows-11-arm' }}' || '${{ vars.JANITOR_WINDOWS_RUNNER || 'windows-latest' }}' }}
+    runs-on: ${{ inputs.arch == 'arm64' && (vars.JANITOR_WINDOWS_ARM_RUNNER || 'windows-11-arm') || (vars.JANITOR_WINDOWS_RUNNER || 'windows-latest') }}
     # windows-11-arm runners are much slower (npm ci alone runs 12+ minutes and
     # the MSIX leg exceeds 30 total); x64 legs complete in ~14.
     timeout-minutes: 45

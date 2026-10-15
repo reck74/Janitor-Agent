@@ -28,6 +28,7 @@ def test_packaging_registers_janitor_and_extension_package():
 
 def test_default_home_is_janitor(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.delenv("HERMES_HOME", raising=False)
     monkeypatch.delenv("JANITOR_HOME", raising=False)
     assert janitor_home() == tmp_path / ".janitor"
@@ -169,13 +170,16 @@ def test_gateway_profile_selection_remains_upstream_owned(tmp_path, monkeypatch)
 
 
 def test_shell_launcher_preserves_explicit_home_and_profile_flags(tmp_path):
+    from pm.shell import bash
+    shell = bash()
+    assert shell is not None, 'The PM Bash toolchain must be available'
     root = tmp_path / 'source'; (root / 'scripts').mkdir(parents=True)
-    launcher = root / 'scripts/janitor'; launcher.write_text((ROOT / 'scripts/janitor').read_text()); launcher.chmod(0o755)
+    launcher = root / 'scripts/janitor'; launcher.write_text((ROOT / 'scripts/janitor').read_text(), newline='\n'); launcher.chmod(0o755)
     backend = root / '.hermes/bin/hermes'; backend.parent.mkdir(parents=True)
-    backend.write_text('#!/bin/sh\nprintf "%s\n" "$HERMES_HOME" "$@"\n'); backend.chmod(0o755)
+    backend.write_text('#!/bin/sh\nprintf "%s\n" "$HERMES_HOME" "$@"\n', newline='\n'); backend.chmod(0o755)
     profile = tmp_path / 'custom/profiles/work'
     env = dict(os.environ, HERMES_HOME=str(profile), JANITOR_HOME=str(tmp_path / 'default'))
-    result = subprocess.run([str(launcher), '--profile', 'work', 'config', 'path'], env=env,
+    result = subprocess.run([shell, launcher.as_posix(), '--profile', 'work', 'config', 'path'], env=env,
                             capture_output=True, text=True, timeout=10, check=False)
     assert result.returncode == 0
     assert result.stdout.splitlines() == [str(profile), '--run-module', 'janitor_cli', '--profile', 'work', 'config', 'path']
@@ -187,7 +191,7 @@ def test_real_cli_profile_dispatch_and_honcho_gate_are_isolated(tmp_path):
     (tmp_path / 'config.yaml').write_text(config)
     (work / 'config.yaml').write_text(config)
     (tmp_path / 'active_profile').write_text('work\n')
-    env = dict(os.environ, HERMES_HOME=str(tmp_path), JANITOR_HOME=str(tmp_path), HOME=str(tmp_path),
+    env = dict(os.environ, HERMES_HOME=str(tmp_path), JANITOR_HOME=str(tmp_path), HOME=str(tmp_path), USERPROFILE=str(tmp_path),
                HERMES_DISABLE_LAZY_INSTALLS='1', PYTHONPATH=str(ROOT), PYTEST_CURRENT_TEST='janitor-entry-contract')
     for name in list(env):
         if name.endswith(('_API_KEY', '_TOKEN', '_SECRET', '_PASSWORD')): env.pop(name)

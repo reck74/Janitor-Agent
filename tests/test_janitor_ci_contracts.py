@@ -28,6 +28,43 @@ def test_reusable_workflow_interfaces_are_valid():
     assert not workflow_interface_errors(_workflows())
 
 
+def test_workflow_expressions_do_not_embed_a_second_expression():
+    import re
+
+    def check(value, location):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                check(child, f"{location}.{key}")
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                check(child, f"{location}[{index}]")
+        elif isinstance(value, str):
+            for match in re.finditer(r"\$\{\{(.*?)\}\}", value, re.DOTALL):
+                assert "${{" not in match.group(1), f"Nested Actions expression: {location}"
+
+    for path, workflow in _workflows().items():
+        check(workflow, path)
+
+
+def test_windows_bundle_runners_resolve_architecture_and_configured_overrides():
+    from tests.ci import _gha_expr as gha
+
+    workflows = _workflows()
+    targets = (
+        ("desktop-bundle-smoke.yml", "windows", "arch"),
+        ("install-e2e-windows-run.yml", "bundled-e2e", "bundle-arch"),
+    )
+    for filename, job, input_name in targets:
+        expression = workflows[f".github/workflows/{filename}"]["jobs"][job]["runs-on"]
+        for arch, key, fallback in (
+            ("arm64", "JANITOR_WINDOWS_ARM_RUNNER", "windows-11-arm"),
+            ("x64", "JANITOR_WINDOWS_RUNNER", "windows-latest"),
+        ):
+            for variables in ({}, {key: ""}, {key: f"janitor-custom-{arch}"}):
+                context = {"inputs": {input_name: arch}, "vars": variables}
+                assert gha.evaluate(expression, context) == (variables.get(key) or fallback)
+
+
 def test_every_fork_python_gate_uses_one_manifest_runner():
     workflows = _workflows()
     for path, job in ((".github/workflows/tests.yml", "test"),

@@ -23,7 +23,8 @@ def test_profile_preserves_persona_secrets_and_custom_choices(tmp_path):
     assert (home / "SOUL.md").read_text() == "My custom persona"
     assert read_secrets(home / ".env")["CUSTOM_TOKEN"] == "keep me"
     assert Path(report["backup"]).joinpath("SOUL.md").read_text() == "My custom persona"
-    assert (home / ".env").stat().st_mode & 0o777 == 0o600
+    if os.name != "nt":  # Windows stat mode bits do not represent file ACLs.
+        assert (home / ".env").stat().st_mode & 0o777 == 0o600
     assert "baseUrl" not in json.loads((home / "honcho.json").read_text())
 
 
@@ -285,17 +286,20 @@ def test_provider_readiness_detects_missing_sdk_even_with_current_pm(tmp_path, m
 def test_install_shell_preserves_selected_profile(tmp_path):
     import shutil
     import subprocess
+    from pm.shell import bash
+    shell = bash()
+    assert shell is not None, 'The PM Bash toolchain must be available'
     root = tmp_path / 'source'
     scripts = root / 'scripts'
     scripts.mkdir(parents=True)
     shutil.copyfile(Path(__file__).resolve().parents[1] / 'scripts/janitor-install.sh', scripts / 'janitor-install.sh')
     launcher = scripts / 'janitor'
-    launcher.write_text('#!/bin/sh\nprintf "%s\\n" "$HERMES_HOME" "$@"\n')
+    launcher.write_text('#!/bin/sh\nprintf "%s\\n" "$HERMES_HOME" "$@"\n', newline='\n')
     launcher.chmod(0o755)
     selected = tmp_path / 'home/profiles/work'
-    result = subprocess.run(['bash', str(scripts / 'janitor-install.sh'), '--profile-only'],
+    result = subprocess.run([shell, (scripts / 'janitor-install.sh').as_posix(), '--profile-only'],
                             env=dict(os.environ, HERMES_HOME=str(selected), JANITOR_HOME=str(tmp_path / 'home')),
-                            capture_output=True, text=True, check=True)
+                            capture_output=True, text=True, timeout=30, check=True)
     assert result.stdout.splitlines()[0] == str(selected)
     assert str(tmp_path / 'home') not in result.stdout.splitlines()[1:]
 

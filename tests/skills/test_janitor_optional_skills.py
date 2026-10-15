@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import shlex
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -73,14 +74,14 @@ def test_compose_is_pinned_isolated_and_docker_accepts_config(name, tmp_path, mo
 
 
 @pytest.mark.parametrize('name', SERVICES)
-def test_deploy_propagates_docker_pull_failure(name, tmp_path, monkeypatch):
+def test_deploy_propagates_docker_pull_failure(name, tmp_path, monkeypatch, janitor_bash):
     binary = tmp_path / 'bin'; binary.mkdir()
     docker = binary / 'docker'
-    docker.write_text('#!/bin/sh\ncase "$1" in info) exit 0;; compose) case " $* " in *" pull "*) exit 37;; esac;; esac\nexit 0\n')
+    docker.write_text('#!/bin/sh\ncase "$1" in info) exit 0;; compose) case " $* " in *" pull "*) exit 37;; esac;; esac\nexit 0\n', encoding='utf-8', newline='\n')
     docker.chmod(0o755)
-    env = dict(os.environ, PATH=str(binary) + os.pathsep + os.environ['PATH'], HERMES_HOME=str(tmp_path / 'profile'),
-               JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON=sys.executable, MINIMAX_API_KEY='test-secret')
-    result = subprocess.run(['bash', str(ROOT / f'skills/janitor-{name}/scripts/deploy.sh')],
+    env = dict(os.environ, PATH=binary.as_posix() + os.pathsep + os.environ['PATH'], HERMES_HOME=(tmp_path / 'profile').as_posix(),
+               JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON=Path(sys.executable).as_posix(), MINIMAX_API_KEY='test-secret')
+    result = subprocess.run([janitor_bash, (ROOT / f'skills/janitor-{name}/scripts/deploy.sh').as_posix()],
                             env=env, capture_output=True, text=True, timeout=15, check=False)
     assert result.returncode == 37, result.stderr + result.stdout
 
@@ -161,13 +162,13 @@ def test_existing_unconfirmed_destination_refuses_before_stopping(tmp_path, monk
     assert not any(c[0] in ('stop', 'run', 'rename') for c in calls)
 
 
-def test_browser_installs_with_pm_and_failure_reaches_caller(tmp_path):
+def test_browser_installs_with_pm_and_failure_reaches_caller(tmp_path, janitor_bash):
     python = tmp_path / 'python'
-    python.write_text('#!/bin/sh\nprintf "%s\\n" "$*" > "$BROWSER_CALL"\nexit 39\n')
+    python.write_text('#!/bin/sh\nprintf "%s\\n" "$*" > "$BROWSER_CALL"\nexit 39\n', encoding='utf-8', newline='\n')
     python.chmod(0o755)
     out = tmp_path / 'call'
-    env = dict(os.environ, JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON=str(python), BROWSER_CALL=str(out))
-    result = subprocess.run(['bash', str(ROOT / 'skills/janitor-browser/scripts/install.sh')], env=env, check=False)
+    env = dict(os.environ, JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON=python.as_posix(), BROWSER_CALL=out.as_posix())
+    result = subprocess.run([janitor_bash, (ROOT / 'skills/janitor-browser/scripts/install.sh').as_posix()], env=env, check=False)
     assert result.returncode == 39
     assert out.read_text().strip() == '-m pm.launch install agent-browser chromium cua-driver'
 
@@ -195,7 +196,8 @@ def test_n8n_auth_encodes_quoted_profile_password_as_json(tmp_path, monkeypatch)
     try:
         assert seen[0]['password'] == password
         assert 'n8n-auth' in cookie.read_text()
-        assert cookie.stat().st_mode & 0o077 == 0
+        if os.name == 'posix':
+            assert cookie.stat().st_mode & 0o077 == 0
     finally:
         cookie.unlink()
 
@@ -229,7 +231,7 @@ def test_profile_skill_symlink_cannot_escape_authorized_roots(tmp_path, monkeypa
         optional_deploy.main([str(scripts / 'deploy.sh')])
 
 
-def test_copied_honcho_skill_uses_installed_pm_launcher_and_profile(tmp_path):
+def test_copied_honcho_skill_uses_installed_pm_launcher_and_profile(tmp_path, janitor_bash):
     selected = tmp_path / 'home/profiles/work'
     script = selected / 'skills/janitor-honcho/scripts/deploy.sh'
     script.parent.mkdir(parents=True)
@@ -237,13 +239,13 @@ def test_copied_honcho_skill_uses_installed_pm_launcher_and_profile(tmp_path):
     binary = tmp_path / 'bin'
     binary.mkdir()
     launcher = binary / 'janitor'
-    launcher.write_text('#!/bin/sh\nprintf "%s\\n" "$HERMES_HOME" "$@"\n')
+    launcher.write_text('#!/bin/sh\nprintf "%s\\n" "$HERMES_HOME" "$@"\n', encoding='utf-8', newline='\n')
     launcher.chmod(0o755)
-    result = subprocess.run(['bash', str(script), '--help'], env=dict(os.environ,
-        PATH=str(binary) + os.pathsep + os.environ['PATH'], HERMES_HOME=str(selected), JANITOR_HOME=str(tmp_path / 'home')),
+    result = subprocess.run([janitor_bash, script.as_posix(), '--help'], env=dict(os.environ,
+        PATH=binary.as_posix() + os.pathsep + os.environ['PATH'], HERMES_HOME=selected.as_posix(), JANITOR_HOME=(tmp_path / 'home').as_posix()),
         capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr
-    assert result.stdout.splitlines() == [str(selected), '--run-module', 'janitor_ext.honcho', '--help']
+    assert result.stdout.splitlines() == [selected.as_posix(), '--run-module', 'janitor_ext.honcho', '--help']
 
 
 def test_entire_skills_root_symlink_is_not_trusted(tmp_path, monkeypatch):
@@ -318,21 +320,29 @@ def test_waha_group_diff_real_http_uses_credentials_and_paginated_nocodb(tmp_pat
         thread.join(timeout=5)
 
 
+def _python_stub(path, body):
+    # A shebang cannot quote an interpreter path containing spaces (Git/PM on Windows).
+    executable = shlex.quote(Path(sys.executable).as_posix())
+    prefix = f"#!/bin/sh\nexec {executable} - \"$@\" <<'JANITOR_PYTHON_STUB'\n"
+    path.write_text(prefix + body + "\nJANITOR_PYTHON_STUB\n", encoding="utf-8", newline="\n")
+    path.chmod(0o755)
+
+
 def _require_absolute_mktemp_template(binary):
     """Exercise the portable operand form instead of OS-specific -t semantics."""
     native = shutil.which('mktemp')
     assert native
     wrapper = binary / 'mktemp'
-    wrapper.write_text(f"#!{sys.executable}\n" +
+    _python_stub(wrapper,
         "import os, sys\n"
         "if len(sys.argv) != 2 or not os.path.isabs(sys.argv[1]):\n"
         "    sys.exit(64)\n"
-        f"os.execv({native!r}, [{native!r}, sys.argv[1]])\n", encoding='utf-8')
+        f"os.execv({native!r}, [{native!r}, sys.argv[1]])\n")
     wrapper.chmod(0o755)
 
 
 @pytest.mark.parametrize('response', ['healthy', 'http-error', 'network-error'])
-def test_waha_health_uses_private_scratch_and_cleans_after_every_outcome(tmp_path, response):
+def test_waha_health_uses_private_scratch_and_cleans_after_every_outcome(tmp_path, response, janitor_bash):
     binary = tmp_path / 'bin'
     binary.mkdir()
     _require_absolute_mktemp_template(binary)
@@ -340,10 +350,10 @@ def test_waha_health_uses_private_scratch_and_cleans_after_every_outcome(tmp_pat
     scratch.mkdir()
     capture = tmp_path / 'curl.json'
     docker = binary / 'docker'
-    docker.write_text('#!/bin/sh\ncase "$1" in inspect) echo healthy;; esac\nexit 0\n', encoding='utf-8')
+    docker.write_text('#!/bin/sh\ncase "$1" in inspect) echo healthy;; esac\nexit 0\n', encoding='utf-8', newline='\n')
     docker.chmod(0o755)
     curl = binary / 'curl'
-    curl.write_text(f"#!{sys.executable}\n" + '''import json, os, pathlib, sys
+    _python_stub(curl, '''import json, os, pathlib, sys
 args = sys.argv[1:]
 output = pathlib.Path(args[args.index('-o') + 1])
 output.write_text('{"status":"ok"}', encoding='utf-8')
@@ -353,24 +363,25 @@ pathlib.Path(os.environ['CURL_CAPTURE']).write_text(json.dumps({
 if os.environ['CURL_RESPONSE'] == 'network-error':
     sys.exit(7)
 print('500' if os.environ['CURL_RESPONSE'] == 'http-error' else '200', end='')
-''', encoding='utf-8')
+''')
     curl.chmod(0o755)
-    result = subprocess.run(['bash', str(ROOT / 'skills/janitor-waha/scripts/deploy.sh')],
-        env=dict(os.environ, PATH=str(binary) + os.pathsep + os.environ['PATH'],
-                 HERMES_HOME=str(tmp_path / 'profile'), TMPDIR=str(scratch),
-                 JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON=shutil.which('true'),
-                 CURL_CAPTURE=str(capture), CURL_RESPONSE=response),
+    result = subprocess.run([janitor_bash, (ROOT / 'skills/janitor-waha/scripts/deploy.sh').as_posix()],
+        env=dict(os.environ, PATH=binary.as_posix() + os.pathsep + os.environ['PATH'],
+                 HERMES_HOME=(tmp_path / 'profile').as_posix(), TMPDIR=scratch.as_posix(),
+                 JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON=Path(shutil.which('true')).as_posix(),
+                 CURL_CAPTURE=capture.as_posix(), CURL_RESPONSE=response),
         capture_output=True, text=True, timeout=15, check=False)
     record = json.loads(capture.read_text(encoding='utf-8'))
     assert Path(record['path']).parent == scratch
-    assert record['mode'] == 0o600
+    if os.name == 'posix':
+        assert record['mode'] == 0o600
     assert not Path(record['path']).exists()
     assert list(scratch.iterdir()) == []
     assert (result.returncode == 0) is (response == 'healthy'), result.stdout + result.stderr
 
 
 @pytest.mark.parametrize('valid', [True, False])
-def test_waha_pair_qr_private_path_and_failed_download_cleanup(tmp_path, valid):
+def test_waha_pair_qr_private_path_and_failed_download_cleanup(tmp_path, valid, janitor_bash):
     binary = tmp_path / 'bin'
     binary.mkdir()
     _require_absolute_mktemp_template(binary)
@@ -378,10 +389,10 @@ def test_waha_pair_qr_private_path_and_failed_download_cleanup(tmp_path, valid):
     scratch.mkdir()
     profile = tmp_path / 'profile'
     (profile / 'docker').mkdir(parents=True)
-    (profile / 'docker/waha.env').write_text('WAHA_API_KEY=test\nWHATSAPP_DEFAULT_ENGINE=NOWEB\n', encoding='utf-8')
+    (profile / 'docker/waha.env').write_text('WAHA_API_KEY=test\nWHATSAPP_DEFAULT_ENGINE=NOWEB\n', encoding='utf-8', newline='\n')
     capture = tmp_path / 'qr.json'
     curl = binary / 'curl'
-    curl.write_text(f"#!{sys.executable}\n" + '''import base64, json, os, pathlib, sys
+    _python_stub(curl, '''import base64, json, os, pathlib, sys
 args = sys.argv[1:]
 url = next(arg for arg in args if arg.startswith('http'))
 if url.endswith('/health'):
@@ -394,26 +405,36 @@ elif url.split('?', 1)[0].endswith('/api/sessions'):
     print('[]')
 else:
     print('{"status":"SCAN_QR_CODE"}')
-''', encoding='utf-8')
+''')
     curl.chmod(0o755)
     for name in ('sleep', 'xdg-open'):
         stub = binary / name
-        stub.write_text('#!/bin/sh\nexit 0\n', encoding='utf-8')
+        stub.write_text('#!/bin/sh\nexit 0\n', encoding='utf-8', newline='\n')
         stub.chmod(0o755)
-    result = subprocess.run(['bash', str(ROOT / 'skills/janitor-waha/scripts/pair-waha.sh'), '--qr'],
-        env=dict(os.environ, PATH=str(binary) + os.pathsep + os.environ['PATH'],
-                 HERMES_HOME=str(profile), TMPDIR=str(scratch), WAHA_QR_OUTPUT='',
-                 JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON=sys.executable,
-                 QR_CAPTURE=str(capture), QR_VALID='1' if valid else '0'),
+    result = subprocess.run([janitor_bash, (ROOT / 'skills/janitor-waha/scripts/pair-waha.sh').as_posix(), '--qr'],
+        env=dict(os.environ, PATH=binary.as_posix() + os.pathsep + os.environ['PATH'],
+                 HERMES_HOME=profile.as_posix(), TMPDIR=scratch.as_posix(), WAHA_QR_OUTPUT='',
+                 JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON=Path(sys.executable).as_posix(),
+                 QR_CAPTURE=capture.as_posix(), QR_VALID='1' if valid else '0'),
         capture_output=True, text=True, timeout=15, check=False)
     record = json.loads(capture.read_text(encoding='utf-8'))
     output = Path(record['path'])
     assert output.parent == scratch
-    assert record['mode'] == 0o600
+    if os.name == 'posix':
+        assert record['mode'] == 0o600
     assert output.exists() is valid
     assert (result.returncode == 0) is valid, result.stdout + result.stderr
     if valid:
-        assert str(output) in result.stdout
+        clean_output = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout)
+        announced = re.search(r"QR guardado en ([^\r\n]+)", clean_output)
+        assert announced, result.stdout
+        printed_path = announced.group(1)
+        if os.name == "nt":
+            printed_path = subprocess.check_output(
+                [janitor_bash, "-c", 'cygpath -w -- "$1"', "fixture", printed_path],
+                text=True, timeout=5,
+            ).strip()
+        assert Path(printed_path).resolve() == output.resolve()
         output.unlink()
     assert list(scratch.iterdir()) == []
 
@@ -445,7 +466,8 @@ if sys.argv[1] == 'run':
     ('STARTING', 'SCAN_QR_CODE'), ('STARTING', 'WORKING'),
     ('UNKNOWN', 'UNKNOWN'), ('FAILED', 'SCAN_QR_CODE'), ('STOPPED', 'SCAN_QR_CODE'),
 ])
-def test_waha_pair_reuses_live_sessions_without_logging_out(tmp_path, status, polled_status):
+@pytest.mark.parametrize("python_newline", ["\n", "\r\n"], ids=["LF", "CRLF"])
+def test_waha_pair_reuses_live_sessions_without_logging_out(tmp_path, status, polled_status, janitor_bash, python_newline):
     import base64
     import threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -481,24 +503,33 @@ def test_waha_pair_reuses_live_sessions_without_logging_out(tmp_path, status, po
 
     profile = tmp_path / 'profile'
     (profile / 'docker').mkdir(parents=True)
-    (profile / 'docker/waha.env').write_text('WAHA_API_KEY=fixture-only\nWHATSAPP_DEFAULT_ENGINE=NOWEB\n', encoding='utf-8')
+    (profile / 'docker/waha.env').write_text('WAHA_API_KEY=fixture-only\nWHATSAPP_DEFAULT_ENGINE=NOWEB\n', encoding='utf-8', newline='\n')
     binary = tmp_path / 'bin'
     binary.mkdir()
     for name in ('sleep', 'xdg-open'):
         stub = binary / name
-        stub.write_text('#!/bin/sh\nexit 0\n', encoding='utf-8')
+        stub.write_text('#!/bin/sh\nexit 0\n', encoding='utf-8', newline='\n')
         stub.chmod(0o755)
+    # Preserve Python's native text boundary, including Windows CRLF, in the real pipeline.
+    python_bridge = tmp_path / "python bridge with spaces"
+    bridge_code = "import sys; sys.stdout.reconfigure(newline=" + repr(python_newline) + "); exec(sys.argv[1])"
+    python_bridge.write_text(
+        f'#!/bin/sh\nif [ "$1" != -c ]; then exec {shlex.quote(Path(sys.executable).as_posix())} "$@"; fi\n'
+        + f'exec {shlex.quote(Path(sys.executable).as_posix())} -c {shlex.quote(bridge_code)} "$2"\n',
+        encoding="utf-8", newline="\n",
+    )
+    python_bridge.chmod(0o755)
     scratch = tmp_path / 'scratch'
     scratch.mkdir()
     server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        result = subprocess.run(['bash', str(ROOT / 'skills/janitor-waha/scripts/pair-waha.sh'), '--qr'],
-            env=dict(os.environ, PATH=str(binary) + os.pathsep + os.environ['PATH'],
-                     HERMES_HOME=str(profile), TMPDIR=str(scratch), WAHA_QR_OUTPUT='',
+        result = subprocess.run([janitor_bash, (ROOT / 'skills/janitor-waha/scripts/pair-waha.sh').as_posix(), '--qr'],
+            env=dict(os.environ, PATH=binary.as_posix() + os.pathsep + os.environ['PATH'],
+                     HERMES_HOME=profile.as_posix(), TMPDIR=scratch.as_posix(), WAHA_QR_OUTPUT='',
                      WAHA_BASE_URL=f'http://127.0.0.1:{server.server_port}',
-                     JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON=sys.executable),
+                     JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON=python_bridge.as_posix()),
             capture_output=True, text=True, timeout=15, check=False)
         assert calls[:2] == [('GET', '/health'), ('GET', '/api/sessions?all=true')]
         if status in ('FAILED', 'STOPPED'):
