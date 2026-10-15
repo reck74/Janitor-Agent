@@ -9,15 +9,16 @@ Con --apply: aplica las actualizaciones automaticamente.
 import argparse
 import difflib
 import os
+import re
 import sys
-import yaml
+import hermes_yaml as yaml
 from pathlib import Path
 
 JANITOR_HOME = Path(os.environ.get("JANITOR_HOME", Path.home() / ".janitor"))
-ASSETS_JANITOR = JANITOR_HOME / "janitor-core" / "assets" / "janitor"
+ASSETS_JANITOR = Path(os.environ.get("JANITOR_CORE_ROOT", JANITOR_HOME / "janitor-core")) / "assets" / "janitor"
 
 FILES = {
-    "config.yaml": ("config.yaml", "config.yaml"),
+    "config.yaml": ("config.yaml", "config-overlay.yaml" if (ASSETS_JANITOR / "config-overlay.yaml").exists() else "config.yaml"),
     "SOUL.md": ("SOUL.md", "SOUL.md"),
 }
 
@@ -43,8 +44,10 @@ def diff_configs(active_path, asset_path):
     try:
         active_data = load_yaml(active_path)
         asset_data = load_yaml(asset_path)
-    except yaml.YAMLError as e:
-        return [f"  ERROR parseando YAML: {e}"]
+    except yaml.YAMLError:
+        return ["  ERROR parseando YAML: contenido invalido (valores omitidos)"]
+    if any(value is not None and not isinstance(value, dict) for value in (active_data, asset_data)):
+        return ["  ERROR parseando YAML: se esperaba un mapa"]
 
     active_flat = flatten_dict(active_data) if active_data else {}
     asset_flat = flatten_dict(asset_data) if asset_data else {}
@@ -54,20 +57,28 @@ def diff_configs(active_path, asset_path):
 
     # Keys solo en asset (en asset pero no en activo)
     for k in sorted(all_keys - set(active_flat.keys())):
-        diffs.append(f"  + {k}: {asset_flat[k]}")
+        diffs.append(f"  + {k}: {display_value(k, asset_flat[k])}")
 
     # Keys solo en activo
     for k in sorted(all_keys - set(asset_flat.keys())):
-        diffs.append(f"  - {k}: {active_flat[k]}")
+        diffs.append(f"  - {k}: {display_value(k, active_flat[k])}")
 
     # Keys con valores distintos
     for k in sorted(all_keys):
         if k in active_flat and k in asset_flat and active_flat[k] != asset_flat[k]:
             diffs.append(f"  ~ {k}:")
-            diffs.append(f"      ACTIVO: {active_flat[k]}")
-            diffs.append(f"      ASSET:  {asset_flat[k]}")
+            diffs.append(f"      ACTIVO: {display_value(k, active_flat[k])}")
+            diffs.append(f"      ASSET:  {display_value(k, asset_flat[k])}")
 
     return diffs
+
+
+def display_value(key, value):
+    if re.search(r"(?i)(password|passwd|secret|token|api[_-]?key|authorization|credential)", key):
+        return "[REDACTED]"
+    from hermes_cli.mcp_config import redact_mcp_probe_text
+    text = re.sub(r"(?i)([a-z][a-z0-9+.-]*://)[^/\s@]+@", r"\1[REDACTED]@", str(value))
+    return redact_mcp_probe_text(text)
 
 
 def diff_text_files(active_path, asset_path):
@@ -111,34 +122,51 @@ def audit_file(name, apply_mode=False):
         diffs = diff_text_files(active_path, asset_path)
 
     if not diffs:
-        print(f"  [OK] Sin diferencias — archivos identicos.")
+        print("  [OK] Sin diferencias — archivos identicos.")
         return True
+
+    if filename == "config.yaml" and any("ERROR parseando YAML" in diff for diff in diffs):
+        print("  [REFUSED] YAML invalido: el archivo activo no se modifica.")
+        return False
 
     print(f"  [{len(diffs)} diferencia(s)]")
     for d in diffs:
         print(d)
 
     if apply_mode:
-        print(f"\n  >> Aplicando actualizacion...")
+        print("\n  >> Aplicando actualizacion...")
         import shutil
+        from uuid import uuid4
+        from janitor_ext.install import merge_defaults, private_write
         backup = Path(str(active_path) + ".bak")
+        if backup.exists():
+            backup = Path(str(active_path) + "." + uuid4().hex[:8] + ".bak")
         shutil.copy2(active_path, backup)
-        shutil.copy2(asset_path, active_path)
+        backup.chmod(0o600)
+        if filename == "config.yaml":
+            current = load_yaml(active_path) or {}
+            suggested = load_yaml(asset_path) or {}
+            merged = merge_defaults(suggested, current)
+            private_write(active_path, yaml.safe_dump(merged, allow_unicode=True, sort_keys=False))
+        else:
+            proposal = Path(str(active_path) + ".proposed")
+            private_write(proposal, asset_path.read_text())
+            print(f"  Persona conservada; propuesta disponible en: {proposal}")
         print(f"  [OK] Asset aplicado. Backup en: {backup}")
 
         # Validar YAML si es config.yaml
         if filename == "config.yaml":
             try:
                 load_yaml(active_path)
-                print(f"  [OK] YAML valido tras aplicacion.")
+                print("  [OK] YAML valido tras aplicacion.")
             except yaml.YAMLError as e:
                 print(f"  [FALLO] YAML invalido tras aplicacion: {e}")
                 # Restaurar backup
                 shutil.copy2(backup, active_path)
-                print(f"  [RESTORED] Backup restaurado.")
+                print("  [RESTORED] Backup restaurado.")
                 return False
     else:
-        print(f"\n  Para aplicar: /audit-config --apply")
+        print("\n  Para aplicar: /audit-config --apply")
 
     return True
 
@@ -160,7 +188,7 @@ def main():
         results.append((name, ok))
 
     print(f"\n{'='*60}")
-    print(f"  RESUMEN")
+    print("  RESUMEN")
     print(f"{'='*60}")
     for name, ok in results:
         status = "OK" if ok else "FALLO"

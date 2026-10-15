@@ -1,4 +1,8 @@
+import { readFileSync } from 'node:fs'
+
+import type { SkinBranding, SkinColors } from '@hermes/shared/skin'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { parse } from 'yaml'
 
 const RELEVANT_ENV = [
   'HERMES_TUI_LIGHT',
@@ -6,21 +10,22 @@ const RELEVANT_ENV = [
   'HERMES_TUI_BACKGROUND',
   'COLORFGBG',
   'COLORTERM',
-  'TERM_PROGRAM',
+  'TERM_PROGRAM'
 ] as const
 
-async function importThemeWithEnv(env: Partial<Record<(typeof RELEVANT_ENV)[number], string>> = {}) {
-  for (const key of RELEVANT_ENV) {
-    vi.stubEnv(key, env[key] ?? '')
-  }
+const skin = parse(readFileSync(new URL('../../../assets/janitor/sentry-janitor.yaml', import.meta.url), 'utf8')) as {
+  colors: SkinColors
+  branding: SkinBranding
+  banner_logo: string
+  banner_hero: string
+  tool_prefix: string
+}
 
+async function importThemeWithEnv(env: Partial<Record<(typeof RELEVANT_ENV)[number], string>> = {}) {
+  for (const key of RELEVANT_ENV) {vi.stubEnv(key, env[key] ?? '')}
   vi.resetModules()
 
   return import('../theme.js')
-}
-
-async function importThemeWithCleanEnv() {
-  return importThemeWithEnv()
 }
 
 afterEach(() => {
@@ -28,109 +33,45 @@ afterEach(() => {
   vi.resetModules()
 })
 
-describe('Janitor skin integration', () => {
-  it('janitor branding can be injected via fromSkin', async () => {
-    const { fromSkin } = await importThemeWithCleanEnv()
-
-    const theme = fromSkin({
-      banner_border: '#00FF41',
-      banner_title: '#00FF41',
-      banner_accent: '#39FF14',
-      banner_dim: '#0D3D0D',
-      banner_text: '#00FF41',
-    }, {
-      agent_name: 'Janitor',
-      prompt_symbol: '▓',
-    })
-
-    expect(theme.brand.name).toBe('Janitor')
-    expect(theme.brand.prompt).toBe('▓')
+describe('Janitor skin integration (AGENTS.md #4)', () => {
+  it('loads Janitor identity and art from the shipped skin', async () => {
+    const { fromSkin } = await importThemeWithEnv()
+    const theme = fromSkin(skin.colors, skin.branding, skin.banner_logo, skin.banner_hero, skin.tool_prefix)
+    expect(theme.brand.name).toBe('THE JANITOR') // AGENTS.md #12: wrapper/skin output
+    expect(theme.brand.icon).toBe('🛠')
+    expect(theme.brand.prompt).toBe('❯')
+    expect(theme.brand.tool).toBe('│')
+    expect(theme.brand.welcome).toBe(skin.branding.welcome)
+    expect(theme.bannerLogo).toBe(skin.banner_logo)
+    expect(theme.bannerHero).toBe(skin.banner_hero)
   })
-
-  it('janitor colors are applied via fromSkin', async () => {
-    const { fromSkin } = await importThemeWithCleanEnv()
-
-    const theme = fromSkin({
-      banner_title: '#00FF41',
-      banner_border: '#00FF41',
-      banner_accent: '#39FF14',
-      banner_dim: '#0D3D0D',
-      banner_text: '#00FF41',
-      ui_error: '#FF073A',
-    }, {
-      agent_name: 'Janitor',
-    })
-
-    expect(theme.color.primary).toBe('#00FF41')
+  it('applies the shipped Sentry palette through fromSkin', async () => {
+    const { fromSkin } = await importThemeWithEnv()
+    const { color } = fromSkin(skin.colors, skin.branding)
+    expect(color.primary).toBe(skin.colors.ui_primary)
+    expect(color.border).toBe(skin.colors.ui_border)
+    expect(color.error).toBe(skin.colors.ui_error)
+    expect(color.completionBg).toBe(skin.colors.background)
   })
-
-  it('janitor skin does not crash when missing optional fields', async () => {
-    const { fromSkin, JANITOR_DARK_THEME } = await importThemeWithCleanEnv()
-
+  it('falls back to the base theme for omitted optional skin fields', async () => {
+    const { fromSkin, DARK_THEME } = await importThemeWithEnv()
     const theme = fromSkin({}, { agent_name: 'Janitor' })
-
     expect(theme.brand.name).toBe('Janitor')
-    expect(theme.color.primary).toBe(JANITOR_DARK_THEME.color.primary)
-    expect(theme.color.error).toBe(JANITOR_DARK_THEME.color.error)
+    expect(theme.color).toEqual(DARK_THEME.color)
   })
-
-  it('skin config keys are all valid hex colors', async () => {
-    const { fromSkin } = await importThemeWithCleanEnv()
-
-    const janitorSkin = {
-      banner_border: '#00FF41',
-      banner_title: '#00FF41',
-      banner_accent: '#39FF14',
-      banner_dim: '#0D3D0D',
-      banner_text: '#00FF41',
-      ui_error: '#FF073A',
-      ui_warn: '#FFE135',
-    }
-
-    const theme = fromSkin(janitorSkin, {})
-
-    expect(theme.color.primary).toBe('#00FF41')
-    expect(theme.color.accent).toBe('#39FF14')
-    expect(theme.color.border).toBe('#00FF41')
+  it('keeps upstream identity and palettes available without Janitor injection', async () => {
+    const { BRAND, DARK_THEME, LIGHT_THEME, DEFAULT_THEME, fromSkin } = await importThemeWithEnv()
+    expect(DEFAULT_THEME).toBe(DARK_THEME)
+    expect(DARK_THEME.brand).toBe(BRAND)
+    expect(LIGHT_THEME.brand).toBe(BRAND)
+    expect(fromSkin({}, {}).brand.name).toBe(BRAND.name)
+    expect(fromSkin(skin.colors, skin.branding).brand.name).not.toBe(BRAND.name)
   })
-
-  it('janitor error color is dark red for visibility', async () => {
-    const { fromSkin } = await importThemeWithCleanEnv()
-
-    const theme = fromSkin({ ui_error: '#FF073A' }, {})
-
-    expect(theme.color.error).toBe('#FF073A')
-  })
-
-  it('JANITOR_BRAND.name is THE JANITOR', async () => {
-    const { JANITOR_BRAND } = await importThemeWithCleanEnv()
-    expect(JANITOR_BRAND.name).toBe('THE JANITOR')
-    expect(JANITOR_BRAND.icon).toBe('🛠')
-  })
-
-  it('JANITOR_DARK_THEME.primary is lime green #c2ef4e', async () => {
-    const { JANITOR_DARK_THEME } = await importThemeWithCleanEnv()
-    expect(JANITOR_DARK_THEME.color.primary).toBe('#c2ef4e')
-    expect(JANITOR_DARK_THEME.color.border).toBe('#362d59')
-    expect(JANITOR_DARK_THEME.color.error).toBe('#fa7faa')
-  })
-
-  it('DEFAULT_THEME defaults to JANITOR theme (not Hermes)', async () => {
-    const { DEFAULT_THEME } = await importThemeWithCleanEnv()
-    expect(DEFAULT_THEME.brand.name).toBe('THE JANITOR')
-    expect(DEFAULT_THEME.color.primary).toBe('#c2ef4e')
-  })
-
-  it('DARK_THEME / LIGHT_THEME alias JANITOR_*_THEME so upstream DEFAULT_THEME checks pass', async () => {
-    const { DARK_THEME, LIGHT_THEME, JANITOR_DARK_THEME, JANITOR_LIGHT_THEME } = await importThemeWithCleanEnv()
-    expect(DARK_THEME).toBe(JANITOR_DARK_THEME)
-    expect(LIGHT_THEME).toBe(JANITOR_LIGHT_THEME)
-  })
-
-  it('legacy BRAND export keeps Hermes identity for any third-party importers', async () => {
-    const { BRAND, JANITOR_BRAND } = await importThemeWithCleanEnv()
-    expect(BRAND.name).toBe('Hermes Agent')
-    expect(BRAND.icon).toBe('⚕')
-    expect(BRAND).not.toBe(JANITOR_BRAND)
+  it('uses authored dark canvas even on a light terminal', async () => {
+    const { fromSkin, skinIsLight, contrastRatio } = await importThemeWithEnv({ HERMES_TUI_BACKGROUND: '#ffffff' })
+    expect(skinIsLight(skin.colors)).toBe(false)
+    const { color } = fromSkin(skin.colors, skin.branding)
+    expect(color.primary).toBe(skin.colors.ui_primary)
+    expect(contrastRatio(color.text, skin.colors.background!)).toBeGreaterThanOrEqual(4.5)
   })
 })

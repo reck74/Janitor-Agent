@@ -16,7 +16,7 @@
 
 set -euo pipefail
 
-JANITOR_HOME="${JANITOR_HOME:-$HOME/.janitor}"
+JANITOR_HOME="${HERMES_HOME:-${JANITOR_HOME:-$HOME/.janitor}}"
 BACKUP_DIR="${JANITOR_HOME}/.backup/migration-$(date +%Y%m%d-%H%M%S)"
 
 RED='\033[0;31m'

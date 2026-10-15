@@ -1,14 +1,14 @@
 ---
-title: "Kanban Orchestrator"
+title: "Kanban Orchestrator — Kanban orchestrator playbook; don't do the work yourself"
 sidebar_label: "Kanban Orchestrator"
-description: "Decomposition playbook + anti-temptation rules for an orchestrator profile routing work through Kanban"
+description: "Kanban orchestrator playbook; don't do the work yourself"
 ---
 
 {/* This page is auto-generated from the skill's SKILL.md by website/scripts/generate-skill-docs.py. Edit the source SKILL.md, not this page. */}
 
 # Kanban Orchestrator
 
-Decomposition playbook + anti-temptation rules for an orchestrator profile routing work through Kanban. The "don't do the work yourself" rule and the basic lifecycle are auto-injected into every kanban worker's system prompt; this skill is the deeper playbook when you're specifically playing the orchestrator role.
+Kanban orchestrator playbook; don't do the work yourself.
 
 ## Skill metadata
 
@@ -17,15 +17,20 @@ Decomposition playbook + anti-temptation rules for an orchestrator profile routi
 | Source | Bundled (installed by default) |
 | Path | `skills/devops/kanban-orchestrator` |
 | Version | `3.0.0` |
+| Author | Janitor Agent |
+| License | MIT |
 | Platforms | linux, macos, windows |
 | Tags | `kanban`, `multi-agent`, `orchestration`, `routing` |
-| Related skills | [`kanban-worker`](/docs/user-guide/skills/bundled/devops/devops-kanban-worker) |
+| Related skills | [`kanban-worker`](../../bundled/devops/devops-kanban-worker.md) |
 
 ## Reference: full SKILL.md
 
 :::info
 The following is the complete skill definition that Hermes loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
 :::
+
+> Compatibility status: experimental manual playbook retained for existing users. Current Hermes Kanban uses its built-in lifecycle guidance; the dispatcher does not auto-load this skill. Use it only when explicitly selected. `tests/hermes_cli/test_kanban_core_functionality.py` verifies the no-auto-load contract. The active board/worker implementation remains upstream-owned.
+
 
 # Kanban Orchestrator — Decomposition Playbook
 

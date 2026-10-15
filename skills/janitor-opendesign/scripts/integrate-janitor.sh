@@ -35,6 +35,11 @@ if [[ ! -d "${OD_SOURCE_DIR}" ]]; then
   exit 1
 fi
 
+# Gate de versión Node — aborta con exit 2 si engines.node no coincide
+# con la versión que mise resuelve. CRÍTICO para evitar segfault de
+# better-sqlite3 que corrompe el bridge PRIME del framebuffer.
+bash "${SCRIPT_DIR}/check-node-version.sh" || exit $?
+
 if ! command -v janitor &>/dev/null; then
   echo "ERROR: 'janitor' no está en PATH." >&2
   exit 1

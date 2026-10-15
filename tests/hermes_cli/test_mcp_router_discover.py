@@ -9,31 +9,28 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 
-def test_probe_single_server_backward_compat_no_rich_tools_key():
-    """_probe_single_server must NOT populate rich_tools when caller doesn't
-    request it. Guards the Task 1 extension against regressions in /test
-    and cmd_mcp_test (the two existing callers).
-
-    NOTE: source-text assertion, generally discouraged by AGENTS.md but used
-    here for the same reason as test_janitor_monkeypatch_signatures.py
-    (directive #14): the gating condition IS the contract; there is no
-    observable runtime behavior without spinning up the real MCP loop, which
-    these unit tests deliberately avoid.
-    """
-    import inspect
-
+def test_probe_descriptors_are_opt_in_and_shutdown_is_preserved(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
     from hermes_cli.mcp_config import _probe_single_server
+    from tools import mcp_tool_discovery, mcp_tool_lifecycle, mcp_tool_loop
 
-    # details without "rich_tools" key — existing callers' shape
-    # We assert the contract via source inspection: the function's source
-    # must gate the rich_tools assignment behind `"rich_tools" in details`
-    # so existing callers (no rich_tools key) are unaffected.
-    src = inspect.getsource(_probe_single_server)
-    assert '"rich_tools" in details' in src, (
-        "Task 1 regression: _probe_single_server must gate the rich_tools "
-        "assignment behind `if details is not None and \"rich_tools\" in details:` "
-        "so existing callers (no rich_tools key) are unaffected."
-    )
+    tool = SimpleNamespace(name="ping", description="full descriptor", inputSchema={"type": "object"})
+    shutdown = AsyncMock()
+    server = SimpleNamespace(_tools=[tool], shutdown=shutdown, initialize_result=None)
+    monkeypatch.setattr(mcp_tool_discovery, "_connect_server", AsyncMock(return_value=server))
+    monkeypatch.setattr(mcp_tool_loop, "_ensure_mcp_loop", lambda: None)
+    monkeypatch.setattr(mcp_tool_loop, "_run_on_mcp_loop", lambda coro, **kwargs: asyncio.run(coro))
+    monkeypatch.setattr(mcp_tool_lifecycle, "_stop_mcp_loop_if_idle", lambda: None)
+    config = {"url": "http://127.0.0.1:1/mcp", "tools": {"prompts": False, "resources": False}}
+    plain = {}
+    assert _probe_single_server("alpha", config, details=plain) == [("ping", "full descriptor")]
+    assert "rich_tools" not in plain
+    rich = {"rich_tools": []}
+    assert _probe_single_server("alpha", config, details=rich) == [("ping", "full descriptor")]
+    assert rich["rich_tools"] == [tool]
+    assert shutdown.await_count == 2
 
 
 # === Task 3: route tests ===
@@ -135,7 +132,7 @@ def test_discover_504_timeout():
 
     with patch(
         "hermes_cli.mcp_config._probe_single_server",
-        side_effect=asyncio.TimeoutError(),
+        side_effect=TimeoutError(),
     ):
         resp = client.post("/api/mcp/servers/slow/discover")
 
@@ -166,3 +163,62 @@ def test_discover_input_schema_falls_back_to_input_schema_attr():
     assert resp.status_code == 200, resp.text
     tool = resp.json()["tools"][0]
     assert tool["inputSchema"] == {"type": "object"}
+
+
+def test_discovery_requires_dashboard_auth():
+    from starlette.testclient import TestClient
+    from hermes_cli.web_server import app
+    assert TestClient(app).post("/api/mcp/servers/alpha/discover").status_code == 401
+
+
+def test_discovery_errors_redact_credential_headers():
+    _seed_server("broken")
+    with patch("hermes_cli.mcp_config._probe_single_server",
+               side_effect=ConnectionError("Authorization: Bearer janitor-audit-fake-secret")):
+        response = _client().post("/api/mcp/servers/broken/discover")
+    assert response.status_code == 502
+    assert "janitor-audit-fake-secret" not in response.text
+
+
+def test_real_stdio_discovery_keeps_schema_and_captures_only_its_stderr(tmp_path):
+    """Exercise the actual SDK/transport/cleanup path with a local protocol stand-in."""
+    import sys
+    from hermes_cli.mcp_config import _save_mcp_server
+
+    child = tmp_path / "mcp_stand_in.py"
+    child.write_text('''import json, sys
+for line in sys.stdin:
+    message = json.loads(line)
+    if "id" not in message:
+        continue
+    method = message.get("method")
+    if method == "initialize":
+        print("janitor-real-mcp-stderr", file=sys.stderr, flush=True)
+        result = {"protocolVersion": message["params"]["protocolVersion"],
+                  "capabilities": {"tools": {}}, "serverInfo": {"name": "stand-in", "version": "1"}}
+    elif method == "tools/list":
+        result = {"tools": [{"name": "ping", "description": "local protocol stand-in",
+                            "inputSchema": {"type": "object", "properties": {"value": {"type": "string"}}}}]}
+    else:
+        result = {}
+    print(json.dumps({"jsonrpc": "2.0", "id": message["id"], "result": result}), flush=True)
+''')
+    assert _save_mcp_server("real-stdio", {"command": sys.executable, "args": [str(child)],
+                                         "tools": {"prompts": False, "resources": False}, "connect_timeout": 10})
+    response = _client().post("/api/mcp/servers/real-stdio/discover")
+    assert response.status_code == 200, response.text
+    assert response.json()["tools"][0]["inputSchema"]["properties"]["value"] == {"type": "string"}
+    logs = _client().get("/api/mcp/servers/real-stdio/logs").json()
+    assert logs["available"] is True
+    assert any("janitor-real-mcp-stderr" in line for line in logs["lines"])
+
+
+def test_discovery_errors_redact_url_userinfo():
+    _seed_server("alpha")
+    client = _client()
+    with patch("hermes_cli.mcp_config._probe_single_server", side_effect=ConnectionError(
+            "GET https://janitor-user:private-pass@example.invalid/mcp")):
+        response = client.post("/api/mcp/servers/alpha/discover")
+    assert response.status_code == 502
+    assert "private-pass" not in response.text and "janitor-user" not in response.text
+    assert "example.invalid" in response.text

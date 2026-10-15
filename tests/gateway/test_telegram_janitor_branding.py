@@ -20,6 +20,8 @@ from plugins.platforms.telegram.adapter import TelegramAdapter
 def _make_adapter() -> TelegramAdapter:
     adapter = TelegramAdapter(PlatformConfig(enabled=True, token="***", extra={}))
     adapter._bot = AsyncMock()
+    adapter._bot.id = 999
+    adapter._bot.username = "janitor_bot"
     return adapter
 
 
@@ -52,6 +54,9 @@ async def test_set_janitor_avatar_on_connect(tmp_path, monkeypatch):
     )
 
     class FakeBuilder:
+        def application_class(self, _cls, _kwargs):
+            return self
+
         def token(self, _token):
             return self
 
@@ -68,6 +73,9 @@ async def test_set_janitor_avatar_on_connect(tmp_path, monkeypatch):
             return self
 
         def get_updates_request(self, _request):
+            return self
+
+        def concurrent_updates(self, _processor):
             return self
 
         def build(self):
@@ -274,7 +282,7 @@ async def test_handle_start_sends_janitor_welcome_photo(tmp_path, monkeypatch):
     monkeypatch.setattr(telegram_module, "_JANITOR_WELCOME_PATH", welcome_path, raising=False)
 
     adapter = _make_adapter()
-    update = SimpleNamespace(effective_chat=SimpleNamespace(id=12345))
+    update = _start_update()
 
     await adapter._handle_start(update, SimpleNamespace())
 
@@ -293,7 +301,7 @@ async def test_handle_start_falls_back_to_text_when_welcome_photo_missing(tmp_pa
     monkeypatch.setattr(telegram_module, "_JANITOR_WELCOME_PATH", missing_path, raising=False)
 
     adapter = _make_adapter()
-    update = SimpleNamespace(effective_chat=SimpleNamespace(id=12345))
+    update = _start_update()
 
     await adapter._handle_start(update, SimpleNamespace())
 
@@ -312,3 +320,48 @@ def test_telegram_avatar_asset_is_jpeg():
 
     result = subprocess.run(["file", str(asset)], capture_output=True, text=True, check=True)
     assert "JPEG image data" in result.stdout
+
+
+def _start_update(*, thread=None, forum=False, chat_type="private", user_id=7):
+    chat = SimpleNamespace(id=12345, type=chat_type, is_forum=forum)
+    message = SimpleNamespace(chat=chat, message_id=8, text="/start@janitor_bot",
+                              from_user=SimpleNamespace(id=user_id, is_bot=False, username="tester"),
+                              message_thread_id=thread, is_topic_message=forum or thread is not None,
+                              entities=[], sender_chat=None, reply_to_message=None)
+    return SimpleNamespace(effective_chat=chat, effective_message=message, message=message)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("blocked_by", ["user", "chat"])
+async def test_start_preserves_upstream_intake_gates(monkeypatch, blocked_by):
+    adapter = _make_adapter()
+    adapter.config.extra.update({"require_mention": False})
+    if blocked_by == "user":
+        adapter.config.extra["allow_from"] = ["99999"]
+        update = _start_update()
+    else:
+        adapter.config.extra["allowed_chats"] = ["99999"]
+        update = _start_update(chat_type="supergroup", forum=True, thread=123)
+    await adapter._handle_start(update, SimpleNamespace())
+    adapter._bot.send_photo.assert_not_awaited()
+    adapter._bot.send_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("photo", [True, False])
+@pytest.mark.parametrize("thread,forum,chat_type,expected", [
+    (123, True, "supergroup", 123),
+    (None, True, "supergroup", None),
+    (456, False, "private", 456),
+])
+async def test_start_preserves_topic_for_photo_and_fallback(tmp_path, monkeypatch, photo, thread, forum, chat_type, expected):
+    welcome = tmp_path / "welcome.jpg"
+    if photo:
+        welcome.write_bytes(b"photo")
+    monkeypatch.setattr(telegram_module, "_JANITOR_WELCOME_PATH", welcome)
+    adapter = _make_adapter()
+    adapter.config.extra.update({"require_mention": False})
+    await adapter._handle_start(_start_update(thread=thread, forum=forum, chat_type=chat_type), SimpleNamespace())
+    sender = adapter._bot.send_photo if photo else adapter._bot.send_message
+    sender.assert_awaited_once()
+    assert sender.await_args.kwargs.get("message_thread_id") == expected

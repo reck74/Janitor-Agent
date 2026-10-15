@@ -19,7 +19,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-import yaml
+import hermes_yaml as yaml
 
 SKILL_DIR = Path(__file__).resolve().parents[2] / "skills" / "janitor-config-audit"
 
@@ -166,7 +166,7 @@ class TestDiffLogic:
         assert "Aplicando" in captured.out or "aplicado" in captured.out
 
         loaded = yaml.safe_load(active.read_text())
-        assert loaded["model"] == "gpt-4"
+        assert loaded["model"] == "gpt-3"  # Applying defaults preserves user choices.
 
     def test_apply_restores_on_bad_yaml(self, tmp_janitor_home: Path, capsys) -> None:
         active = tmp_janitor_home / "config.yaml"
@@ -176,8 +176,21 @@ class TestDiffLogic:
 
         exit_code = self._reload_and_run(tmp_janitor_home, "--apply", "config")
         captured = capsys.readouterr()
-        assert "RESTORED" in captured.out or "restaurado" in captured.out
+        assert "REFUSED" in captured.out
         assert exit_code != 0
 
         loaded = yaml.safe_load(active.read_text())
         assert loaded["model"] == "gpt-3"
+
+    def test_preview_redacts_credentials_and_yaml_errors(self, tmp_janitor_home, capsys):
+        active = tmp_janitor_home / "config.yaml"
+        asset = tmp_janitor_home / "janitor-core/assets/janitor/config.yaml"
+        active.write_text(yaml.safe_dump({"providers": {"custom": {"api_key": "private-active-key"}}, "endpoint": "https://user:private-pass@example.invalid"}))
+        asset.write_text(yaml.safe_dump({"providers": {"custom": {"api_key": "private-suggested-key"}}}))
+        self._reload_and_run(tmp_janitor_home, "config")
+        output = capsys.readouterr().out
+        assert "private-active-key" not in output and "private-suggested-key" not in output and "private-pass" not in output
+        assert "REDACTED" in output
+        active.write_text("api_key: private-active-key: :")
+        assert self._reload_and_run(tmp_janitor_home, "--apply", "config") != 0
+        assert "private-active-key" not in capsys.readouterr().out

@@ -26,7 +26,7 @@ import sys
 from pathlib import Path
 
 import pytest
-import yaml
+import hermes_yaml as yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SKILL_DIR = REPO_ROOT / "skills" / "janitor-firecrawl"
@@ -86,7 +86,7 @@ def test_postgres_uses_prebuilt_image(compose_yaml: dict) -> None:
     """BUG 1: postgres service must NOT use `build:` with a non-existent path."""
     pg = compose_yaml["services"]["firecrawl-postgres"]
     assert "image" in pg, "firecrawl-postgres missing `image:` key"
-    assert pg["image"] == "ghcr.io/firecrawl/nuq-postgres:latest"
+    assert re.fullmatch(r"ghcr\.io/firecrawl/nuq-postgres:[^@]+@sha256:[0-9a-f]{64}", pg["image"])
     assert "build" not in pg, "firecrawl-postgres must not use `build:`"
 
 
@@ -296,3 +296,48 @@ def test_verify_pgcron_script_uses_correct_env_file() -> None:
     assert '"postgres"' in script or "== \"postgres\"" in script, (
         "must assert cron.database_name == postgres"
     )
+
+
+@pytest.mark.parametrize('payload,exit_code,expected', [('', 22, 1), ('{"success":false,"error":"private-fixture"}', 0, 1), ('{"success":true,"data":{}}', 0, 1), ('{"success":true,"data":{"markdown":"Example Domain"}}', 0, 0)])
+def test_scrape_verification_propagates_failure_and_requires_content(tmp_path, payload, exit_code, expected):
+    import subprocess
+    binary = tmp_path / 'bin'
+    binary.mkdir()
+    curl = binary / 'curl'
+    curl.write_text('#!/bin/sh\nprintf "%s" "$FIXTURE_PAYLOAD"\nexit "$FIXTURE_EXIT"\n')
+    curl.chmod(0o755)
+    sleep = binary / 'sleep'
+    sleep.write_text('#!/bin/sh\nexit 0\n')
+    sleep.chmod(0o755)
+    # Source all production functions, omitting only the automatic main dispatch.
+    source = DEPLOY_SH.read_text().rsplit('main "$@"', 1)[0] + '\nverify_scrape\n'
+    fixture = tmp_path / 'verify.sh'
+    fixture.write_text(source)
+    result = subprocess.run(['bash', str(fixture)], env=dict(os.environ, PATH=str(binary) + os.pathsep + os.environ['PATH'],
+        JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON=sys.executable, FIXTURE_PAYLOAD=payload, FIXTURE_EXIT=str(exit_code)),
+        capture_output=True, text=True, timeout=15, check=False)
+    assert (result.returncode != 0) == bool(expected), result.stdout + result.stderr
+    assert 'private-fixture' not in result.stdout + result.stderr
+
+
+def test_deploy_main_does_not_activate_or_announce_success_after_scrape_failure(tmp_path):
+    import subprocess
+    source = DEPLOY_SH.read_text().rsplit('main "$@"', 1)[0]
+    source += '''
+check_docker() { return 0; }
+generate_firecrawl_env() { return 0; }
+ensure_compose_file() { return 0; }
+launch_firecrawl() { return 0; }
+wait_for_health() { return 0; }
+verify_scrape() { return 1; }
+inject_firecrawl_env() { touch "$HERMES_HOME/activated"; }
+print_summary() { echo FALSE_SUCCESS; }
+main
+'''
+    script = tmp_path / 'deploy-fixture.sh'
+    script.write_text(source)
+    result = subprocess.run(['bash', str(script)], env=dict(os.environ, HERMES_HOME=str(tmp_path),
+        JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON=sys.executable), capture_output=True, text=True, check=False)
+    assert result.returncode != 0
+    assert not (tmp_path / 'activated').exists()
+    assert 'FALSE_SUCCESS' not in result.stdout

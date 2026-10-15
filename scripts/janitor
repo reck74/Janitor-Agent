@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# A stable command bound to this installation; PM selects dependencies at each launch.
+set -euo pipefail
+script_path="$(readlink -f "${BASH_SOURCE[0]}")"
+janitor_root="$(cd "$(dirname "$script_path")/.." && pwd)"
+export JANITOR_HOME="${JANITOR_HOME:-$HOME/.janitor}"
+export HERMES_HOME="${HERMES_HOME:-$JANITOR_HOME}"
+launcher="$janitor_root/.hermes/bin/hermes"
+if [[ ! -x "$launcher" ]]; then
+    printf 'Janitor runtime is incomplete. Repair with: bash %s/scripts/bootstrap.sh --dir %s\n' "$janitor_root" "$janitor_root" >&2
+    exit 1
+fi
+if [[ "${1:-}" == "--run-module" ]]; then
+    [[ $# -ge 2 ]] || { echo '--run-module needs a module' >&2; exit 2; }
+    exec "$launcher" "$@"
+fi
+exec "$launcher" --run-module janitor_cli "$@"

@@ -1,5 +1,7 @@
 """Subprocess tests for ``scripts/migrate-janitor-v0.20.1.sh``.
 
+Schema-only fixtures use builtin memory: networked Honcho repair is covered by the installer/real memory acceptance, never disabled in production.
+
 Subprocess-only: no source reads. Each test drives the script via
 ``subprocess.run(["bash", str(SCRIPT), *args], env=env, ...)`` against a
 temp ``HERMES_HOME``; every subprocess env block sets ``JANITOR_HOME`` to
@@ -32,10 +34,18 @@ pytestmark = pytest.mark.skipif(
 SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "migrate-janitor-v0.20.1.sh"
 
 
+@pytest.fixture(autouse=True)
+def _migration_uses_the_active_test_interpreter(monkeypatch):
+    # scripts/run_tests.sh strips ambient Python overrides. The child must use
+    # this prepared PM test environment, rather than the host's bare python3.
+    monkeypatch.setenv("HERMES_PYTHON", sys.executable)
+
+
+
 def test_script_is_present_and_bash_n_clean():
     """The migration script exists and passes bash -n syntax check."""
     assert SCRIPT.exists()
-    r = subprocess.run(["bash", "-n", str(SCRIPT)], capture_output=True, text=True)
+    r = subprocess.run(["bash", "-n", str(SCRIPT)], capture_output=True, text=True, check=False)
     assert r.returncode == 0, r.stderr
 
 
@@ -43,13 +53,13 @@ def test_dry_run_does_not_modify_config(tmp_path):
     """--dry-run is idempotent and does NOT modify the source config."""
     home = tmp_path / "janitor"
     home.mkdir()
-    (home / "config.yaml").write_text("memory:\n  provider: honcho\n")
+    (home / "config.yaml").write_text("memory:\n  provider: builtin\n")
     before = (home / "config.yaml").read_bytes()
     r = subprocess.run(
         ["bash", str(SCRIPT), "--dry-run"],
         env={**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""},
         capture_output=True, text=True,
-    )
+    check=False)
     assert r.returncode == 0, r.stderr
     assert (home / "config.yaml").read_bytes() == before
 
@@ -58,12 +68,12 @@ def test_creates_timestamped_backup(tmp_path):
     """For-real run creates exactly one timestamped config backup."""
     home = tmp_path / "janitor"
     home.mkdir()
-    (home / "config.yaml").write_text("memory:\n  provider: honcho\n")
+    (home / "config.yaml").write_text("memory:\n  provider: builtin\n")
     r = subprocess.run(
         ["bash", str(SCRIPT)],
         env={**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""},
         capture_output=True, text=True,
-    )
+    check=False)
     assert r.returncode == 0, r.stderr
     backups = [
         p for p in home.glob("config.yaml.bak.*")
@@ -79,11 +89,11 @@ def test_is_idempotent(tmp_path):
     """Second for-real run on already-migrated config is a no-op (no new backup)."""
     home = tmp_path / "janitor"
     home.mkdir()
-    (home / "config.yaml").write_text("memory:\n  provider: honcho\n")
+    (home / "config.yaml").write_text("memory:\n  provider: builtin\n")
     env = {**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""}
     subprocess.run(["bash", str(SCRIPT)], env=env, check=True, capture_output=True, text=True)
     first_count = len(list(home.glob("config.yaml.bak.*")))
-    r = subprocess.run(["bash", str(SCRIPT)], env=env, capture_output=True, text=True)
+    r = subprocess.run(["bash", str(SCRIPT)], env=env, capture_output=True, text=True, check=False)
     assert r.returncode == 0, r.stderr
     second_count = len(list(home.glob("config.yaml.bak.*")))
     assert second_count == first_count
@@ -97,7 +107,7 @@ def test_missing_config_exits_1(tmp_path):
         ["bash", str(SCRIPT)],
         env={**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""},
         capture_output=True, text=True,
-    )
+    check=False)
     assert r.returncode == 1
     assert list(home.glob("config.yaml.bak.*")) == []
 
@@ -111,17 +121,18 @@ def test_v33_content_triggers_migration(tmp_path):
         "display:\n"
         "  personality: kawaii\n"
         "memory:\n"
-        "  provider: honcho\n"
+        "  provider: builtin\n"
     )
     r = subprocess.run(
         ["bash", str(SCRIPT)],
         env={**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""},
         capture_output=True, text=True,
-    )
+    check=False)
     assert r.returncode == 0, r.stderr
-    import yaml
+    import hermes_yaml as yaml
     after = yaml.safe_load((home / "config.yaml").read_text())
-    assert after["_config_version"] == 34
+    from hermes_cli.config_defaults import DEFAULT_CONFIG
+    assert after["_config_version"] == DEFAULT_CONFIG["_config_version"]
     assert after["display"]["personality"] == ""
 
 
@@ -146,14 +157,14 @@ def test_manual_prompts_preserved(tmp_path):
         "    Custom prompt the user wrote.\n"
         "    Keep this verbatim across migrations.\n"
         "memory:\n"
-        "  provider: honcho\n"
+        "  provider: builtin\n"
     )
     (home / "config.yaml").write_text(custom)
     env = {**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""}
 
     r = subprocess.run(
         ["bash", str(SCRIPT)], env=env, capture_output=True, text=True,
-    )
+    check=False)
     assert r.returncode == 0, r.stderr
     text = (home / "config.yaml").read_text()
     assert "Custom prompt the user wrote." in text
@@ -171,7 +182,7 @@ def test_manual_prompts_preserved(tmp_path):
     # no-op and not create a new backup.
     r2 = subprocess.run(
         ["bash", str(SCRIPT)], env=env, capture_output=True, text=True,
-    )
+    check=False)
     assert r2.returncode == 0, r2.stderr
     backups_after_second = sorted(home.glob("config.yaml.bak.*"))
     assert len(backups_after_second) == len(backups_after_first), (
@@ -188,13 +199,13 @@ def test_unknown_arg_exits_2_no_backup_no_mutation(tmp_path):
     """Unknown args print usage to stderr and exit 2 — NO backup, NO mutation."""
     home = tmp_path / "janitor"
     home.mkdir()
-    (home / "config.yaml").write_text("memory:\n  provider: honcho\n")
+    (home / "config.yaml").write_text("memory:\n  provider: builtin\n")
     before = (home / "config.yaml").read_bytes()
     r = subprocess.run(
         ["bash", str(SCRIPT), "--bogus"],
         env={**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""},
         capture_output=True, text=True,
-    )
+    check=False)
     assert r.returncode == 2, (r.returncode, r.stdout, r.stderr)
     assert list(home.glob("config.yaml.bak.*")) == []
     assert (home / "config.yaml").read_bytes() == before
@@ -205,13 +216,13 @@ def test_extra_args_after_dry_run_exits_2_no_backup_no_mutation(tmp_path):
     """Extra positional args after --dry-run also exit 2 — NO backup, NO mutation."""
     home = tmp_path / "janitor"
     home.mkdir()
-    (home / "config.yaml").write_text("memory:\n  provider: honcho\n")
+    (home / "config.yaml").write_text("memory:\n  provider: builtin\n")
     before = (home / "config.yaml").read_bytes()
     r = subprocess.run(
         ["bash", str(SCRIPT), "--dry-run", "--also-bogus"],
         env={**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""},
         capture_output=True, text=True,
-    )
+    check=False)
     assert r.returncode == 2, (r.returncode, r.stdout, r.stderr)
     assert list(home.glob("config.yaml.bak.*")) == []
     assert (home / "config.yaml").read_bytes() == before
@@ -221,12 +232,12 @@ def test_no_args_runs_normally(tmp_path):
     """Exactly zero positional args runs the script normally (no usage error)."""
     home = tmp_path / "janitor"
     home.mkdir()
-    (home / "config.yaml").write_text("memory:\n  provider: honcho\n")
+    (home / "config.yaml").write_text("memory:\n  provider: builtin\n")
     r = subprocess.run(
         ["bash", str(SCRIPT)],
         env={**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""},
         capture_output=True, text=True,
-    )
+    check=False)
     assert r.returncode == 0, r.stderr
 
 
@@ -245,24 +256,26 @@ def test_prints_raw_and_display_version(tmp_path):
 
     home = tmp_path / "janitor"
     home.mkdir()
-    (home / "config.yaml").write_text("memory:\n  provider: honcho\n")
+    (home / "config.yaml").write_text("memory:\n  provider: builtin\n")
     r = subprocess.run(
         ["bash", str(SCRIPT)],
         env={**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""},
         capture_output=True, text=True,
-    )
+    check=False)
     assert r.returncode == 0, r.stderr
     assert f"Raw version: {raw}" in r.stdout
     assert f"Display version: {display}" in r.stdout
 
 
-def test_janitor_home_precedence_over_hermes_home(tmp_path):
-    """$JANITOR_HOME wins over $HERMES_HOME and over $HOME/.janitor."""
+def test_selected_profile_precedence_over_installation_root(tmp_path):
+    """R01: the selected HERMES_HOME profile wins over the JANITOR_HOME root."""
     janitor_home = tmp_path / "j"
     hermes_home = tmp_path / "h"
     janitor_home.mkdir()
     hermes_home.mkdir()
-    (janitor_home / "config.yaml").write_text("memory:\n  provider: honcho\n")
+    (janitor_home / "config.yaml").write_text("memory:\n  provider: builtin\n")
+    (hermes_home / "config.yaml").write_text("memory:\n  provider: builtin\n")
+    root_before = (janitor_home / "config.yaml").read_bytes()
     r = subprocess.run(
         ["bash", str(SCRIPT)],
         env={
@@ -272,10 +285,11 @@ def test_janitor_home_precedence_over_hermes_home(tmp_path):
             "HOME": str(tmp_path),
         },
         capture_output=True, text=True,
-    )
+    check=False)
     assert r.returncode == 0, r.stderr
-    assert list(janitor_home.glob("config.yaml.bak.*")) != []
-    assert list(hermes_home.glob("config.yaml.bak.*")) == []
+    assert list(janitor_home.glob("config.yaml.bak.*")) == []
+    assert (janitor_home / "config.yaml").read_bytes() == root_before
+    assert list(hermes_home.glob("config.yaml.bak.*")) != []
 
 
 def test_hermes_home_precedence_over_default_home(tmp_path):
@@ -283,9 +297,9 @@ def test_hermes_home_precedence_over_default_home(tmp_path):
     default_home = tmp_path / "default"
     explicit_home = tmp_path / "explicit"
     (default_home / ".janitor").mkdir(parents=True)
-    (default_home / ".janitor" / "config.yaml").write_text("memory:\n  provider: honcho\n")
+    (default_home / ".janitor" / "config.yaml").write_text("memory:\n  provider: builtin\n")
     explicit_home.mkdir()
-    (explicit_home / "config.yaml").write_text("memory:\n  provider: honcho\n")
+    (explicit_home / "config.yaml").write_text("memory:\n  provider: builtin\n")
     r = subprocess.run(
         ["bash", str(SCRIPT)],
         env={
@@ -295,7 +309,7 @@ def test_hermes_home_precedence_over_default_home(tmp_path):
             "JANITOR_HOME": "",
         },
         capture_output=True, text=True,
-    )
+    check=False)
     assert r.returncode == 0, r.stderr
     assert list(explicit_home.glob("config.yaml.bak.*")) != []
     assert list((default_home / ".janitor").glob("config.yaml.bak.*")) == []
@@ -305,12 +319,12 @@ def test_prints_rollback_instructions(tmp_path):
     """Stdout prints rollback instructions referencing the actual backup filename."""
     home = tmp_path / "janitor"
     home.mkdir()
-    (home / "config.yaml").write_text("memory:\n  provider: honcho\n")
+    (home / "config.yaml").write_text("memory:\n  provider: builtin\n")
     r = subprocess.run(
         ["bash", str(SCRIPT)],
         env={**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""},
         capture_output=True, text=True,
-    )
+    check=False)
     assert r.returncode == 0, r.stderr
     assert "To rollback:" in r.stdout
     backups = list(home.glob("config.yaml.bak.*"))
@@ -328,7 +342,7 @@ def test_migration_failure_after_backup_exits_3_and_preserves_original(tmp_path)
         ["bash", str(SCRIPT)],
         env={**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""},
         capture_output=True, text=True,
-    )
+    check=False)
     assert r.returncode == 3, (r.returncode, r.stdout, r.stderr)
     backups = list(home.glob("config.yaml.bak.*"))
     assert len(backups) == 1
@@ -350,12 +364,12 @@ def test_backup_filename_strict_portable_shape_no_nanoseconds(tmp_path):
     """
     home = tmp_path / "janitor"
     home.mkdir()
-    (home / "config.yaml").write_text("memory:\n  provider: honcho\n")
+    (home / "config.yaml").write_text("memory:\n  provider: builtin\n")
     r = subprocess.run(
         ["bash", str(SCRIPT)],
         env={**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""},
         capture_output=True, text=True,
-    )
+    check=False)
     assert r.returncode == 0, r.stderr
     backups = list(home.glob("config.yaml.bak.*"))
     assert len(backups) == 1
@@ -393,7 +407,7 @@ def test_script_uses_canonical_hermes_cli_version_import(tmp_path):
     home = tmp_path / "janitor"
     home.mkdir()
     (home / "config.yaml").write_text(
-        "_config_version: 99\nmemory:\n  provider: honcho\n"
+        "_config_version: 99\nmemory:\n  provider: builtin\n"
     )
 
     r = subprocess.run(
@@ -405,7 +419,7 @@ def test_script_uses_canonical_hermes_cli_version_import(tmp_path):
         },
         capture_output=True,
         text=True,
-    )
+    check=False)
 
     # Canonical values, derived exactly the way the script must derive them.
     expected_raw = hermes_cli.__version__
@@ -445,13 +459,13 @@ def test_post_check_failure_message_is_truthful_about_config_state(tmp_path):
         "display:\n"
         "  personality: kawaii\n"
         "memory:\n"
-        "  provider: honcho\n"
+        "  provider: builtin\n"
     )
     r = subprocess.run(
         ["bash", str(SCRIPT)],
         env={**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""},
         capture_output=True, text=True,
-    )
+    check=False)
     assert r.returncode == 0
     combined = r.stdout + r.stderr
     assert "byte-identical" not in combined, (
@@ -479,7 +493,7 @@ def test_real_pre_floor_config_is_allowed_to_remain_behind(tmp_path):
     config.write_text(
         f"_config_version: {pre_floor_version}\n"
         "memory:\n"
-        "  provider: honcho\n"
+        "  provider: builtin\n"
     )
     before = config.read_bytes()
 
@@ -489,7 +503,7 @@ def test_real_pre_floor_config_is_allowed_to_remain_behind(tmp_path):
         env={**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""},
         capture_output=True,
         text=True,
-    )
+    check=False)
 
     # Then the supported refusal exits zero while remaining visibly behind.
     assert result.returncode == 0, (result.stdout, result.stderr)
@@ -539,7 +553,7 @@ def test_script_imports_repository_modules_from_hostile_outside_cwd(tmp_path):
     home = tmp_path / "janitor"
     home.mkdir()
     (home / "config.yaml").write_text(
-        "_config_version: 99\nmemory:\n  provider: honcho\n"
+        "_config_version: 99\nmemory:\n  provider: builtin\n"
     )
 
     # When the script is launched from the hostile directory.
@@ -554,7 +568,7 @@ def test_script_imports_repository_modules_from_hostile_outside_cwd(tmp_path):
         },
         capture_output=True,
         text=True,
-    )
+    check=False)
 
     # Then only repository canonical values are observable.
     assert result.returncode == 0, (result.stdout, result.stderr)

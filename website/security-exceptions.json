@@ -1,0 +1,15 @@
+{
+  "reviewed": "2026-10-15",
+  "exceptions": [
+    {
+      "advisory": "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
+      "package": "braces",
+      "version": "3.0.3",
+      "expires": "2026-10-29",
+      "scope": "Docusaurus build and local development dependency graph only",
+      "reason": "No patched release exists. Builds consume repository-controlled glob patterns and run without deployment credentials in PR validation. The published site consists of static files; never expose the development server publicly.",
+      "resolution": "Update the lock as soon as a compatible patched release is published; rerun npm ci, audit and the bilingual build. Re-review is required after expiry.",
+      "severity": "high"
+    }
+  ]
+}

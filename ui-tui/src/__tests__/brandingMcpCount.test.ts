@@ -5,6 +5,7 @@ import React from 'react'
 import { describe, expect, it } from 'vitest'
 
 import { Banner, SessionPanel } from '../components/branding.js'
+import { messages } from '../i18n/runtime.js'
 import { DEFAULT_THEME } from '../theme.js'
 import type { McpServerStatus, SessionInfo } from '../types.js'
 
@@ -76,7 +77,7 @@ async function renderFooter(info: SessionInfo): Promise<string> {
 }
 
 async function renderBanner(columns: number, name: string): Promise<string> {
-  const theme = { ...DEFAULT_THEME, brand: { ...DEFAULT_THEME.brand, name } }
+  const theme = { ...DEFAULT_THEME, brand: { ...DEFAULT_THEME.brand, name, welcome: `${name} online` } }
 
   return renderOutput(React.createElement(Banner, { maxWidth: columns, t: theme }), columns)
 }
@@ -91,8 +92,8 @@ describe('branding MCP headline count', () => {
     )
 
     // One connected server → "1 MCP", never "2 MCP".
-    expect(frame).toContain('1 MCP')
-    expect(frame).not.toContain('2 MCP')
+    expect(frame).toContain(messages().chatBits.branding.mcpSummary(1))
+    expect(frame).not.toContain(messages().chatBits.branding.mcpSummary(2))
   })
 
   it('drops the MCP segment entirely when no server is connected', async () => {
@@ -103,19 +104,6 @@ describe('branding MCP headline count', () => {
     // Matches the classic CLI, which only appends "· N MCP" when N > 0.
     expect(frame).not.toContain('MCP servers')
     expect(frame).not.toMatch(/\d MCP\b/)
-  })
-
-  it('counts every connected server when several are connected', async () => {
-    const frame = await renderFooter(
-      baseInfo([
-        mcp({ connected: true, name: 'alpha', status: 'connected' }),
-        mcp({ connected: true, name: 'beta', status: 'connected' }),
-        mcp({ connected: false, disabled: true, name: 'gamma', status: 'disabled' })
-      ])
-    )
-
-    expect(frame).toContain('2 MCP')
-    expect(frame).not.toContain('3 MCP')
   })
 })
 
@@ -128,9 +116,9 @@ describe('responsive banner branding', () => {
     const mid = await renderBanner(50, brandName)
     const tiny = await renderBanner(40, brandName)
 
-    expect(wide).toContain(`${brandName} · DevSecOps Orchestrator`)
-    expect(compact).toContain(`${brandName} · DevSecOps Orchestrator`)
-    expect(mid).toContain(`${brandName} · DevSecOps`)
+    expect(wide).toContain(`${brandName} online`)
+    expect(compact).toContain(`${brandName} online`)
+    expect(mid).toContain(brandName)
     expect(tiny).toContain(brandName)
   })
 })

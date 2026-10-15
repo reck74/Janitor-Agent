@@ -1,0 +1,21 @@
+# Canonical fork gate. Keep every test_*janitor*.py here; upstream runs on sync/dispatch.
+tests/test_janitor_cli.py
+tests/test_janitor_update_bootstrap.py
+tests/test_janitor_update_core.py
+tests/test_janitor_bootstrap_node_version.py
+tests/test_janitor_syntax_guard.py
+tests/gateway/test_telegram_janitor_branding.py
+tests/skills/test_janitor_config_audit_skill.py
+tests/skills/test_janitor_firecrawl_skill.py
+tests/skills/test_janitor_lightrag_skill.py
+tests/test_janitor_monkeypatch_signatures.py
+tests/test_janitor_no_duplicate_methods.py
+tests/test_janitor_migrate_v0201.py
+tests/hermes_cli/test_mcp_router_discover.py
+tests/hermes_cli/test_mcp_router_logs.py
+tests/test_janitor_ci_contracts.py
+tests/test_janitor_install.py
+tests/test_janitor_migration.py
+tests/test_janitor_installer_e2e.py
+tests/skills/test_janitor_optional_skills.py
+tests/test_janitor_desktop.py

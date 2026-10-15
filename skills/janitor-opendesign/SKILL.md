@@ -21,6 +21,8 @@ with Open Design is the install target; Janitor is wired in via four
 idempotent patches so future `git pull upstream` updates don't clobber the
 integration.
 
+> ⚠️ **SAFETY INVARIANT:** `start.sh` and `integrate-janitor.sh` run `check-node-version.sh` first and abort with exit 2 if `engines.node` does not match the resolved Node. This prevents `pnpm install` from segfaulting on the wrong Node major (incident 2026-08-19: Node 26 + open-design v0.18.2 → SIGSEGV in better-sqlite3 compile).
+
 ## What This Skill Installs
 
 - **Open Design source tree** at `~/open-design` (cloned from `nexu-io/open-design`, latest `open-design-v*` tag)
@@ -116,6 +118,8 @@ janitor-opendesign/
     ├── 02-patch-registry.sh          # register in BASE_AGENT_DEFS
     ├── 03-copy-icon.sh               # install PNG to public/agent-icons/
     ├── 04-patch-agent-icon.sh        # patch AgentIcon.tsx (ICON_EXT, not MONO_ICONS)
+    ├── check-node-version.sh         # gate compartido: aborta si Node major ≠ engines.node
+    ├── safe-pnpm-install.sh          # wrapper defensivo de pnpm install (CPU/mem caps, backup, cleanup)
     ├── integrate-janitor.sh          # orchestrator: register | start | stop | status
     ├── start.sh                      # start with persistent ports
     ├── stop.sh                       # stop the stack
@@ -142,6 +146,7 @@ re-run.
 - **Agent probe latency**: `detectAgents()` runs all probes in parallel; Janitor's probe takes ~5-15s because it spawns `janitor acp --accept-hooks`. The browser may show an empty picker during the first 15s of a fresh page load.
 - **WSL2 only on WSL 11+**: WSLg (Windows 11) is required for the desktop sidecar. WSL2 without WSLg runs daemon+web headless.
 - **No Docker support**: This skill provisions the local pnpm workspace. For containerized deploy, use `opendesign-docker-deploy` (separate skill).
+- **Node version gate**: `start.sh`, `integrate-janitor.sh` and `safe-pnpm-install.sh` run `scripts/check-node-version.sh` first and abort with exit 2 if the Node resolved via mise doesn't match `engines.node` in `~/open-design/package.json`. Incident 2026-08-19: a session resolved pnpm from Node 26's corepack while open-design requires Node ~24 → SIGSEGV in `uv_kill` during better-sqlite3 compile. NOTE: upstream ships a tracked `mise.toml` (node = "24") — do NOT create a `.mise.toml` or run `mise use` in the source tree (both dirty the git checkout). Deterministic install: `bash scripts/safe-pnpm-install.sh install --frozen-lockfile`.
 
 ## Security Notes
 

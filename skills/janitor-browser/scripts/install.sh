@@ -1,37 +1,15 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-
-log_info()  { echo -e "${CYAN}→${NC} $1"; }
-log_ok()    { echo -e "${GREEN}✓${NC} $1"; }
-log_warn()  { echo -e "${YELLOW}⚠${NC} $1"; }
-log_fail()  { echo -e "${RED}✗${NC} $1"; }
-
-log_info "Installing Playwright browser automation..."
-
-set +e
-if command -v uv >/dev/null 2>&1; then
-    uv pip install playwright 2>/dev/null
-    uv run playwright install --with-deps chromium < /dev/tty
-    RESULT=$?
-elif command -v pip >/dev/null 2>&1; then
-    pip install playwright 2>/dev/null
-    python3 -m playwright install --with-deps chromium < /dev/tty
-    RESULT=$?
-else
-    log_fail "No uv or pip found. Cannot install Playwright."
-    exit 1
+# Enter this installation's PM Python; load profile secrets without shell evaluation.
+if [[ "${JANITOR_SERVICE_ENV:-}" != "1" ]]; then
+    skill_source="$(readlink -f "${BASH_SOURCE[0]}")"
+    skill_root="$(cd "$(dirname "$skill_source")/../../.." && pwd)"
+    launcher="$skill_root/scripts/janitor"
+    [[ -x "$launcher" ]] || launcher="$(command -v janitor || true)"
+    [[ -n "$launcher" && -x "$launcher" ]] || { echo "Install/repair Janitor before deploying this skill." >&2; exit 1; }
+    export JANITOR_HOME="${HERMES_HOME:-${JANITOR_HOME:-$HOME/.janitor}}"
+    exec "$launcher" --run-module janitor_ext.optional_deploy "$skill_source" "$@"
 fi
-set -e
-
-if [ $RESULT -ne 0 ]; then
-    log_warn "Playwright install had issues — continuing anyway."
-    log_info "You can retry later with: uv run playwright install --with-deps chromium"
-else
-    log_ok "Playwright + Chromium installed"
-fi
+umask 077
+exec "$JANITOR_SERVICE_PYTHON" -m pm.launch install agent-browser chromium cua-driver

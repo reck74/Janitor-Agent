@@ -23,6 +23,14 @@ OD_INSTALL_DIR="${OD_INSTALL_DIR:-${HOME}/open-design}"
 DAEMON_PORT="${OD_DAEMON_PORT:-45351}"
 WEB_PORT="${OD_WEB_PORT:-45343}"
 
+# ------------------------------------------------------------
+# Node version gate (engines.node = "~24" en package.json).
+# Delega a check-node-version.sh — exit 2 si hay mismatch.
+# CRÍTICO: si esto falla, pnpm install segfaultea better-sqlite3
+# y corrompe el bridge PRIME NVIDIA↔AMD → pantalla congelada.
+# ------------------------------------------------------------
+bash "${SCRIPT_DIR}/check-node-version.sh" || exit $?
+
 if [[ ! -x "${OD_INSTALL_DIR}/node_modules/.bin/tools-dev" ]]; then
   echo "ERROR: tools-dev no encontrado en ${OD_INSTALL_DIR}/node_modules/.bin/" >&2
   echo "¿Ejecutaste pnpm install en el source tree?" >&2

@@ -1,14 +1,14 @@
 ---
-title: "Kanban Worker — Pitfalls, examples, and edge cases for Hermes Kanban workers"
+title: "Kanban Worker — Pitfalls, examples, and edge cases for Kanban workers"
 sidebar_label: "Kanban Worker"
-description: "Pitfalls, examples, and edge cases for Hermes Kanban workers"
+description: "Pitfalls, examples, and edge cases for Kanban workers"
 ---
 
 {/* This page is auto-generated from the skill's SKILL.md by website/scripts/generate-skill-docs.py. Edit the source SKILL.md, not this page. */}
 
 # Kanban Worker
 
-Pitfalls, examples, and edge cases for Hermes Kanban workers. The lifecycle itself is auto-injected into every worker's system prompt as KANBAN_GUIDANCE (from agent/prompt_builder.py); this skill is what you load when you want deeper detail on specific scenarios.
+Pitfalls, examples, and edge cases for Kanban workers.
 
 ## Skill metadata
 
@@ -17,15 +17,20 @@ Pitfalls, examples, and edge cases for Hermes Kanban workers. The lifecycle itse
 | Source | Bundled (installed by default) |
 | Path | `skills/devops/kanban-worker` |
 | Version | `2.0.0` |
+| Author | Janitor Agent |
+| License | MIT |
 | Platforms | linux, macos, windows |
 | Tags | `kanban`, `multi-agent`, `collaboration`, `workflow`, `pitfalls` |
-| Related skills | [`kanban-orchestrator`](/docs/user-guide/skills/bundled/devops/devops-kanban-orchestrator) |
+| Related skills | [`kanban-orchestrator`](../../bundled/devops/devops-kanban-orchestrator.md) |
 
 ## Reference: full SKILL.md
 
 :::info
 The following is the complete skill definition that Hermes loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
 :::
+
+> Compatibility status: experimental manual playbook retained for existing users. Current Hermes Kanban uses its built-in lifecycle guidance; the dispatcher does not auto-load this skill. Use it only when explicitly selected. `tests/hermes_cli/test_kanban_core_functionality.py` verifies the no-auto-load contract. The active board/worker implementation remains upstream-owned.
+
 
 # Kanban Worker — Pitfalls and Examples
 

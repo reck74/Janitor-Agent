@@ -1,102 +1,26 @@
 #!/usr/bin/env python3
-"""
-Janitor CLI - A cínico, ciberseguridad-focused wrapper around HermesCLI.
-
-Per JANITOR FORK DIRECTIVES:
-- ZERO-RENAMING: Never rename 'hermes' in the core.
-- CLI WRAPPER: Janitor extensions inherit from HermesCLI in separate files.
-- TUI ISOLATION: Visual changes go through skin_engine.py, not hardcoded.
-
-This module provides the `janitor` command entry point and the JanitorCLI class
-that forces the Janitor skin and identity on top of the Hermes core.
-
-Aislamiento: Janitor uses ~/.janitor as HERMES_HOME to stay fully isolated
-from any pre-existing Hermes installation at ~/.hermes/.
-"""
-
+"""Janitor entrypoint and runtime adapters, isolated from the Hermes core."""
 from __future__ import annotations
 
+import argparse
+import json
 import os
+from pathlib import Path
 import shutil
 import sys
 
-# AISLAMIENTO CRÍTICO: Must be set BEFORE any hermes_ modules are imported.
-# hermes_constants.get_hermes_home() reads this env var at import time.
-os.environ["HERMES_HOME"] = os.path.expanduser("~/.janitor")
+from janitor_ext.startup import prepare_environment, profile_selection
 
-
-def _load_janitor_env() -> None:
-    env_path = os.path.expanduser("~/.janitor/.env")
-    try:
-        with open(env_path, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if "=" not in line:
-                    continue
-                key, _, value = line.partition("=")
-                key = key.strip()
-                value = value.strip()
-                if key and key != "HERMES_HOME":
-                    os.environ.setdefault(key, value)
-    except FileNotFoundError:
-        pass
-    except Exception:
-        pass
-
-
-_load_janitor_env()
-
-# COMMAND HIJACKING: Intercept `janitor update` before Hermes CLI parses arguments.
-# We delegate to a minimal bootstrap helper so this path stays importable
-# even when the venv is partially broken (e.g. new Hermes imports after a pull).
-if len(sys.argv) > 1 and sys.argv[1] == "update":
-    try:
-        from janitor_update_bootstrap import run_update
-        sys.exit(run_update())
-    except Exception as e:
-        print(f"⚠ Bootstrap update failed: {e}", file=sys.stderr)
-        sys.exit(1)
-
-from hermes_cli.config import DEFAULT_CONFIG
-
-DEFAULT_CONFIG.setdefault("memory", {}).setdefault("provider", "honcho")
-DEFAULT_CONFIG.setdefault("display", {}).setdefault("skin", "sentry-janitor")
-
-
-def _load_janitor_soul() -> str:
-    soul_path = os.path.expanduser("~/.janitor/SOUL.md")
-    try:
-        with open(soul_path, "r", encoding="utf-8") as f:
-            return f.read()
-    except FileNotFoundError:
-        pass
-    except Exception:
-        pass
-    return ""
-
-
-from agent import prompt_builder
-
-_original_load_soul_md = prompt_builder.load_soul_md
-
-
-def _janitor_load_soul_md(context_length=None):
-    # Signature MUST mirror upstream prompt_builder.load_soul_md(context_length).
-    # Upstream's system_prompt.py:186 calls load_soul_md(_ctx_len); a wrapper
-    # with no args raises TypeError at runtime. See AGENTS.md post-sync audit.
-    soul = _load_janitor_soul()
-    if soul:
-        return soul
-    return _original_load_soul_md(context_length)
-
-
-prompt_builder.load_soul_md = _janitor_load_soul_md
-
-import argparse
-
+_original_load_soul_md = None
 _original_argparser_init = argparse.ArgumentParser.__init__
+_RUNTIME_INSTALLED = False
+
+
+def _janitor_load_soul_md(context_length=None, home_override=None):
+    """Preserve upstream profile binding, scanning and context-length handling."""
+    if _original_load_soul_md is None:
+        _install_janitor_runtime()
+    return _original_load_soul_md(context_length, home_override=home_override)
 
 
 def _janitor_argparser_init(self, *args, **kwargs):
@@ -105,204 +29,134 @@ def _janitor_argparser_init(self, *args, **kwargs):
     _original_argparser_init(self, *args, **kwargs)
 
 
-argparse.ArgumentParser.__init__ = _janitor_argparser_init
-
-sys.path.insert(0, os.path.dirname(__file__))
-import cli
-
-
 def _apply_janitor_identity():
-    os.environ.setdefault("HERMES_SKIN", "janitor")
+    os.environ.setdefault("HERMES_SKIN", "sentry-janitor")
 
 
 def _ensure_janitor_skin_file():
-    """Ensure the sentry-janitor skin file exists in ~/.janitor/skins/.
-
-    If the user skin file is missing, copy from the bundled fallback so
-    load_skin('sentry-janitor') always works.
-    """
-    try:
-        from hermes_cli.skin_engine import _skins_dir
-        from pathlib import Path
-        import shutil
-
-        skins_dir = Path(_skins_dir())
-        if not skins_dir.exists():
-            skins_dir.mkdir(parents=True, exist_ok=True)
-
-        skin_file = skins_dir / "sentry-janitor.yaml"
-        if not skin_file.exists():
-            bundled = Path(__file__).parent / "assets" / "janitor" / "sentry-janitor.yaml"
-            if bundled.exists():
-                shutil.copy2(bundled, skin_file)
-    except Exception:
-        pass
-
-
-class JanitorCLI(cli.HermesCLI):
-    """
-    Janitor CLI — inherits from HermesCLI to inject cínico/ciberseguridad identity.
-
-    Per CLI WRAPPER directive, we inherit instead of modifying the core HermesCLI.
-    This class forces the 'janitor' skin on initialization and ensures all branding
-    reflects the Janitor fork identity rather than the base Hermes one.
-    """
-
-    def __init__(self, *args, **kwargs):
-        _apply_janitor_identity()
-        _ensure_janitor_skin_file()
-
-        try:
-            from hermes_cli.skin_engine import set_active_skin
-
-            set_active_skin("sentry-janitor")
-        except Exception:
-            pass
-
-        super().__init__(*args, **kwargs)
-
-    @property
-    def force_skin(self) -> bool:
-        return True
-
-    def get_skin_name(self) -> str:
-        return "sentry-janitor"
+    from hermes_constants import get_hermes_home
+    skin = get_hermes_home() / "skins" / "sentry-janitor.yaml"
+    bundled = Path(__file__).resolve().parent / "assets" / "janitor" / "sentry-janitor.yaml"
+    if not skin.exists() and bundled.is_file():
+        skin.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(bundled, skin)
 
 
 def _owasp_honcho_fail_safe():
-    """
-    OWASP fail-safe: verify Honcho memory integration has required credentials.
-
-    Exit with security error (code 1) if:
-    - memory.provider is 'honcho' AND
-    - neither HONCHO_API_KEY nor HONCHO_BASE_URL is set
-
-    This prevents the Janitor from running with an incomplete Honcho integration
-    that could leak session data to an unconfigured external service.
-    """
-
-    honcho_key = os.environ.get("HONCHO_API_KEY", "").strip()
-    honcho_base = os.environ.get("HONCHO_BASE_URL", "").strip()
-
-    if honcho_key or honcho_base:
+    """Validate configured Honcho at conversation startup; repair commands stay reachable."""
+    from hermes_cli.config import load_config
+    from hermes_constants import get_hermes_home
+    cfg = load_config()
+    if (cfg.get("memory") or {}).get("provider") != "honcho":
         return
-
-    from cli import load_cli_config
-
-    try:
-        cfg = load_cli_config()
-    except Exception:
+    from plugins.memory import find_provider_dir
+    if find_provider_dir("honcho") is None:
+        raise RuntimeError("Honcho memory plugin is missing. Run 'janitor plugins install honcho' or reinstall Janitor.")
+    if os.environ.get("HONCHO_API_KEY", "").strip() or os.environ.get("HONCHO_BASE_URL", "").strip():
         return
-
-    memory_provider = cfg.get("memory", {}).get("provider", "")
-    if memory_provider != "honcho":
-        return
-
-    from hermes_constants import display_hermes_home
-
-    home_display = display_hermes_home()
-
-    print(
-        "FATAL: Honcho memory provider configured but HONCHO_API_KEY / HONCHO_BASE_URL not set.",
-        file=sys.stderr,
-    )
-    print(
-        "Janitor will not start with partial Honcho credentials (OWASP fail-safe).",
-        file=sys.stderr,
-    )
-    print(
-        f"Set HONCHO_API_KEY in {home_display}/.env or run 'janitor honcho setup'.",
-        file=sys.stderr,
-    )
-    sys.exit(1)
-
-
-def _owasp_honcho_fail_safe_for_test(hermes_home: str):
-    """
-    OWASP fail-safe variant that accepts an explicit hermes_home path.
-    Used only by tests to validate the check works with any HERMES_HOME.
-    """
-    honcho_key = os.environ.get("HONCHO_API_KEY", "").strip()
-    honcho_base = os.environ.get("HONCHO_BASE_URL", "").strip()
-
-    if honcho_key or honcho_base:
-        return True, ""
-
-    from pathlib import Path
-
-    config_path = Path(hermes_home) / "config.yaml"
-    if not config_path.exists():
-        return True, ""
-
-    import yaml
-
-    with open(config_path, encoding="utf-8") as f:
-        cfg = yaml.safe_load(f) or {}
-
-    memory_provider = cfg.get("memory", {}).get("provider", "")
-    if memory_provider != "honcho":
-        return True, ""
-
-    from hermes_constants import display_hermes_home
-
-    os.environ["HERMES_HOME"] = hermes_home
-    home_display = display_hermes_home()
-
-    msg = (
-        f"FATAL: Honcho memory provider configured but HONCHO_API_KEY / HONCHO_BASE_URL not set.\n"
-        f"Janitor will not start with partial Honcho credentials (OWASP fail-safe).\n"
-        f"Set HONCHO_API_KEY in {home_display}/.env or run 'janitor honcho setup'."
-    )
-    return False, msg
+    # Honcho supports a profile-local config in addition to environment credentials.
+    for source in (get_hermes_home() / "honcho.json", Path.home() / ".honcho" / "config.json"):
+        try:
+            with source.open(encoding="utf-8") as stream:
+                data = json.load(stream)
+            host = (data.get("hosts") or {}).get("hermes") or {}
+            if any(str(section.get(key) or "").strip() for section in (data, host)
+                   for key in ("apiKey", "baseUrl", "baseURL")):
+                return
+        except (OSError, ValueError, AttributeError):
+            continue
+    raise RuntimeError("Honcho memory is configured without a key or local URL. Re-run scripts/janitor-install.sh for this profile.")
 
 
 def _janitor_cmd_update(args):
-    """Janitor update — delegates to the shared core in ``janitor_update_core``.
+    from janitor_update_core import run_janitor_update
+    return run_janitor_update(args)
 
-    Replaces the built-in ``hermes update`` so it only pulls from the
-    Janitor fork and never syncs with the upstream NousResearch/hermes-agent
-    repository.
-    """
-    import janitor_update_core
-    return janitor_update_core.run_janitor_update(args)
+
+def _install_janitor_runtime():
+    global _RUNTIME_INSTALLED, _original_load_soul_md
+    if _RUNTIME_INSTALLED:
+        return
+    # Hermes bootstrap selects/activates the PM generation and applies --profile
+    # before any Janitor adapter reads profile-owned configuration.
+    import hermes_cli.main as main_module
+    import cli
+    from agent import prompt_builder
+    from hermes_cli.skin_engine import set_active_skin
+    from hermes_cli import banner
+    from janitor_version import format_version
+    from janitor_update_core import install_update_adapter
+
+    _original_load_soul_md = prompt_builder.load_soul_md
+    prompt_builder.load_soul_md = _janitor_load_soul_md
+    argparse.ArgumentParser.__init__ = _janitor_argparser_init
+    install_update_adapter(main_module)
+    main_module.cmd_update = _janitor_cmd_update
+    from janitor_ext.desktop import install_cli_adapter
+    install_cli_adapter(main_module)
+    main_module._print_version_info = lambda: print(format_version())
+    main_module.cmd_version = lambda args: print(format_version())
+    banner.format_banner_version_label = format_version
+    # Register the fork section at runtime; upstream config source stays intact.
+    import hermes_cli.config as config_module
+    config_module._KNOWN_ROOT_KEYS = config_module._KNOWN_ROOT_KEYS | {"janitor"}
+    _ensure_janitor_skin_file()
+    set_active_skin("sentry-janitor")
+    from janitor_ext.tips_es import JANITOR_TIPS, get_janitor_tip
+    from hermes_cli import tips
+    tips.TIPS, tips.get_random_tip = JANITOR_TIPS, get_janitor_tip
+
+    original_cli = cli.HermesCLI
+
+    class JanitorCLI(original_cli):
+        """Fork CLI extends the current upstream class, without editing cli.py."""
+        def __init__(self, *args, **kwargs):
+            _owasp_honcho_fail_safe()
+            super().__init__(*args, **kwargs)
+
+        @property
+        def force_skin(self):
+            return True
+
+        def get_skin_name(self):
+            return "sentry-janitor"
+
+    globals()["JanitorCLI"] = JanitorCLI
+    cli.HermesCLI = JanitorCLI
+    _RUNTIME_INSTALLED = True
+
+
+def __getattr__(name):
+    if name == "JanitorCLI":
+        prepare_environment()
+        _install_janitor_runtime()
+        return globals()[name]
+    raise AttributeError(name)
 
 
 def main():
-    """
-    Entry point for the `janitor` command.
-
-    Forces the Janitor skin and then delegates to HermesCLI.main().
-    We do NOT run HermesCLI here directly — we configure the environment
-    first so that when HermesCLI initializes, it picks up the Janitor identity.
-    """
-    _apply_janitor_identity()
-    _ensure_janitor_skin_file()
-
+    argv = sys.argv[1:]
     try:
-        from hermes_cli.skin_engine import set_active_skin
-
-        set_active_skin("sentry-janitor")
-    except Exception:
-        pass
-
-    _owasp_honcho_fail_safe()
-
-    # Monkey-patch tips to the Janitor Spanish corpus without touching core Hermes.
-    import hermes_cli.tips as _hermes_tips_mod
-    from janitor_ext.tips_es import JANITOR_TIPS, get_janitor_tip
-
-    _hermes_tips_mod.TIPS = JANITOR_TIPS
-    _hermes_tips_mod.get_random_tip = get_janitor_tip
-
-    # Monkey-patch ``hermes update`` so it pulls from the Janitor fork only.
-    import hermes_cli.main as _hermes_main_mod
-
-    _hermes_main_mod.cmd_update = _janitor_cmd_update
-
-    from hermes_cli.main import main as hermes_main
-
-    sys.exit(hermes_main())
+        prepare_environment(argv)
+        _, command = profile_selection(argv)
+        if command and command[0] == "update":
+            from janitor_update_bootstrap import run_update
+            return run_update(command[1:])
+        if command in (["--version"], ["version"]):
+            from janitor_version import format_version
+            print(format_version())
+            print(f"Install directory: {Path(__file__).resolve().parent}")
+            return 0
+        _install_janitor_runtime()
+        if command[:2] in (["gateway", "run"], ["gateway", "start"]):
+            _owasp_honcho_fail_safe()
+        from hermes_cli.main import main as upstream_main
+        result = upstream_main()
+        return result if isinstance(result, int) else 0
+    except (ValueError, RuntimeError) as error:
+        print(f"Janitor: {error}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
