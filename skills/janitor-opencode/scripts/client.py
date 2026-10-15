@@ -286,6 +286,6 @@ async def detect_opencode_port(host: str = "localhost", start_port: int = 3000, 
                 if response.status_code == 200:
                     logger.info(f"opencode serve found on port {port}")
                     return port
-        except Exception:
+        except httpx.HTTPError:
             continue
     return None

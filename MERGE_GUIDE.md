@@ -38,7 +38,7 @@ El auditor de duplicados (directiva 15) incluye facades, cron, Janitor, ACP y m�
 ## Gates antes de publicar
 
 - Python: manifiesto Janitor verde, firmas compatibles, sin duplicados ni marcadores de merge. Ejecutar el gate upstream de sync y registrar cualquier fallo pendiente con su causa.
-- TUI: `npm run build --workspace ui-tui`, `npm run typecheck --workspace ui-tui`, `npm run test --workspace ui-tui -- --maxWorkers=2`.
+- TUI: `npm run build:ink` primero; después `npm run build --workspace ui-tui`, `npm run typecheck --workspace ui-tui`, `npm run test --workspace ui-tui -- --maxWorkers=2`.
 - Web: `npm run check --workspace web` y `npm run build --workspace web`; verificar assets de `hermes_cli/web_dist`.
 - Desktop Linux: tests del overlay, typecheck, bundle, AppImage y smoke real en perfil aislado. Un bundle correcto no certifica instalación, autenticación ni actualización real.
 - Instalador: bootstrap completo con Docker disponible, HOME aislado y proveedor local de pruebas (`scripts/janitor-ci-smoke.sh`). `--profile-only` prueba generación de configuración; no sustituye ese smoke.
@@ -52,6 +52,10 @@ El salto Electron 40→41 requiere los gates desktop anteriores antes de publica
 
 Los snapshots anteriores de esta guía y los planes retirados están en `legacy/docs/pre-1.0/`.
 
+
+## Instrucciones de agentes
+
+El hub `AGENTS.md` mantiene las quince directivas del fork y la tabla de áreas dentro del límite upstream de 12.000 caracteres; cada cadena de instrucciones debe quedar bajo 30.000. El contexto histórico vive en `JANITOR_FORK_DIRECTIVES.md`. Ejecutar `python scripts/ci/check_agents_md_size.py` tras editar instrucciones; no aumentar límites ni eliminar contratos para superar el gate.
 
 ## Inventario y dependencias del website
 

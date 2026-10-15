@@ -8,7 +8,7 @@
 # ============================================================
 set -euo pipefail
 
-OD_INSTALL_DIR="${OD_INSTALL_DIR:-${HOME}/open-design}"
+OD_INSTALL_DIR="${OD_INSTALL_DIR:-${OD_SOURCE_DIR:-${HOME}/open-design}}"
 
 if [[ ! -x "${OD_INSTALL_DIR}/node_modules/.bin/tools-dev" ]]; then
   echo "ERROR: tools-dev no encontrado." >&2

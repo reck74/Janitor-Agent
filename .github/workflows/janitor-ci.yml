@@ -65,12 +65,16 @@ jobs:
       - uses: ./.github/actions/retry
         with:
           command: npm ci
+      - name: Build the Ink module required by TUI tests
+        run: npm run build:ink --workspace ui-tui
       - name: Build the TUI bundle (directive 7)
         run: npm run build --workspace ui-tui
       - name: Typecheck the TUI
         run: npm run typecheck --workspace ui-tui
       - name: Test the TUI
         run: npm run test --workspace ui-tui -- --maxWorkers=2
+      - name: Lint the TUI
+        run: npm run lint --workspace ui-tui
 
       - name: Check the checkout is clean
         uses: ./.github/actions/check-clean-worktree

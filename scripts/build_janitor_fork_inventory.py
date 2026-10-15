@@ -35,6 +35,9 @@ MOVED = {
     "optional-skills/devops/janitor-skill-integration/SKILL.md": "skills/janitor-skill-integration/SKILL.md",
 }
 CORE = {
+    "hermes_cli/models.py": ("hermes_cli/model_switch_providers.py", "Fix deterministic cold-cache duplicate fetch and lost-row races while retaining facade seams."),
+    "hermes_cli/models_custom_cache.py": ("hermes_cli/models.py", "Profile-and-credential scoped cold-cache coordination; independent providers stay concurrent."),
+    "plugins/platforms/telegram/telegram_entities.py": ("plugins/platforms/telegram/adapter.py", "Unchanged HTML entity helper extracted to keep the adapter within its inherited size cap."),
     "agent/secret_sources/bitwarden.py": ("agent/secret_sources/registry.py", "Remove duplicated registration left by sync; retain upstream provider behavior."),
     "hermes_cli/distribution_identity.py": ("hermes_cli/version_info.py", "Generic distribution identity keeps engine/plugin compatibility separate from product version."),
     "hermes_cli/version_info.py": ("hermes_cli/main.py", "Display product identity while retaining the Hermes compatibility version."),
@@ -47,6 +50,7 @@ CORE = {
     "plugins/platforms/telegram/adapter.py": ("plugins/platforms/telegram/plugin.yaml", "Current platform adapter retains admissions/topic routing and Janitor avatar/welcome."),
 }
 EXT = {
+    "telegram_branding.py": ("plugins/platforms/telegram/adapter.py", "Isolated welcome/avatar mixin preserves authorization, pairing, topic and redaction contracts."),
     "ci_contracts.py": ("scripts/run_janitor_tests.py", "Canonical test manifest and reusable workflow contracts."),
     "ci_smoke.py": ("scripts/janitor-ci-smoke.sh", "Disposable installer acceptance fixtures."),
     "desktop.py": ("janitor_cli.py", "PM-aware Janitor Desktop command."),
@@ -73,14 +77,14 @@ EXT = {
 
 
 def git(*args: str) -> str:
-    return subprocess.check_output(["git", *args], cwd=ROOT, text=True)
+    return subprocess.check_output(["git", *args], cwd=ROOT, text=True, encoding="utf-8", errors="replace", timeout=120)
 
 
 def decision(status: str, consumers: list[str], reason: str, replacement: str | None = None) -> dict:
     return {"classification": status, "consumers": consumers, "reason": reason, "replacement": replacement}
 
 
-def classify(path: str, historical: set[str], current: set[str], engine_paths: set[str]) -> dict:
+def _classify_historical(path: str, current: set[str], engine_paths: set[str]) -> dict | None:
     exists = (ROOT / path).is_file()
     replacement = MOVED.get(path)
     if path.startswith("docs/"):
@@ -108,6 +112,10 @@ def classify(path: str, historical: set[str], current: set[str], engine_paths: s
         if path in {"agent/google_oauth.py", "agent/google_code_assist.py"}:
             return decision("replaced_by_upstream", ["plugins/model-providers/"], "Stable explicitly removed this implementation; no imports remain. Credential-file protection is retained.", "plugins/model-providers/")
         return decision("replaced_by_upstream", [], "Historical fork-only delta was removed by stable; no active file is reintroduced.", f"{ENGINE} (removal)")
+    return None
+
+
+def _classify_extension(path: str) -> dict | None:
     if path.startswith("legacy/"):
         return decision("legacy", ["legacy/README.md"], "Historical source/reference only; excluded from runtime, skill discovery and executable tests.", None)
     if path == ".claude/agents/janitor-dev-boss-autonomous.md":
@@ -132,6 +140,10 @@ def classify(path: str, historical: set[str], current: set[str], engine_paths: s
         return decision("active", [consumer], reason)
     if path.startswith("janitor_") and path.endswith(".py"):
         return decision("active", ["scripts/janitor", "pyproject.toml"], "Fork entrypoint/version/update adapter delegates shared core and preserves engine compatibility.")
+    return None
+
+
+def _classify_support(path: str) -> dict:
     if path.startswith("assets/janitor/"):
         consumers = ["plugins/platforms/telegram/adapter.py", "apps/desktop/janitor/build.mjs"] if Path(path).suffix in {".jpg", ".png"} else ["janitor_ext/install.py"]
         return decision("active", consumers, "Product persona, configuration overlay, skin or referenced identity asset; installed without replacing user customizations.")
@@ -176,6 +188,11 @@ def classify(path: str, historical: set[str], current: set[str], engine_paths: s
     raise ValueError(f"Unclassified current fork path: {path}")
 
 
+def classify(path: str, historical: set[str], current: set[str], engine_paths: set[str]) -> dict:
+    return (_classify_historical(path, current, engine_paths)
+            or _classify_extension(path) or _classify_support(path))
+
+
 def inventory() -> dict:
     historical = set(git("diff", "--name-only", "--no-renames", BASE, FORK).splitlines())
     current = set(git("diff", "--name-only", "--no-renames", ENGINE).splitlines())
@@ -214,11 +231,11 @@ def main() -> int:
     rendered = json.dumps(inventory(), ensure_ascii=False, indent=2) + "\n"
     target = ROOT / OUTPUT
     if args.check:
-        if not target.is_file() or target.read_text() != rendered:
+        if not target.is_file() or target.read_text(encoding="utf-8-sig") != rendered:
             print("Fork inventory is stale; regenerate after reviewing changed consumers.")
             return 1
     else:
-        target.write_text(rendered)
+        target.write_text(rendered, encoding="utf-8")
     print(f"Fork inventory: {len(json.loads(rendered)['entries'])} paths")
     return 0
 

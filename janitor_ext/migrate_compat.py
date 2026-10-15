@@ -93,8 +93,8 @@ def main(argv=None) -> int:
             raise RuntimeError(f"Post-check current v{final_version}, latest v{latest}; migration did not reach the supported schema")
         else:
             print(f"Migration complete: v{latest}; state backup: {report['backup']}")
-    except Exception as exc:
-        print(f"Migration failed: {exc}. Live config may be partially modified; {backup} is the pre-migration snapshot.")
+    except Exception as exc:  # health: allow BLE001 -- recovery boundary reports the error type and rollback path without leaking configuration values
+        print(f"Migration failed ({type(exc).__name__}). Live config may be partially modified; {backup} is the pre-migration snapshot.")
         print(rollback)
         return 3
     print(rollback)

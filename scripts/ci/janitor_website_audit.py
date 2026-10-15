@@ -70,9 +70,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("report", type=Path)
     args = parser.parse_args()
-    report = json.loads(args.report.read_text())
-    policy = json.loads((ROOT / "website/security-exceptions.json").read_text())
-    lock = json.loads((ROOT / "website/package-lock.json").read_text())
+    report = json.loads(args.report.read_text(encoding="utf-8-sig"))
+    policy = json.loads((ROOT / "website/security-exceptions.json").read_text(encoding="utf-8-sig"))
+    lock = json.loads((ROOT / "website/package-lock.json").read_text(encoding="utf-8-sig"))
     errors = audit_errors(report, policy, lock, datetime.now(UTC).date())
     for error in errors:
         print(error)

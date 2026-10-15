@@ -7,7 +7,7 @@ import type { RuntimeAgentDef } from '../types.js';
 //
 // Binario: `janitor` (ya en PATH del host tras install de Janitor).
 // Protocolo: ACP JSON-RPC (igual que Hermes).
-// Icono: agent-icons/janitor.svg (monoline, color #1c1b1a).
+// Icono: agent-icons/janitor.png (bundled Janitor identity).
 
 export const janitorAgentDef = {
   id: 'janitor',
@@ -44,6 +44,6 @@ export const janitorAgentDef = {
   streamFormat: 'acp-json-rpc',
   mcpDiscovery: 'mature-acp',
   externalMcpInjection: 'acp-merge',
-  installUrl: 'https://github.com/nickarora01/janitor',
-  docsUrl: 'https://janitor.sh/docs',
+  installUrl: 'https://github.com/reck74/Janitor-Agent',
+  docsUrl: 'https://github.com/reck74/Janitor-Agent/blob/main/README.md',
 } satisfies RuntimeAgentDef;

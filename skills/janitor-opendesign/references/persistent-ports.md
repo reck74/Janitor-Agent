@@ -1,74 +1,26 @@
-# Persistent Ports — Why This Skill Pins Them
+# Persistent ports and MCP
 
-## The Problem
-
-Open Design runs three sidecars (daemon, web, desktop) under the
-`pnpm tools-dev` control plane. Without explicit port flags, `tools-dev`
-picks **random free ports** in the 55k-57k range every time it starts.
-This breaks:
-
-- **MCP clients** that hardcode the daemon URL in their config
-  (Claude Desktop, Cursor, etc.)
-- **Browser bookmarks** to the web UI
-- **Reverse proxy configs** that forward to a known port
-- **Documentation and onboarding scripts** that reference specific ports
-
-## What This Skill Does
-
-`scripts/start.sh` always invokes:
+The selected Open Design source checkout uses tools-dev. Janitor supplies
+`--daemon-port` and `--web-port` so browser bookmarks and direct HTTP health
+checks remain stable. Defaults are 45351 and 45343; these are configurable
+application ports, not a reserved or guaranteed collision-free range.
 
 ```bash
-./node_modules/.bin/tools-dev start \
-  --daemon-port "${OD_DAEMON_PORT:-45351}" \
-  --web-port    "${OD_WEB_PORT:-45343}"
+OD_DAEMON_PORT=56095 OD_WEB_PORT=55983 bash scripts/start.sh web
 ```
 
-The `tools-dev` control plane has native flags for this (see
-`tools/dev/src/index.ts:1082`). When both flags are present, ports are
-deterministic. When absent, `tools-dev` allocates randomly.
+Pass the same variables to `status.sh`. The `web` target starts daemon and
+browser UI without Electron. Without a target, tools-dev starts its default
+GUI stack. `stop.sh` addresses the default namespace inside the selected
+checkout and does not need port arguments.
 
-## The Stop Caveat
+In Open Design 0.25.0, MCP runs over stdio through `od mcp`. There is no
+HTTP `/mcp` endpoint. Fetch `/api/mcp/install-info` on the daemon or use
+Settings → MCP and copy its `command`, `args` and complete `env` to the
+external client. Sidecar-based configurations discover the running daemon;
+the returned sidecar connection and data-directory fields must be preserved.
+Direct CLI configurations may use the upstream `--daemon-url` option.
 
-`tools-dev stop` does NOT accept `--daemon-port` / `--web-port`. It only
-needs `--namespace` (which defaults to `default`). So `stop.sh` is
-simpler:
-
-```bash
-./node_modules/.bin/tools-dev stop
-```
-
-This is fine because `stop` doesn't need to know the port — it
-identifies the sidecars by the canonical `--od-stamp-app=daemon|web|desktop`
-discriminator in their command line (visible via `ps`).
-
-## When Ports COLLIDE
-
-If 45351 or 45343 are already taken on the host (another service, a
-previous install, etc.), override before starting:
-
-```bash
-OD_DAEMON_PORT=56095 OD_WEB_PORT=55983 bash scripts/start.sh
-```
-
-Then update every place that referenced the old ports:
-
-- MCP client config
-- Browser bookmarks
-- Reverse proxy upstream definitions
-- Documentation that shows URLs
-
-The skill does NOT track port history — once you change them, you own
-the new values.
-
-## Why 45351 / 45343?
-
-- Both are in the IANA "dynamic/private" range (49152-65535), so they
-  don't collide with well-known services
-- They are not the Open Design upstream default range (55k-57k), so a
-  default `tools-dev start` without flags will pick DIFFERENT ports,
-  making port collisions easy to spot
-- 45351 → 4-5-3-5-1 (readable) for the daemon, which is the one MCP
-  clients connect to
-- 45343 → 4-5-3-4-3 (also readable) for the web UI
-
-You can change them; these are just the defaults this skill ships with.
+Keep this source checkout and its data separate from another running install.
+If ports collide, choose free ports before starting; never stop an unrelated
+service merely to obtain the defaults.

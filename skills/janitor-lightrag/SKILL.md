@@ -27,7 +27,11 @@ uses NetworkX graph storage because this PostgreSQL image does not contain
 Apache AGE. Images are fixed by digest in the bundled Compose file.
 
 Fresh deployments use MiniMax-M2.7 through `https://api.minimax.io/v1` and
-`MINIMAX_API_KEY` from the active Janitor profile's `.env`. Embeddings use
+`MINIMAX_API_KEY` from the active Janitor profile's `.env`. The native
+`QUERY_OPENAI_LLM_EXTRA_BODY={"reasoning_split":true}` option keeps MiniMax
+reasoning out of the displayed query answer. Existing service settings remain
+unchanged; add that option to `docker/lightrag.env` and rerun deploy to enable it
+on an existing MiniMax installation. Embeddings use
 `nomic-embed-text:v1.5` (768 dimensions), downloaded explicitly during deploy.
 This stack has no dependency on Honcho, its Ollama instance, or its network.
 
@@ -56,7 +60,14 @@ Runtime copy and credentials: `~/.janitor/docker/lightrag-compose.yml` and
 credentials are `AUTH_ACCOUNTS`, and REST calls use `LIGHTRAG_API_KEY`.
 
 Deployment pulls the pinned images, migrates legacy named volumes offline,
-starts PostgreSQL/Ollama, pulls the embedding model, and starts the app.
+starts PostgreSQL/Ollama, pulls the embedding model, verifies its manifest digest,
+and starts the app. The audited `nomic-embed-text:v1.5` manifest is
+`sha256:0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f`.
+The pinned Ollama image records a provenance layer pointing to that manifest;
+its installed manifest SHA-256 is `8688dbc0926c1dfdc1b8b7489034e1fedb06f6ac66472dd2d7f0ed6d7d23ba29`.
+An existing verified model is preserved without repulling its mutable tag.
+A changed or unreadable installed model stops deployment before app startup; review model compatibility
+and re-index requirements before updating this pin.
 Successful health checks precede updating Janitor's API settings. A failure
 exits nonzero. Legacy source volumes remain intact; stopped legacy containers
 are preserved under `janitor-legacy-*`. Migration receipts live beside the
@@ -142,6 +153,7 @@ docker compose -f lightrag-compose.yml --env-file lightrag.env up -d
 | `LLM_BINDING` | `openai` | OpenAI-compatible endpoint |
 | `LLM_BINDING_HOST` | `https://api.minimax.io/v1` | MiniMax OpenAI-compatible endpoint |
 | `LLM_MODEL` | `MiniMax-M2.7` | Fresh deployment default |
+| `QUERY_OPENAI_LLM_EXTRA_BODY` | `{"reasoning_split":true}` | Native MiniMax query response formatting |
 | `EMBEDDING_BINDING` | `ollama` | Local embeddings |
 | `EMBEDDING_BINDING_HOST` | `http://janitor-lightrag-embeddings:11434` | Isolated stack |
 | `EMBEDDING_MODEL` | `nomic-embed-text:v1.5` | 768 dimensions |

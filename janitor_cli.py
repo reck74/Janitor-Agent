@@ -30,7 +30,7 @@ def _janitor_argparser_init(self, *args, **kwargs):
 
 
 def _apply_janitor_identity():
-    os.environ.setdefault("HERMES_SKIN", "sentry-janitor")
+    os.environ.setdefault("HERMES_SKIN", "sentry-janitor")  # health: allow HX002 -- internal bridge to the upstream skin loader for bundled Janitor identity; explicit user skin selection wins
 
 
 def _ensure_janitor_skin_file():

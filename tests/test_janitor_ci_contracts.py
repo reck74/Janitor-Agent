@@ -52,6 +52,12 @@ def test_tui_bundle_and_tests_are_both_required():
     commands = "\n".join(step.get("run", "") for step in steps)
     assert "npm run build --workspace ui-tui" in commands
     assert "npm run test --workspace ui-tui" in commands
+    # The main bundle aliases Ink source; Vitest imports the generated module.
+    # A clean checkout therefore needs both outputs before tests can collect.
+    ink = commands.index("npm run build:ink --workspace ui-tui")
+    assert ink < commands.index("npm run typecheck --workspace ui-tui")
+    assert ink < commands.index("npm run test --workspace ui-tui")
+    assert "npm run lint --workspace ui-tui" in commands
 
 
 def test_interface_validation_detects_both_original_ci_regressions():

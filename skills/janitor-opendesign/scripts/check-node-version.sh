@@ -2,7 +2,7 @@
 # ============================================================
 # check-node-version.sh
 # Gate compartido por todos los scripts de janitor-opendesign.
-# Garantiza que el Node que resuelve `mise` dentro del source
+# Garantiza que el Node ejecutado desde PATH dentro del source
 # tree de Open Design coincide con `engines.node` del package.json.
 #
 # POR QUÉ EXISTE (2026-08-19):
@@ -15,10 +15,10 @@
 #
 # COMPORTAMIENTO:
 #   - Lee `engines.node` del package.json del source tree.
-#   - Resuelve `node --version` dentro del source tree (mise-aware).
+#   - Resuelve el mismo `node` de PATH que ejecutarán pnpm y tools-dev.
 #   - Compara major versions.
 #   - Si hay mismatch → exit 2 con mensaje accionable.
-#   - Si no hay mise → usa `node` del PATH y avisa con WARN.
+#   - No valida un `mise exec` distinto del entorno que usará el comando.
 #   - Si no hay `engines.node` → sale 0 (no se puede validar).
 #
 # USO:
@@ -27,7 +27,7 @@
 # ============================================================
 set -euo pipefail
 
-OD_INSTALL_DIR="${OD_INSTALL_DIR:-${HOME}/open-design}"
+OD_INSTALL_DIR="${OD_INSTALL_DIR:-${OD_SOURCE_DIR:-${HOME}/open-design}}"
 
 if [[ ! -f "${OD_INSTALL_DIR}/package.json" ]]; then
   echo "WARN: ${OD_INSTALL_DIR}/package.json no existe. Gate de versión omitido." >&2
@@ -49,44 +49,29 @@ if [[ -z "${EXPECTED_MAJOR}" ]]; then
   exit 0
 fi
 
-# Resuelve la versión real de node (mise-aware si está disponible)
-if command -v mise >/dev/null 2>&1; then
-  ACTUAL_VERSION="$(cd "${OD_INSTALL_DIR}" && mise exec -- node --version 2>/dev/null | tr -d 'v' || true)"
-else
-  ACTUAL_VERSION="$(node --version 2>/dev/null | tr -d 'v' || true)"
-fi
+# Check the executable used by the child commands, from their working directory.
+# A separate `mise exec` may report Node 24 while PATH still executes Node 26.
+ACTUAL_VERSION="$(cd "${OD_INSTALL_DIR}" && node --version 2>/dev/null | tr -d 'v' || true)"
 
 ACTUAL_MAJOR="$(echo "${ACTUAL_VERSION}" | grep -oE '[0-9]+' | head -1 || true)"
 
 if [[ -z "${ACTUAL_MAJOR}" ]]; then
-  echo "WARN: no se pudo resolver node --version. Gate omitido." >&2
-  exit 0
+  echo "ERROR: no se pudo resolver node --version. Activa el Node requerido antes de continuar." >&2
+  exit 2
 fi
 
 if [[ "${ACTUAL_MAJOR}" != "${EXPECTED_MAJOR}" ]]; then
   cat >&2 <<EOF
 ERROR: open-design exige Node ${EXPECTED_SPEC} pero el entorno resuelve Node ${ACTUAL_VERSION}.
 
-Esto CRASHEA la instalación:
-  - pnpm install compila better-sqlite3 con node-gyp.
-  - Si el major de Node no coincide, el binario falla con
-    segfault en uv_kill (corrupcion del bridge PRIME GPU).
-  - Consecuencia: pantalla congelada, sddm restart necesario.
+Las dependencias nativas deben instalarse con el mismo Node compatible
+que ejecutará Open Design. Activa el toolchain del proyecto en esta sesión:
 
-CORRECCIÓN (elige UNA):
-  1. Crear override local solo para este proyecto:
-       cd ${OD_INSTALL_DIR}
-       echo '[tools]' > .mise.toml
-       echo 'node = "${EXPECTED_MAJOR}.18.1"' >> .mise.toml
-       echo 'pnpm = "10.33.2"' >> .mise.toml
-       rm -rf node_modules ~/.cache/pnpm
-       pnpm install --frozen-lockfile
+  cd ${OD_INSTALL_DIR}
+  mise exec -- bash /ruta/a/janitor-opendesign/scripts/safe-pnpm-install.sh install --frozen-lockfile
 
-  2. Cambiar el Node global de mise:
-       mise global node@${EXPECTED_MAJOR}.18.1
-
-  3. Prefijar el PATH para esta sesión:
-       export PATH="\$HOME/.local/share/mise/installs/node/${EXPECTED_MAJOR}.18.1/bin:\$PATH"
+También puedes anteponer al PATH el binario Node ${EXPECTED_MAJOR} instalado.
+No hace falta cambiar el Node global ni crear un segundo archivo mise.
 
 Este script aborta con exit 2 para que las skills no procedan
 con un Node incompatible.

@@ -106,7 +106,6 @@ def prepare_profile(home: Path, secrets: dict[str, str], mode: str) -> dict:
     config.setdefault("memory", {})["provider"] = "honcho"
     config.setdefault("janitor", {})["honcho_mode"] = mode
     config["_config_version"] = current.get("_config_version", DEFAULT_CONFIG["_config_version"])
-    private_write(current_path, yaml.safe_dump(config, allow_unicode=True, sort_keys=False))
     values = read_secrets(home / ".env") | secrets
     if mode == "local":
         values["HONCHO_BASE_URL"] = "http://127.0.0.1:1973"
@@ -115,6 +114,15 @@ def prepare_profile(home: Path, secrets: dict[str, str], mode: str) -> dict:
         for key in ("HONCHO_BASE_URL", "HONCHO_URL"):
             if _is_janitor_local_endpoint(values.get(key)):
                 values.pop(key, None)
+    # The pinned provider's SDK builder falls back to config.yaml after honcho.json.
+    # Keep that fallback on the same transport, while preserving tuning fields.
+    honcho_options = config.get("honcho")
+    if isinstance(honcho_options, dict):
+        endpoint = values.get("HONCHO_BASE_URL") or values.get("HONCHO_URL")
+        honcho_options.pop("base_url", None)
+        if endpoint:
+            honcho_options["base_url"] = endpoint.rstrip("/")
+    private_write(current_path, yaml.safe_dump(config, allow_unicode=True, sort_keys=False))
     private_write(home / ".env", "".join(f"{key}={json.dumps(value, ensure_ascii=False)}\n" for key, value in sorted(values.items())))
     for filename in ("SOUL.md", "honcho.json"):
         target = home / filename
@@ -197,7 +205,14 @@ def honcho_connection(home: Path):
     from importlib import import_module
     from plugins.memory import load_memory_provider
     from hermes_constants import set_hermes_home_override, reset_hermes_home_override
+    from agent.secret_scope import (build_profile_secret_scope, set_secret_scope, reset_secret_scope,
+                                    set_multiplex_context, reset_multiplex_context)
+    # Setup has just persisted credentials; the launching process may still have
+    # the old endpoint/key. Bind the selected profile exactly as routed runtime does.
+    values = build_profile_secret_scope(home)
     token = set_hermes_home_override(home)
+    secret_token = set_secret_scope(values, profile_home=str(home))
+    context_token = set_multiplex_context(True)
     try:
         provider = load_memory_provider("honcho", register_skills=False)
         if provider is None:
@@ -205,6 +220,8 @@ def honcho_connection(home: Path):
         client_module = import_module(type(provider).__module__ + ".client")
         return client_module.HonchoClientConfig.from_global_config(config_path=home / "honcho.json")
     finally:
+        reset_multiplex_context(context_token)
+        reset_secret_scope(secret_token)
         reset_hermes_home_override(token)
 
 
@@ -223,17 +240,21 @@ def verify_honcho_provider(home: Path) -> None:
         raise RuntimeError("Honcho SDK does not expose its client")
     connection = honcho_connection(home)
     from hermes_cli.config import require_readable_config_before_write
-    mode = require_readable_config_before_write(home / "config.yaml").get("janitor", {}).get("honcho_mode")
-    if mode == "cloud" and (_is_janitor_local_endpoint(connection.base_url) or connection.environment != "production"):
+    config = require_readable_config_before_write(home / "config.yaml")
+    mode = config.get("janitor", {}).get("honcho_mode")
+    # Match the SDK constructor's secondary YAML lookup, not just its JSON resolver.
+    fallback = config.get("honcho", {})
+    effective_url = connection.base_url or (fallback.get("base_url") if isinstance(fallback, dict) else None)
+    if mode == "cloud" and (_is_janitor_local_endpoint(effective_url) or connection.environment != "production"):
         raise RuntimeError("Cloud Honcho still resolves to a local endpoint; repair the selected profile")
-    if mode == "local" and connection.base_url != "http://127.0.0.1:1973":
+    if mode == "local" and effective_url != "http://127.0.0.1:1973":
         raise RuntimeError("Local Honcho does not resolve to the installed server; repair the selected profile")
 
 
 def _verify_fresh_honcho(home: Path) -> None:
     env = dict(os.environ, HERMES_HOME=str(home), JANITOR_HOME=str(home))
     subprocess.run([str(ROOT / "scripts/janitor"), "--run-module", "janitor_ext.install",
-                    "--home", str(home), "--verify-honcho"], cwd=ROOT, env=env, check=True)
+                    "--home", str(home), "--verify-honcho"], cwd=ROOT, env=env, check=True, timeout=300)
 
 
 def install_honcho_plugin() -> None:
@@ -290,7 +311,7 @@ def main(argv=None) -> int:
         publish_commands(ROOT, args.home)
         return 0
     if not args.profile_only:
-        subprocess.run(["docker", "info"], stdout=subprocess.DEVNULL, check=True)
+        subprocess.run(["docker", "info"], stdout=subprocess.DEVNULL, check=True, timeout=30)
     values, mode = configure_credentials(args.home, non_interactive=args.non_interactive, mode=args.honcho_mode)
     result = prepare_profile(args.home, values, mode)
     # prepare_profile normalizes mode-dependent endpoints; never use stale
@@ -299,7 +320,7 @@ def main(argv=None) -> int:
     if not args.profile_only:
         install_honcho_plugin()
         if mode == "local":
-            subprocess.run(["bash", str(ROOT / "skills/janitor-honcho/scripts/deploy.sh")], check=True)
+            subprocess.run(["bash", str(ROOT / "skills/janitor-honcho/scripts/deploy.sh")], check=True, timeout=18000)
         else:
             from janitor_ext.honcho import verify_memory
             connection = honcho_connection(args.home)

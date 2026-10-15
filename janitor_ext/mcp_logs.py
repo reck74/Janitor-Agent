@@ -38,7 +38,7 @@ class RedactedStderrLog:
     def write(self, text: str):
         try:
             safe = _redact(text)
-        except Exception:
+        except Exception:  # health: allow BLE001 -- fail closed without logging potentially secret-bearing redactor exceptions
             # A diagnostic failure cannot expose the unredacted input or exception.
             safe = "[MCP stderr redaction unavailable]\n"
             _log.debug("MCP stderr redaction unavailable")

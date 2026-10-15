@@ -159,6 +159,8 @@ LLM_BINDING=openai
 LLM_BINDING_HOST=https://api.minimax.io/v1
 LLM_MODEL=MiniMax-M2.7
 LLM_BINDING_API_KEY=${MINIMAX_API_KEY}
+# Native per-query option: keep reasoning separate from the displayed answer.
+QUERY_OPENAI_LLM_EXTRA_BODY={"reasoning_split":true}
 
 # --- Embeddings (isolated local Ollama) ---
 EMBEDDING_BINDING=ollama
@@ -196,7 +198,24 @@ launch() {
 
     "$JANITOR_SERVICE_PYTHON" -m janitor_ext.volumes --compose "$COMPOSE_DST" --env-file "$ENV_FILE"
     docker compose -f "$COMPOSE_DST" --env-file "$ENV_FILE" up -d --wait --wait-timeout 180 lightrag-db lightrag-embeddings
-    docker compose -f "$COMPOSE_DST" --env-file "$ENV_FILE" exec -T lightrag-embeddings ollama pull nomic-embed-text:v1.5
+    local model_manifest="/root/.ollama/models/manifests/registry.ollama.ai/library/nomic-embed-text/v1.5"
+    # Keep an installed model unchanged; a mutable remote tag must not replace
+    # embeddings beneath an already running app during a repair/reinstall.
+    if ! docker compose -f "$COMPOSE_DST" --env-file "$ENV_FILE" exec -T lightrag-embeddings test -f "$model_manifest"; then
+        docker compose -f "$COMPOSE_DST" --env-file "$ENV_FILE" exec -T lightrag-embeddings ollama pull nomic-embed-text:v1.5
+    fi
+    # Ollama tags may move independently of the pinned server image.
+    local expected_digest="8688dbc0926c1dfdc1b8b7489034e1fedb06f6ac66472dd2d7f0ed6d7d23ba29"
+    local installed_digest
+    if ! installed_digest=$(docker compose -f "$COMPOSE_DST" --env-file "$ENV_FILE" exec -T lightrag-embeddings \
+        sha256sum "$model_manifest"); then
+        log_fail "Could not verify the installed embedding model manifest."
+        return 1
+    fi
+    if [[ "${installed_digest%% *}" != "$expected_digest" ]]; then
+        log_fail "Embedding model digest differs from the audited version; update aborted before starting LightRAG."
+        return 1
+    fi
     log_info "Levantando stack (docker compose up -d)..."
     if ! docker compose -f "$COMPOSE_DST" --env-file "$ENV_FILE" up -d; then
         log_fail "docker compose up fallo."
@@ -244,7 +263,7 @@ inject_janitor_env() {
     # Idempotente: eliminar entrada previa antes de appendear.
     local tmp
     tmp=$(mktemp)
-    grep -v '^LIGHTRAG_API_URL=' "$JANITOR_ENV" 2>/dev/null | grep -v '^LIGHTRAG_API_KEY=' > "$tmp" || true
+    grep -v -E '^LIGHTRAG_(API_URL|API_KEY|WEBUI_USER|WEBUI_PASSWORD)=' "$JANITOR_ENV" > "$tmp" || true
 
     # Extraer LIGHTRAG_API_KEY + AUTH_ACCOUNTS del env file generado.
     local api_key auth_password

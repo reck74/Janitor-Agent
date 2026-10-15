@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================================================
 # migrate-janitor-minimal.sh — Migrate existing Janitor install to minimal model
 # =============================================================================

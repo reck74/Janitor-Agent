@@ -58,5 +58,5 @@ def prepare_environment(argv: Sequence[str] = ()) -> Path:
         if profile != "default" and not (home / "config.yaml").is_file():
             raise ValueError(f"Profile {profile!r} does not exist; run 'janitor profile create {profile}'")
     os.environ["HERMES_HOME"] = str(home)
-    os.environ.setdefault("HERMES_SKIN", "sentry-janitor")
+    os.environ.setdefault("HERMES_SKIN", "sentry-janitor")  # health: allow HX002 -- internal bridge to the upstream skin loader for bundled Janitor identity; explicit user skin selection wins
     return home

@@ -19,3 +19,4 @@ tests/test_janitor_migration.py
 tests/test_janitor_installer_e2e.py
 tests/skills/test_janitor_optional_skills.py
 tests/test_janitor_desktop.py
+tests/skills/test_janitor_opendesign_skill.py

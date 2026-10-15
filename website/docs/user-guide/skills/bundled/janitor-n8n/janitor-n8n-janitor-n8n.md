@@ -113,9 +113,11 @@ curl -s -b "$N8N_COOKIE_JAR" http://127.0.0.1:5678/rest/workflows
 ### Login
 
 ```bash
-curl -s -c /tmp/cookies.txt -X POST http://127.0.0.1:5678/rest/login \
-  -H "Content-Type: application/json" \
-  -d '{"emailOrLdapLoginId":"janitor@example.com","password":"${N8N_USER_PASSWORD}"}'
+source "${HERMES_HOME:-$HOME/.janitor}/skills/janitor-n8n/scripts/n8n-auth.sh"
+# The helper sends JSON credentials to /rest/login and creates a private cookie jar.
+# Reuse "$N8N_COOKIE_JAR" for the authenticated requests in this session.
+# After the final request:
+rm -f -- "$N8N_COOKIE_JAR"
 ```
 
 **Field name:** `emailOrLdapLoginId` (NOT `email` — this changed in v2.x)

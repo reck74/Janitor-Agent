@@ -152,21 +152,24 @@ wait_for_health() {
     exit 1
 }
 
-verify_endpoint() {
-    local api_key
+verify_endpoint() (
+    # Subshell confines the cleanup trap to this probe; mktemp honors TMPDIR.
+    local api_key response_file code
     api_key=$(grep '^WAHA_API_KEY=' "$ENV_FILE" | cut -d= -f2)
-    local code
-    code=$(curl -s -o /tmp/waha-health.json -w '%{http_code}' \
-        -H "X-Api-Key: ${api_key}" http://127.0.0.1:3000/health)
-    if [ "$code" = "200" ]; then
-        log_info "GET /health → 200 OK"
-        echo "    $(grep -o '"status":"[^"]*"' /tmp/waha-health.json | head -1)"
-    else
-        log_err "GET /health → HTTP $code"
-        cat /tmp/waha-health.json >&2
+    response_file=$(mktemp -t janitor-waha-health.XXXXXX)
+    trap 'rm -f -- "$response_file"' EXIT
+    if ! code=$(curl -sS --connect-timeout 5 --max-time 15 -o "$response_file" -w '%{http_code}' \
+        -H "X-Api-Key: ${api_key}" http://127.0.0.1:3000/health); then
+        log_err "No se pudo consultar GET /health"
         exit 1
     fi
-}
+    if [ "$code" = "200" ]; then
+        log_info "GET /health → 200 OK"
+    else
+        log_err "GET /health → HTTP $code"
+        exit 1
+    fi
+)
 
 inject_env() {
     local api_key dash_pass swagger_pass
@@ -215,25 +218,12 @@ print_summary() {
     echo "    WAHA_API_KEY             = ${api_key:0:16}...(64 hex total)"
     echo ""
     echo "  Próximos pasos:"
-    echo "    1. Reinicia Hermes para que las tools lean las nuevas env vars"
-    echo "    2. Crea una sesión WhatsApp y vincúlala (ver skill janitor-waha §'Connecting a WhatsApp Number'):"
-    echo -e "       ${YLW}# Flujo recomendado (NOWEB engine, evita bug de GOWS):${NC}"
-    echo -e "       ${YLW}curl -X POST -H \"X-Api-Key: $WAHA_API_KEY -H \"Content-Type: application/json\" \\"
-    echo -e "         -d '{\"name\":\"default\",\"config\":{\"engine\":\"NOWEB\"}}' \\"
-    echo -e "         http://127.0.0.1:3000/api/sessions"
-    echo -e "       ${YLW}curl -X POST -H \"X-Api-Key: $WAHA_API_KEY \\"
-    echo -e "         http://127.0.0.1:3000/api/sessions/default/start${NC}"
-    echo "    3. Obtén QR o pairing code (ver skill para ambos flujos):"
-    echo -e "       ${YLW}# QR (si estás en el workstation):"
-    echo -e "       curl -H \"X-Api-Key: $WAHA_API_KEY \\"
-    echo -e "         http://127.0.0.1:3000/api/default/auth/qr -o /tmp/qr.png"
-    echo -e "       # Pairing code (si estás lejos, ej. solo con celular):"
-    echo -e "       curl -X POST -H \"X-Api-Key: $WAHA_API_KEY -H \"Content-Type: application/json\" \\"
-    echo -e "         -d '{\"phoneNumber\":\"573001234567\"}' \\"
-    echo -e "         http://127.0.0.1:3000/api/default/auth/request-code${NC}"
-    echo ""
-    echo "  💡 Tip: hay un helper para pairing:"
-    echo "       ~/.janitor/skills/janitor-waha/scripts/pair-waha.sh 573001234567"
+    echo "    1. Reinicia Janitor para cargar las credenciales del perfil."
+    echo "    2. Vincula WhatsApp con el helper (ver skill janitor-waha):"
+    printf '       bash %q --qr\n' "$SCRIPT_DIR/pair-waha.sh"
+    echo "       El helper muestra la ruta del QR privado; elimínalo después de vincular."
+    echo "    O utiliza un código de vinculación para tu número:"
+    printf '       bash %q 573001234567\n' "$SCRIPT_DIR/pair-waha.sh"
     echo ""
     echo "  ⚠️  WAHA usa cliente WhatsApp Web no oficial. Cumple ToS de WhatsApp —"
     echo "     no usar para spam/mass outreach. Ver skill janitor-waha para detalles."

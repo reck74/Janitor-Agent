@@ -27,7 +27,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OD_INSTALL_DIR="${OD_INSTALL_DIR:-${HOME}/open-design}"
+OD_INSTALL_DIR="${OD_INSTALL_DIR:-${OD_SOURCE_DIR:-${HOME}/open-design}}"
 
 # A) Gate de versión Node — exit 2 si hay mismatch.
 bash "${SCRIPT_DIR}/check-node-version.sh"
@@ -47,7 +47,7 @@ if command -v systemd-run >/dev/null 2>&1; then
   PNPM_CMD=(systemd-run --user --scope --quiet
     --property=CPUQuota=70%
     --property=MemoryMax=6G
-    --unit="opendesign-pnpm-$$"
+    --unit="janitor-opendesign-pnpm-$$"
     pnpm)
 fi
 

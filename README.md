@@ -22,9 +22,13 @@ El instalador pide las credenciales sin mostrarlas y las conserva en `.env` del 
 Cuando exista la release estable `v1.0.0`, el instalador público fijado será:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/reck74/Janitor-Agent/v1.0.0/scripts/bootstrap.sh -o /tmp/janitor-bootstrap.sh
-bash /tmp/janitor-bootstrap.sh
-janitor
+(
+  set -e
+  installer=$(mktemp)
+  trap 'rm -f "$installer"' EXIT
+  curl -fsSL https://raw.githubusercontent.com/reck74/Janitor-Agent/v1.0.0/scripts/bootstrap.sh -o "$installer"
+  bash "$installer"
+) && janitor
 ```
 
 El bootstrap verifica Docker, descarga Janitor, prepara PM, construye las interfaces y comprueba Honcho. Un fallo detiene la instalación con salida no cero. Browser y computer-use quedan excluidos de la instalación base.

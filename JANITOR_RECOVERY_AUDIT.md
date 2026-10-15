@@ -101,15 +101,15 @@ Los cuatro contenedores temporales Honcho `janitor-revival-e4_hq0h9-*` están de
 
 Registros locales consultados:
 
-- `/tmp/janitor-independent-canonical-audit.log` — gate repetido durante esta auditoría.
-- `/tmp/janitor-independent-runtime-audit-tests.log` — 60 tests independientes.
-- `/tmp/janitor-revival-checkpoint-commit.log` — rechazo del hook.
-- `/tmp/janitor-revival-upstream-full.log` y `/tmp/janitor-revival-upstream-remaining.log` — ejecución ampliada y fallos pendientes de clasificación.
-- `/tmp/janitor-revival-tui-final.log` y `/tmp/janitor-revival-web-final.log` — builds/tests de interfaz.
-- `/tmp/janitor-desktop-appimage-smoke5.log` — smoke nativo limitado a arranque/formulario/cancelación/PTY.
-- `/tmp/janitor-first-chat-result.json` y `/tmp/janitor-honcho-acceptance-result.json` — chat y persistencia, con límite explícito de embeddings.
-- `/tmp/janitor-optional-acceptance-20261015.json` — healthchecks y migración de volumen.
+- `/tmp/janitor-independent-canonical-audit.log` — gate repetido durante esta auditoría. <!-- no-tmp: ok — ruta histórica de evidencia, no instrucción de ejecución. -->
+- `/tmp/janitor-independent-runtime-audit-tests.log` — 60 tests independientes. <!-- no-tmp: ok — ruta histórica de evidencia, no instrucción de ejecución. -->
+- `/tmp/janitor-revival-checkpoint-commit.log` — rechazo del hook. <!-- no-tmp: ok — ruta histórica de evidencia, no instrucción de ejecución. -->
+- `/tmp/janitor-revival-upstream-full.log` y `/tmp/janitor-revival-upstream-remaining.log` — ejecución ampliada y fallos pendientes de clasificación. <!-- no-tmp: ok — ruta histórica de evidencia, no instrucción de ejecución. -->
+- `/tmp/janitor-revival-tui-final.log` y `/tmp/janitor-revival-web-final.log` — builds/tests de interfaz. <!-- no-tmp: ok — ruta histórica de evidencia, no instrucción de ejecución. -->
+- `/tmp/janitor-desktop-appimage-smoke5.log` — smoke nativo limitado a arranque/formulario/cancelación/PTY. <!-- no-tmp: ok — ruta histórica de evidencia, no instrucción de ejecución. -->
+- `/tmp/janitor-first-chat-result.json` y `/tmp/janitor-honcho-acceptance-result.json` — chat y persistencia, con límite explícito de embeddings. <!-- no-tmp: ok — ruta histórica de evidencia, no instrucción de ejecución. -->
+- `/tmp/janitor-optional-acceptance-20261015.json` — healthchecks y migración de volumen. <!-- no-tmp: ok — ruta histórica de evidencia, no instrucción de ejecución. -->
 
-Los registros de `/tmp` son temporales. Los resultados y límites esenciales quedan preservados en este informe; la entrega final debe guardar evidencia de CI vinculada al commit aceptado.
+Los registros de ese directorio son temporales. Los resultados y límites esenciales quedan preservados en este informe; la entrega final debe guardar evidencia de CI vinculada al commit aceptado.
 
 La revisión automática de permisos había rechazado una propuesta de archivar playbooks Kanban y referencias relacionadas por posibles consumidores activos. Esa limpieza no se ejecutó y queda pendiente de justificar con el inventario. Los fallos de lint son un bloqueo distinto, producido por los controles del repositorio.

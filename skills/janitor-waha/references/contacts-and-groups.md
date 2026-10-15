@@ -30,9 +30,12 @@ without NOWEB store. You only need NOWEB store if you want richer profile data
 ```bash
 WAHA_API_KEY=$(grep '^WAHA_API_KEY=' ~/.janitor/docker/waha.env | cut -d= -f2)
 
+WAHA_GROUPS_FILE=$(mktemp -t janitor-waha-groups.XXXXXX)
 curl -s -H "X-Api-Key: $WAHA_API_KEY" \
   http://127.0.0.1:3000/api/default/groups \
-  -o /tmp/waha-groups.json
+  -o "$WAHA_GROUPS_FILE"
+# Inspect "$WAHA_GROUPS_FILE", then remove it when finished:
+# rm -f -- "$WAHA_GROUPS_FILE"
 ```
 
 Returns a **dict keyed by groupId**, not a list:

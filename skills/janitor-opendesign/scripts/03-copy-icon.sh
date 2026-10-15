@@ -20,12 +20,12 @@ ICON_DST="${OD_SOURCE_DIR}/apps/web/public/agent-icons/janitor.png"
 #   1. Junto al script (skills/janitor-opendesign/icon/)
 #   2. Raiz del proyecto de la skill (un nivel arriba de skills/)
 SCRIPT_DIR_ABS="$(cd "$(dirname "$0")" && pwd)"
-SKILL_ROOT="$(cd "${SCRIPT_DIR_ABS}/../.." && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR_ABS}/../../.." && pwd)"
 
 ICON_SRC=""
 for candidate in \
-    "${SCRIPT_DIR_ABS}/icon/janitor.png" \
-    "${SKILL_ROOT}/janitor.png"; do
+    "${SCRIPT_DIR_ABS}/../icon/janitor.png" \
+    "${PROJECT_ROOT}/janitor.png"; do
   if [[ -f "${candidate}" ]]; then
     ICON_SRC="${candidate}"
     break
@@ -34,8 +34,8 @@ done
 
 if [[ -z "${ICON_SRC}" ]]; then
   echo "ERROR: janitor.png no encontrado en ninguno de los paths esperados:" >&2
-  echo "  - ${SCRIPT_DIR_ABS}/icon/janitor.png" >&2
-  echo "  - ${SKILL_ROOT}/janitor.png" >&2
+  echo "  - ${SCRIPT_DIR_ABS}/../icon/janitor.png" >&2
+  echo "  - ${PROJECT_ROOT}/janitor.png" >&2
   exit 1
 fi
 

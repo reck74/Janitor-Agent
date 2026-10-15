@@ -17,7 +17,7 @@ Usage:
         --group-id "120363000000000001@g.us" \\
         --nocodb-url http://127.0.0.1:1980 \\
         --nocodb-token "$NOCODB_XC_TOKEN" \\
-        --cookie-file /tmp/nocodb-cookies-fresh.txt \\
+        --cookie-file "$NOCODB_FRESH_COOKIE_JAR" \\
         --table-id msgsrwt93puiq7l \\
         --by lid
 
@@ -136,18 +136,8 @@ def fetch_csv_records(csv_path: str, lid_column: str) -> list:
     return records
 
 
-def diff(group_participants: list, base_records: list, by: str = "lid") -> dict:
-    """
-    Three-way diff: NEW (in group, not in base), KNOWN, EXITED (in base, not in group).
-
-    `by` controls the comparison key:
-      'lid'      - strict on WhatsApp LID (default, recommended)
-      'phone'    - strict on normalized phone (~80% of members visible)
-      'username' - strict on @username (~20% of members visible)
-
-    Returns:
-        { 'new': [...group_participants], 'known_count': int, 'exited': [...base_records] }
-    """
+def _base_index(base_records: list, by: str) -> dict:
+    """Index existing rows using the selected participant identifier."""
     if by == "lid":
         base_keys = {r.get("WA LID") or r.get("_lid"): r for r in base_records
                      if r.get("WA LID") or r.get("_lid")}
@@ -163,6 +153,22 @@ def diff(group_participants: list, base_records: list, by: str = "lid") -> dict:
     else:
         raise ValueError(f"Unknown diff key: {by}")
 
+    return base_keys
+
+
+def diff(group_participants: list, base_records: list, by: str = "lid") -> dict:
+    """
+    Three-way diff: NEW (in group, not in base), KNOWN, EXITED (in base, not in group).
+
+    `by` controls the comparison key:
+      'lid'      - strict on WhatsApp LID (default, recommended)
+      'phone'    - strict on normalized phone (~80% of members visible)
+      'username' - strict on @username (~20% of members visible)
+
+    Returns:
+        { 'new': [...group_participants], 'known_count': int, 'exited': [...base_records] }
+    """
+    base_keys = _base_index(base_records, by)
     new = []
     known = []
     for p in group_participants:
@@ -246,7 +252,7 @@ def main():
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--nocodb-url", help="NocoDB base URL (e.g. http://127.0.0.1:1980)")
     ap.add_argument("--nocodb-token", help="NocoDB xc-token")
-    ap.add_argument("--cookie-file", help="Path to NocoDB cookie jar (e.g. /tmp/nocodb-cookies-fresh.txt)")
+    ap.add_argument("--cookie-file", help="Path to the private NocoDB cookie jar created during login")
     ap.add_argument("--table-id", help="NocoDB table ID")
     src.add_argument("--csv", help="Path to CSV with base contacts (alternative to NocoDB)")
     ap.add_argument("--csv-lid-column", default="lid", help="Column name for LID in CSV")

@@ -829,6 +829,18 @@ export function skinIsLight(colors: SkinColors, env: NodeJS.ProcessEnv = process
   return authored === null ? detectLightMode(env) : authored >= LUMA_LIGHT_THRESHOLD
 }
 
+function skinBrand(branding: SkinBranding, fallback: ThemeBrand, toolPrefix: string, helpHeader: string): ThemeBrand {
+  return {
+    name: branding.agent_name ?? fallback.name,
+    icon: branding.icon ?? fallback.icon,
+    prompt: cleanPromptSymbol(branding.prompt_symbol, fallback.prompt),
+    welcome: branding.welcome ?? fallback.welcome,
+    goodbye: branding.goodbye ?? fallback.goodbye,
+    tool: toolPrefix || fallback.tool,
+    helpHeader: branding.help_header ?? (helpHeader || fallback.helpHeader)
+  }
+}
+
 export function fromSkin(
   colors: SkinColors,
   branding: SkinBranding,
@@ -945,15 +957,7 @@ export function fromSkin(
       // An empty skin preserves the base palette; skins supply their own identity.
       color: hasSkinColors ? adapted : d.color,
 
-      brand: {
-        name: branding.agent_name ?? d.brand.name,
-        icon: branding.icon ?? d.brand.icon,
-        prompt: cleanPromptSymbol(branding.prompt_symbol, d.brand.prompt),
-        welcome: branding.welcome ?? d.brand.welcome,
-        goodbye: branding.goodbye ?? d.brand.goodbye,
-        tool: toolPrefix || d.brand.tool,
-        helpHeader: branding.help_header ?? (helpHeader || d.brand.helpHeader)
-      },
+      brand: skinBrand(branding, d.brand, toolPrefix, helpHeader),
 
       bannerLogo,
       bannerHero

@@ -73,12 +73,12 @@ def checkout_server(source: Path) -> None:
     fresh = not source.exists()
     if fresh:
         source.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["git", "clone", "--filter=blob:none", "--no-checkout", "https://github.com/plastic-labs/honcho.git", str(source)], check=True)
+        subprocess.run(["git", "clone", "--filter=blob:none", "--no-checkout", "https://github.com/plastic-labs/honcho.git", str(source)], check=True, timeout=600)
     # A --no-checkout clone intentionally has all worktree files absent.
-    if not fresh and subprocess.check_output(["git", "-C", str(source), "status", "--porcelain"], text=True).strip():
+    if not fresh and subprocess.check_output(["git", "-C", str(source), "status", "--porcelain"], text=True, timeout=30).strip():
         raise RuntimeError(f"Honcho source has local changes: {source}; preserve them before upgrading")
-    subprocess.run(["git", "-C", str(source), "fetch", "origin", HONCHO_REF], check=True)
-    subprocess.run(["git", "-C", str(source), "checkout", "--detach", HONCHO_REF], check=True)
+    subprocess.run(["git", "-C", str(source), "fetch", "origin", HONCHO_REF], check=True, timeout=600)
+    subprocess.run(["git", "-C", str(source), "checkout", "--detach", HONCHO_REF], check=True, timeout=120)
 
 
 def compose_command(home: Path, *args: str) -> list[str]:
@@ -107,33 +107,81 @@ def probe_local_transports() -> None:
     # Read the server's effective credentials/configuration and test its outbound network.
     # The command contains no secret values; the child reports only curated provider/status errors.
     try:
-        subprocess.run(["docker", "exec", "janitor-honcho-api", "python", "-c", code], check=True)
-    except subprocess.CalledProcessError:
+        subprocess.run(["docker", "exec", "janitor-honcho-api", "python", "-c", code], check=True, timeout=120)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         raise RuntimeError("Honcho transport readiness failed; resolve the provider error above before using local memory") from None
 
 
+def _compose_owner(home: Path, state: dict) -> Path:
+    """Resolve a single compose owner inside this installation, before any mutation."""
+    root = Path(os.environ.get("JANITOR_HOME") or home).expanduser().resolve()
+    if root.parent.name == "profiles":
+        root = root.parent.parent
+    if home != root and home.parent != root / "profiles":
+        raise RuntimeError("Selected Honcho profile does not belong to this Janitor owner")
+    labels = state.get("Config", {}).get("Labels") or {}
+    paths = str(labels.get("com.docker.compose.project.config_files", "")).split(",")
+    if labels.get("com.docker.compose.project") != "janitor-honcho" or len(paths) != 1 or not paths[0]:
+        raise RuntimeError("Existing Honcho ownership is ambiguous; repair its owner before continuing")
+    compose = Path(paths[0])
+    if not compose.is_absolute() or not compose.is_file():
+        raise RuntimeError("Existing Honcho owner compose is unavailable; preserve its credentials before continuing")
+    compose = compose.resolve()
+    owner = compose.parent.parent
+    if (compose != owner / "docker/honcho-compose.yml"
+            or (owner != root and owner.parent != root / "profiles")):
+        raise RuntimeError("Existing Honcho belongs to an external owner; it was preserved")
+    return owner
+
+
+def _database_login(owner: Path, state: dict) -> dict[str, str]:
+    previous = read_secrets(owner / "honcho.env")
+    login = legacy_database_credentials(owner) | {key: value for key, value in previous.items()
+        if key in ("HONCHO_POSTGRES_USER", "HONCHO_POSTGRES_PASSWORD")}
+    actual = dict(value.split("=", 1) for value in state.get("Config", {}).get("Env", []) if "=" in value)
+    for name in ("POSTGRES_USER", "POSTGRES_PASSWORD"):
+        value = login.get("HONCHO_" + name)
+        if not value or actual.get(name) != value:
+            raise RuntimeError("Existing Honcho owner credentials cannot be verified; they were preserved")
+    return login
+
+
 def deploy(home: Path) -> None:
-    subprocess.run(["docker", "info"], stdout=subprocess.DEVNULL, check=True)
+    home = home.expanduser().resolve()
+    subprocess.run(["docker", "info"], stdout=subprocess.DEVNULL, check=True, timeout=30)
     # The server runs schema migrations on startup. Capture an existing database first.
-    previous = subprocess.run(["docker", "inspect", "janitor-honcho-database"], capture_output=True, text=True, check=False)
+    previous = subprocess.run(["docker", "inspect", "janitor-honcho-database"], capture_output=True, text=True, check=False, timeout=30)
     if previous.returncode == 0:
         state = json.loads(previous.stdout)[0]
+        owner = _compose_owner(home, state)
+        login = _database_login(owner, state)
         if not state["State"]["Running"]:
             raise RuntimeError("Start the existing Honcho database before upgrading so pg_dump can back it up")
+        if owner != home:
+            # A named profile uses its own client/workspace, while this local daemon
+            # retains the owning profile's server credentials and configuration.
+            api = subprocess.run(["docker", "inspect", "janitor-honcho-api"], capture_output=True, text=True, check=False, timeout=30)
+            if api.returncode != 0:
+                raise RuntimeError("Repair the existing Honcho owner before using its shared server")
+            api_state = json.loads(api.stdout)[0]
+            if _compose_owner(home, api_state) != owner or not api_state.get("State", {}).get("Running"):
+                raise RuntimeError("Existing Honcho API ownership is inconsistent; repair its owner first")
+            verify_memory()
+            probe_local_transports()
+            print("Reusing this installation's healthy Honcho server; profile and owner credentials were preserved.")
+            return
         backup = snapshot(home, include_profiles=False)
-        user = legacy_database_credentials(home).get("HONCHO_POSTGRES_USER") or read_secrets(home / "honcho.env").get("HONCHO_POSTGRES_USER")
-        if not user:
-            raise RuntimeError("Cannot determine existing Honcho database user; preserve its credentials before upgrading")
+        user = login["HONCHO_POSTGRES_USER"]
         dump = backup / "honcho-postgres.dump"
         with dump.open("wb") as output:
-            subprocess.run(["docker", "exec", "janitor-honcho-database", "pg_dump", "-U", user, "-d", "honcho", "-Fc"], stdout=output, check=True)
+            subprocess.run(["docker", "exec", "janitor-honcho-database", "pg_dump", "-U", user, "-d", "honcho", "-Fc"], stdout=output, check=True, timeout=1800)
         record_backup_artifact(backup, dump, kind="postgres-dump")
     source = prepare_service(home)
     checkout_server(source)
-    subprocess.run(compose_command(home, "build"), check=True)
+    subprocess.run(compose_command(home, "build"), check=True, timeout=3600)
     from janitor_ext.volumes import migrate_compose
     migrate_compose(home / "docker/honcho-compose.yml", home / "honcho.env")
-    subprocess.run(compose_command(home, "up", "-d", "--wait", "--wait-timeout", "180"), check=True)
+    subprocess.run(compose_command(home, "up", "-d", "--wait", "--wait-timeout", "180"), check=True, timeout=300)
     verify_memory()
     probe_local_transports()
     print("Janitor Honcho memory, embeddings and reasoning are ready; existing volumes were preserved.")

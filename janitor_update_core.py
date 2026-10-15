@@ -264,7 +264,7 @@ def _retarget_to_owning_install(project_root: Path) -> None:
     if not entry.is_file():
         raise ValueError(f"The interpreter belongs to {owner}, which has no Janitor entrypoint")
     env = dict(os.environ, PYTHONPATH=str(owner))
-    code = subprocess.call([sys.executable, str(entry), *sys.argv[1:]], cwd=owner, env=env)
+    code = subprocess.call([sys.executable, str(entry), *sys.argv[1:]], cwd=owner, env=env)  # health: allow HX006 -- foreground owner-process handoff preserves interactive prompts; the updater bounds its own network/build operations
     raise SystemExit(code)
 
 

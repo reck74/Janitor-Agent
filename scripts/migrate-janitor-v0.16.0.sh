@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # migrate-janitor-v0.16.0.sh
 # Migración de v0.15.x → v0.16.0 (Hermes upstream #43354)
 #

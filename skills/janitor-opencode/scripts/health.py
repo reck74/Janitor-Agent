@@ -4,6 +4,8 @@ import asyncio
 import json
 import os
 
+import httpx
+
 from client import OpenCodeOrchestrator
 
 
@@ -13,7 +15,7 @@ async def probe(host, port):
         await client.connect()
         print(json.dumps({"ok": True, "service": "opencode"}))
         return 0
-    except Exception as error:
+    except (httpx.HTTPError, RuntimeError, ValueError, TypeError) as error:
         print(json.dumps({"ok": False, "service": "opencode", "error": type(error).__name__}))
         return 1
     finally:

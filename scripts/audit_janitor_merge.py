@@ -19,7 +19,7 @@ def main() -> int:
     diff = subprocess.check_output(
         ["git", "diff", "--no-ext-diff", "--no-color", "--src-prefix=a/",
          "--dst-prefix=b/", "--unified=0", f"{args.base}...HEAD", "--"],
-        cwd=ROOT, text=True, encoding="utf-8", errors="replace")
+        cwd=ROOT, text=True, encoding="utf-8", errors="replace", timeout=120)
     errors = fork_diff_violations(diff)
     for error in errors:
         print(error, file=sys.stderr)

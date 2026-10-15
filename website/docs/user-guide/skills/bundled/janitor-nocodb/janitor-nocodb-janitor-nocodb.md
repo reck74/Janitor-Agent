@@ -86,26 +86,33 @@ This script:
 
 ## Authentication
 
+The pinned image uses `/api/v1/db/auth/user/signin` for user login; metadata
+and record operations continue to use their `/api/v2/` routes.
+
 NocoDB 2026.07+ requires **both** an `xc-token` header AND a cookie jar containing
 `nc_token` + `refresh_token`. The token alone returns 401. Login via the user
-signin endpoint, capture the cookies with `-c cookies.txt`, then send both on every
+signin endpoint, capture the cookies in a private jar with `-c "$NOCODB_COOKIE_JAR"`, then send both on every
 subsequent request.
 
 ```bash
 # One-time login (capture cookies + token)
-curl -s -c /tmp/nocodb-cookies.txt -H "Content-Type: application/json" \
-  -X POST http://127.0.0.1:1980/api/v2/auth/user/signin \
+NOCODB_COOKIE_JAR=$(mktemp -t janitor-nocodb-cookies.XXXXXX)
+curl -s -c "$NOCODB_COOKIE_JAR" -H "Content-Type: application/json" \
+  -X POST http://127.0.0.1:1980/api/v1/db/auth/user/signin \
   -d '{"email":"janitor@example.com","password":"<NC_ADMIN_PASSWORD>"}'
 
 # Response: {"token":"eyJhbGc..."}
-TOKEN=$(curl -s -b /tmp/nocodb-cookies.txt -H "Content-Type: application/json" \
-  -X POST http://127.0.0.1:1980/api/v2/auth/user/signin \
+TOKEN=$(curl -s -b "$NOCODB_COOKIE_JAR" -H "Content-Type: application/json" \
+  -X POST http://127.0.0.1:1980/api/v1/db/auth/user/signin \
   -d '{"email":"janitor@example.com","password":"<NC_ADMIN_PASSWORD>"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
 
 # All subsequent API calls (cookie AND header both required)
-curl -s -b /tmp/nocodb-cookies.txt -H "xc-token: $TOKEN" \
+curl -s -b "$NOCODB_COOKIE_JAR" -H "xc-token: $TOKEN" \
   http://127.0.0.1:1980/api/v2/meta/bases
+
+# After the final authenticated request:
+rm -f -- "$NOCODB_COOKIE_JAR"
 ```
 
 **Cookies expire** (the `nc_token` cookie has a TTL). When API calls start returning
@@ -430,7 +437,7 @@ See also `references/multiselect-api.md` for the working MultiSelect API pattern
    replacement for a wiki or notebook.
 
 10. **Cookie jar + xc-token both required:** On v2026.07+, API calls with
-    `xc-token` alone return 401. Login via `/api/v2/auth/user/signin` and
+    `xc-token` alone return 401. Login via `/api/v1/db/auth/user/signin` and
     capture both `nc_token` + `refresh_token` cookies (HttpOnly) with
     `curl -c cookies.txt`. Subsequent calls need `-b cookies.txt -H "xc-token: $TOKEN"`.
     Cookies expire — re-login when auth breaks. See Authentication section.
@@ -483,13 +490,13 @@ See also `references/multiselect-api.md` for the working MultiSelect API pattern
     **Probe cookie freshness BEFORE any diff/reconciliation run:**
 
     ```bash
-    curl -s -m 5 -b /tmp/nocodb-cookies.txt -H "xc-token: $TOKEN" \
+    curl -s -m 5 -b "$NOCODB_COOKIE_JAR" -H "xc-token: $TOKEN" \
       -o /dev/null -w "%{http_code}" \
       http://127.0.0.1:1980/api/v2/tables/$TABLE_ID/records?limit=1
     # 401 → re-login needed (see Authentication section above)
     ```
 
-    Use `-c /tmp/nocodb-cookies-fresh.txt` to write a new jar (don't overwrite
+    Use `-c "$NOCODB_FRESH_COOKIE_JAR"` with a new `mktemp` file to write a fresh jar (don't overwrite
     the original — saves a debug step if you want to compare). Cookies
     typically have short TTLs during active agent sessions; daily re-login is
     a safe default.
@@ -497,12 +504,15 @@ See also `references/multiselect-api.md` for the working MultiSelect API pattern
     **Reusable NocoDB login one-liner** (saves the new cookie jar):
 
     ```bash
+    NOCODB_FRESH_COOKIE_JAR=$(mktemp -t janitor-nocodb-cookies.XXXXXX)
     EMAIL=$(grep '^NC_ADMIN_EMAIL=' ~/.janitor/docker/nocodb.env | cut -d= -f2)
     PASS=$(grep '^NC_ADMIN_PASSWORD=' ~/.janitor/docker/nocodb.env | cut -d= -f2)
-    curl -s -m 10 -c /tmp/nocodb-cookies-fresh.txt \
+    curl -s -m 10 -c "$NOCODB_FRESH_COOKIE_JAR" \
       -H "Content-Type: application/json" \
-      -X POST http://127.0.0.1:1980/api/v2/auth/user/signin \
+      -X POST http://127.0.0.1:1980/api/v1/db/auth/user/signin \
       -d "{\"email\":\"$EMAIL\",\"password\":\"$PASS\"}"
+    # Use this jar for the reconciliation, then remove it:
+    # rm -f -- "$NOCODB_FRESH_COOKIE_JAR"
     ```
 
 ## See Also

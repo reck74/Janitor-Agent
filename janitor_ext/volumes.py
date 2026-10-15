@@ -10,8 +10,21 @@ import uuid
 COPY_IMAGE = "alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8"
 
 
-def _run(*args, check=True):
-    return subprocess.run(["docker", *args], check=check, capture_output=True, text=True)
+def _run(*args, check=True, timeout=None):
+    # Data copying and image download need more time than daemon metadata probes.
+    if timeout is None:
+        timeout = {"run": 3600, "pull": 600, "stop": 120, "start": 120}.get(args[0], 30)
+    try:
+        return subprocess.run(["docker", *args], check=check, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        # Killing the Docker CLI does not stop the container it created. Stop
+        # our named copy helper before the caller resumes the original stack.
+        if args[0] == "run" and "--name" in args:
+            name = args[args.index("--name") + 1]
+            if name.startswith("janitor-volume-copy-"):
+                subprocess.run(["docker", "rm", "-f", name], check=False,
+                               capture_output=True, text=True, timeout=30)
+        raise
 
 
 def _inspect(kind: str, name: str):

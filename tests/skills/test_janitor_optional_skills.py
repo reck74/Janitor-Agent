@@ -316,3 +316,110 @@ def test_waha_group_diff_real_http_uses_credentials_and_paginated_nocodb(tmp_pat
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+@pytest.mark.parametrize('response', ['healthy', 'http-error', 'network-error'])
+def test_waha_health_uses_private_scratch_and_cleans_after_every_outcome(tmp_path, response):
+    binary = tmp_path / 'bin'
+    binary.mkdir()
+    scratch = tmp_path / 'scratch with spaces'
+    scratch.mkdir()
+    capture = tmp_path / 'curl.json'
+    docker = binary / 'docker'
+    docker.write_text('#!/bin/sh\ncase "$1" in inspect) echo healthy;; esac\nexit 0\n', encoding='utf-8')
+    docker.chmod(0o755)
+    curl = binary / 'curl'
+    curl.write_text(f"#!{sys.executable}\n" + '''import json, os, pathlib, sys
+args = sys.argv[1:]
+output = pathlib.Path(args[args.index('-o') + 1])
+output.write_text('{"status":"ok"}', encoding='utf-8')
+pathlib.Path(os.environ['CURL_CAPTURE']).write_text(json.dumps({
+    'path': str(output), 'mode': output.stat().st_mode & 0o777,
+}), encoding='utf-8')
+if os.environ['CURL_RESPONSE'] == 'network-error':
+    sys.exit(7)
+print('500' if os.environ['CURL_RESPONSE'] == 'http-error' else '200', end='')
+''', encoding='utf-8')
+    curl.chmod(0o755)
+    result = subprocess.run(['bash', str(ROOT / 'skills/janitor-waha/scripts/deploy.sh')],
+        env=dict(os.environ, PATH=str(binary) + os.pathsep + os.environ['PATH'],
+                 HERMES_HOME=str(tmp_path / 'profile'), TMPDIR=str(scratch),
+                 JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON='/bin/true',
+                 CURL_CAPTURE=str(capture), CURL_RESPONSE=response),
+        capture_output=True, text=True, timeout=15, check=False)
+    record = json.loads(capture.read_text(encoding='utf-8'))
+    assert Path(record['path']).parent == scratch
+    assert record['mode'] == 0o600
+    assert not Path(record['path']).exists()
+    assert list(scratch.iterdir()) == []
+    assert (result.returncode == 0) is (response == 'healthy'), result.stdout + result.stderr
+
+
+@pytest.mark.parametrize('valid', [True, False])
+def test_waha_pair_qr_private_path_and_failed_download_cleanup(tmp_path, valid):
+    binary = tmp_path / 'bin'
+    binary.mkdir()
+    scratch = tmp_path / 'scratch with spaces'
+    scratch.mkdir()
+    profile = tmp_path / 'profile'
+    (profile / 'docker').mkdir(parents=True)
+    (profile / 'docker/waha.env').write_text('WAHA_API_KEY=test\nWHATSAPP_DEFAULT_ENGINE=NOWEB\n', encoding='utf-8')
+    capture = tmp_path / 'qr.json'
+    curl = binary / 'curl'
+    curl.write_text(f"#!{sys.executable}\n" + '''import base64, json, os, pathlib, sys
+args = sys.argv[1:]
+url = next(arg for arg in args if arg.startswith('http'))
+if url.endswith('/health'):
+    print('200')
+elif url.endswith('/auth/qr'):
+    output = pathlib.Path(args[args.index('-o') + 1])
+    output.write_bytes(base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2O+YAAAAASUVORK5CYII=') if os.environ['QR_VALID'] == '1' else b'not png')
+    pathlib.Path(os.environ['QR_CAPTURE']).write_text(json.dumps({'path': str(output), 'mode': output.stat().st_mode & 0o777}), encoding='utf-8')
+elif url.endswith('/api/sessions'):
+    print('[]')
+else:
+    print('{"status":"SCAN_QR_CODE"}')
+''', encoding='utf-8')
+    curl.chmod(0o755)
+    for name in ('sleep', 'xdg-open'):
+        stub = binary / name
+        stub.write_text('#!/bin/sh\nexit 0\n', encoding='utf-8')
+        stub.chmod(0o755)
+    result = subprocess.run(['bash', str(ROOT / 'skills/janitor-waha/scripts/pair-waha.sh'), '--qr'],
+        env=dict(os.environ, PATH=str(binary) + os.pathsep + os.environ['PATH'],
+                 HERMES_HOME=str(profile), TMPDIR=str(scratch), WAHA_QR_OUTPUT='',
+                 JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON=sys.executable,
+                 QR_CAPTURE=str(capture), QR_VALID='1' if valid else '0'),
+        capture_output=True, text=True, timeout=15, check=False)
+    record = json.loads(capture.read_text(encoding='utf-8'))
+    output = Path(record['path'])
+    assert output.parent == scratch
+    assert record['mode'] == 0o600
+    assert output.exists() is valid
+    assert (result.returncode == 0) is valid, result.stdout + result.stderr
+    if valid:
+        assert str(output) in result.stdout
+        output.unlink()
+    assert list(scratch.iterdir()) == []
+
+
+@pytest.mark.platforms('posix')
+def test_timed_out_volume_copy_stops_only_its_temporary_container(tmp_path, monkeypatch):
+    binary = tmp_path / 'bin'
+    binary.mkdir()
+    docker = binary / 'docker'
+    log = tmp_path / 'calls.jsonl'
+    docker.write_text(f"#!{sys.executable}\n" + '''import json, os, pathlib, signal, sys
+with pathlib.Path(os.environ['DOCKER_CALLS']).open('a', encoding='utf-8') as handle:
+    handle.write(json.dumps(sys.argv[1:]) + '\\n')
+if sys.argv[1] == 'run':
+    signal.pause()
+''', encoding='utf-8')
+    docker.chmod(0o755)
+    monkeypatch.setenv('PATH', str(binary) + os.pathsep + os.environ['PATH'])
+    monkeypatch.setenv('DOCKER_CALLS', str(log))
+    with pytest.raises(subprocess.TimeoutExpired):
+        volumes._run('run', '--rm', '--name', 'janitor-volume-copy-fixture', 'copy-image', timeout=2)
+    calls = [json.loads(line) for line in log.read_text(encoding='utf-8').splitlines()]
+    assert calls == [['run', '--rm', '--name', 'janitor-volume-copy-fixture', 'copy-image'],
+                     ['rm', '-f', 'janitor-volume-copy-fixture']]

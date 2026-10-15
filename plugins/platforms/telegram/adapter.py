@@ -1,7 +1,6 @@
 """Telegram platform adapter (python-telegram-bot): inbound messages/media/commands, outbound replies."""
 
 import asyncio
-from io import BytesIO
 import contextlib
 import dataclasses
 import inspect
@@ -117,10 +116,6 @@ try:
         from telegram import LinkPreviewOptions
     except ImportError:
         LinkPreviewOptions = None
-    try:
-        from telegram import InputProfilePhotoStatic
-    except ImportError:
-        InputProfilePhotoStatic = None
     from telegram.ext import (
         Application, CommandHandler, CallbackQueryHandler, InlineQueryHandler, MessageHandler as TelegramMessageHandler,
         ContextTypes, TypeHandler, filters)
@@ -131,7 +126,7 @@ except ImportError:
     TELEGRAM_AVAILABLE = False
     Update = Bot = Message = InlineKeyboardButton = InlineKeyboardMarkup = Application = Any
     CommandHandler = CallbackQueryHandler = InlineQueryHandler = TypeHandler = TelegramMessageHandler = HTTPXRequest = Any
-    InputProfilePhotoStatic = LinkPreviewOptions = filters = ParseMode = ChatType = None
+    LinkPreviewOptions = filters = ParseMode = ChatType = None
 
     # Mock so ContextTypes.DEFAULT_TYPE annotations don't crash class definition without the lib.
     class _MockContextTypes:
@@ -167,14 +162,6 @@ def _toast(key: str, **kwargs: Any) -> str:
     return t(key, **kwargs)[:_TOAST_LIMIT]
 
 
-def _bold_label_html(line: str) -> str:
-    """HTML-bold the ``Label:`` prefix of a translated line (whole line when it has no colon)."""
-    label, sep, rest = line.partition(":")
-    if not sep:
-        return f"<b>{_html.escape(line)}</b>"
-    return f"<b>{_html.escape(label)}:</b>{_html.escape(rest)}"
-
-
 # Inbound-media ``kind`` labels are dual-use: the English word stays in the agent-visible observed note,
 # the chat reply shows the catalog translation.
 _MEDIA_KIND_KEYS = {
@@ -183,24 +170,13 @@ _MEDIA_KIND_KEYS = {
     "video file": "platform.telegram.media.kind_video"}
 
 from gateway.platforms.event import MessageEvent, MessageType, ProcessingOutcome
-from plugins.platforms.telegram.telegram_entities import expand_link_entities
+from plugins.platforms.telegram.telegram_entities import _bold_label_html, expand_link_entities
 from plugins.platforms.telegram.telegram_held_inbound import TelegramHeldInboundMixin
 from plugins.platforms.telegram.telegram_ids import normalize_telegram_chat_id
 from plugins.platforms.telegram.telegram_network import (
     SEED_FALLBACK_IPS, TelegramFallbackTransport, discover_fallback_ips, parse_fallback_ip_env, tcp_keepalive_socket_options)
 from utils import env_float, env_int
-
-_JANITOR_ASSETS_DIR = _Path(__file__).resolve().parents[3] / "assets" / "janitor"
-_JANITOR_AVATAR_PATH = _JANITOR_ASSETS_DIR / "janitor_avatar.png"
-_JANITOR_TELEGRAM_AVATAR_PATH = _JANITOR_ASSETS_DIR / "janitor_avatar_telegram.jpg"
-_JANITOR_WELCOME_PATH = _JANITOR_ASSETS_DIR / "telegram_welcome.jpg"
-_JANITOR_WELCOME_TEXT = (
-    "DENEGADO. No hay tiempo para presentaciones. "
-    "Soy The Janitor. Trae tu código roto, tu arquitectura frágil "
-    "y tus secretos hardcodeados. Los limpio. Los audito. "
-    "Los hago a prueba de balas. Escribe /topic para separar tus conversaciones "
-    "en tópicos y mantener el contexto organizado. Comienza."
-)
+from janitor_ext.telegram_branding import JanitorTelegramBrandingMixin
 
 _TELEGRAM_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 # Max seconds a send/edit may sleep inline on a flood-control RetryAfter; longer penalties fail
@@ -528,7 +504,7 @@ class _PollingStallError(RuntimeError):
     """
 
 
-class TelegramAdapter(TelegramHeldInboundMixin, BasePlatformAdapter):
+class TelegramAdapter(JanitorTelegramBrandingMixin, TelegramHeldInboundMixin, BasePlatformAdapter):
     """Telegram bot adapter: users/groups, MarkdownV2 replies, forum topics, media."""
 
     # Bound for the per-(chat_id, status_key) status-message cache; FIFO half-trim on overflow.
@@ -6495,98 +6471,6 @@ class TelegramAdapter(TelegramHeldInboundMixin, BasePlatformAdapter):
             return
         await self._ensure_forum_commands(update.message)
         self._enqueue_text_event(await self._build_triggered_event(msg, update, MessageType.TEXT))
-
-    async def _set_janitor_avatar(self) -> None:
-        """Forcibly set the bot profile photo to the Janitor avatar on every connect."""
-        if not _JANITOR_TELEGRAM_AVATAR_PATH.exists():
-            logger.warning(
-                "[%s] Janitor avatar asset not found at %s; skipping Telegram avatar setup",
-                self.name,
-                _JANITOR_TELEGRAM_AVATAR_PATH,
-            )
-            return
-
-        if not hasattr(self._bot, "set_my_profile_photo"):
-            logger.warning(
-                "[%s] Janitor Telegram avatar requires python-telegram-bot >= 22.7. "
-                "Installed version lacks set_my_profile_photo. "
-                "Run: pip install 'python-telegram-bot[webhooks]>=22.7,<23'",
-                self.name,
-            )
-            return
-
-        try:
-            remove_media_ok = await self._bot.remove_my_profile_photo()
-            logger.debug(
-                "[%s] removeMyProfilePhoto result: %s",
-                self.name, remove_media_ok,
-            )
-        except Exception as exc:
-            logger.debug(
-                "[%s] removeMyProfilePhoto not available or failed: %s",
-                self.name, exc,
-            )
-            try:
-                await self._bot.do_api_request("removeMyProfilePhoto")
-                logger.debug("[%s] removeMyProfilePhoto (raw) succeeded", self.name)
-            except Exception as raw_exc:
-                logger.debug(
-                    "[%s] removeMyProfilePhoto (raw) also failed: %s",
-                    self.name, raw_exc,
-                )
-
-        try:
-            with BytesIO(await asyncio.to_thread(_JANITOR_TELEGRAM_AVATAR_PATH.read_bytes)) as photo_file:
-                photo_file.name = str(_JANITOR_TELEGRAM_AVATAR_PATH)
-                if InputProfilePhotoStatic is not None:
-                    profile_photo = InputProfilePhotoStatic(photo=photo_file)
-                    await self._bot.set_my_profile_photo(photo=profile_photo)
-                else:
-                    await self._bot.set_my_profile_photo(photo=photo_file)
-            logger.info("[%s] Janitor Telegram avatar applied successfully", self.name)
-        except Exception as exc:
-            logger.warning(
-                "[%s] Failed to set Janitor Telegram avatar: %s",
-                self.name,
-                exc,
-                exc_info=True,
-            )
-
-    async def _handle_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Welcome only admitted senders, retaining the incoming Telegram topic."""
-        msg = self._effective_update_message(update)
-        if not msg or not getattr(msg, "text", None):
-            return
-        if not self._should_process_message(msg, is_command=True):
-            return
-        if not self._is_user_authorized_from_message(msg):
-            self._log_blocked_user(msg)
-            return
-        chat_id = getattr(getattr(msg, "chat", None), "id", None)
-        if chat_id is None:
-            return
-        await self._ensure_forum_commands(msg)
-        metadata = {}
-        direct_topic = getattr(msg, "direct_messages_topic", None)
-        if direct_topic is not None:
-            metadata["direct_messages_topic_id"] = direct_topic.topic_id
-        routing = self._thread_kwargs_for_send(
-            str(chat_id), self._effective_message_thread_id(msg), metadata)
-        routing = {key: value for key, value in routing.items() if value is not None}
-        if _JANITOR_WELCOME_PATH.exists():
-            try:
-                with BytesIO(await asyncio.to_thread(_JANITOR_WELCOME_PATH.read_bytes)) as photo_file:
-                    await self._bot.send_photo(
-                        chat_id=chat_id, photo=photo_file, caption=_JANITOR_WELCOME_TEXT, **routing)
-                return
-            except Exception as exc:
-                logger.warning("[%s] Failed to send Janitor Telegram welcome image: %s",
-                               self.name, _redact_telegram_error_text(exc))
-        try:
-            await self._bot.send_message(chat_id=chat_id, text=_JANITOR_WELCOME_TEXT, **routing)
-        except Exception as exc:
-            logger.warning("[%s] Failed to send Janitor Telegram welcome text: %s",
-                           self.name, _redact_telegram_error_text(exc))
 
     async def _handle_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle incoming command messages."""

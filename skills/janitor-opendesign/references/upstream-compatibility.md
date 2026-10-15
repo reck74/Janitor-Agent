@@ -1,6 +1,6 @@
 # Upstream Compatibility
 
-This skill patches the Open Design source tree in three places:
+This skill patches the Open Design source tree in four places:
 
 1. `apps/daemon/src/runtimes/defs/janitor.ts` — new file (no upstream conflict)
 2. `apps/daemon/src/runtimes/registry.ts` — adds one import + one array entry
@@ -25,7 +25,7 @@ If upstream renames the file or the array, this sed fails silently
   but Janitor is not in the picker
 - `/api/agents` returns no entry with `id: "janitor"`
 
-**Fix**: Find the new location of the BASE_AGENT_DEFS array and update
+**Fix**: Find the new location of the SHIPPED_AGENT_DEFS array (BASE_AGENT_DEFS on older releases) and update
 the sed anchor. Re-run the script.
 
 ## Scenario 2: Upstream moves `defs/` to a different package
@@ -65,25 +65,22 @@ with upstream's `RuntimeAgentDef` interface.
 
 ## Verifying After an Upstream Sync
 
+Use the pinned source release documented in SKILL.md. Do not merge a moving
+upstream branch into an existing customized installation as part of setup.
+After reviewing and backing up a deliberately selected upgrade, validate it:
+
 ```bash
-# Pull upstream
-cd ~/open-design
-git fetch upstream
-git merge upstream/main   # or rebase
-
-# Re-run the integration (idempotent)
-bash "$JANITOR_SKILLS_DIR/janitor-opendesign/scripts/integrate-janitor.sh" register
-# (or set JANITOR_SKILLS_DIR=$HOME/.janitor/skills on a default install)
-
-# Rebuild + restart
-pnpm install
-bash "$JANITOR_SKILLS_DIR/janitor-opendesign/scripts/start.sh"
-
-# Verify
+cd "$OD_SOURCE_DIR"
+mise exec -- bash "$JANITOR_SKILLS_DIR/janitor-opendesign/scripts/integrate-janitor.sh" register
+mise exec -- bash "$JANITOR_SKILLS_DIR/janitor-opendesign/scripts/safe-pnpm-install.sh" install --frozen-lockfile
+mise exec -- bash "$JANITOR_SKILLS_DIR/janitor-opendesign/scripts/start.sh" web
 bash "$JANITOR_SKILLS_DIR/janitor-opendesign/scripts/status.sh"
-curl -s http://127.0.0.1:45351/api/agents | grep -c '"id":"janitor"'
-# Expect: 1
+curl --fail --max-time 30 http://127.0.0.1:45351/api/agents
 ```
+
+Confirm exactly one available agent with `id: "janitor"`. Read the stdio MCP
+configuration from `/api/mcp/install-info` and validate initialize/tools/list;
+0.25.0 does not implement an HTTP `/mcp` route.
 
 If any of those fail, check the relevant log:
 
@@ -102,5 +99,5 @@ We patch the **minimum** number of files. Specifically:
   file lives in the standard `defs/` directory which is already in
   the workspace)
 
-This means a vanilla `git pull upstream main` plus a re-run of
-`integrate-janitor.sh` is all you need to stay in sync.
+A new upstream version still requires compilation and runtime validation.
+Idempotent source patching does not certify an upgrade or database migration.

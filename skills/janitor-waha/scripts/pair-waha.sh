@@ -4,12 +4,12 @@
 #
 # Usage:
 #   pair-waha.sh <phone-in-international-format>   # pairing code (no QR scan needed)
-#   pair-waha.sh --qr                              # QR code as PNG (default /tmp/waha-qr.png)
+#   pair-waha.sh --qr                              # QR code as PNG (private temporary file)
 #   pair-waha.sh                                   # QR (default if no args)
 #
 # Examples:
 #   pair-waha.sh 573001234567       # pair via 8-digit code (no QR)
-#   pair-waha.sh --qr               # generate QR PNG to /tmp/waha-qr.png
+#   pair-waha.sh --qr               # generate a private QR PNG; print its path
 #
 # After running with a phone number, type the printed 8-char code in WhatsApp on your
 # phone (Settings → Linked Devices → Link with phone number).
@@ -31,7 +31,7 @@ ENV_FILE="${ENV_FILE:-${HERMES_HOME:-$HOME/.janitor}/docker/waha.env}"
 BASE_URL="${WAHA_BASE_URL:-http://127.0.0.1:3000}"
 SESSION_NAME="${WAHA_SESSION:-default}"
 [[ "$SESSION_NAME" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "Invalid WAHA session name" >&2; exit 2; }
-QR_OUTPUT="${WAHA_QR_OUTPUT:-/tmp/waha-qr.png}"
+QR_OUTPUT="${WAHA_QR_OUTPUT:-}"
 
 # Colors
 RED='\033[0;31m'; GRN='\033[0;32m'; YLW='\033[1;33m'; NC='\033[0m'
@@ -116,9 +116,17 @@ fi
 if [ "${1:-}" = "--qr" ] || [ -z "${1:-}" ]; then
     # --- QR code flow ---
     log_info "Obteniendo QR code..."
-    curl -s -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/api/$SESSION_NAME/auth/qr" -o "$QR_OUTPUT"
+    # Keep a valid QR available for the image viewer; remove failed downloads.
+    if [ -z "$QR_OUTPUT" ]; then
+        QR_OUTPUT=$(mktemp -t janitor-waha-qr.XXXXXX)
+        trap 'rm -f -- "$QR_OUTPUT"' EXIT
+    fi
+    curl -fsS --connect-timeout 5 --max-time 15 -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/api/$SESSION_NAME/auth/qr" -o "$QR_OUTPUT"
     if [ -s "$QR_OUTPUT" ] && file "$QR_OUTPUT" | grep -q "PNG image"; then
+        chmod 600 "$QR_OUTPUT"
+        trap - EXIT
         log_info "QR guardado en $QR_OUTPUT"
+        log_info "Elimina el archivo después de vincular el dispositivo."
         log_info "Abriéndolo con xdg-open..."
         xdg-open "$QR_OUTPUT" 2>/dev/null || log_warn "No se pudo abrir automáticamente. Abrilo manualmente: $QR_OUTPUT"
     else

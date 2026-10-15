@@ -2996,13 +2996,8 @@ def cached_fetch_api_models(
     if cache_only:
         return None
 
-    live = _live()
-    if live or isinstance(live, _NativePickerModelList):
-        stored = _entry(live, now)
-        _store_cache_entry(cache_key, stored, cache)
-        return _catalog(stored)
-    # Live returned nothing (offline, timeout, auth hiccup): a stale same-fingerprint entry beats it
-    # (non-empty only: an empty native row is not worth resurrecting over the generic fallback).
-    if _cache_entry_valid(entry, fp):
-        return _catalog(entry)
-    return _chat_catalog_rows(live)
+    from hermes_cli.models_custom_cache import fetch_cold_catalog
+    return fetch_cold_catalog(
+        cache_key=cache_key, fingerprint=fp, ttl_seconds=ttl_seconds,
+        force_refresh=force_refresh, stale_entry=entry,
+        fetch=_live, encode=_entry, decode=_catalog)

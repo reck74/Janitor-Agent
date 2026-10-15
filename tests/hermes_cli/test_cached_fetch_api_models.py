@@ -450,3 +450,110 @@ class TestProbeApiModelsNegativeCache:
         ok = mod.probe_api_models("", "https://blackhole.invalid/v1", timeout=1.0)
         assert ok["models"] == ["m1"]
         assert key not in mod._probe_neg_cache  # recovery is not masked by the stale entry
+
+
+class TestConcurrentCustomCatalogs:
+    def test_cold_reads_share_one_live_probe(self, monkeypatch):
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+
+        import hermes_cli.models as mod
+
+        load = mod._load_provider_models_cache
+        both_cold = threading.Barrier(2)
+        seen = set()
+        seen_lock = threading.Lock()
+        calls = []
+
+        def load_together():
+            cache = load()
+            with seen_lock:
+                first = threading.get_ident() not in seen
+                seen.add(threading.get_ident())
+            if first:
+                both_cold.wait(timeout=5)
+            return cache
+
+        monkeypatch.setattr(mod, "_load_provider_models_cache", load_together)
+        monkeypatch.setattr(mod, "fetch_api_models", lambda *a, **kw: calls.append(True) or ["shared"])
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(mod.cached_fetch_api_models, "test-key", "https://shared.test/v1")
+                       for _ in range(2)]
+            assert [future.result(timeout=10) for future in futures] == [["shared"], ["shared"]]
+        assert len(calls) == 1
+
+    @pytest.mark.parametrize("identity", ["credential", "profile"])
+    def test_independent_catalogs_probe_concurrently_and_keep_both_rows(self, monkeypatch, tmp_path, identity):
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+
+        import hermes_cli.models as mod
+        from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+
+        both_live = threading.Barrier(2)
+
+        def fetch(api_key, base_url, **kwargs):
+            both_live.wait(timeout=5)
+            return [threading.current_thread().name]
+
+        def read(index):
+            home = tmp_path / (str(index) if identity == "profile" else "shared")
+            home.mkdir(exist_ok=True)
+            token = set_hermes_home_override(home)
+            try:
+                return mod.cached_fetch_api_models(
+                    f"test-key-{index}" if identity == "credential" else "same-key", "https://shared.test/v1")
+            finally:
+                reset_hermes_home_override(token)
+
+        monkeypatch.setattr(mod, "fetch_api_models", fetch)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(read, index) for index in range(2)]
+            answers = [future.result(timeout=10) for future in futures]
+        assert all(answers)
+        assert answers[0] != answers[1]
+        cache_files = list(tmp_path.glob("*/provider_models_cache.json"))
+        import json
+        rows = [entry for path in cache_files for entry in json.loads(path.read_text(encoding="utf-8")).values()]
+        assert sorted(entry["models"] for entry in rows) == sorted(answers)
+
+    def test_failed_probe_releases_the_waiter(self, monkeypatch):
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+
+        import hermes_cli.models as mod
+
+        entered, release = threading.Event(), threading.Event()
+        calls = []
+
+        def fetch(*args, **kwargs):
+            calls.append(True)
+            if len(calls) == 1:
+                entered.set()
+                assert release.wait(timeout=5)
+                raise RuntimeError("synthetic failure")
+            return ["recovered"]
+
+        monkeypatch.setattr(mod, "fetch_api_models", fetch)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            first = executor.submit(mod.cached_fetch_api_models, "test-key", "https://shared.test/v1")
+            assert entered.wait(timeout=5)
+            second = executor.submit(mod.cached_fetch_api_models, "test-key", "https://shared.test/v1")
+            release.set()
+            with pytest.raises(RuntimeError, match="synthetic failure"):
+                first.result(timeout=10)
+            assert second.result(timeout=10) == ["recovered"]
+        assert mod.cached_fetch_api_models("test-key", "https://shared.test/v1") == ["recovered"]
+        assert len(calls) == 2
+
+    def test_probe_can_resolve_another_endpoint(self, monkeypatch):
+        import hermes_cli.models as mod
+
+        def fetch(api_key, base_url, **kwargs):
+            if base_url == "https://outer.test/v1":
+                assert mod.cached_fetch_api_models(api_key, "https://inner.test/v1") == ["inner"]
+                return ["outer"]
+            return ["inner"]
+
+        monkeypatch.setattr(mod, "fetch_api_models", fetch)
+        assert mod.cached_fetch_api_models("test-key", "https://outer.test/v1") == ["outer"]

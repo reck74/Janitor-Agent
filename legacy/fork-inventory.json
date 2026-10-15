@@ -9,10 +9,10 @@
   },
   "classification_note": "Active names indicate ownership/consumers, not completed live acceptance. Consumer entries include declared command/discovery interfaces. Legacy retained in place is explicitly identified.",
   "counts": {
-    "active": 313,
+    "active": 322,
     "experimental": 7,
     "legacy": 41,
-    "replaced_by_upstream": 124
+    "replaced_by_upstream": 125
   },
   "entries": [
     {
@@ -62,7 +62,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "ca8039e57b257e32caf140ae960297090448a8a9733717488a8fac11f706f586",
+      "sha256": "f804e37cb57127f4e2486597258969dbeda0a1b0f8a83bb970e98a5825a1cd40",
       "classification": "active",
       "consumers": [
         "GitHub Actions",
@@ -89,7 +89,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "6039de97e4360dc15797d7074b3718a031dcc9ebaf7fed3f75f9c99b3757f09e",
+      "sha256": "c93b7b9700791be04d5a41a1999ad6ee721ebfc05a117e0b4fecb922bc43afe8",
       "classification": "active",
       "consumers": [
         "GitHub Actions",
@@ -293,7 +293,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "186b56c809ddd9712aa424cf42e973a37dd1ce09533f4a9ba1b1bde57733499d",
+      "sha256": "8f5f05ac7a449af08cec364a7889f001d11a72a7a74500a2c55992d198f40f05",
       "classification": "active",
       "consumers": [
         "GitHub Actions",
@@ -595,7 +595,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "ad82431ac8f5253ec1ff85ead75f8290b58c4c3ea218d15f240ec235787e9c8a",
+      "sha256": "d38118e3b264c355c8f25b68d8e3370809f262b7267d41755809a7c829e1cfd8",
       "classification": "active",
       "consumers": [
         "repository documentation entrypoint"
@@ -617,11 +617,24 @@
       "replacement": null
     },
     {
+      "path": "JANITOR_FORK_DIRECTIVES.md",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "84259d345d89428e0675eb4cf5ab1da93b0d09c1cdce028abb241d3b7d9e93a9",
+      "classification": "active",
+      "consumers": [
+        "repository documentation entrypoint"
+      ],
+      "reason": "Product instructions, contracts, provenance or recovery evidence; audit records retain their observation date.",
+      "replacement": null
+    },
+    {
       "path": "JANITOR_RECOVERY_AUDIT.md",
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "58c0d04cbe8795058f7fe5f735d5544f88f0b5448d0dd5dd2a3746a713a727e7",
+      "sha256": "7f645423ee431bbc784845e2b1b7aba1ad9b2e3f3c94be1e22781667d4bf0605",
       "classification": "active",
       "consumers": [
         "repository documentation entrypoint"
@@ -634,7 +647,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "71ddb676457dc7a2d41ffe1225feb7b9892806c5e41e5cdf911ecbc404241f78",
+      "sha256": "eac26eabe636cee49002e36690e10534bc6231b4f132ccc613847b3026b7a2ce",
       "classification": "active",
       "consumers": [
         "repository documentation entrypoint"
@@ -647,7 +660,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "30510afa8edaa5453fc6f3ecfd58ce2879c592cca353b993bd2016af1bbb50e8",
+      "sha256": "c291e7b9320fb6431525e3cade6dbfab20bd43393df148918e5f2baa33f08eba",
       "classification": "active",
       "consumers": [
         "repository documentation entrypoint"
@@ -660,7 +673,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "5185e85fa6e444bdf626347cc1b08caf80aa862336377580bed6646e2cdbfff8",
+      "sha256": "df8264904d104d9fb24b8f294a5d13676e5fec5047bf117cf0a63ba7df9966d8",
       "classification": "active",
       "consumers": [
         "repository documentation entrypoint"
@@ -2816,6 +2829,32 @@
       "replacement": "d923a5eb487a17c0a68801bba9ef0f56c81040a8:hermes_cli/model_switch.py"
     },
     {
+      "path": "hermes_cli/models.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "52febb9921b69674e8e734cb740c2cf15d034c1b01b832ec61bcb0c6389ae002",
+      "classification": "active",
+      "consumers": [
+        "hermes_cli/model_switch_providers.py"
+      ],
+      "reason": "Fix deterministic cold-cache duplicate fetch and lost-row races while retaining facade seams.",
+      "replacement": null
+    },
+    {
+      "path": "hermes_cli/models_custom_cache.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "62efc1ec7ad359410b6f3b195b2a97ed627ea9359be7d9edcaed4f980a4be5f1",
+      "classification": "active",
+      "consumers": [
+        "hermes_cli/models.py"
+      ],
+      "reason": "Profile-and-credential scoped cold-cache coordination; independent providers stay concurrent.",
+      "replacement": null
+    },
+    {
       "path": "hermes_cli/nous_subscription.py",
       "historical_fork_delta": true,
       "current_engine_delta": false,
@@ -2885,7 +2924,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "9f2618a1bde857194479e7e304756e586159f8a8b5b6df9488940a9a93f5726e",
+      "sha256": "445aa980c12f948f63e1fd4b67b49fcb3fd1b6f9cf2b9536baada5635213a85f",
       "classification": "active",
       "consumers": [
         "hermes_cli/web_server.py"
@@ -2920,7 +2959,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "35e4f80e5de1e28aa10787ba582b56f0d72570a43e5e0ff7b40f1dda42c816a1",
+      "sha256": "091cfc22494e507e51bd496e67727c5b7ac505868dcf5085ae3be00df540a2c5",
       "classification": "active",
       "consumers": [
         "scripts/janitor",
@@ -2999,7 +3038,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "7fd026c84b5f8655126b58f5c7473ef2a4c70431313f1c46529ed5aae9d5ed65",
+      "sha256": "a9ca65ee531c1fc82b01a9d8105602ec396c9cbf8838ad0dbbf31fa028d3a13f",
       "classification": "active",
       "consumers": [
         "skills/janitor-honcho/scripts/deploy.sh"
@@ -3012,7 +3051,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "1f078fdf12408435507a004d6f93f9a185ee213bfcfc7bee104a1fde23e5caa8",
+      "sha256": "7f53f193b37b5736169bda89de34b52eff5db78b94c0a1b4452da00e4d7eead1",
       "classification": "active",
       "consumers": [
         "janitor_ext/honcho.py"
@@ -3025,7 +3064,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "116c343e08abefae71948bbcf69ebab619118bb4275b53660c13c8ada33a45bc",
+      "sha256": "f7183a24adff6dd845a2b310b8dbc5da72734e2153173fc499a3d3107f5c33a4",
       "classification": "active",
       "consumers": [
         "scripts/janitor-install.sh"
@@ -3038,7 +3077,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "fb2e95bd19bfbe3bce6c4840708bad26da8a2f37342852469b3d670bfa2e9979",
+      "sha256": "26997fdc1e5e8f191c173ba54b0905c8aa6f108e63bd0e5762aabd205f84700e",
       "classification": "active",
       "consumers": [
         "hermes_cli/web_routers/mcp.py"
@@ -3051,7 +3090,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "1036741408fd3f95e9afcd2640dee98b5e744fee2778772173ebd8ea31314ee6",
+      "sha256": "10d1a72052ff70d0a6463df601dc5112d594203ad325ce582bdd0cd90193a5b6",
       "classification": "active",
       "consumers": [
         "tools/mcp_tool_transport.py"
@@ -3064,7 +3103,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "8282f27f26101ecc8d429de1a6fe7afa610fc068863460f7581f3ee316007b7f",
+      "sha256": "3bc0757bf9486a18c9e272d87aaf60002603bef8f956f6febca615a82431f523",
       "classification": "active",
       "consumers": [
         "scripts/migrate-janitor-1.0.sh"
@@ -3077,7 +3116,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "2f56ef825ae3200801156e0ee9cb8f2fee62aab2b5e0e923830068b17fd966f5",
+      "sha256": "166d3f824121154953febf1dd24f40dbf5416e15c80b364b4177285fd4cb22d9",
       "classification": "active",
       "consumers": [
         "scripts/migrate-janitor-v0.20.1.sh"
@@ -3142,12 +3181,25 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "b2f3b590862631df0bb6cf115387401ff5c10385d866165dcc4cd53628c41998",
+      "sha256": "26b1da6ff7d99f32fa1b3311caf115d4b838939f90dda31913643acc2a874c49",
       "classification": "active",
       "consumers": [
         "janitor_cli.py"
       ],
       "reason": "Startup diagnosis retains help/repair when base credentials are missing.",
+      "replacement": null
+    },
+    {
+      "path": "janitor_ext/telegram_branding.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "6c42ab09ac6bb9b6e7f8232a7cc5ed87600412508615c4a7e648fe63da9e4677",
+      "classification": "active",
+      "consumers": [
+        "plugins/platforms/telegram/adapter.py"
+      ],
+      "reason": "Isolated welcome/avatar mixin preserves authorization, pairing, topic and redaction contracts.",
       "replacement": null
     },
     {
@@ -3181,7 +3233,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "49a7c95170d552f7c40611e943ac93f333e3ae50a913a1f25967277b4afd35aa",
+      "sha256": "b4767ba6721e123046a20d664a3d8aa9e5fbca9ab0a33566a94ddcfe571dc87e",
       "classification": "active",
       "consumers": [
         "skills/janitor-lightrag/scripts/deploy.sh"
@@ -3208,7 +3260,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "8982c1317e72f8811975a18fd446507f3e486fa99814cc519573712f8e4a0e44",
+      "sha256": "01bf40d216e114f7c52726e610ee72a2541ea5555db43002c85ca4b18ba98031",
       "classification": "active",
       "consumers": [
         "scripts/janitor",
@@ -3548,12 +3600,25 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "0e6aa3ebea9721f872b947c0d2cf872a144e7f49cd40efa72cc911aeab2ff1c0",
+      "sha256": "c55d266824ae61d1863f64e18c60a33e9b8a68e6fd42318669f048973fbede84",
       "classification": "active",
       "consumers": [
         "plugins/platforms/telegram/plugin.yaml"
       ],
       "reason": "Current platform adapter retains admissions/topic routing and Janitor avatar/welcome.",
+      "replacement": null
+    },
+    {
+      "path": "plugins/platforms/telegram/telegram_entities.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "7ad09c4fb55635d05daad06fa9e6d17dd32453906a91652529d03aba8ec5c217",
+      "classification": "active",
+      "consumers": [
+        "plugins/platforms/telegram/adapter.py"
+      ],
+      "reason": "Unchanged HTML entity helper extracted to keep the adapter within its inherited size cap.",
       "replacement": null
     },
     {
@@ -3588,7 +3653,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "6e9f68c492f1d9a92eccb736f3b95e712f3c11821705e0e0e7f5e67a303f9354",
+      "sha256": "7008638ddafbce59944d7a6e6bf47998dce4b358d3d8b5bfc14f41d8735ac042",
       "classification": "active",
       "consumers": [
         "MERGE_GUIDE.md"
@@ -3615,7 +3680,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "f2fb2bfad573fdbf20fb58c5326631e33e2e058bd57e328a986cb52aad72a2c3",
+      "sha256": "ec61a1783d99b0248058a84fdd8f5a38a45abc48adb5e9126b97ccff0ef94c6e",
       "classification": "active",
       "consumers": [
         "MERGE_GUIDE.md"
@@ -3642,7 +3707,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "bb69f4083c06e70961fe1e8f33736895e12d1b6636823cf66305b4f1d5256f0f",
+      "sha256": "72dcffcbdb2bda01a57bdada2c7918aac74cb7da8be27cb71257d227fb228232",
       "classification": "active",
       "consumers": [
         ".github/workflows/ci.yaml",
@@ -3739,7 +3804,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "9a137f2750c2c79387fe9aad8e36f2e9dd4ba84e2a4b3217fc77aede64321214",
+      "sha256": "0e4a5af0365667f94916fa392bcebe8b287864880b579f47baafbb1e69dbd90b",
       "classification": "legacy",
       "consumers": [
         "manual compatibility command"
@@ -3765,7 +3830,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "a0243d0a55bd47b1ecb18557e4f89c3cbde0e231101d0b24ae5710df2d9eaae9",
+      "sha256": "08c06ad962c8798dd521d64802ce024db8f7384b63e569645a2b7863d7c514e9",
       "classification": "legacy",
       "consumers": [
         "manual compatibility command"
@@ -3805,7 +3870,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "42189333b43f9687937391bfeefdad1c542619cb7761297ad952b2aa838f17d3",
+      "sha256": "61f0bdecb7bf5235fb31cbf00820e8ebf7148783ed2506e938c5608b04adb910",
       "classification": "active",
       "consumers": [
         ".github/workflows/ci.yaml",
@@ -4320,7 +4385,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "581f54802e4e0d5778cc627a314b150f163c937f43e47091ae76b43dc62f9248",
+      "sha256": "fb33f25197e214d3ec8c066dbc07d510ce9e6c04740ed9a08af0565710e2863d",
       "classification": "active",
       "consumers": [
         "skills/janitor-core/SKILL.md",
@@ -4455,7 +4520,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "b98fc9aea3f94eb506280ef7055cfdf420543cf6ceb470b7519fc1f009fd7b97",
+      "sha256": "4e3a721455cbafeb6e44340cba6573620314a78d8514e30e8ce62d462176c0a7",
       "classification": "active",
       "consumers": [
         "skills/janitor-lightrag/SKILL.md",
@@ -4470,7 +4535,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "1a5eb8148125d128062b08545890fe31807fcc7a6fbdb1b85eb8307d14008c71",
+      "sha256": "46f80287fb560700b3a93e31072a393202a12329437111d0b647520e8e039cb5",
       "classification": "active",
       "consumers": [
         "skills/janitor-lightrag/SKILL.md",
@@ -4500,7 +4565,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "595a9cf54ac8d817de639f7efa91d4657b96a94410fb2def62bff71d304e6dc8",
+      "sha256": "fdf34746e727c7b01dbc87f42199ac6227094d7e85900fe3457afb18f35d5145",
       "classification": "active",
       "consumers": [
         "skills/janitor-n8n/SKILL.md",
@@ -4575,7 +4640,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "b7ee3df1dad0a3cdb7eb6fc040ccdccbc06b260246a036f1d5cb1f9d2a5fe075",
+      "sha256": "0a63198e5c7829585e8f3fdcd57cd680c5e4380ff06d82115c11237dbb1bd905",
       "classification": "active",
       "consumers": [
         "skills/janitor-nocodb/SKILL.md",
@@ -4692,7 +4757,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "bbbc915d8a2e6744bbb7854eb829eef7c58433a6706f21025a06ac19b610f8dc",
+      "sha256": "abf66f0eba8f218bd9d1646f60b0bbe627aae9e0686e7ebcf15b81693d3c8535",
       "classification": "experimental",
       "consumers": [
         "skills/janitor-opencode/SKILL.md",
@@ -4706,7 +4771,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "763115b6e783ed8174e23ad929796cdccbd2058a8cc253a89b5b93fa10bb57a3",
+      "sha256": "58b37638e59684639b825ddc8e285fd4fc1ee93b7d756ad4451dada6ed39d883",
       "classification": "experimental",
       "consumers": [
         "skills/janitor-opencode/SKILL.md",
@@ -4734,7 +4799,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "51a6545139ce6cea4e302858184ceff9695b689f6c174c281d0d50cab148a317",
+      "sha256": "03eabe0f75daadd7821a194a4949f82aaad192a21fc2abe7dc35c524d477b1cc",
       "classification": "active",
       "consumers": [
         "skills/janitor-opendesign/SKILL.md",
@@ -4749,7 +4814,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "d2b439d5333cc35a718e3c300f9a21657a60d541c207583d68fbdb9ae07dc042",
+      "sha256": "472bb683861199229801c66a01e95176c851c577941020c3f8cd32896e0b4de8",
       "classification": "active",
       "consumers": [
         "skills/janitor-opendesign/SKILL.md",
@@ -4779,7 +4844,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "7461d57edc0402bc83444585f5b5d866c705dbdd3523cd754a35d04c7b03dc4d",
+      "sha256": "d081065179a1b703ede927a837bf96367bd1d961300759cb0136eccb49df2568",
       "classification": "active",
       "consumers": [
         "skills/janitor-opendesign/SKILL.md",
@@ -4794,7 +4859,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "9d5f3e354a9482a467ad7bfeb71579278f6258a291b874364fb6cbb3ec078e6f",
+      "sha256": "ee3d3783c974a57c88c565b7579a2b270ac7b4cbc2a71bbcd65cc243fb72cfd8",
       "classification": "active",
       "consumers": [
         "skills/janitor-opendesign/SKILL.md",
@@ -4839,7 +4904,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "97d1bff906d2a83df0ebbcd0f21b320aff47e570ffb862a59a67984e83b92cad",
+      "sha256": "b29cccbcd66d4a96b4e66123f74d831f7140927f7233cb98a81d92f32008d975",
       "classification": "active",
       "consumers": [
         "skills/janitor-opendesign/SKILL.md",
@@ -4869,7 +4934,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "102d5eaa44d3b80d0ce76e5d935abee331cc93cefc1d7575aaa126140c5b978a",
+      "sha256": "e590865541d8e1ceaefc74d31341d4c96d1b1eeb079a69f4e62663ab021f5a75",
       "classification": "active",
       "consumers": [
         "skills/janitor-opendesign/SKILL.md",
@@ -4884,7 +4949,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "1886821b64c3d2c61c5bebb3a5df800c779257f63e21daabb53260ddd0dd087f",
+      "sha256": "701cfaef982cfd4cf24d0eff260a64370f2630c617ebd76f40d78cb6d7833166",
       "classification": "active",
       "consumers": [
         "skills/janitor-opendesign/SKILL.md",
@@ -4899,7 +4964,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "2ff701f6c3ceb182647d72454eb2b7a4df3eef08e456b681da375359b0717b29",
+      "sha256": "7c05b93218b2678c8f528cdab383540ef39163983b7181b6504982d183172e47",
       "classification": "active",
       "consumers": [
         "skills/janitor-opendesign/SKILL.md",
@@ -4914,7 +4979,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "c7c2085588aca6cfdbae1638809c000e381fc33562914b1aa734f0c396fc514c",
+      "sha256": "a65191675aaa6fc14bbe52810de4d8c7ac52245669888e82c2510878e9540ecb",
       "classification": "active",
       "consumers": [
         "skills/janitor-opendesign/SKILL.md",
@@ -4929,7 +4994,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "54c1e015b65063796881470c8a66b67bfcf95f5b88d974b4ab60c9edc3c2c046",
+      "sha256": "f27819d971068107b38bc76b7b262007afbae5640c7d0ce7abbd9dff7a27be1b",
       "classification": "active",
       "consumers": [
         "skills/janitor-opendesign/SKILL.md",
@@ -4944,7 +5009,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "3ed1b902365a081db925eb9fcda0f9081ba293ea3935486eade25614c31a1651",
+      "sha256": "5acdabdbed2bb33c41742e663ba3987abf859f0a95c05b313bd73fd7652f1744",
       "classification": "active",
       "consumers": [
         "skills/janitor-opendesign/SKILL.md",
@@ -5049,7 +5114,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "9a02d46946d0250d324377e497f6f4ada108bd3031d041bd77acce1eaaaee91f",
+      "sha256": "37060e8da48010193791ce8e6b9eb3dd7fa30c295742a843e9ed2aadb9adb020",
       "classification": "active",
       "consumers": [
         "skills/janitor-waha/SKILL.md",
@@ -5064,7 +5129,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "b47ee586d2349c0017109eb9bf172fc87e76383d492474c444af6800a2bb9bab",
+      "sha256": "a1975867b4c0212a031f06215536534fd43d1bc77e69523154ddea241686eb0d",
       "classification": "active",
       "consumers": [
         "skills/janitor-waha/SKILL.md",
@@ -5079,7 +5144,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "43edba0759e3847a9c6b6d2a908c853f1154fc4e59e7689f74aa5397f06a8638",
+      "sha256": "1aca5dccf5ef9aef1870aae1b355f8e93c374bc86eb43a4788d223b3c783e237",
       "classification": "active",
       "consumers": [
         "skills/janitor-waha/SKILL.md",
@@ -5094,7 +5159,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "56bc62ab3e6634beb2ff077cfd35f561ca9512ae54fb9ba59484984916919dba",
+      "sha256": "53f3504920adf282e464f175ef2f85ef044bca67cb2c61ad8d435a610525bae2",
       "classification": "active",
       "consumers": [
         "skills/janitor-waha/SKILL.md",
@@ -5109,7 +5174,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "c94fe62aa247e7c317d6b0b6e240de2bd571ae33d222c42587dec5cce3f6868c",
+      "sha256": "15822a2d7506106c726e619dada003cd7678f046e0de223b459606989931570d",
       "classification": "active",
       "consumers": [
         "skills/janitor-waha/SKILL.md",
@@ -5332,7 +5397,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "093b75304cd34a1bdd021799aba4991ec26fa5e365defa840e8c4b83da8b657b",
+      "sha256": "01baa32a3cdfabaa8754c46b8ae297a3e490a635c5b63529df78ab0dc3eaf01d",
       "classification": "active",
       "consumers": [
         ".github/janitor-tests.txt"
@@ -5367,6 +5432,32 @@
       "replacement": "d923a5eb487a17c0a68801bba9ef0f56c81040a8:tests/hermes_cli/test_banner.py"
     },
     {
+      "path": "tests/hermes_cli/test_cached_fetch_api_models.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "3fa090e46781668a3203d353e454d845269f9fd352ff1b32f0c8278007cff56f",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/hermes_cli/test_copilot_in_model_list.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "9ee2e6949b7ce761f52874f689c44fb4fdb6a6e9092e6c9de16997b205d221b3",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
       "path": "tests/hermes_cli/test_kanban_db.py",
       "historical_fork_delta": true,
       "current_engine_delta": false,
@@ -5384,7 +5475,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "bb557c2bf4f0010820fd9c0a75ee82152c57aef76be1d6daa7bdfa737596202f",
+      "sha256": "93460b32ae4eda81431893f21b4f6f195d4611dcd5689152c1fcdbec2e34b9dc",
       "classification": "active",
       "consumers": [
         ".github/workflows/tests.yml"
@@ -5398,6 +5489,19 @@
       "current_engine_delta": true,
       "present": true,
       "sha256": "4c9168a7cd1019df1f4e68f1378ecfdab594bd7617bb9caae0c2a05a78ac772b",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/hermes_cli/test_model_options_account_usage.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "0bdb3cea9da25231e4411b4b0ce5c4d6f6b1427c1277b944d0189e3862746596",
       "classification": "active",
       "consumers": [
         ".github/workflows/tests.yml"
@@ -5449,7 +5553,20 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "fc4b45f26b02b7aa9d044948efa5de66df1aaf42f9c234bd7c9804d0b6af56c1",
+      "sha256": "872e2c69a7fe23c7d0dfa5a872da1c6d84b65cf6e8fcde101801846029a88d6b",
+      "classification": "active",
+      "consumers": [
+        ".github/janitor-tests.txt"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/skills/test_janitor_opendesign_skill.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "7e5740cc43ac77ca0e3ced0eb1614e431b1d85da2e039ebfc71b5cce121f4d66",
       "classification": "active",
       "consumers": [
         ".github/janitor-tests.txt"
@@ -5462,7 +5579,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "8048b49156365736d84ca6e834c7247accda86a1ce1d86efefe2c1f4fd93d623",
+      "sha256": "7990858dc73e68c98b62b7b96651402fc4f61c2f19e4982231c1dc2a9d1c66ee",
       "classification": "active",
       "consumers": [
         ".github/janitor-tests.txt"
@@ -5488,7 +5605,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "68aa4f99aaffb57be6f4a2d671dceced3e694caa9cca981da2bb7dbf6d34fe11",
+      "sha256": "d2369e78c148197c21484c5ddec1ad45853d48810bc32b4429a5a705040d6472",
       "classification": "active",
       "consumers": [
         ".github/janitor-tests.txt"
@@ -5527,7 +5644,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "b9a38b55905196853228f07506f18b7138aa2821bf044e297f16e8d5f63b77c4",
+      "sha256": "f5d9a0a8ffc6703ee6bb8b9c0a94f312ec570b603badc0280c7264f307878839",
       "classification": "active",
       "consumers": [
         ".github/janitor-tests.txt"
@@ -5605,7 +5722,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "ad4ba192c609c929f91b2638a4d5c6d55448f2e1492ec46e9c1ad668c8fe5482",
+      "sha256": "546932b186cec0bd20b72f4dce69b874097925e43a4e5cf8cb745c4a191a352d",
       "classification": "active",
       "consumers": [
         ".github/janitor-tests.txt"
@@ -5869,23 +5986,22 @@
     {
       "path": "ui-tui/src/lib/externalLink.ts",
       "historical_fork_delta": true,
-      "current_engine_delta": true,
+      "current_engine_delta": false,
       "present": true,
-      "sha256": "b8336388501b1a4d2d9991997aabd2a3b712ddd6e8651ad8f31605ac8143fd5a",
-      "classification": "active",
+      "sha256": "e87ba64d98869fbb3d7d8e4d9b3b45f588db852990fa79f28a029c7230405335",
+      "classification": "replaced_by_upstream",
       "consumers": [
-        "ui-tui/package.json",
-        "janitor_cli.py"
+        "ui-tui/src/lib/externalLink.ts"
       ],
-      "reason": "Skin-compatible branding/contract tests or lint-only preservation of stable behavior.",
-      "replacement": null
+      "reason": "The previous fork delta is gone; the current file uses the pinned stable implementation.",
+      "replacement": "d923a5eb487a17c0a68801bba9ef0f56c81040a8:ui-tui/src/lib/externalLink.ts"
     },
     {
       "path": "ui-tui/src/theme.ts",
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "3071cd25c68e03c8d37a909b01a9b2e2aa332d7d1ed04e7346456c8037825c29",
+      "sha256": "5c8a0514d301401f1257b2cc1f8886f7787a57d0ab2542b34f46ed8ac2eab745",
       "classification": "active",
       "consumers": [
         "ui-tui/package.json",
@@ -5948,11 +6064,24 @@
       "replacement": null
     },
     {
+      "path": "web/src/components/ToolCall.test.tsx",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "87af3a1c0d4f8ebc6790cfc3478d8cf5c052deea9d6810280b64083bf347f72d",
+      "classification": "active",
+      "consumers": [
+        "web/package.json"
+      ],
+      "reason": "Stable dashboard build or lint-only cleanup; product behavior preserved.",
+      "replacement": null
+    },
+    {
       "path": "web/src/components/ToolCall.tsx",
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "ff8ec4014c24cd2fea4a3c46f827ab593cf79f3815836703982664c783d5df29",
+      "sha256": "3ceba26673b43d64f778886aafbd20766338d3e802b3d6e83b5337e4085e2c4a",
       "classification": "active",
       "consumers": [
         "web/package.json"
@@ -5992,7 +6121,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "a37eb7f6aa03cc749aaccbd107a4a59a64aa8ef0f0739869a75bd2da0fa8de98",
+      "sha256": "1467c9a750312097ea67cd99bc81f849d8b8f358530a0b47e3c20d9a3ce9071a",
       "classification": "active",
       "consumers": [
         "website/package.json",
@@ -6286,7 +6415,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "63c17506afb2b8e9f74876cbaeca361e837d213d9ba22a192ea07a929a541a7f",
+      "sha256": "074c8a23062e538dde882dbfcfb55852ade548cda8b78551bd205e6cc0f551d4",
       "classification": "active",
       "consumers": [
         "website/package.json",
@@ -6300,7 +6429,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "4e2c55ef68fcc6d204698f0e21fa06b3a044000066512d520d864d0e198e10c2",
+      "sha256": "70df933f6302c6327d6bd8cdc46ca045d8a64dad0a713cb652f374b4328762de",
       "classification": "active",
       "consumers": [
         "website/package.json",
@@ -6314,7 +6443,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "ec97a7ccfc6551eb9fe52d805828232513eb770c30d08d3bec0879cdd516f724",
+      "sha256": "1f4ef279b21ab63b65a5b922c7b4a232a593c7578974e80e647f6221613d11b2",
       "classification": "active",
       "consumers": [
         "website/package.json",
@@ -6356,7 +6485,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "613b380f70aabf1e00743ed1053810838dad70ccba418e81401c05d8a50e48cf",
+      "sha256": "85d87a21115dbcc4e157462e9866f283441f589b547cef2f30b1247e3e67c31f",
       "classification": "active",
       "consumers": [
         "website/package.json",
@@ -6398,7 +6527,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "df860cf87ee91eaff358b4cc77403350564c486b2f24bdd6c7ab51326a0b7d02",
+      "sha256": "9930ffc3a3c506ccb6a8d9e4d699ac6c4344c56b675e44f04a61b9567bd51ab7",
       "classification": "active",
       "consumers": [
         "website/package.json",

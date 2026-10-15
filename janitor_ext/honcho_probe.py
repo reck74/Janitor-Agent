@@ -69,7 +69,7 @@ def main() -> int:
         probe_transports(config)
         print("Honcho embeddings and reasoning transport probes passed.")
         return 0
-    except Exception as error:
+    except Exception as error:  # health: allow BLE001 -- CLI boundary emits curated readiness diagnostics without credential-bearing transport tracebacks
         # RuntimeErrors above are curated; never render arbitrary network/config exception text.
         detail = str(error) if isinstance(error, RuntimeError) else "invalid server configuration or transport response"
         print(f"Honcho readiness failed: {detail}", file=__import__("sys").stderr)

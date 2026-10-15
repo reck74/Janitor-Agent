@@ -48,7 +48,7 @@ async def discover_mcp_server(name: str, request: Request, profile: Optional[str
         details = await config_scoped_to_thread(profile, _probe)
     except asyncio.CancelledError:
         raise
-    except Exception as exc:
+    except Exception as exc:  # health: allow BLE001 -- arbitrary MCP SDK failures become redacted HTTP errors; raw tracebacks may expose credentials
         root = _unwrap_exception_group(exc)
         if isinstance(root, TimeoutError):
             raise HTTPException(status_code=504, detail=f"MCP server '{name}' timed out on tools/list") from None

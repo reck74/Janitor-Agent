@@ -167,7 +167,7 @@ def prepare_source_update(root: Path) -> None:
             continue
         env = dict(os.environ, HERMES_HOME=str(home), JANITOR_HOME=str(home))
         subprocess.run([sys.executable, "-c", "from janitor_ext.install import install_honcho_plugin; install_honcho_plugin()"],
-                       cwd=root, env=env, check=True)
+                       cwd=root, env=env, check=True, timeout=1800)
 
 
 def migrate(home: Path, *, apply: bool = False, all_profiles: bool = False) -> dict:
@@ -189,7 +189,7 @@ def migrate(home: Path, *, apply: bool = False, all_profiles: bool = False) -> d
             continue
         env = dict(os.environ, HERMES_HOME=str(profile), JANITOR_HOME=str(profile))
         code = "from janitor_ext.migrate import migrate_profile; migrate_profile()"
-        subprocess.run([sys.executable, "-c", code], cwd=root, env=env, check=True)
+        subprocess.run([sys.executable, "-c", code], cwd=root, env=env, check=True, timeout=1800)
     return report
 
 

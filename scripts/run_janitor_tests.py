@@ -23,6 +23,7 @@ def main(argv=None) -> int:
         return 0
     if args[:1] == ["--"]:
         args.pop(0)
+    # health: allow HX006 -- the isolated upstream runner owns per-file deadlines, retries and cancellation
     return subprocess.call(["bash", str(ROOT / "scripts/run_tests.sh"), *files, *args], cwd=ROOT)
 
 

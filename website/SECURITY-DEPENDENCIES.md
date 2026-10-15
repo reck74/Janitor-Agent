@@ -27,8 +27,10 @@ To reproduce:
 ```bash
 cd website
 npm ci
-npm audit --json > /tmp/janitor-website-audit.json
-python ../scripts/ci/janitor_website_audit.py /tmp/janitor-website-audit.json
+audit_report=$(mktemp)
+npm audit --json > "$audit_report"
+python ../scripts/ci/janitor_website_audit.py "$audit_report"
+rm -f "$audit_report"
 npm run typecheck
 DOCUSAURUS_SSR_CONCURRENCY=2 DOCUSAURUS_SSG_WORKER_THREAD_COUNT=2 npm run build
 ```

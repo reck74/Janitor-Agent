@@ -222,3 +222,15 @@ def test_discovery_errors_redact_url_userinfo():
     assert response.status_code == 502
     assert "private-pass" not in response.text and "janitor-user" not in response.text
     assert "example.invalid" in response.text
+
+
+def test_discovery_and_log_routes_have_one_authenticated_owner():
+    from hermes_cli.web_routers.mcp import router
+    from janitor_ext import mcp_dashboard
+
+    for suffix, endpoint in (("discover", mcp_dashboard.discover_mcp_server),
+                             ("logs", mcp_dashboard.get_mcp_server_logs)):
+        matches = [route for route in router.routes
+                   if route.path == "/api/mcp/servers/{name}/" + suffix]
+        assert len(matches) == 1
+        assert matches[0].endpoint is endpoint

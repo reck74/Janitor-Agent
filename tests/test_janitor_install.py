@@ -346,3 +346,185 @@ def test_explicit_cloud_proxy_endpoint_survives_local_endpoint_normalization(tmp
     config = json.loads((tmp_path / 'honcho.json').read_text())
     assert config['baseUrl'] == endpoint
     assert config['hosts']['hermes']['baseUrl'] == endpoint
+
+
+@pytest.mark.parametrize('named', [False, True])
+def test_honcho_mode_switch_normalizes_provider_yaml_fallback(tmp_path, named):
+    home = tmp_path / 'profiles/work' if named else tmp_path
+    home.mkdir(parents=True, exist_ok=True)
+    (home / 'config.yaml').write_text(yaml.safe_dump({'honcho': {'base_url': 'http://localhost:1973', 'timeout': 19}}))
+    (home / 'honcho.json').write_text(json.dumps({'hosts': {'hermes_work': {'workspace': 'private-work'}}}))
+    credentials = {'MINIMAX_API_KEY': 'fixture', 'HONCHO_API_KEY': 'fixture-cloud', 'OPENAI_API_KEY': 'fixture'}
+    prepare_profile(home, credentials, 'cloud')
+    config = yaml.safe_load((home / 'config.yaml').read_text())
+    assert not config['honcho'].get('base_url')  # The pinned SDK builder falls back to this after honcho.json.
+    assert config['honcho']['timeout'] == 19
+    prepare_profile(home, credentials, 'local')
+    config = yaml.safe_load((home / 'config.yaml').read_text())
+    assert config['honcho']['base_url'] == 'http://127.0.0.1:1973'
+    assert json.loads((home / 'honcho.json').read_text())['hosts']['hermes_work']['workspace'] == 'private-work'
+
+
+def _honcho_database_state(owner):
+    return {'State': {'Running': True}, 'Config': {'Labels': {
+        'com.docker.compose.project': 'janitor-honcho',
+        'com.docker.compose.project.config_files': str(owner / 'docker/honcho-compose.yml'),
+    }, 'Env': ['POSTGRES_USER=fixture-user', 'POSTGRES_PASSWORD=fixture-password']}}
+
+
+def _existing_honcho_owner(home):
+    (home / 'docker').mkdir(parents=True)
+    (home / 'docker/honcho-compose.yml').write_text('name: janitor-honcho\n')
+    (home / 'honcho.env').write_text('HONCHO_POSTGRES_USER=fixture-user\nHONCHO_POSTGRES_PASSWORD=fixture-password\n')
+
+
+def test_named_profile_reuses_owned_running_honcho_without_reconfiguring_it(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from janitor_ext import honcho
+    root = tmp_path / 'root'
+    selected = root / 'profiles/work'
+    selected.mkdir(parents=True)
+    _existing_honcho_owner(root)
+    (selected / 'honcho.json').write_text('{"workspace":"profile-private"}')
+    (selected / '.env').write_text('HONCHO_API_KEY=profile-fixture\n')
+    before = {path: path.read_bytes() for path in (root / 'honcho.env', selected / '.env', selected / 'honcho.json')}
+    monkeypatch.setenv('JANITOR_HOME', str(root))
+    calls = []
+    def run(command, **kwargs):
+        calls.append(command)
+        if command[:2] == ['docker', 'inspect']:
+            assert command[-1] in ('janitor-honcho-database', 'janitor-honcho-api')
+            return SimpleNamespace(returncode=0, stdout=json.dumps([_honcho_database_state(root)]))
+        assert command == ['docker', 'info']
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(honcho.subprocess, 'run', run)
+    monkeypatch.setattr(honcho, 'prepare_service', lambda home: pytest.fail('shared owner must not be rewritten'))
+    monkeypatch.setattr(honcho, 'verify_memory', lambda: calls.append('memory-ready'))
+    monkeypatch.setattr(honcho, 'probe_local_transports', lambda: calls.append('transports-ready'))
+    honcho.deploy(selected)
+    assert calls[-2:] == ['memory-ready', 'transports-ready']
+    assert before == {path: path.read_bytes() for path in before}
+    assert not (selected / 'honcho.env').exists()
+    assert not (selected / 'backups').exists()
+
+
+@pytest.mark.parametrize('ownership', ['external', 'missing', 'multiple', 'wrong-project', 'credential-mismatch'])
+def test_local_honcho_refuses_external_or_ambiguous_owner_before_writes(tmp_path, monkeypatch, ownership):
+    from types import SimpleNamespace
+    from janitor_ext import honcho
+    selected = tmp_path / 'root'
+    selected.mkdir()
+    owner = tmp_path / 'external' if ownership == 'external' else selected
+    _existing_honcho_owner(owner)
+    state = _honcho_database_state(owner)
+    labels = state['Config']['Labels']
+    mutations = {
+        'missing': labels.clear,
+        'multiple': lambda: labels.update({'com.docker.compose.project.config_files':
+            labels['com.docker.compose.project.config_files'] + ',' + str(owner / 'docker/another.yml')}),
+        'wrong-project': lambda: labels.update({'com.docker.compose.project': 'foreign'}),
+        'credential-mismatch': lambda: state['Config']['Env'].__setitem__(0, 'POSTGRES_USER=other-user'),
+    }
+    if mutation := mutations.get(ownership):
+        mutation()
+    monkeypatch.setenv('JANITOR_HOME', str(selected))
+    def run(command, **kwargs):
+        if command == ['docker', 'inspect', 'janitor-honcho-database']:
+            return SimpleNamespace(returncode=0, stdout=json.dumps([state]))
+        assert command == ['docker', 'info']
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(honcho.subprocess, 'run', run)
+    with pytest.raises(RuntimeError, match='owner|ownership|credentials'):
+        honcho.deploy(selected)
+    assert not (selected / 'backups').exists()
+
+
+def test_provider_guard_rejects_local_yaml_fallback_in_cloud_profile(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    import pm.client
+    import janitor_ext.install as installer
+    _plugin_record(tmp_path)
+    (tmp_path / 'config.yaml').write_text(yaml.safe_dump({'janitor': {'honcho_mode': 'cloud'},
+                                                        'honcho': {'base_url': 'http://127.0.0.1:1973'}}))
+    monkeypatch.setitem(sys.modules, 'honcho', SimpleNamespace(Honcho=lambda: None))
+    monkeypatch.setattr(pm.client, 'venv_is_current', lambda **kwargs: True)
+    monkeypatch.setattr(installer, 'honcho_connection', lambda home: SimpleNamespace(base_url=None, environment='production'))
+    with pytest.raises(RuntimeError, match='Cloud Honcho still resolves to a local endpoint'):
+        installer.verify_honcho_provider(tmp_path)
+
+
+def test_local_honcho_owner_upgrade_keeps_dump_in_verified_backup(tmp_path, monkeypatch):
+    import hashlib
+    from types import SimpleNamespace
+    from janitor_ext import honcho, volumes
+    _existing_honcho_owner(tmp_path)
+    monkeypatch.setenv('JANITOR_HOME', str(tmp_path))
+    calls = []
+    def run(command, **kwargs):
+        calls.append(command)
+        if command == ['docker', 'inspect', 'janitor-honcho-database']:
+            return SimpleNamespace(returncode=0, stdout=json.dumps([_honcho_database_state(tmp_path)]))
+        if command[:4] == ['docker', 'exec', 'janitor-honcho-database', 'pg_dump']:
+            kwargs['stdout'].write(b'fixture database dump')
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(honcho.subprocess, 'run', run)
+    monkeypatch.setattr(honcho, 'prepare_service', lambda home: tmp_path / 'source')
+    monkeypatch.setattr(honcho, 'checkout_server', lambda source: None)
+    monkeypatch.setattr(volumes, 'migrate_compose', lambda *args: None)
+    monkeypatch.setattr(honcho, 'verify_memory', lambda: None)
+    monkeypatch.setattr(honcho, 'probe_local_transports', lambda: None)
+    honcho.deploy(tmp_path)
+    backups = list((tmp_path / 'backups').iterdir())
+    assert len(backups) == 1
+    manifest = json.loads((backups[0] / 'manifest.json').read_text())
+    assert {'path': 'honcho-postgres.dump', 'kind': 'postgres-dump',
+            'sha256': hashlib.sha256(b'fixture database dump').hexdigest()} in manifest['files']
+    assert any(command[-6:] == ['pg_dump', '-U', 'fixture-user', '-d', 'honcho', '-Fc'] for command in calls)
+    assert read_secrets(tmp_path / 'honcho.env')['HONCHO_POSTGRES_PASSWORD'] == 'fixture-password'
+
+
+@pytest.mark.parametrize('named', [False, True])
+def test_honcho_connection_uses_profile_secrets_without_stale_process_endpoint(tmp_path, monkeypatch, named):
+    import importlib
+    from types import SimpleNamespace
+    from plugins import memory
+    from agent.secret_scope import get_secret, current_secret_scope
+    from hermes_constants import get_hermes_home
+    from janitor_ext.install import honcho_connection
+    home = tmp_path / 'profiles/work' if named else tmp_path
+    home.mkdir(parents=True, exist_ok=True)
+    (home / '.env').write_text('HONCHO_API_KEY=profile-cloud-fixture\n')
+    monkeypatch.setenv('HERMES_HOME', str(home))
+    monkeypatch.setenv('HONCHO_API_KEY', 'stale-process-fixture')
+    monkeypatch.setenv('HONCHO_BASE_URL', 'http://localhost:1973')
+    class Provider:
+        pass
+    class ClientConfig:
+        @classmethod
+        def from_global_config(cls, config_path):
+            assert get_hermes_home() == home
+            assert config_path == home / 'honcho.json'
+            return SimpleNamespace(api_key=get_secret('HONCHO_API_KEY'), base_url=get_secret('HONCHO_BASE_URL'))
+    original_import = importlib.import_module
+    monkeypatch.setattr(memory, 'load_memory_provider', lambda *args, **kwargs: Provider())
+    monkeypatch.setattr(importlib, 'import_module', lambda name: SimpleNamespace(HonchoClientConfig=ClientConfig)
+                        if name == Provider.__module__ + '.client' else original_import(name))
+    before = current_secret_scope()
+    connection = honcho_connection(home)
+    assert connection.api_key == 'profile-cloud-fixture'
+    assert connection.base_url is None
+    assert current_secret_scope() is before
+
+
+def test_honcho_transport_timeout_is_bounded_and_diagnostic_redacted(monkeypatch):
+    import subprocess
+    from janitor_ext import honcho
+    def stall(command, **kwargs):
+        timeout = kwargs.get('timeout')
+        assert timeout is not None and 0 < timeout <= 180
+        raise subprocess.TimeoutExpired(command, timeout, stderr='sensitive-provider-token')
+    monkeypatch.setattr(honcho.subprocess, 'run', stall)
+    with pytest.raises(RuntimeError, match='readiness failed') as error:
+        honcho.probe_local_transports()
+    assert 'sensitive-provider-token' not in str(error.value)

@@ -160,13 +160,16 @@ curl -X POST -H "X-Api-Key: $WAHA_API_KEY" -H "Content-Type: application/json" \
 curl -X POST -H "X-Api-Key: $WAHA_API_KEY" \
   http://127.0.0.1:3000/api/sessions/default/start
 
-# 3. Get QR as PNG
+# 3. Get QR as PNG in a private file (mktemp honors TMPDIR)
+WAHA_QR_OUTPUT=$(mktemp -t janitor-waha-qr.XXXXXX)
 curl -H "X-Api-Key: $WAHA_API_KEY" \
   http://127.0.0.1:3000/api/default/auth/qr \
-  --output /tmp/waha-qr.png
+  --output "$WAHA_QR_OUTPUT"
 
 # 4. Open the QR (or send to your phone via Telegram)
-xdg-open /tmp/waha-qr.png
+xdg-open "$WAHA_QR_OUTPUT"
+# After scanning and closing the viewer:
+# rm -f -- "$WAHA_QR_OUTPUT"
 ```
 
 Then in WhatsApp: ⚙️ → Dispositivos vinculados → Vincular un dispositivo → scan.
@@ -943,8 +946,9 @@ from "session exists but not started" (need `POST /api/sessions/{name}/start`).
 
 Both expire in ~60s. Re-request without restarting the session:
 ```bash
-# QR
-curl -H "X-Api-Key: $WAHA_API_KEY" http://127.0.0.1:3000/api/default/auth/qr -o /tmp/qr.png
+# QR; remove "$WAHA_QR_OUTPUT" after scanning.
+WAHA_QR_OUTPUT=$(mktemp -t janitor-waha-qr.XXXXXX)
+curl -H "X-Api-Key: $WAHA_API_KEY" http://127.0.0.1:3000/api/default/auth/qr -o "$WAHA_QR_OUTPUT"
 
 # Pairing code
 curl -X POST -H "X-Api-Key: $WAHA_API_KEY" -H "Content-Type: application/json" \
