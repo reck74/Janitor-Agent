@@ -25,3 +25,25 @@ def isolated_machine_home(request, tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(home))
+
+
+@pytest.fixture
+def paired_npm_cli():
+    """Resolve npm's JS beside the real Node, never a version-manager shell wrapper."""
+    def resolve(node: Path, command: str) -> Path:
+        node = Path(node).resolve()
+        entry = f"{command}-cli.js"
+        candidates = (
+            node.parent.parent / "lib/node_modules/npm/bin" / entry,
+            node.parent / "node_modules/npm/bin" / entry,
+            node.with_name(command).resolve(),  # distro symlink, e.g. /usr/bin -> /usr/share
+        )
+        for candidate in candidates:
+            if not candidate.is_file():
+                continue
+            with candidate.open(encoding="utf-8") as stream:
+                header = stream.readline().strip()
+            if header.startswith("#!") and Path(header.split()[-1]).name == "node":
+                return candidate
+        pytest.fail(f"No real JavaScript {command} entry accompanies Node {node}")
+    return resolve

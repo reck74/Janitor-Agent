@@ -84,3 +84,118 @@ def test_live_writer_in_another_process_is_named_by_pid(tmp_path):
         holder.kill()
         holder.wait()
     assert state_db_write_lock_holders(db) == []
+
+
+@pytest.mark.platforms("linux")
+@pytest.mark.parametrize("fd_device,fd_inode,fd_lock,expected", [
+    (31, 73, "1: POSIX ADVISORY WRITE 4242 00:1d:73 120 120", True),
+    (32, 73, "1: POSIX ADVISORY WRITE 4242 00:1d:73 120 120", False),
+    (31, 74, "1: POSIX ADVISORY WRITE 4242 00:1d:73 120 120", False),
+    (31, 73, "", False),
+    (31, 73, "1: POSIX ADVISORY READ 4242 00:1d:73 120 120", False),
+    (31, 73, "1: POSIX ADVISORY WRITE 9999 00:1d:73 120 120", False),
+])
+def test_device_alias_requires_exact_file_identity_and_its_fd_lock(
+    tmp_path, monkeypatch, fd_device, fd_inode, fd_lock, expected,
+):
+    """Btrfs subvolume st_dev differs from /proc/locks; inode alone is not authority."""
+    from types import SimpleNamespace
+    import hermes_state_holders
+    import hermes_state_lockowners as owners
+
+    db = tmp_path / "state.db"
+    child_fd = "/proc/4242/fd/9"
+    lock = "1: POSIX ADVISORY WRITE 4242 00:1d:73 120 120\n"
+    real_stat = os.stat
+
+    def stat(path, *args, **kwargs):
+        if str(path) == str(db) + "-shm":
+            return SimpleNamespace(st_dev=os.makedev(0, 31), st_ino=73)
+        if str(path) == child_fd:
+            return SimpleNamespace(st_dev=os.makedev(0, fd_device), st_ino=fd_inode)
+        return real_stat(path, *args, **kwargs)
+
+    def opened(path, *args, **kwargs):
+        if str(path) == "/proc/locks":
+            return io.StringIO(lock)
+        if str(path) == "/proc/4242/fdinfo/9":
+            return io.StringIO("pos: 0\nino: 73\n" + ("lock: " + fd_lock if fd_lock else ""))
+        raise AssertionError(f"unexpected open: {path}")
+
+    monkeypatch.setattr(owners.os, "stat", stat)
+    monkeypatch.setattr(owners.os, "listdir", lambda path: ["9"] if str(path) == "/proc/4242/fd" else [])
+    monkeypatch.setattr(owners, "open", opened, raising=False)
+    monkeypatch.setattr(hermes_state_holders, "describe_holder_pid", lambda pid: f"PID {pid} (fixture)")
+    lines = owners.state_db_write_lock_holders(db)
+    assert lines == (["PID 4242 (fixture) holds WAL write lock on state.db-shm"] if expected else [])
+
+
+@pytest.mark.platforms("linux")
+def test_device_alias_does_not_borrow_another_descriptor_lock(tmp_path, monkeypatch):
+    """A process may read our file and write another subvolume's equal inode."""
+    from types import SimpleNamespace
+    import hermes_state_lockowners as owners
+
+    db = tmp_path / "state.db"
+    real_stat = os.stat
+
+    def stat(path, *args, **kwargs):
+        path = str(path)
+        if path in (str(db) + "-shm", "/proc/4242/fd/8"):
+            return SimpleNamespace(st_dev=os.makedev(0, 31), st_ino=73)
+        if path == "/proc/4242/fd/9":
+            return SimpleNamespace(st_dev=os.makedev(0, 32), st_ino=73)
+        return real_stat(path, *args, **kwargs)
+
+    def opened(path, *args, **kwargs):
+        if str(path) == "/proc/locks":
+            return io.StringIO("1: POSIX ADVISORY WRITE 4242 00:1d:73 120 120\n")
+        if str(path) == "/proc/4242/fdinfo/8":
+            return io.StringIO("pos: 0\nino: 73\n")
+        raise AssertionError(f"unverified descriptor must not be read: {path}")
+
+    monkeypatch.setattr(owners.os, "stat", stat)
+    monkeypatch.setattr(owners.os, "listdir", lambda path: ["8", "9"])
+    monkeypatch.setattr(owners, "open", opened, raising=False)
+    assert owners.state_db_write_lock_holders(db) == []
+
+
+@pytest.mark.platforms("linux")
+@pytest.mark.parametrize("failure", ["listdir", "stat", "fdinfo", "reused_fd"])
+def test_device_alias_inaccessible_or_reused_descriptor_is_not_attributed(tmp_path, monkeypatch, failure):
+    from types import SimpleNamespace
+    import hermes_state_lockowners as owners
+
+    db = tmp_path / "state.db"
+    real_stat = os.stat
+    reads = 0
+
+    def stat(path, *args, **kwargs):
+        nonlocal reads
+        if str(path) == str(db) + "-shm":
+            return SimpleNamespace(st_dev=os.makedev(0, 31), st_ino=73)
+        if str(path) == "/proc/4242/fd/9":
+            if failure == "stat":
+                raise PermissionError("fd hidden")
+            reads += 1
+            return SimpleNamespace(st_dev=os.makedev(0, 31), st_ino=74 if failure == "reused_fd" and reads > 1 else 73)
+        return real_stat(path, *args, **kwargs)
+
+    def listdir(path):
+        if failure == "listdir":
+            raise PermissionError("process hidden")
+        return ["9"]
+
+    def opened(path, *args, **kwargs):
+        if str(path) == "/proc/locks":
+            return io.StringIO("1: POSIX ADVISORY WRITE 4242 00:1d:73 120 120\n")
+        if str(path) == "/proc/4242/fdinfo/9":
+            if failure == "fdinfo":
+                raise PermissionError("lock hidden")
+            return io.StringIO("lock: 1: POSIX ADVISORY WRITE 4242 00:1d:73 120 120\n")
+        raise AssertionError(f"unexpected open: {path}")
+
+    monkeypatch.setattr(owners.os, "stat", stat)
+    monkeypatch.setattr(owners.os, "listdir", listdir)
+    monkeypatch.setattr(owners, "open", opened, raising=False)
+    assert owners.state_db_write_lock_holders(db) == []

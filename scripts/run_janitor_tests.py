@@ -23,8 +23,14 @@ def main(argv=None) -> int:
         return 0
     if args[:1] == ["--"]:
         args.pop(0)
+    from pm.shell import bash
+
+    shell = bash()
+    if shell is None:
+        print("Bash is unavailable; run the Hermes PM toolchain setup before running tests.", file=sys.stderr)
+        return 2
     # health: allow HX006 -- the isolated upstream runner owns per-file deadlines, retries and cancellation
-    return subprocess.call(["bash", str(ROOT / "scripts/run_tests.sh"), *files, *args], cwd=ROOT)
+    return subprocess.call([shell, str(ROOT / "scripts/run_tests.sh"), *files, *args], cwd=ROOT)
 
 
 if __name__ == "__main__":

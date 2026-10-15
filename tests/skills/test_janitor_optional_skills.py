@@ -318,10 +318,24 @@ def test_waha_group_diff_real_http_uses_credentials_and_paginated_nocodb(tmp_pat
         thread.join(timeout=5)
 
 
+def _require_absolute_mktemp_template(binary):
+    """Exercise the portable operand form instead of OS-specific -t semantics."""
+    native = shutil.which('mktemp')
+    assert native
+    wrapper = binary / 'mktemp'
+    wrapper.write_text(f"#!{sys.executable}\n" +
+        "import os, sys\n"
+        "if len(sys.argv) != 2 or not os.path.isabs(sys.argv[1]):\n"
+        "    sys.exit(64)\n"
+        f"os.execv({native!r}, [{native!r}, sys.argv[1]])\n", encoding='utf-8')
+    wrapper.chmod(0o755)
+
+
 @pytest.mark.parametrize('response', ['healthy', 'http-error', 'network-error'])
 def test_waha_health_uses_private_scratch_and_cleans_after_every_outcome(tmp_path, response):
     binary = tmp_path / 'bin'
     binary.mkdir()
+    _require_absolute_mktemp_template(binary)
     scratch = tmp_path / 'scratch with spaces'
     scratch.mkdir()
     capture = tmp_path / 'curl.json'
@@ -344,7 +358,7 @@ print('500' if os.environ['CURL_RESPONSE'] == 'http-error' else '200', end='')
     result = subprocess.run(['bash', str(ROOT / 'skills/janitor-waha/scripts/deploy.sh')],
         env=dict(os.environ, PATH=str(binary) + os.pathsep + os.environ['PATH'],
                  HERMES_HOME=str(tmp_path / 'profile'), TMPDIR=str(scratch),
-                 JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON='/bin/true',
+                 JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON=shutil.which('true'),
                  CURL_CAPTURE=str(capture), CURL_RESPONSE=response),
         capture_output=True, text=True, timeout=15, check=False)
     record = json.loads(capture.read_text(encoding='utf-8'))
@@ -359,6 +373,7 @@ print('500' if os.environ['CURL_RESPONSE'] == 'http-error' else '200', end='')
 def test_waha_pair_qr_private_path_and_failed_download_cleanup(tmp_path, valid):
     binary = tmp_path / 'bin'
     binary.mkdir()
+    _require_absolute_mktemp_template(binary)
     scratch = tmp_path / 'scratch with spaces'
     scratch.mkdir()
     profile = tmp_path / 'profile'
@@ -375,7 +390,7 @@ elif url.endswith('/auth/qr'):
     output = pathlib.Path(args[args.index('-o') + 1])
     output.write_bytes(base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2O+YAAAAASUVORK5CYII=') if os.environ['QR_VALID'] == '1' else b'not png')
     pathlib.Path(os.environ['QR_CAPTURE']).write_text(json.dumps({'path': str(output), 'mode': output.stat().st_mode & 0o777}), encoding='utf-8')
-elif url.endswith('/api/sessions'):
+elif url.split('?', 1)[0].endswith('/api/sessions'):
     print('[]')
 else:
     print('{"status":"SCAN_QR_CODE"}')
@@ -423,3 +438,85 @@ if sys.argv[1] == 'run':
     calls = [json.loads(line) for line in log.read_text(encoding='utf-8').splitlines()]
     assert calls == [['run', '--rm', '--name', 'janitor-volume-copy-fixture', 'copy-image'],
                      ['rm', '-f', 'janitor-volume-copy-fixture']]
+
+
+@pytest.mark.parametrize('status, polled_status', [
+    ('WORKING', 'WORKING'), ('SCAN_QR_CODE', 'SCAN_QR_CODE'),
+    ('STARTING', 'SCAN_QR_CODE'), ('STARTING', 'WORKING'),
+    ('UNKNOWN', 'UNKNOWN'), ('FAILED', 'SCAN_QR_CODE'), ('STOPPED', 'SCAN_QR_CODE'),
+])
+def test_waha_pair_reuses_live_sessions_without_logging_out(tmp_path, status, polled_status):
+    import base64
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    calls = []
+    png = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2O+YAAAAASUVORK5CYII=')
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+        def respond(self):
+            calls.append((self.command, self.path))
+            size = int(self.headers.get('Content-Length', '0'))
+            if size:
+                self.rfile.read(size)
+            responses = {
+                '/health': b'{"status":"ok"}',
+                '/api/sessions': json.dumps([] if status == 'STOPPED' else [{'name': 'default', 'status': status}]).encode(),
+                '/api/sessions?all=true': json.dumps([{'name': 'default', 'status': status}]).encode(),
+                '/api/sessions/default': json.dumps({'status': polled_status}).encode(),
+                '/api/default/auth/qr': png,
+            }
+            body = responses.get(self.path, b'{}')
+            self.send_response(200)
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        do_GET = respond
+        do_POST = respond
+        do_DELETE = respond
+
+    profile = tmp_path / 'profile'
+    (profile / 'docker').mkdir(parents=True)
+    (profile / 'docker/waha.env').write_text('WAHA_API_KEY=fixture-only\nWHATSAPP_DEFAULT_ENGINE=NOWEB\n', encoding='utf-8')
+    binary = tmp_path / 'bin'
+    binary.mkdir()
+    for name in ('sleep', 'xdg-open'):
+        stub = binary / name
+        stub.write_text('#!/bin/sh\nexit 0\n', encoding='utf-8')
+        stub.chmod(0o755)
+    scratch = tmp_path / 'scratch'
+    scratch.mkdir()
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        result = subprocess.run(['bash', str(ROOT / 'skills/janitor-waha/scripts/pair-waha.sh'), '--qr'],
+            env=dict(os.environ, PATH=str(binary) + os.pathsep + os.environ['PATH'],
+                     HERMES_HOME=str(profile), TMPDIR=str(scratch), WAHA_QR_OUTPUT='',
+                     WAHA_BASE_URL=f'http://127.0.0.1:{server.server_port}',
+                     JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON=sys.executable),
+            capture_output=True, text=True, timeout=15, check=False)
+        assert calls[:2] == [('GET', '/health'), ('GET', '/api/sessions?all=true')]
+        if status in ('FAILED', 'STOPPED'):
+            assert calls[2:7] == [
+                ('POST', '/api/sessions/default/stop'), ('POST', '/api/sessions/default/logout'),
+                ('DELETE', '/api/sessions/default'), ('POST', '/api/sessions'),
+                ('POST', '/api/sessions/default/start'),
+            ]
+        else:
+            assert all(method == 'GET' for method, _ in calls), calls
+        assert result.returncode == (1 if status == 'UNKNOWN' else 0), result.stdout + result.stderr
+        if polled_status in ('WORKING', 'UNKNOWN'):
+            assert len(calls) == (3 if status == 'STARTING' else 2)
+            assert list(scratch.iterdir()) == []
+        else:
+            assert calls[-2:] == [('GET', '/api/sessions/default'), ('GET', '/api/default/auth/qr')]
+            assert len(list(scratch.iterdir())) == 1
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)

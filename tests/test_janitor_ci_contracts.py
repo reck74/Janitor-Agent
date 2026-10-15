@@ -259,3 +259,62 @@ def test_janitor_desktop_candidate_requires_its_build_and_full_acceptance():
     assert "--prerelease" in commands and "re.fullmatch" in commands
     assert "--target \"$GITHUB_SHA\"" in commands
     assert "sourceDirty" in commands and "sha256sum --check" in commands
+
+
+def _janitor_manifest_runner():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("janitor_manifest_runner_probe", ROOT / "scripts/run_janitor_tests.py")
+    runner = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(runner)
+    return runner
+
+
+def test_manifest_runner_uses_pm_git_bash_instead_of_windows_wsl_stub(tmp_path, monkeypatch):
+    import json
+    import platform
+    import subprocess
+    from pm import shell
+
+    staged = tmp_path / "tools/git-test/usr/bin/bash.exe"
+    staged.parent.mkdir(parents=True)
+    staged.write_text("synthetic Windows binary", encoding="utf-8")
+    facts = tmp_path / "facts.json"
+    facts.write_text(json.dumps({"schema": 1, "packages": {"git": {"entry": "git-test"}}}), encoding="utf-8")
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+    monkeypatch.setattr(shell.paths, "facts_path", lambda: facts)
+    monkeypatch.setattr(shell.paths, "store_root", lambda: tmp_path / "tools")
+    monkeypatch.setattr(shell.shutil, "which", lambda name: r"C:\Windows\System32\bash.exe")
+    probes = []
+
+    def start(argv, **kwargs):
+        probes.append(argv)
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(shell.subprocess, "run", start)
+    runner = _janitor_manifest_runner()
+    monkeypatch.setattr(runner, "janitor_test_files", lambda root: ["tests/test_janitor_cli.py"])
+    calls = []
+    monkeypatch.setattr(runner.subprocess, "call", lambda argv, **kwargs: calls.append(argv) or 23)
+    assert runner.main(["-j", "2", "--file-retries", "0"]) == 23
+    assert probes and probes[0][0] == str(staged)
+    assert calls == [[str(staged), str(ROOT / "scripts/run_tests.sh"), "tests/test_janitor_cli.py",
+                      "-j", "2", "--file-retries", "0"]]
+
+
+def test_manifest_runner_reports_unavailable_bash_but_keeps_list_accessible(tmp_path, monkeypatch, capsys):
+    import os
+    from types import SimpleNamespace
+    from pm import shell
+
+    monkeypatch.setattr(shell, "_staged_bash", lambda: None)
+    monkeypatch.setattr(shell, "os", SimpleNamespace(name="nt", path=os.path, environ={"ProgramFiles": str(tmp_path)}))
+    monkeypatch.setattr(shell.shutil, "which", lambda name: r"C:\Windows\System32\bash.exe")
+    runner = _janitor_manifest_runner()
+    monkeypatch.setattr(runner, "janitor_test_files", lambda root: ["tests/test_janitor_cli.py"])
+    calls = []
+    monkeypatch.setattr(runner.subprocess, "call", lambda *args, **kwargs: calls.append(args) or 0)
+    assert runner.main([]) == 2
+    assert "Bash" in capsys.readouterr().err
+    assert not calls
+    assert runner.main(["--list"]) == 0
+    assert capsys.readouterr().out.strip() == "tests/test_janitor_cli.py"

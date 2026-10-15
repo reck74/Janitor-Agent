@@ -139,4 +139,3 @@ class JanitorTelegramBrandingMixin:
         except (TelegramError, OSError, AttributeError, RuntimeError, TypeError, ValueError) as exc:
             logger.warning("[%s] Failed to send Janitor Telegram welcome text: %s",
                            self.name, _safe_error(exc))
-

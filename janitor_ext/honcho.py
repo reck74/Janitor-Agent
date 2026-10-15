@@ -121,7 +121,8 @@ def _compose_owner(home: Path, state: dict) -> Path:
         raise RuntimeError("Selected Honcho profile does not belong to this Janitor owner")
     labels = state.get("Config", {}).get("Labels") or {}
     paths = str(labels.get("com.docker.compose.project.config_files", "")).split(",")
-    if labels.get("com.docker.compose.project") != "janitor-honcho" or len(paths) != 1 or not paths[0]:
+    project = labels.get("com.docker.compose.project")
+    if project not in ("janitor-honcho", "docker") or len(paths) != 1 or not paths[0]:
         raise RuntimeError("Existing Honcho ownership is ambiguous; repair its owner before continuing")
     compose = Path(paths[0])
     if not compose.is_absolute() or not compose.is_file():
@@ -131,6 +132,11 @@ def _compose_owner(home: Path, state: dict) -> Path:
     if (compose != owner / "docker/honcho-compose.yml"
             or (owner != root and owner.parent != root / "profiles")):
         raise RuntimeError("Existing Honcho belongs to an external owner; it was preserved")
+    # The old installer used docker/honcho-compose.yml without an explicit project.
+    # Its default project may migrate only through the verified owning profile;
+    # another profile must wait for that upgrade before reusing the shared daemon.
+    if project == "docker" and owner != home:
+        raise RuntimeError("Upgrade legacy Honcho from its owner profile before reusing this server")
     return owner
 
 

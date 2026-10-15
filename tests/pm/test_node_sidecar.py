@@ -39,16 +39,16 @@ def test_acquisition_receives_consent_and_reports_refusal(tmp_path, monkeypatch,
 
 
 @pytest.mark.platforms("posix")
-def test_real_npm_uses_paired_node_with_empty_ambient_path(tmp_path, monkeypatch):
-    npm, node = shutil.which("npm"), shutil.which("node")
-    if not npm or not node:
-        pytest.skip("npm and node are required")
-    if any(Path(executable).absolute().is_relative_to(_REAL_HERMES_HOME)
-           for executable in (npm, node)):
-        pytest.skip("requires npm and Node outside the real Hermes home")
+def test_real_npm_uses_paired_node_with_empty_ambient_path(tmp_path, monkeypatch, paired_npm_cli):
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("an already-installed Node executable is required")
+    node = Path(node).resolve()
+    if node.is_relative_to(_REAL_HERMES_HOME):
+        pytest.skip("requires Node outside the real Hermes home")
     # npm's real JS entrypoint uses /usr/bin/env node. Its paired Node lives
     # in a different PATH entry, just as the two PM packages do.
-    npm_cli = next(iter(Path(npm).resolve().parent.parent.glob("lib/npm*/bin/npm-cli.js")), Path(npm).resolve())
+    npm_cli = paired_npm_cli(node, "npm")
     npm_bin, node_bin = tmp_path / "npm/bin", tmp_path / "node/bin"
     npm_bin.mkdir(parents=True)
     node_bin.mkdir(parents=True)
@@ -111,3 +111,35 @@ def test_on_demand_sidecar_install_respects_lazy_refusal(tmp_path, monkeypatch):
     monkeypatch.setattr(pm, "ensure", lambda *args, **kwargs: InstalledRunner())
     reason = install_node_sidecar(tmp_path)
     assert reason and "disabled" in reason
+
+@pytest.mark.platforms("posix")
+@pytest.mark.parametrize("command", ["npm", "npx"])
+@pytest.mark.parametrize("layout", ["wrapper", "symlink"])
+def test_paired_npm_fixture_resolves_js_from_the_real_node(tmp_path, paired_npm_cli, command, layout):
+    prefix = tmp_path / "distribution"
+    bindir = prefix / "bin"
+    bindir.mkdir(parents=True)
+    node = bindir / "node"
+    node.touch()
+    alias = tmp_path / "node-alias"
+    alias.symlink_to(node)
+    package = prefix / "lib/node_modules/npm" if layout == "wrapper" else tmp_path / "shared/npm"
+    cli = package / "bin" / f"{command}-cli.js"
+    cli.parent.mkdir(parents=True)
+    cli.write_text("#!/usr/bin/env node\nconsole.log('fixture');\n")
+    entry = bindir / command
+    if layout == "wrapper":
+        entry.write_text("#!/usr/bin/env bash\nexit 97\n")
+    else:
+        entry.symlink_to(cli)
+    assert paired_npm_cli(alias, command) == cli
+
+
+@pytest.mark.platforms("posix")
+def test_paired_npm_fixture_rejects_a_shell_wrapper_without_js(tmp_path, paired_npm_cli):
+    node = tmp_path / "bin/node"
+    node.parent.mkdir()
+    node.touch()
+    node.with_name("npm").write_text("#!/usr/bin/env bash\nexit 97\n")
+    with pytest.raises(pytest.fail.Exception, match="No real JavaScript npm entry"):
+        paired_npm_cli(node, "npm")

@@ -45,55 +45,74 @@ log_err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 WAHA_API_KEY=$(grep '^WAHA_API_KEY=' "$ENV_FILE" | cut -d= -f2)
 [ -n "$WAHA_API_KEY" ] || { log_err "WAHA_API_KEY empty in $ENV_FILE"; exit 1; }
 
-if ! curl -s -o /dev/null -w '%{http_code}' -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/health" | grep -q 200; then
+if ! curl -sS --connect-timeout 5 --max-time 15 -o /dev/null -w '%{http_code}' -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/health" | grep -q 200; then
     log_err "WAHA no responde en $BASE_URL/health. Stack levantado?"
     log_err "Solución: docker ps --filter name=janitor-waha"
     exit 1
 fi
 
-# === Ensure NOWEB engine (avoids GOWS bug from WAHA 2026.7.2) ===
-CURRENT_DEFAULT=$(grep '^WHATSAPP_DEFAULT_ENGINE=' "$ENV_FILE" | cut -d= -f2)
-if [ "$CURRENT_DEFAULT" != "NOWEB" ]; then
-    log_warn "WHATSAPP_DEFAULT_ENGINE=$CURRENT_DEFAULT (should be NOWEB)"
-    log_warn "Applying fix: WAHA 2026.7.2 + GOWS has pairing code bug."
-    sed -i 's/^WHATSAPP_DEFAULT_ENGINE=.*/WHATSAPP_DEFAULT_ENGINE=NOWEB/' "$ENV_FILE"
-    log_warn "Edited $ENV_FILE. Restart container to apply:"
-    log_warn "  cd ~/.janitor/docker && docker compose --env-file waha.env -f waha-compose.yml restart"
-    log_warn "Continuing with --engine NOWEB for this session anyway."
-fi
+# Reuse live sessions. A repeated pairing command must never log out a healthy device.
+EXISTING_STATUS=$(curl -fsS --connect-timeout 5 --max-time 15 -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/api/sessions?all=true" | \
+    "$JANITOR_SERVICE_PYTHON" -c "import sys, json; ss=json.load(sys.stdin); print(next((s.get('status', 'UNKNOWN') for s in ss if s['name']=='$SESSION_NAME'), 'ABSENT'))")
 
-# === Clean previous session if it exists in FAILED/STOPPED state ===
+CREATE_SESSION=true
+case "$EXISTING_STATUS" in
+    WORKING)
+        log_info "Sesión '$SESSION_NAME' ya está vinculada y WORKING. No requiere emparejamiento."
+        exit 0
+        ;;
+    STARTING|SCAN_QR_CODE)
+        CREATE_SESSION=false
+        log_info "Reutilizando sesión '$SESSION_NAME' ($EXISTING_STATUS)."
+        ;;
+    FAILED|STOPPED)
+        log_info "Recuperando sesión '$SESSION_NAME' ($EXISTING_STATUS)..."
+        curl -fsS --connect-timeout 5 --max-time 15 -X POST -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/api/sessions/$SESSION_NAME/stop" > /dev/null
+        curl -fsS --connect-timeout 5 --max-time 15 -X POST -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/api/sessions/$SESSION_NAME/logout" > /dev/null
+        curl -fsS --connect-timeout 5 --max-time 15 -X DELETE -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/api/sessions/$SESSION_NAME" > /dev/null
+        sleep 2
+        ;;
+    ABSENT) ;;
+    *)
+        log_err "Estado de sesión desconocido ($EXISTING_STATUS). No se modificó la sesión."
+        exit 1
+        ;;
+esac
 
-EXISTING=$(curl -s -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/api/sessions" | \
-    "$JANITOR_SERVICE_PYTHON" -c "import sys, json; ss=json.load(sys.stdin); print(next((s['name'] for s in ss if s['name']=='$SESSION_NAME'), ''))" 2>/dev/null || echo "")
+if [ "$CREATE_SESSION" = true ]; then
+    # === Ensure NOWEB engine (avoids GOWS bug from WAHA 2026.7.2) ===
+    CURRENT_DEFAULT=$(grep '^WHATSAPP_DEFAULT_ENGINE=' "$ENV_FILE" | cut -d= -f2)
+    if [ "$CURRENT_DEFAULT" != "NOWEB" ]; then
+        log_warn "WHATSAPP_DEFAULT_ENGINE=$CURRENT_DEFAULT (should be NOWEB)"
+        log_warn "Applying fix: WAHA 2026.7.2 + GOWS has pairing code bug."
+        sed -i 's/^WHATSAPP_DEFAULT_ENGINE=.*/WHATSAPP_DEFAULT_ENGINE=NOWEB/' "$ENV_FILE"
+        log_warn "Edited $ENV_FILE. Restart container to apply:"
+        log_warn "  cd ~/.janitor/docker && docker compose --env-file waha.env -f waha-compose.yml restart"
+        log_warn "Continuing with --engine NOWEB for this session anyway."
+    fi
 
-if [ -n "$EXISTING" ]; then
-    log_info "Sesión '$SESSION_NAME' ya existe. Limpiando estado previo..."
-    curl -s -X POST -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/api/sessions/$SESSION_NAME/stop" > /dev/null || true
-    curl -s -X POST -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/api/sessions/$SESSION_NAME/logout" > /dev/null || true
-    curl -s -X DELETE -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/api/sessions/$SESSION_NAME" > /dev/null || true
+    log_info "Creando sesión '$SESSION_NAME' con engine NOWEB..."
+    CREATE_RESP=$(curl -fsS --connect-timeout 5 --max-time 15 -X POST -H "X-Api-Key: $WAHA_API_KEY" -H "Content-Type: application/json" \
+        -d "{\"name\":\"$SESSION_NAME\",\"config\":{\"engine\":\"NOWEB\"}}" \
+        "$BASE_URL/api/sessions")
+    echo "$CREATE_RESP" | "$JANITOR_SERVICE_PYTHON" -m json.tool 2>/dev/null || echo "$CREATE_RESP"
+
     sleep 2
+
+    log_info "Iniciando sesión..."
+    curl -fsS --connect-timeout 5 --max-time 15 -X POST -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/api/sessions/$SESSION_NAME/start" | \
+        "$JANITOR_SERVICE_PYTHON" -m json.tool 2>/dev/null
 fi
-
-# === Create + start session (NOWEB) ===
-
-log_info "Creando sesión '$SESSION_NAME' con engine NOWEB..."
-CREATE_RESP=$(curl -s -X POST -H "X-Api-Key: $WAHA_API_KEY" -H "Content-Type: application/json" \
-    -d "{\"name\":\"$SESSION_NAME\",\"config\":{\"engine\":\"NOWEB\"}}" \
-    "$BASE_URL/api/sessions")
-echo "$CREATE_RESP" | "$JANITOR_SERVICE_PYTHON" -m json.tool 2>/dev/null || echo "$CREATE_RESP"
-
-sleep 2
-
-log_info "Iniciando sesión..."
-curl -s -X POST -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/api/sessions/$SESSION_NAME/start" | \
-    "$JANITOR_SERVICE_PYTHON" -m json.tool 2>/dev/null
 
 # Wait for SCAN_QR_CODE
 log_info "Esperando estado SCAN_QR_CODE (max 15s)..."
 for i in $(seq 1 15); do
-    STATUS=$(curl -s -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/api/sessions/$SESSION_NAME" | \
+    STATUS=$(curl -fsS --connect-timeout 5 --max-time 15 -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/api/sessions/$SESSION_NAME" | \
         "$JANITOR_SERVICE_PYTHON" -c "import sys, json; print(json.load(sys.stdin).get('status','?'))" 2>/dev/null)
+    if [ "$STATUS" = "WORKING" ]; then
+        log_info "Sesión '$SESSION_NAME' ya está vinculada y WORKING."
+        exit 0
+    fi
     if [ "$STATUS" = "SCAN_QR_CODE" ]; then
         log_info "Sesión lista para autenticar (status=$STATUS en ${i}s)"
         break
@@ -118,7 +137,10 @@ if [ "${1:-}" = "--qr" ] || [ -z "${1:-}" ]; then
     log_info "Obteniendo QR code..."
     # Keep a valid QR available for the image viewer; remove failed downloads.
     if [ -z "$QR_OUTPUT" ]; then
-        QR_OUTPUT=$(mktemp -t janitor-waha-qr.XXXXXX)
+        scratch_dir="${TMPDIR:-${HERMES_HOME:-$HOME/.janitor}/cache/scratch}"
+        mkdir -p "$scratch_dir"
+        scratch_dir="$(cd "$scratch_dir" && pwd)"
+        QR_OUTPUT=$(mktemp "$scratch_dir/janitor-waha-qr.XXXXXX")
         trap 'rm -f -- "$QR_OUTPUT"' EXIT
     fi
     curl -fsS --connect-timeout 5 --max-time 15 -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/api/$SESSION_NAME/auth/qr" -o "$QR_OUTPUT"
@@ -144,7 +166,7 @@ else
     fi
 
     log_info "Pidiendo pairing code para $PHONE..."
-    CODE_RESP=$(curl -s -X POST -H "X-Api-Key: $WAHA_API_KEY" -H "Content-Type: application/json" \
+    CODE_RESP=$(curl -fsS --connect-timeout 5 --max-time 15 -X POST -H "X-Api-Key: $WAHA_API_KEY" -H "Content-Type: application/json" \
         -d "{\"phoneNumber\":\"$PHONE\"}" \
         "$BASE_URL/api/$SESSION_NAME/auth/request-code")
 
@@ -173,11 +195,11 @@ else
     echo ""
     echo "  Waiting for WORKING transition (max 90s)..."
     for i in $(seq 1 18); do
-        STATUS=$(curl -s -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/api/sessions/$SESSION_NAME" | \
+        STATUS=$(curl -fsS --connect-timeout 5 --max-time 15 -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/api/sessions/$SESSION_NAME" | \
             "$JANITOR_SERVICE_PYTHON" -c "import sys, json; print(json.load(sys.stdin).get('status','?'))" 2>/dev/null)
         if [ "$STATUS" = "WORKING" ]; then
             log_info "Sesión WORKING (en $((i*5))s)"
-            ME=$(curl -s -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/api/sessions/$SESSION_NAME/me" 2>/dev/null)
+            ME=$(curl -fsS --connect-timeout 5 --max-time 15 -H "X-Api-Key: $WAHA_API_KEY" "$BASE_URL/api/sessions/$SESSION_NAME/me" 2>/dev/null)
             echo "    $ME" | "$JANITOR_SERVICE_PYTHON" -m json.tool 2>/dev/null | head -5
             echo ""
             log_info "Test sending a message:"

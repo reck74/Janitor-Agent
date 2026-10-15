@@ -85,3 +85,73 @@ def test_products_stage_uses_pm_without_global_node_uv_or_nvm(tmp_path):
 def test_bootstrap_passes_bash_syntax_check():
     result = subprocess.run(["bash", "-n", str(BOOTSTRAP)], capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX bootstrap stage routing")
+@pytest.mark.parametrize(("stage", "arguments", "resolves_release"), [
+    ("repository", [], True),
+    ("repository", ["--commit", "a" * 40], False),
+    ("repository", ["--branch", "development"], False),
+    ("config", [], False),
+    ("config", ["--non-interactive", "--honcho-mode", "cloud"], False),
+    ("setup", [], False),
+    ("profile", [], False),
+    ("complete", [], False),
+    ("gateway", [], False),
+])
+def test_bootstrap_stage_routes_do_not_require_extglob(tmp_path, stage, arguments, resolves_release):
+    source, env, calls, lookup = _stage_routing_fixture(tmp_path)
+    result = subprocess.run(["bash", str(source / "scripts/bootstrap.sh"), "--dir", str(source),
+                             "--stage", stage, "--json", *arguments],
+                            env=env, text=True, capture_output=True, check=False, timeout=10)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert lookup.exists() is resolves_release
+    assert calls.exists() is (stage != "gateway"), result.stdout + result.stderr
+    if "--honcho-mode" in arguments:
+        assert calls.read_text().strip() == "--non-interactive --honcho-mode cloud"
+    if resolves_release:
+        assert "--commit " + "a" * 40 in calls.read_text()
+    assert json.loads(result.stdout.splitlines()[-1])["ok"] is True
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX bootstrap stage routing")
+@pytest.mark.parametrize("failure", ["missing-release", "installer"])
+def test_bootstrap_stage_routes_preserve_failures(tmp_path, failure):
+    source, env, calls, _lookup = _stage_routing_fixture(tmp_path)
+    env["JANITOR_TEST_STABLE"] = "missing" if failure == "missing-release" else "a" * 40
+    env["JANITOR_TEST_INSTALL_EXIT"] = "17"
+    result = subprocess.run(["bash", str(source / "scripts/bootstrap.sh"), "--dir", str(source),
+                             "--stage", "repository", "--json"],
+                            env=env, text=True, capture_output=True, check=False, timeout=10)
+    assert result.returncode == (1 if failure == "missing-release" else 17), result.stdout + result.stderr
+    if failure == "missing-release":
+        assert not calls.exists()
+        assert "stable v1.0.0 is unavailable" in result.stderr
+    else:
+        assert json.loads(result.stdout.splitlines()[-1])["ok"] is False
+
+
+def _stage_routing_fixture(tmp_path):
+    source = tmp_path / "source"
+    scripts = source / "scripts"
+    scripts.mkdir(parents=True)
+    shutil.copy2(BOOTSTRAP, scripts / "bootstrap.sh")
+    (source / "janitor_cli.py").write_text("# local installer marker\n")
+    calls, lookup = tmp_path / "calls", tmp_path / "lookup"
+    for name in ("install.sh", "janitor-install.sh", "janitor"):
+        target = scripts / name
+        target.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$JANITOR_TEST_CALLS"\n'
+                          'exit "${JANITOR_TEST_INSTALL_EXIT:-0}"\n')
+        target.chmod(0o755)
+    binary = tmp_path / "bin"
+    binary.mkdir()
+    git = binary / "git"
+    git.write_text('#!/bin/sh\nprintf "%s\\n" "$*" > "$JANITOR_TEST_LOOKUP"\n'
+                   'printf "%s\\trefs/tags/v1.0.0\\n" "$JANITOR_TEST_STABLE"\n')
+    git.chmod(0o755)
+    home = tmp_path / "home"
+    home.mkdir()
+    env = {**os.environ, "PATH": str(binary) + os.pathsep + os.environ["PATH"],
+           "HOME": str(home), "JANITOR_HOME": str(home / ".janitor"), "HERMES_HOME": str(home / ".janitor"),
+           "JANITOR_TEST_CALLS": str(calls), "JANITOR_TEST_LOOKUP": str(lookup),
+           "JANITOR_TEST_STABLE": "a" * 40, "JANITOR_TEST_INSTALL_EXIT": "0"}
+    return source, env, calls, lookup

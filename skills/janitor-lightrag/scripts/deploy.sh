@@ -98,7 +98,22 @@ generate_lightrag_env() {
             printf '\nLLM_BINDING_API_KEY=%s\n' "$previous_key" >> "$ENV_FILE"
         fi
         if grep -q '^EMBEDDING_BINDING_HOST=http://janitor-honcho-ollama:11434$' "$ENV_FILE"; then
-            sed -i 's|^EMBEDDING_BINDING_HOST=.*|EMBEDDING_BINDING_HOST=http://janitor-lightrag-embeddings:11434|; s|^EMBEDDING_MODEL=.*|EMBEDDING_MODEL=nomic-embed-text:v1.5|' "$ENV_FILE"
+            "$JANITOR_SERVICE_PYTHON" - "$ENV_FILE" <<'PYTHON'
+from pathlib import Path
+import re
+import sys
+
+from janitor_ext.install import private_write
+
+path = Path(sys.argv[1])
+content = path.read_text(encoding="utf-8")
+for key, value in {
+    "EMBEDDING_BINDING_HOST": "http://janitor-lightrag-embeddings:11434",
+    "EMBEDDING_MODEL": "nomic-embed-text:v1.5",
+}.items():
+    content = re.sub(rf"(?m)^{key}=.*$", f"{key}={value}", content)
+private_write(path, content)
+PYTHON
         fi
         # The application uses POSTGRES_DATABASE; POSTGRES_DB belongs to the DB image.
         local field

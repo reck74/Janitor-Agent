@@ -93,4 +93,3 @@ This backs up config, detects Infisical shell RC snippets, offers secret export,
 and cleans up configuration without deleting Docker volumes.
 
 ---
-

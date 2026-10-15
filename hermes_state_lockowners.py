@@ -46,6 +46,21 @@ def _describe_range(sidecar: str, start: int, end: int) -> str:
     return f"db bytes {start}-{end}"
 
 
+def _write_lock_fields(line: str) -> tuple[int, tuple[int, int], int, int] | None:
+    fields = line.split()
+    # "N: POSIX ADVISORY WRITE <pid> MAJ:MIN:INO <start> <end|EOF>"; skip blocked waiters.
+    if len(fields) < 8 or fields[1] == "->" or fields[3] != "WRITE":
+        return None
+    try:
+        major, minor, inode = fields[5].split(":")
+        key = (os.makedev(int(major, 16), int(minor, 16)), int(inode))
+        start = int(fields[6])
+        end = start if fields[7] == "EOF" else int(fields[7])
+        return int(fields[4]), key, start, end
+    except ValueError:
+        return None
+
+
 def parse_proc_locks(text: str, inodes: dict[tuple[int, int], str]) -> list[tuple[int, str, str]]:
     """``(pid, lock kind, sidecar)`` for every WRITE lock on one of ``inodes``.
 
@@ -55,27 +70,67 @@ def parse_proc_locks(text: str, inodes: dict[tuple[int, int], str]) -> list[tupl
     """
     found: list[tuple[int, str, str]] = []
     for line in text.splitlines():
-        fields = line.split()
-        # "N: POSIX ADVISORY WRITE <pid> MAJ:MIN:INO <start> <end|EOF>"; a blocked waiter is "N: -> POSIX ...".
-        if len(fields) < 8 or fields[1] == "->":
+        record = _write_lock_fields(line)
+        if record is None:
             continue
-        _, _kind, _cls, access, pid_s, ident, start_s, end_s = fields[:8]
-        if access != "WRITE":
-            continue
-        try:
-            major_s, minor_s, ino_s = ident.split(":")
-            dev = os.makedev(int(major_s, 16), int(minor_s, 16))
-            key = (dev, int(ino_s))
-            pid = int(pid_s)
-            start = int(start_s)
-            end = start if end_s == "EOF" else int(end_s)
-        except ValueError:
-            continue
+        pid, key, start, end = record
         sidecar = inodes.get(key)
-        if sidecar is None:
-            continue
-        found.append((pid, _describe_range(sidecar, start, end), sidecar))
+        if sidecar is not None:
+            found.append((pid, _describe_range(sidecar, start, end), sidecar))
     return found
+
+
+def _verified_fd_write_locks(pid: int, inodes: dict[tuple[int, int], str]) -> list[tuple[int, str, str]]:
+    """Read locks only from FDs whose stat identity matches our SQLite generation.
+
+    Btrfs exports its superblock device in /proc/locks but the subvolume device in stat().
+    fdinfo attaches each lock to its descriptor, so equal inodes on other subvolumes cannot
+    borrow an open descriptor for our file as proof. Never open the DB itself: closing it
+    would release this process's POSIX locks on that file.
+    """
+    try:
+        fds = os.listdir(f"/proc/{pid}/fd")
+    except OSError:
+        return []
+    held: list[tuple[int, str, str]] = []
+    for fd in fds:
+        fd_path = f"/proc/{pid}/fd/{fd}"
+        try:
+            before = os.stat(fd_path)
+            key = (before.st_dev, before.st_ino)
+            sidecar = inodes.get(key)
+            if sidecar is None:
+                continue
+            with open(f"/proc/{pid}/fdinfo/{fd}", encoding="ascii", errors="replace") as handle:
+                info = handle.read()
+            after = os.stat(fd_path)
+        except OSError:
+            continue
+        if key != (after.st_dev, after.st_ino):
+            continue  # descriptor closed/reused during the read
+        for line in info.splitlines():
+            if not line.startswith("lock:"):
+                continue
+            record = _write_lock_fields(line.removeprefix("lock:").lstrip())
+            if record is None:
+                continue
+            owner, kernel_key, start, end = record
+            if owner == pid and kernel_key[1] == before.st_ino:
+                held.append((pid, _describe_range(sidecar, start, end), sidecar))
+    return held
+
+
+def _device_alias_write_locks(text: str, inodes: dict[tuple[int, int], str]) -> list[tuple[int, str, str]]:
+    """Verify possible device aliases without treating an inode match alone as ownership."""
+    watched_inodes = {inode for _, inode in inodes}
+    candidates = set()
+    for line in text.splitlines():
+        record = _write_lock_fields(line)
+        if record is not None:
+            pid, key, _, _ = record
+            if pid > 0 and key not in inodes and key[1] in watched_inodes:
+                candidates.add(pid)
+    return [entry for pid in sorted(candidates) for entry in _verified_fd_write_locks(pid, inodes)]
 
 
 def state_db_write_lock_holders(db_path) -> list[str]:
@@ -102,7 +157,8 @@ def state_db_write_lock_holders(db_path) -> list[str]:
                 text = handle.read()
         except OSError:
             return []
-        held.extend(entry for entry in parse_proc_locks(text, inodes) if entry not in held)
+        entries = parse_proc_locks(text, inodes) + _device_alias_write_locks(text, inodes)
+        held.extend(entry for entry in entries if entry not in held)
     from hermes_state_holders import describe_holder_pid
 
     lines = []

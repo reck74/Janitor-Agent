@@ -9,10 +9,10 @@
   },
   "classification_note": "Active names indicate ownership/consumers, not completed live acceptance. Consumer entries include declared command/discovery interfaces. Legacy retained in place is explicitly identified.",
   "counts": {
-    "active": 322,
+    "active": 349,
     "experimental": 7,
-    "legacy": 41,
-    "replaced_by_upstream": 125
+    "legacy": 40,
+    "replaced_by_upstream": 126
   },
   "entries": [
     {
@@ -617,11 +617,24 @@
       "replacement": null
     },
     {
+      "path": "JANITOR_CI_BASELINE_PROPOSAL.md",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "7149245802c1ec13ce8ff34c6ba573a86dbe95d5cea3eee249667d800876abc3",
+      "classification": "active",
+      "consumers": [
+        "repository documentation entrypoint"
+      ],
+      "reason": "Product instructions, contracts, provenance or recovery evidence; audit records retain their observation date.",
+      "replacement": null
+    },
+    {
       "path": "JANITOR_FORK_DIRECTIVES.md",
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "84259d345d89428e0675eb4cf5ab1da93b0d09c1cdce028abb241d3b7d9e93a9",
+      "sha256": "ab15cf111e39e4fd4bb9e5ef13610b0131f2a55e6483000d4b86c942e5dbd322",
       "classification": "active",
       "consumers": [
         "repository documentation entrypoint"
@@ -643,11 +656,24 @@
       "replacement": null
     },
     {
+      "path": "JANITOR_RELEASE_CI_REVIEW.md",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "9dbdd791eb71690d2b049387f081129e2fc799a9233d3c2924e2632f8686de3e",
+      "classification": "active",
+      "consumers": [
+        "repository documentation entrypoint"
+      ],
+      "reason": "Product instructions, contracts, provenance or recovery evidence; audit records retain their observation date.",
+      "replacement": null
+    },
+    {
       "path": "JANITOR_REPAIR_STATUS.md",
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "eac26eabe636cee49002e36690e10534bc6231b4f132ccc613847b3026b7a2ce",
+      "sha256": "c2c648e0c5322e177486d79465072687de86631d39ebb185685968df6be965c7",
       "classification": "active",
       "consumers": [
         "repository documentation entrypoint"
@@ -2556,6 +2582,244 @@
       "replacement": "d923a5eb487a17c0a68801bba9ef0f56c81040a8:cli.py"
     },
     {
+      "path": "contributors/emails/UniversePeak@users.noreply.github.com",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "cd692559d99c1aed52ed49083ca1a88024ab753b65138a5f9e1f51fe7254f5bc",
+      "classification": "active",
+      "consumers": [
+        "scripts/releases/authors.py",
+        ".github/workflows/contributor-check.yml"
+      ],
+      "reason": "Contributor mapping backed by a public GitHub commit-author association; ambiguous identities remain unmapped.",
+      "replacement": null
+    },
+    {
+      "path": "contributors/emails/ZenSchema@users.noreply.github.com",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "c3e42f25df134776213ec32872f2244efaad67694f95a275ef52cdb8629fe96c",
+      "classification": "active",
+      "consumers": [
+        "scripts/releases/authors.py",
+        ".github/workflows/contributor-check.yml"
+      ],
+      "reason": "Contributor mapping backed by a public GitHub commit-author association; ambiguous identities remain unmapped.",
+      "replacement": null
+    },
+    {
+      "path": "contributors/emails/bot@duyet.net",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "81558617b5e1a454b9ebf7ffe756608168236b0656c59a74d2ec70c0b5543d7a",
+      "classification": "active",
+      "consumers": [
+        "scripts/releases/authors.py",
+        ".github/workflows/contributor-check.yml"
+      ],
+      "reason": "Contributor mapping backed by a public GitHub commit-author association; ambiguous identities remain unmapped.",
+      "replacement": null
+    },
+    {
+      "path": "contributors/emails/david@dudokdewit.net",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "1536d04175a898360182f733fbc9043d2f20793c5905f7bfb8bf32f255ade495",
+      "classification": "active",
+      "consumers": [
+        "scripts/releases/authors.py",
+        ".github/workflows/contributor-check.yml"
+      ],
+      "reason": "Contributor mapping backed by a public GitHub commit-author association; ambiguous identities remain unmapped.",
+      "replacement": null
+    },
+    {
+      "path": "contributors/emails/dialapus@users.noreply.github.com",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "78f216ca528e17eb3d993f37ba851b09a90a0990f9acb6130e339fc8f76f4da0",
+      "classification": "active",
+      "consumers": [
+        "scripts/releases/authors.py",
+        ".github/workflows/contributor-check.yml"
+      ],
+      "reason": "Contributor mapping backed by a public GitHub commit-author association; ambiguous identities remain unmapped.",
+      "replacement": null
+    },
+    {
+      "path": "contributors/emails/dmyou@users.noreply.github.com",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "65e26f049ab272cd4c002dca016b0665d4a9a16a6bfd526f98f9aa1ef75086a2",
+      "classification": "active",
+      "consumers": [
+        "scripts/releases/authors.py",
+        ".github/workflows/contributor-check.yml"
+      ],
+      "reason": "Contributor mapping backed by a public GitHub commit-author association; ambiguous identities remain unmapped.",
+      "replacement": null
+    },
+    {
+      "path": "contributors/emails/erosika@users.noreply.github.com",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "7bd217d557e08ef543fdf67d5f477d40efe51d3f62e509118a9fde5a4fd635cf",
+      "classification": "active",
+      "consumers": [
+        "scripts/releases/authors.py",
+        ".github/workflows/contributor-check.yml"
+      ],
+      "reason": "Contributor mapping backed by a public GitHub commit-author association; ambiguous identities remain unmapped.",
+      "replacement": null
+    },
+    {
+      "path": "contributors/emails/evan-bradford@users.noreply.github.com",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "53e601a4664ec0c7377e9510456d8395db694f212e6805be600e49ea62834f27",
+      "classification": "active",
+      "consumers": [
+        "scripts/releases/authors.py",
+        ".github/workflows/contributor-check.yml"
+      ],
+      "reason": "Contributor mapping backed by a public GitHub commit-author association; ambiguous identities remain unmapped.",
+      "replacement": null
+    },
+    {
+      "path": "contributors/emails/flyer103@users.noreply.github.com",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "b4c52c1972e7d438f449e9b1535bbb5152c7abdc403ef5c70fd032b74895593e",
+      "classification": "active",
+      "consumers": [
+        "scripts/releases/authors.py",
+        ".github/workflows/contributor-check.yml"
+      ],
+      "reason": "Contributor mapping backed by a public GitHub commit-author association; ambiguous identities remain unmapped.",
+      "replacement": null
+    },
+    {
+      "path": "contributors/emails/gilfoyle-vault77@humbledigital.net",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "9a730590895813f7666ca779422d4eea580451b7630c8542b4989664b9f0bc9e",
+      "classification": "active",
+      "consumers": [
+        "scripts/releases/authors.py",
+        ".github/workflows/contributor-check.yml"
+      ],
+      "reason": "Contributor mapping backed by a public GitHub commit-author association; ambiguous identities remain unmapped.",
+      "replacement": null
+    },
+    {
+      "path": "contributors/emails/kiyo-e@users.noreply.github.com",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "d13a27872a55fd0bdba35b001fdf7815df370b3878e673b7d75d35b132302b5f",
+      "classification": "active",
+      "consumers": [
+        "scripts/releases/authors.py",
+        ".github/workflows/contributor-check.yml"
+      ],
+      "reason": "Contributor mapping backed by a public GitHub commit-author association; ambiguous identities remain unmapped.",
+      "replacement": null
+    },
+    {
+      "path": "contributors/emails/kvnloo@users.noreply.github.com",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "467f3fa1a21dd02c0a55112d8bbad957bae9d5b229a2aede8199c9ef812624ac",
+      "classification": "active",
+      "consumers": [
+        "scripts/releases/authors.py",
+        ".github/workflows/contributor-check.yml"
+      ],
+      "reason": "Contributor mapping backed by a public GitHub commit-author association; ambiguous identities remain unmapped.",
+      "replacement": null
+    },
+    {
+      "path": "contributors/emails/mario841859784@users.noreply.github.com",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "111416eb3594c99b033761a2c297da6ada592bb413bf8d3c57460fe4b4577866",
+      "classification": "active",
+      "consumers": [
+        "scripts/releases/authors.py",
+        ".github/workflows/contributor-check.yml"
+      ],
+      "reason": "Contributor mapping backed by a public GitHub commit-author association; ambiguous identities remain unmapped.",
+      "replacement": null
+    },
+    {
+      "path": "contributors/emails/mfwagner@users.noreply.github.com",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "d3c3a3408bb6265f5845c874868ff9e3f881f809cc6f6758da3a4bb67f295fe0",
+      "classification": "active",
+      "consumers": [
+        "scripts/releases/authors.py",
+        ".github/workflows/contributor-check.yml"
+      ],
+      "reason": "Contributor mapping backed by a public GitHub commit-author association; ambiguous identities remain unmapped.",
+      "replacement": null
+    },
+    {
+      "path": "contributors/emails/squevo@users.noreply.github.com",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "5d21839bcd54226b8172c18999f74c579a2f469bdc82bab2ca160bc3cd5d6374",
+      "classification": "active",
+      "consumers": [
+        "scripts/releases/authors.py",
+        ".github/workflows/contributor-check.yml"
+      ],
+      "reason": "Contributor mapping backed by a public GitHub commit-author association; ambiguous identities remain unmapped.",
+      "replacement": null
+    },
+    {
+      "path": "contributors/emails/tim404x@users.noreply.github.com",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "95af5316b89b8a9fe231964e6d5ccf17dd96d716552cb50c32b5f1245be48f13",
+      "classification": "active",
+      "consumers": [
+        "scripts/releases/authors.py",
+        ".github/workflows/contributor-check.yml"
+      ],
+      "reason": "Contributor mapping backed by a public GitHub commit-author association; ambiguous identities remain unmapped.",
+      "replacement": null
+    },
+    {
+      "path": "contributors/emails/yagna@users.noreply.github.com",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "72016beb727d86d1261997747dfba3f99e1463b90bc4f6036f8d2a183fc7ef62",
+      "classification": "active",
+      "consumers": [
+        "scripts/releases/authors.py",
+        ".github/workflows/contributor-check.yml"
+      ],
+      "reason": "Contributor mapping backed by a public GitHub commit-author association; ambiguous identities remain unmapped.",
+      "replacement": null
+    },
+    {
       "path": "cron/jobs.py",
       "historical_fork_delta": true,
       "current_engine_delta": false,
@@ -2933,15 +3197,28 @@
       "replacement": null
     },
     {
-      "path": "infographic/kanban-db-corruption-defense/infographic.png",
-      "historical_fork_delta": true,
+      "path": "hermes_state_lockowners.py",
+      "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "3a75c1be0625273674b834d8f135de63b242eeff55a3dce2c801bcf844667230",
-      "classification": "legacy",
-      "consumers": [],
-      "reason": "Historical illustration retained in place; no active runtime consumer found. Not evidence of current UI or behavior.",
+      "sha256": "7b2c8f1678834101de796c8a197e291a58b16f73b9bd34612b47b0cd6a32efa1",
+      "classification": "active",
+      "consumers": [
+        "hermes_state.py"
+      ],
+      "reason": "Attribute SQLite writer locks on Btrfs only after verifying descriptor device/inode and its fdinfo lock; preserve collision and permission boundaries.",
       "replacement": null
+    },
+    {
+      "path": "infographic/kanban-db-corruption-defense/infographic.png",
+      "historical_fork_delta": true,
+      "current_engine_delta": false,
+      "present": false,
+      "sha256": null,
+      "classification": "replaced_by_upstream",
+      "consumers": [],
+      "reason": "Historical fork-only delta was removed by stable; no active file is reintroduced.",
+      "replacement": "d923a5eb487a17c0a68801bba9ef0f56c81040a8 (removal)"
     },
     {
       "path": "janitor-tui.png",
@@ -3038,7 +3315,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "a9ca65ee531c1fc82b01a9d8105602ec396c9cbf8838ad0dbbf31fa028d3a13f",
+      "sha256": "a9ffdcc0547bc32fcc473de9193109b8ae8280737d330411f1d59a5af8197fe9",
       "classification": "active",
       "consumers": [
         "skills/janitor-honcho/scripts/deploy.sh"
@@ -3194,7 +3471,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "6c42ab09ac6bb9b6e7f8232a7cc5ed87600412508615c4a7e648fe63da9e4677",
+      "sha256": "d771ed40accfafd6d37d96a457e154bc559935e54f601468de17458920046420",
       "classification": "active",
       "consumers": [
         "plugins/platforms/telegram/adapter.py"
@@ -3288,7 +3565,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "503e1dfac6edce076c4e5ae6c3254a4ed9d644cf6022ae620e51f87a5217538d",
+      "sha256": "7575563b6fe03b5adf07b82568c192180cfdfbde4054bdd1d69fc1c8e73ba1bb",
       "classification": "legacy",
       "consumers": [
         "legacy/README.md"
@@ -3666,7 +3943,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "6aca2e361c1ce8039d998c8d4717991d107e3aee6d79c2703406b555322d700d",
+      "sha256": "729057320f0d487f97ddb3619dbbefe49f911dd4e88fc52a80bd1bab5b8ea803",
       "classification": "active",
       "consumers": [
         "scripts/bootstrap.sh",
@@ -3680,7 +3957,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "ec61a1783d99b0248058a84fdd8f5a38a45abc48adb5e9126b97ccff0ef94c6e",
+      "sha256": "0a575bf823e7d179d3dab8571c1d53f3e7c44cbcf880c1df08aba2e8c97d4bce",
       "classification": "active",
       "consumers": [
         "MERGE_GUIDE.md"
@@ -3870,7 +4147,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "61f0bdecb7bf5235fb31cbf00820e8ebf7148783ed2506e938c5608b04adb910",
+      "sha256": "99ce82d6c7ecea5c19352444e29306e7ec5767df106e73f26d24b216df3cdcc3",
       "classification": "active",
       "consumers": [
         ".github/workflows/ci.yaml",
@@ -4535,7 +4812,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "46f80287fb560700b3a93e31072a393202a12329437111d0b647520e8e039cb5",
+      "sha256": "73a47ffa400987ab33b0ffa745ac5ad32b80f0beb57d59940680bbb6979aec4a",
       "classification": "active",
       "consumers": [
         "skills/janitor-lightrag/SKILL.md",
@@ -4934,7 +5211,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "e590865541d8e1ceaefc74d31341d4c96d1b1eeb079a69f4e62663ab021f5a75",
+      "sha256": "c7f99e8f553665f11255c405f74ce8145480c657a3f50ec5b7fbe0550542e95b",
       "classification": "active",
       "consumers": [
         "skills/janitor-opendesign/SKILL.md",
@@ -5114,7 +5391,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "37060e8da48010193791ce8e6b9eb3dd7fa30c295742a843e9ed2aadb9adb020",
+      "sha256": "7c282b9dcd5cf4bead3781f6cab1bda4a2f66fc4b98e220875237e3f4d61d86f",
       "classification": "active",
       "consumers": [
         "skills/janitor-waha/SKILL.md",
@@ -5144,7 +5421,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "1aca5dccf5ef9aef1870aae1b355f8e93c374bc86eb43a4788d223b3c783e237",
+      "sha256": "55fdccfe7241d69af13c480afd07d371f790a67eb963955d36965c6d1479fdaa",
       "classification": "active",
       "consumers": [
         "skills/janitor-waha/SKILL.md",
@@ -5174,7 +5451,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "15822a2d7506106c726e619dada003cd7678f046e0de223b459606989931570d",
+      "sha256": "f9f8fcda20efac5823a7937655a02bd3aa657e1f73dcdea0dc6036cd57f573b3",
       "classification": "active",
       "consumers": [
         "skills/janitor-waha/SKILL.md",
@@ -5523,6 +5800,97 @@
       "replacement": "d923a5eb487a17c0a68801bba9ef0f56c81040a8:tests/hermes_cli/test_startup_fast_guards.py"
     },
     {
+      "path": "tests/hermes_cli/test_update_recovery_closure.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "454396d4a7f256d19f4c93c20857979f53db44d5040a7ce99a1812327c4115c2",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/hermes_cli/test_user_providers_model_switch.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "1ef40fa1ea2528df3641939b3ad091540fb45b9b4eb30aa72d5295b48573c6ee",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/hermes_state/test_write_lock_owner_attribution.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "89dcf9cca335b3b283c74ffdb0e9f8cee1db400ec063a70e899bda49325cc42a",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/pm/conftest.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "6c8596e0aeb867fdbe4341445450ee891e69898dfb79de83e33e7995b9d6a2b9",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/pm/test_node_resolution.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "df557586673fe0d5c079ffda1db5eb5d5836a3a5a9c23d2a8e37cac14954e326",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/pm/test_node_sidecar.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "fcfb00bae597c973b90a1225558f14dff64e0f6e96c52f00a359389074c37aa6",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/scripts/install/test_install_sh_shell_path.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "f4e84dc9c301e184c5801f59eb53cc0dbb66c3d1ef42721764db52808bdf8c6c",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
       "path": "tests/skills/test_janitor_config_audit_skill.py",
       "historical_fork_delta": true,
       "current_engine_delta": true,
@@ -5553,7 +5921,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "872e2c69a7fe23c7d0dfa5a872da1c6d84b65cf6e8fcde101801846029a88d6b",
+      "sha256": "390f30fcf33a7609def96dc6ad756f7ab6f161338fc87a501ba463dda0cd3a19",
       "classification": "active",
       "consumers": [
         ".github/janitor-tests.txt"
@@ -5566,7 +5934,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "7e5740cc43ac77ca0e3ced0eb1614e431b1d85da2e039ebfc71b5cce121f4d66",
+      "sha256": "cdfa68c51851bae6e8de65d0dad0c68447563b63ccac612bf281ebd89534ac20",
       "classification": "active",
       "consumers": [
         ".github/janitor-tests.txt"
@@ -5579,7 +5947,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "7990858dc73e68c98b62b7b96651402fc4f61c2f19e4982231c1dc2a9d1c66ee",
+      "sha256": "a288767097245b9028addbf840ee455c8710bad14ab76a998d988c806813b163",
       "classification": "active",
       "consumers": [
         ".github/janitor-tests.txt"
@@ -5592,7 +5960,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "b8c86a332ecd7456c1ec4bce49ecd29ee9e20c4677794c2fd103cfa96c1bb3b4",
+      "sha256": "fd6d2e27745a5a47441d4a2f114bdb3ffd83e6521bc7cdfd09f8e9bb5ae91deb",
       "classification": "active",
       "consumers": [
         ".github/janitor-tests.txt"
@@ -5605,7 +5973,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "d2369e78c148197c21484c5ddec1ad45853d48810bc32b4429a5a705040d6472",
+      "sha256": "f5a09c649d0c90961c050b72a0b3f59fe4c879b6df87fb82387aed46ed635ad3",
       "classification": "active",
       "consumers": [
         ".github/janitor-tests.txt"
@@ -5644,7 +6012,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "f5d9a0a8ffc6703ee6bb8b9c0a94f312ec570b603badc0280c7264f307878839",
+      "sha256": "fd6cd70ec280fd48531d1c2afbb7b72d15fbae396a61bf0de8abaf7df4848b46",
       "classification": "active",
       "consumers": [
         ".github/janitor-tests.txt"
@@ -6527,7 +6895,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "9930ffc3a3c506ccb6a8d9e4d699ac6c4344c56b675e44f04a61b9567bd51ab7",
+      "sha256": "94c644c3f3ecaa51b6b58127f5f998a62a244f318b1d4f843c3847a74f304355",
       "classification": "active",
       "consumers": [
         "website/package.json",

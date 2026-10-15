@@ -35,6 +35,7 @@ MOVED = {
     "optional-skills/devops/janitor-skill-integration/SKILL.md": "skills/janitor-skill-integration/SKILL.md",
 }
 CORE = {
+    "hermes_state_lockowners.py": ("hermes_state.py", "Attribute SQLite writer locks on Btrfs only after verifying descriptor device/inode and its fdinfo lock; preserve collision and permission boundaries."),
     "hermes_cli/models.py": ("hermes_cli/model_switch_providers.py", "Fix deterministic cold-cache duplicate fetch and lost-row races while retaining facade seams."),
     "hermes_cli/models_custom_cache.py": ("hermes_cli/models.py", "Profile-and-credential scoped cold-cache coordination; independent providers stay concurrent."),
     "plugins/platforms/telegram/telegram_entities.py": ("plugins/platforms/telegram/adapter.py", "Unchanged HTML entity helper extracted to keep the adapter within its inherited size cap."),
@@ -116,6 +117,8 @@ def _classify_historical(path: str, current: set[str], engine_paths: set[str]) -
 
 
 def _classify_extension(path: str) -> dict | None:
+    if path.startswith("contributors/emails/"):
+        return decision("active", ["scripts/releases/authors.py", ".github/workflows/contributor-check.yml"], "Contributor mapping backed by a public GitHub commit-author association; ambiguous identities remain unmapped.")
     if path.startswith("legacy/"):
         return decision("legacy", ["legacy/README.md"], "Historical source/reference only; excluded from runtime, skill discovery and executable tests.", None)
     if path == ".claude/agents/janitor-dev-boss-autonomous.md":

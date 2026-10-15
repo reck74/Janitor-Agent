@@ -528,3 +528,86 @@ def test_honcho_transport_timeout_is_bounded_and_diagnostic_redacted(monkeypatch
     with pytest.raises(RuntimeError, match='readiness failed') as error:
         honcho.probe_local_transports()
     assert 'sensitive-provider-token' not in str(error.value)
+
+
+@pytest.fixture
+def legacy_honcho_owner(tmp_path):
+    owner = tmp_path / 'owner'
+    (owner / 'docker').mkdir(parents=True)
+    (owner / '.env').write_text('MINIMAX_API_KEY=fixture-minimax\nOPENAI_API_KEY=fixture-openai\n')
+    compose = owner / 'docker/honcho-compose.yml'
+    compose.write_text(yaml.safe_dump({'services': {'honcho-database': {'environment': {
+        'POSTGRES_USER': 'fixture-user', 'POSTGRES_PASSWORD': 'fixture-password',
+    }}}}))
+    state = {'State': {'Running': True}, 'Config': {'Labels': {
+        'com.docker.compose.project': 'docker',
+        'com.docker.compose.project.config_files': str(compose),
+    }, 'Env': ['POSTGRES_USER=fixture-user', 'POSTGRES_PASSWORD=fixture-password']}}
+    return owner, state
+
+
+def test_legacy_honcho_project_migrates_only_after_verified_owner_backup(legacy_honcho_owner, monkeypatch):
+    from types import SimpleNamespace
+    from janitor_ext import honcho, volumes
+    owner, state = legacy_honcho_owner
+    monkeypatch.setenv('JANITOR_HOME', str(owner))
+    events = []
+
+    def run(command, **kwargs):
+        if command == ['docker', 'inspect', 'janitor-honcho-database']:
+            return SimpleNamespace(returncode=0, stdout=json.dumps([state]))
+        if command[:4] == ['docker', 'exec', 'janitor-honcho-database', 'pg_dump']:
+            assert command[-5:] == ['-U', 'fixture-user', '-d', 'honcho', '-Fc']
+            kwargs['stdout'].write(b'legacy fixture dump')
+            events.append('dump')
+        return SimpleNamespace(returncode=0)
+
+    def migrate(compose, env_file):
+        assert events == ['dump']
+        assert yaml.safe_load(compose.read_text())['name'] == 'janitor-honcho'
+        assert read_secrets(env_file)['HONCHO_POSTGRES_PASSWORD'] == 'fixture-password'
+        events.append('migrate')
+
+    monkeypatch.setattr(honcho.subprocess, 'run', run)
+    monkeypatch.setattr(honcho, 'checkout_server', lambda source: None)
+    monkeypatch.setattr(volumes, 'migrate_compose', migrate)
+    monkeypatch.setattr(honcho, 'verify_memory', lambda: None)
+    monkeypatch.setattr(honcho, 'probe_local_transports', lambda: None)
+    honcho.deploy(owner)
+    assert events == ['dump', 'migrate']
+    assert read_secrets(owner / 'honcho.env')['HONCHO_POSTGRES_USER'] == 'fixture-user'
+    manifests = [json.loads(path.read_text()) for path in (owner / 'backups').glob('*/manifest.json')]
+    assert any(entry.get('kind') == 'postgres-dump' for manifest in manifests for entry in manifest['files'])
+
+
+@pytest.mark.parametrize('violation', ['other-profile', 'external', 'multiple', 'credentials'])
+def test_legacy_honcho_rejects_unverified_or_nonowning_migrations(legacy_honcho_owner, monkeypatch, violation):
+    from types import SimpleNamespace
+    from janitor_ext import honcho
+    owner, state = legacy_honcho_owner
+    selected = owner
+    root = owner
+    if violation == 'other-profile':
+        selected = owner / 'profiles/work'
+        selected.mkdir(parents=True)
+    elif violation == 'external':
+        selected = root = owner.parent / 'external'
+        selected.mkdir()
+    elif violation == 'multiple':
+        state['Config']['Labels']['com.docker.compose.project.config_files'] += ',' + str(owner / 'extra.yml')
+    else:
+        state['Config']['Env'][1] = 'POSTGRES_PASSWORD=wrong-fixture'
+    monkeypatch.setenv('JANITOR_HOME', str(root))
+    before = {path: path.read_bytes() for path in owner.rglob('*') if path.is_file()}
+
+    def run(command, **kwargs):
+        if command == ['docker', 'inspect', 'janitor-honcho-database']:
+            return SimpleNamespace(returncode=0, stdout=json.dumps([state]))
+        assert command == ['docker', 'info'], 'refusal must precede service mutations'
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(honcho.subprocess, 'run', run)
+    with pytest.raises(RuntimeError, match='owner|ownership|credentials'):
+        honcho.deploy(selected)
+    assert before == {path: path.read_bytes() for path in owner.rglob('*') if path.is_file()}
+    assert not (selected / 'backups').exists()

@@ -62,10 +62,16 @@ def test_fresh_deploy_uses_minimax_and_does_not_claim_success_on_pull_failure(tm
 
 def test_rerun_preserves_credentials_and_custom_llm_with_embedding_backup(tmp_path, monkeypatch):
     home = _pull_failure_env(tmp_path, monkeypatch)
+    # BSD sed does not accept the GNU `sed -i SCRIPT FILE` call. The migration
+    # must not depend on that external editing command on any host.
+    sed = tmp_path / 'bin/sed'
+    sed.write_text('#!/bin/sh\necho "in-place sed unavailable" >&2\nexit 64\n', encoding='utf-8')
+    sed.chmod(0o755)
     directory = home / 'docker'; directory.mkdir(parents=True)
     env_file = directory / 'lightrag.env'
     original = ('POSTGRES_PASSWORD=old-password\nLIGHTRAG_API_KEY=old-api\nAUTH_ACCOUNTS=admin:old-auth\n'
-                'LLM_API_KEY=custom-key\nLLM_BINDING_HOST=https://custom.invalid/v1\n'
+                'LLM_API_KEY=custom-key\nLLM_BINDING_HOST=https://custom.invalid/v1?x=a&y=b\n'
+                '# Keep custom values verbatim.\nCUSTOM_VALUE=spaces / ampersand & equals= café\n'
                 'EMBEDDING_BINDING_HOST=http://janitor-honcho-ollama:11434\nEMBEDDING_MODEL=nomic-embed-text\n')
     env_file.write_text(original)
     monkeypatch.delenv('MINIMAX_API_KEY')
@@ -73,7 +79,8 @@ def test_rerun_preserves_credentials_and_custom_llm_with_embedding_backup(tmp_pa
     assert result.returncode == 37
     after = env_file.read_text()
     assert 'POSTGRES_PASSWORD=old-password' in after and 'LLM_API_KEY=custom-key' in after
-    assert 'LLM_BINDING_HOST=https://custom.invalid/v1' in after
+    assert 'LLM_BINDING_HOST=https://custom.invalid/v1?x=a&y=b\n' in after
+    assert '# Keep custom values verbatim.\nCUSTOM_VALUE=spaces / ampersand & equals= café\n' in after
     assert 'LLM_BINDING_API_KEY=custom-key' in after
     assert 'POSTGRES_HOST=lightrag-db' in after
     assert 'POSTGRES_DATABASE=lightrag' in after

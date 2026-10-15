@@ -17,6 +17,7 @@ import signal
 import subprocess
 import sys
 import time
+import venv
 import zlib
 from pathlib import Path
 
@@ -98,7 +99,12 @@ def _killed_mid_write(tmp_path: Path, rel: str, committed: dict[str, str] | None
     (root / ".git/info/attributes").unlink()
 
     (tmp_path / "bin").mkdir()
-    launcher = _launchers._mint_shell_launcher("hermes", tmp_path / "bin", Path(sys.executable),
+    # Recovery is stdlib-only. A runner's editable finder can resolve the deliberately
+    # missing bootstrap from another checkout, bypassing this fixture's torn tree.
+    # Keep the production launcher intact and give it an interpreter with no installs.
+    launch_env = tmp_path / "launcher-python"
+    venv.EnvBuilder(with_pip=False, symlinks=True).create(launch_env)
+    launcher = _launchers._mint_shell_launcher("hermes", tmp_path / "bin", launch_env / "bin/python",
                                                _launchers._launcher_script("hermes", root, None))
     assert launcher is not None
     return root, env, original, launcher

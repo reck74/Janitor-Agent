@@ -18,3 +18,5 @@ Los dos clientes OpenCode tenían SHA-256 idéntico `26646cd8ee17db73e910bbaf0d5
 Google Code Assist/OAuth y el compose Honcho duplicado fueron retirados: estable ya eliminó esos módulos y el despliegue vigente tiene un único dueño bajo `skills/janitor-honcho/`. Las protecciones de archivos de credenciales OAuth se conservan, porque siguen protegiendo datos de instalaciones antiguas.
 
 Ninguna de estas operaciones elimina configuración, perfiles, sesiones o volúmenes del usuario. La migración de datos existente es `scripts/migrate-janitor-1.0.sh`, que toma un backup verificable antes de aplicar cambios.
+
+La infografía generada `infographic/kanban-db-corruption-defense/infographic.png`, sin consumidores runtime o documentación, se retiró conforme a la política upstream de no versionar infografías de PR. Sus bytes siguen recuperables en el commit histórico `cae7537359` y en la base del fork `282a00fc0875455c5f611062eb1a6d2729600d7f`; no se duplica el binario en `legacy/`.

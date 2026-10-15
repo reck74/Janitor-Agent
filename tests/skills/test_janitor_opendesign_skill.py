@@ -5,6 +5,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import os
 from pathlib import Path
 import subprocess
+import shutil
+import shlex
 import threading
 
 import pytest
@@ -80,13 +82,20 @@ def test_opendesign_status_requires_both_services(daemon_status, web_status, exp
     assert ("DOWN" in result.stdout) is bool(expected)
 
 
-@pytest.mark.parametrize("actual_version", ["v26.12.0", "unavailable"])
-def test_opendesign_gate_checks_executed_node_not_a_separate_mise_node(tmp_path, actual_version):
+@pytest.mark.parametrize(("actual_version", "expected"), [("v24.21.0", 0), ("v26.12.0", 2), ("unavailable", 2)])
+def test_opendesign_gate_checks_executed_node_not_a_separate_mise_node(tmp_path, actual_version, expected):
     source = tmp_path / "source"
     source.mkdir()
     (source / "package.json").write_text('{"engines":{"node":"~24"}}')
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
+    # BSD grep rejects PCRE; that failure must never turn a version mismatch into success.
+    unsupported = tmp_path / "unsupported-grep-option"
+    grep = bin_dir / "grep"
+    grep.write_text('#!/bin/sh\nfor arg do case "$arg" in -*P*) '
+                    f'touch {shlex.quote(str(unsupported))}; exit 2;; esac; done\n'
+                    f'exec {shlex.quote(shutil.which("grep"))} "$@"\n')
+    grep.chmod(0o755)
     for name, body in {"mise": "echo v24.21.0", "node": f"echo {actual_version}"}.items():
         script = bin_dir / name
         script.write_text("#!/bin/sh\n" + body + "\n")
@@ -96,7 +105,10 @@ def test_opendesign_gate_checks_executed_node_not_a_separate_mise_node(tmp_path,
         env={**os.environ, "OD_INSTALL_DIR": str(source), "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"]},
         capture_output=True, text=True, check=False, timeout=10,
     )
-    assert result.returncode == 2, result.stdout + result.stderr
+    assert result.returncode == expected, result.stdout + result.stderr
+    assert not unsupported.exists(), "Node gate relies on a GNU-only grep option"
+    if expected == 0:
+        assert "OK: Node" in result.stderr
 
 
 def test_opendesign_orchestrator_routes_source_override_to_same_runtime(tmp_path):

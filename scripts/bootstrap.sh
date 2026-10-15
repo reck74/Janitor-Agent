@@ -45,9 +45,14 @@ else
     upstream_installer="$temporary/install.sh"
     curl --fail --location --silent --show-error "https://raw.githubusercontent.com/reck74/Janitor-Agent/$ref/scripts/install.sh" -o "$upstream_installer"
 fi
-if [[ -z "$commit" && "$explicit_branch" == false && "$stage" != @(products|config|setup|profile|complete|gateway) ]]; then
-    commit="$(git ls-remote "$repo_url" 'refs/tags/v1.0.0^{}' refs/tags/v1.0.0 | awk 'END {print $1}')"
-    [[ "$commit" =~ ^[a-fA-F0-9]{40}$ ]] || { echo 'Janitor stable v1.0.0 is unavailable; choose an explicit --commit for development.' >&2; exit 1; }
+if [[ -z "$commit" && "$explicit_branch" == false ]]; then
+    # macOS ships Bash 3.2, which needs extglob enabled to parse @(...) in [[ ]].
+    case "$stage" in
+        products|config|setup|profile|complete|gateway) ;;
+        *)
+            commit="$(git ls-remote "$repo_url" 'refs/tags/v1.0.0^{}' refs/tags/v1.0.0 | awk 'END {print $1}')"
+            [[ "$commit" =~ ^[a-fA-F0-9]{40}$ ]] || { echo 'Janitor stable v1.0.0 is unavailable; choose an explicit --commit for development.' >&2; exit 1; } ;;
+    esac
 fi
 upstream_args=(--dir "$install_dir" --hermes-home "$HERMES_HOME" --branch "$branch" --non-interactive --skip-browser --skip-computer-use)
 [[ -z "$commit" ]] || upstream_args+=(--commit "$commit")
@@ -94,7 +99,8 @@ PY
             local options=()
             [[ "$non_interactive" != true ]] || options+=(--non-interactive)
             [[ -z "$honcho_mode" ]] || options+=(--honcho-mode "$honcho_mode")
-            bash "$install_dir/scripts/janitor-install.sh" "${options[@]}" ;;
+            # Bash 3.2 treats an empty array as unset under nounset.
+            bash "$install_dir/scripts/janitor-install.sh" ${options[@]+"${options[@]}"} ;;
         gateway) echo 'Gateway service installation is explicit: janitor gateway install' ;;
         complete)
             "$install_dir/scripts/janitor" --run-module janitor_ext.install --home "$HERMES_HOME" --verify-honcho

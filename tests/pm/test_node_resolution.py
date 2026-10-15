@@ -45,6 +45,7 @@ def node_store(tmp_path, monkeypatch):
     node = shutil.which("node")
     if node is None:
         pytest.skip("requires an already-installed Node executable")
+    node = str(Path(node).resolve())
     # The fixture hashes its input. Never read the developer's live PM store to
     # fabricate a temporary one; CI's external Node still exercises this path.
     if Path(node).absolute().is_relative_to(_REAL_HERMES_HOME):
@@ -136,12 +137,18 @@ def test_explicit_node_path_is_not_replaced_by_managed_name(node_store):
 
 
 @pytest.mark.platforms("posix")
-def test_npm_and_npx_use_the_paired_pm_entry(node_store, monkeypatch):
+def test_npm_and_npx_use_the_paired_pm_entry(node_store, paired_npm_cli, monkeypatch):
     home, node, external = node_store
     npm = Path(external).with_name("npm")
     npx = Path(external).with_name("npx")
     if not npm.is_file() or not npx.is_file():
         pytest.skip("requires already-installed npm and npx")
+    # Model PM's JS entries, not a mise/asdf wrapper that needs ambient shell tools.
+    fixture_bin = home / "npm-source/bin"
+    fixture_bin.mkdir(parents=True)
+    for command in ("npm", "npx"):
+        (fixture_bin / command).symlink_to(paired_npm_cli(Path(external), command))
+    npm, npx = fixture_bin / "npm", fixture_bin / "npx"
     binary = _register_installed_tool("npm", npm, [npx])
     companion = binary.with_name("npx")
     legacy = home / "node" / "bin" / "npm"

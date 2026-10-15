@@ -154,9 +154,12 @@ wait_for_health() {
 
 verify_endpoint() (
     # Subshell confines the cleanup trap to this probe; mktemp honors TMPDIR.
-    local api_key response_file code
+    local api_key response_file code scratch_dir
     api_key=$(grep '^WAHA_API_KEY=' "$ENV_FILE" | cut -d= -f2)
-    response_file=$(mktemp -t janitor-waha-health.XXXXXX)
+    scratch_dir="${TMPDIR:-$JANITOR_HOME/cache/scratch}"
+    mkdir -p "$scratch_dir"
+    scratch_dir="$(cd "$scratch_dir" && pwd)"
+    response_file=$(mktemp "$scratch_dir/janitor-waha-health.XXXXXX")
     trap 'rm -f -- "$response_file"' EXIT
     if ! code=$(curl -sS --connect-timeout 5 --max-time 15 -o "$response_file" -w '%{http_code}' \
         -H "X-Api-Key: ${api_key}" http://127.0.0.1:3000/health); then

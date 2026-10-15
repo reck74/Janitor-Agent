@@ -143,7 +143,10 @@ curl -X POST -H "X-Api-Key: $WAHA_API_KEY" \
   http://127.0.0.1:3000/api/sessions/default/start
 
 # 3. Get QR as PNG in a private file (mktemp honors TMPDIR)
-WAHA_QR_OUTPUT=$(mktemp -t janitor-waha-qr.XXXXXX)
+WAHA_SCRATCH="${TMPDIR:-${HERMES_HOME:-$HOME/.janitor}/cache/scratch}"
+mkdir -p "$WAHA_SCRATCH"
+WAHA_SCRATCH="$(cd "$WAHA_SCRATCH" && pwd)"
+WAHA_QR_OUTPUT=$(mktemp "$WAHA_SCRATCH/janitor-waha-qr.XXXXXX")
 curl -H "X-Api-Key: $WAHA_API_KEY" \
   http://127.0.0.1:3000/api/default/auth/qr \
   --output "$WAHA_QR_OUTPUT"
@@ -929,7 +932,10 @@ from "session exists but not started" (need `POST /api/sessions/{name}/start`).
 Both expire in ~60s. Re-request without restarting the session:
 ```bash
 # QR; remove "$WAHA_QR_OUTPUT" after scanning.
-WAHA_QR_OUTPUT=$(mktemp -t janitor-waha-qr.XXXXXX)
+WAHA_SCRATCH="${TMPDIR:-${HERMES_HOME:-$HOME/.janitor}/cache/scratch}"
+mkdir -p "$WAHA_SCRATCH"
+WAHA_SCRATCH="$(cd "$WAHA_SCRATCH" && pwd)"
+WAHA_QR_OUTPUT=$(mktemp "$WAHA_SCRATCH/janitor-waha-qr.XXXXXX")
 curl -H "X-Api-Key: $WAHA_API_KEY" http://127.0.0.1:3000/api/default/auth/qr -o "$WAHA_QR_OUTPUT"
 
 # Pairing code

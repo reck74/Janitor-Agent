@@ -34,7 +34,8 @@ if [[ ! -f "${OD_INSTALL_DIR}/package.json" ]]; then
   exit 0
 fi
 
-EXPECTED_SPEC="$(grep -oP '"node":\s*"\K[^"]+' "${OD_INSTALL_DIR}/package.json" | head -1 || true)"
+# BSD grep has no PCRE mode; use extended expressions and POSIX sed.
+EXPECTED_SPEC="$(grep -oE '"node"[[:space:]]*:[[:space:]]*"[^"]+' "${OD_INSTALL_DIR}/package.json" | head -1 | sed 's/^[^:]*:[[:space:]]*"//' || true)"
 
 if [[ -z "${EXPECTED_SPEC}" ]]; then
   echo "WARN: ${OD_INSTALL_DIR}/package.json no declara engines.node. Gate omitido." >&2

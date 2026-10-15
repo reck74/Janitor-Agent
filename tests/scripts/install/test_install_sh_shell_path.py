@@ -21,10 +21,7 @@ MARKER = "# Hermes Agent command"
 FEDORA_BASHRC = """\
 # .bashrc
 
-# Source global definitions
-if [ -f /etc/bashrc ]; then
-    . /etc/bashrc
-fi
+# Global definitions are omitted: this fixture models Fedora, not the host OS.
 
 # User specific environment
 if ! [[ "$PATH" =~ "$HOME/.local/bin:$HOME/bin:" ]]; then
@@ -62,8 +59,17 @@ def _wire(home: Path, runs: int = 1) -> None:
 
 
 def _login_path(home: Path) -> list[str]:
+    # Bash reads the first user login file below. Source it in a clean shell:
+    # the host /etc/profile may prepend ~/.local/bin before this synthetic
+    # Fedora profile, making duplicates that predate the installer.
+    script = """\
+for profile in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
+    if [ -f "$profile" ]; then . "$profile"; break; fi
+done
+printf %s "$PATH"
+"""
     # Absolute path: the pinned PATH below has no bash on hosts like NixOS.
-    result = subprocess.run([shutil.which("bash"), "-lc", 'printf %s "$PATH"'],
+    result = subprocess.run([shutil.which("bash"), "--noprofile", "--norc", "-c", script],
                             env={"HOME": str(home), "PATH": "/usr/local/bin:/usr/bin:/bin"},
                             stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30, check=False)
     assert result.returncode == 0, result.stderr
