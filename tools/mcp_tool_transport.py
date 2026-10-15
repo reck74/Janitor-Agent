@@ -13,6 +13,7 @@ from utils import normalize_proxy_url
 from agent.proxy_bypass import is_loopback_host, should_bypass_proxy
 from agent import runtime_cwd as _runtime_cwd
 from tools.mcp_tool_errors import NonMcpEndpointError, _apply_identity_header, _describe_http_failure, _handshake_answered_with_unsupported_version, _handshake_rejected_as_modern, _is_streamable_http_rejection, _make_http_rejection_recorder, _make_mcp_body_cap_transport, _make_redirect_header_stripper, _resolve_client_cert, _unwrap_exception_group
+from tools.mcp_tool_wire import RequestMetadataStream
 from tools.mcp_tool_lifecycle import _filter_mcp_children, _leader_start_time, _orphan_stdio_pid_servers, _orphan_stdio_pids, _stdio_pgids, _stdio_pids, _stdio_starttimes
 from tools.mcp_tool_common import _core
 from tools.mcp_tool_node_abi import node_abi_error
@@ -284,7 +285,7 @@ class MCPServerTransportMixin:
         not unpacked (mcp 1.x yields a 3-tuple, 2.x a pair); a TaskGroup drop maps to ``"reconnect"``."""
         try:
             async with transport_cm as _streams:
-                async with _core.ClientSession(_streams[0], _streams[1], **self._session_kwargs()) as session:
+                async with _core.ClientSession(_streams[0], RequestMetadataStream(_streams[1]), **self._session_kwargs()) as session:
                     return await self._serve_session(session, connect_timeout, label)
         except BaseExceptionGroup as _eg:
             return self._reconnect_or_reraise_group(_eg)
@@ -409,7 +410,7 @@ class MCPServerTransportMixin:
                 if new_pids:
                     self._track_spawned_children(new_pids)
                 self._stdio_child_pids = set(new_pids)  # so in-flight calls fail fast when the child dies
-                async with _core.ClientSession(read_stream, write_stream, **self._session_kwargs()) as session:
+                async with _core.ClientSession(read_stream, RequestMetadataStream(write_stream), **self._session_kwargs()) as session:
                     # Bound the handshake here (``connect_timeout`` only bounds the caller's ``.result()``):
                     # a server that never answers ``initialize`` would leak child + pipes per retry until EMFILE.
                     connect_timeout = float(config.get("connect_timeout", _core._DEFAULT_CONNECT_TIMEOUT))

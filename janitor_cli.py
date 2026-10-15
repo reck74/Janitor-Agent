@@ -145,7 +145,8 @@ def main():
         if command in (["--version"], ["version"]):
             from janitor_version import format_version
             print(format_version())
-            print(f"Install directory: {Path(__file__).resolve().parent}")
+            from pm.paths import install_root
+            print(f"Install directory: {install_root()}")
             return 0
         _install_janitor_runtime()
         if command[:2] in (["gateway", "run"], ["gateway", "start"]):

@@ -39,8 +39,6 @@ class AliasNotReverseMapped(AssertionError):
 # Red on main for a tracked, open bug: key -> (the bug's own failure-message pattern, reason). Each
 # gate accepts only its dedicated exception, so harness failures in a KNOWN cell stay failures.
 KNOWN: dict[str, tuple[str, str]] = {
-    "discovery_env": (r"configured endpoint probed=False \(native host saw \d+ GETs\); relay catalog served=False",
-                      "#120844 Anthropic model discovery ignores ANTHROPIC_BASE_URL"),
     "alias_describe": (r"tool_describe did not resolve the advertised alias: .*not_found.*chat_history_lookup",
                        "#120858 wire alias chat_history_lookup not reverse-mapped in tool_describe args"),
 }

@@ -406,15 +406,17 @@ def _script_argv(
     / ``_windows_cron_python_invocation``. Interpreter selection reads PM's install records and
     may raise; callers run this inside their ``try``."""
     if path.suffix.lower() in {".sh", ".bash"}:
-        # which() finds Git Bash on Windows; None there → clear error instead of a "[WinError 2]".
-        _bash = shutil.which("bash") or ("/bin/bash" if os.path.isfile("/bin/bash") else None)
+        from pm.shell import bash
+
+        # PM rejects Windows launcher stubs and knows the staged Git Bash.
+        _bash = bash()
         if _bash is None:
             return None, {}, (
-                f"Cannot run .sh/.bash script {path.name!r}: bash not found on PATH. "
+                f"Cannot run .sh/.bash script {path.name!r}: no usable bash found. "
                 "On Windows, install Git for Windows (which ships Git Bash) "
                 "or rewrite the script as Python (.py)."
             )
-        return [_bash, str(path)], {}, None
+        return [_bash, path.as_posix()], {}, None
     if isinstance(interpreter, str) and interpreter.strip():
         # A user venv gets none of the managed-store overlays: the repo bootstrap / PYTHONPATH
         # exist to run Hermes' own dependency venv and would shadow the user's packages.

@@ -649,6 +649,8 @@ _ENTRIES = {
     "module-oneshot": Entry("module", ("-z",), frozenset({0}), turn=True),
     # The #111942 symptom: the interactive CLI died at startup whenever config.yaml existed.
     "module-interactive-cli": Entry("module", (), frozenset({0}), tty=True),
+    "janitor-version": Entry("janitor", ("--version",), frozenset({0}), prints_version=True),
+    "janitor-help": Entry("janitor", ("--help",), frozenset({0})),
     "hermes-version": Entry("hermes", ("--version",), frozenset({0}), prints_version=True),
     "hermes-help": Entry("hermes", ("--help",), frozenset({0})),
     "hermes-acp-version": Entry("hermes-acp", ("--version",), frozenset({0}), prints_version=True),

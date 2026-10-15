@@ -24,6 +24,8 @@ from tools.mcp_tool_content import (
 from tools.mcp_tool_errors import (
     _auth_error_detail, _is_auth_error, _is_session_expired_error, _mcp_call_failed_message)
 
+from tools.mcp_tool_wire import classify_http_auth_failure
+
 logger = logging.getLogger("tools.mcp_tool")
 _MISSING = object()
 
@@ -464,10 +466,13 @@ def _render_content_blocks(result, server_name: str) -> tuple[str, int, list[str
         image = _cache_mcp_image_block(block)
         if image.startswith("MEDIA:"):
             image_paths.append(image[len("MEDIA:"):])
-        rendered = image or _cache_mcp_audio_block(block) or _render_mcp_resource_block(block, server_name)
+        audio = "" if image else _cache_mcp_audio_block(block)
+        rendered = image or audio or _render_mcp_resource_block(block, server_name)
         if rendered:
             parts.append(rendered)
-            usable_parts += 1
+            # A media failure notice is not content: structuredContent remains the fallback.
+            if not ((image or audio) and not rendered.startswith("MEDIA:")):
+                usable_parts += 1
             continue
         block_type = getattr(block, "type", None) or type(block).__name__
         if block_type in {"text", "resource", "audio", "image"}:  # benign empty render
@@ -584,7 +589,8 @@ def _make_tool_handler(server_name: str, tool_name: str, tool_timeout: float, *,
         image_paths: list[str] = []  # the LAST attempt's cached images (a recoverer may retry _call)
 
         async def _call():
-            async with server._rpc_lock, _track_inflight_rpc(server, server_name, op, retry_safe=read_only):
+            async with server._rpc_lock, classify_http_auth_failure(server), _track_inflight_rpc(
+                    server, server_name, op, retry_safe=read_only):
                 server._pending_call_context = contextvars.copy_context()  # for the elicitation callback
                 try:
                     result = await _call_tool_racing_stdio_death(server, server_name, tool_name, args)
@@ -622,7 +628,7 @@ def _make_utility_handler(op: str, log_label: str, rpc, render, required: Option
                 return tool_error(f"Missing required parameter '{required}'")
 
             async def _call():
-                async with server._rpc_lock:
+                async with server._rpc_lock, classify_http_auth_failure(server):
                     result = await rpc(server.session, args, server_name)
                 return json.dumps(render(result, server_name), ensure_ascii=False)
             return _dispatch(

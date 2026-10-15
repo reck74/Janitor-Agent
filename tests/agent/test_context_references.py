@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import subprocess
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from unittest.mock import patch
 
 import pytest
@@ -753,3 +753,13 @@ async def test_composer_paste_outside_workspace_is_attached_but_sibling_dir_is_n
     assert "PASTED-BODY-MARKER" in result.message
     assert "LOOKALIKE-SECRET" not in result.message
     assert "outside the allowed workspace" in "\n".join(result.warnings)
+
+
+@pytest.mark.parametrize(('path', 'base', 'expected'), [
+    (PureWindowsPath('C:/repo/pkg/sub'), PureWindowsPath('C:/repo'), 'pkg/sub/'),
+    (PureWindowsPath('D:/external/pkg'), PureWindowsPath('C:/repo'), 'D:/external/pkg/'),
+])
+def test_folder_header_uses_portable_separators(path, base, expected, monkeypatch):
+    import agent.context_references as references
+    monkeypatch.setattr(references, '_iter_visible_entries', lambda *args, **kwargs: [])
+    assert references._build_folder_listing(path, base) == expected

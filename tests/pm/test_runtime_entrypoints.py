@@ -98,3 +98,70 @@ def test_packaged_runtime_uses_explicit_stamp_without_tool_downloads(tmp_path, m
     from pm.package import InstallError
     with pytest.raises(InstallError, match="PM runtime"):
         runtime.runtime_command(project / "worker.py")
+
+
+@pytest.mark.parametrize("record", ["valid", "missing", "relative", "other-checkout", "deleted"])
+def test_generation_install_owner_requires_its_recorded_checkout(tmp_path, monkeypatch, record):
+    from pm import environments, paths
+
+    owner = tmp_path / "checkout"
+    owner.mkdir()
+    state = tmp_path / "home" / "installs" / environments.install_key(owner)
+    generated = state / "environments" / ("a" * 32) / "workspace"
+    generated.mkdir(parents=True)
+    inputs = state / "inputs"
+    inputs.mkdir()
+    value = str(owner)
+    if record == "relative":
+        value = "checkout"
+    elif record == "other-checkout":
+        other = tmp_path / "other"
+        other.mkdir()
+        value = str(other)
+    elif record == "deleted":
+        owner.rmdir()
+    if record != "missing":
+        (inputs / ".project-root").write_text(value, encoding="utf-8")
+    monkeypatch.setattr(paths, "repo_root", lambda: generated)
+    monkeypatch.delenv("HERMES_INSTALL_ROOT", raising=False)
+
+    assert paths.install_root() == (owner if record == "valid" else generated)
+    assert paths.repo_root() == generated, "ownership must not replace executing source"
+    expected = owner if record == "valid" else generated
+    assert paths.install_stamp_path(generated) == expected / "install-stamp.json"
+
+
+@pytest.mark.parametrize("entrypoint", ["hermes", "janitor"])
+def test_workspace_version_reports_owner_without_importing_live_checkout(tmp_path, entrypoint):
+    import os
+    from pathlib import Path
+    import subprocess
+    import sys
+
+    from pm import environments, workspace
+
+    owner = Path(__file__).resolve().parents[2]
+    state = tmp_path / "installs" / environments.install_key(owner)
+    generated = state / "environments" / ("b" * 32) / "workspace"
+    generated.parent.mkdir(parents=True)
+    workspace._generate_pyproject([], generated, source=owner)
+    environments.record_activation_inputs(state / "inputs", {}, owner, test_environment=False)
+    env = dict(os.environ)
+    env.pop("HERMES_INSTALL_ROOT", None)
+    code = (
+        "import sys; sys.path.insert(0, sys.argv[1]); "
+        "from pm.paths import repo_root; print('Executing source:', repo_root()); "
+    )
+    if entrypoint == "hermes":
+        code += ("from hermes_cli._startup_fast import print_fast_version_info; "
+                 "print_fast_version_info(check_updates=False)")
+    else:
+        code += "sys.argv=['janitor', '--version']; import janitor_cli; sys.exit(janitor_cli.main())"
+    cp = subprocess.run([sys.executable, "-I", "-c", code, str(generated)],
+                        cwd=tmp_path, env=env, text=True, capture_output=True,
+                        timeout=60, check=False)
+    assert cp.returncode == 0, cp.stderr
+    assert f"Install directory: {owner}" in cp.stdout
+    if entrypoint == "hermes":
+        assert "Install method: git" in cp.stdout
+    assert f"Executing source: {generated}" in cp.stdout

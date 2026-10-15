@@ -1494,7 +1494,7 @@ class PluginManager(PluginLoaderMixin, PluginDispatchMixin, PluginLedgerMixin):
         disabled = _names(plugins_config.get("disabled", []))
         if not enabled:
             return False
-        for lookup_key, manifest in {manifest_key(m): m for m in self._collect_directory_manifests()}.items():
+        for lookup_key, manifest in resolve_manifest_winners(self._collect_directory_manifests()).items():
             names = {lookup_key, manifest.name}
             if not manifest.portable or names & disabled or not names & enabled:
                 continue

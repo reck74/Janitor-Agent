@@ -501,8 +501,14 @@ def _get_auth_error_types() -> tuple:
     return _AUTH_ERROR_TYPES
 
 
+class MCPHTTPAuthenticationError(RuntimeError):
+    """A request-scoped HTTP 401 hidden by the MCP SDK's generic JSON-RPC error."""
+
+
 def _is_auth_error(exc: BaseException) -> bool:
     """True if ``exc`` indicates an MCP OAuth failure; ``HTTPStatusError`` counts only with status 401."""
+    if isinstance(exc, MCPHTTPAuthenticationError):
+        return True
     auth_types, http_types = _get_auth_error_types()
     if not isinstance(exc, auth_types):
         return False

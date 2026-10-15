@@ -862,7 +862,8 @@ def _scan_level(base: Path, source: str, skip_names: set, prefix: str, depth: in
         if key in seen and source == "bundled":
             continue
         src_label = "git" if source == "user" and (d / ".git").exists() else source
-        seen[key] = (name, version, description, src_label, d, key)
+        from hermes_cli.plugins_discovery import resolve_listing_collision
+        seen[key] = resolve_listing_collision(seen.get(key), (name, version, description, src_label, d, key))
 
 
 def _discover_all_plugins() -> list:

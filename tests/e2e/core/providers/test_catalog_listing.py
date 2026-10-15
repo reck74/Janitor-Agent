@@ -42,10 +42,10 @@ HANG_BOUND_S = 40.0
 _LISTING_BROKEN = (
     "ai-gateway", "alibaba", "alibaba-cn", "alibaba-coding-plan", "alibaba-coding-plan-cn",
     "alibaba-token-plan", "alibaba-token-plan-cn", "arcee", "commandcode", "commandcode-anthropic",
-    "deepinfra", "deepseek", "fireworks", "gemini", "gmi", "huggingface", "kilocode", "kimi-coding",
+    "deepinfra", "deepseek", "fireworks", "gemini", "huggingface", "kilocode", "kimi-coding",
     "kimi-coding-cn", "meta-ai", "minimax", "minimax-cn", "nebius-token-factory", "novita", "nvidia",
-    "ollama-cloud", "opencode-go", "opencode-zen", "openrouter", "router", "stepfun", "upstage", "xai",
-    "xiaomi", "zai",
+    "ollama-cloud", "opencode-go", "opencode-zen", "openrouter", "router", "upstage", "xai",
+    "xiaomi",
 )
 # Signature: the picker went to the vendor host and returned without any probe error (it renders
 # the vendor/static list instead of the relay's).

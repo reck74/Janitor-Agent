@@ -7,8 +7,9 @@ from pathlib import Path
 _METADATA = Path(__file__).resolve().parent / "janitor_ext" / "release.json"
 
 
-def release_metadata() -> dict:
-    with _METADATA.open(encoding="utf-8") as stream:
+def release_metadata(root: Path | None = None) -> dict:
+    metadata_path = _METADATA if root is None else Path(root) / "janitor_ext" / "release.json"
+    with metadata_path.open(encoding="utf-8") as stream:
         metadata = json.load(stream)
     if not isinstance(metadata, dict):
         raise ValueError("Janitor release metadata must be an object")
@@ -23,7 +24,11 @@ def display_version(raw: str | None = None) -> str:
     return raw.replace("+", "-", 1) if raw is not None else release_metadata()["janitorVersion"]
 
 
-def format_version() -> str:
-    data = release_metadata()
-    return (f"THE JANITOR v{data['janitorVersion']} "
+def format_version(root: Path | None = None) -> str:
+    from hermes_cli.version_info import get_version_info
+
+    data = release_metadata(root)
+    commit = get_version_info().commit
+    provenance = f" · commit {commit[:12]}" if commit else ""
+    return (f"THE JANITOR v{data['janitorVersion']}{provenance} "
             f"(Hermes {data['upstreamVersion']}; {data['upstreamRef'][:12]})")

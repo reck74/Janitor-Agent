@@ -1633,3 +1633,88 @@ class TestRedactForEgress:
         from agent import redact as R
         monkeypatch.setattr(R, "redact_sensitive_text", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
         assert R.redact_for_egress("sk-live-0123456789abcdef") == R.REDACTION_UNAVAILABLE
+
+
+class TestStreamingEgressRedaction:
+    @pytest.mark.parametrize("payload", [
+        "Here is sk-proj-0123456789abcdefghijklmnopqrstuvwxyz done.",
+        "Here is sk-proj-0123456789\nabcdefghijklmnop done.",
+        "bearer opaqueCredential0123456789abcdefghijklmnop done.",
+        "Authorization: Basic dXNlcjpwYXNzd29yZA== done.",
+        "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 done.",
+        "+12345678901234 done.",
+        "PASSWORD = hunter2 done.",
+        "PW=hunter2 done.",
+        "{'password': 'opaque secret with spaces here'} done.",
+        "Bearer opaqueCredential0123456789abcdefghijklmnop done.",
+        'AUTH_TOKEN = "opaque secret with spaces here" done.',
+        '{"api_key": "opaque secret with spaces here"} done.',
+        "-----BEGIN PRIVATE KEY-----\nYWJjZGVmZ2hpamts\n-----END PRIVATE KEY----- done.",
+        "postgresql://user:opaque-password-value@localhost/db done.",
+        "https://opaqueToken0123456789@localhost/path done.",
+        "https://localhost/path?api_key=sk-proj-0123456789abcdefghijk done.",
+        "a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4.abcdefghijklmnop done.",
+    ])
+    def test_every_chunk_boundary_has_stable_redacted_output(self, payload):
+        from agent.stream_redact import StreamingEgressRedactor
+        from agent.redact import redact_for_egress
+
+        expected = redact_for_egress(payload)
+        for split in range(1, len(payload)):
+            stream = StreamingEgressRedactor()
+            observed = stream.feed(payload[:split])
+            assert expected.startswith(observed)
+            observed += stream.feed(payload[split:])
+            assert expected.startswith(observed)
+            observed += stream.finish()
+            assert observed == expected
+        # Exercise arbitrarily small deltas too, not only two-chunk boundaries.
+        stream, observed = StreamingEgressRedactor(), ""
+        for char in payload:
+            observed += stream.feed(char)
+            assert expected.startswith(observed)
+        assert observed + stream.finish() == expected
+
+    def test_vault_secret_with_spaces_and_shared_prose_prefix(self):
+        from agent.stream_redact import StreamingEgressRedactor
+        from agent.redact import register_vault_redaction_value, clear_vault_redaction_values, redact_for_egress
+
+        secret = "the quick brown fox is the password"
+        register_vault_redaction_value(secret)
+        try:
+            for payload in (f"Result: {secret} done.", "the quick blue bird keeps flying across the sky"):
+                stream, seen = StreamingEgressRedactor(), ""
+                expected = redact_for_egress(payload)
+                for char in payload:
+                    seen += stream.feed(char)
+                    assert expected.startswith(seen)
+                seen += stream.finish()
+                assert seen == expected
+        finally:
+            clear_vault_redaction_values()
+
+    def test_regular_prose_streams_before_completion(self):
+        from agent.stream_redact import StreamingEgressRedactor
+
+        stream = StreamingEgressRedactor()
+        assert stream.feed("Hello world! ") == "Hello world! "
+        assert stream.feed("Still working ") == "Still working "
+        assert stream.finish() == ""
+
+    def test_ambiguous_suffix_is_released_when_disambiguated(self):
+        from agent.stream_redact import StreamingEgressRedactor
+
+        stream = StreamingEgressRedactor()
+        assert stream.feed("Full answer here") == "Full answer her"
+        assert stream.feed(".") == "e."
+        assert stream.finish() == ""
+
+    def test_existing_url_exceptions_remain_unchanged(self):
+        from agent.stream_redact import StreamingEgressRedactor
+        from agent.redact import redact_for_egress
+
+        for payload in ("https://user:password@localhost/path", "https://localhost/?token=opaque1234567890"):
+            assert redact_for_egress(payload) == payload
+            stream = StreamingEgressRedactor()
+            observed = "".join(stream.feed(char) for char in payload)
+            assert observed + stream.finish() == payload

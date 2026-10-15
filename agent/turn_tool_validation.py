@@ -1,5 +1,5 @@
 """Tool-call validation for the conversation turn loop: unknown tool names (with
-auto-repair and the 3-strike partial exit) and malformed JSON arguments (retry, then
+auto-repair and the 3-strike partial exit) and malformed JSON arguments (explicit
 recovery tool results).
 
 Role alternation is preserved on every path: an invalid batch is answered with tool-role
@@ -206,12 +206,9 @@ def validate_tool_calls(
         tool_name, error_msg = invalid_json_args[0]
         agent._buffer_vprint(f"⚠️  Invalid JSON in tool call arguments for '{tool_name}': {error_msg}")
 
-        if agent._invalid_json_retries < 3:
-            agent._buffer_vprint(f"🔄 Retrying API call ({agent._invalid_json_retries}/3)...")
-            # Don't add anything to messages, just retry the API call
-            return _verdict("continue")
-        # Instead of returning partial, inject tool error results so the model can recover.
-        # Using tool results (not user messages) preserves role alternation.
+        # Report every completed malformed call before asking the model again.
+        # A silent retry can produce a final answer claiming success even though
+        # no tool ran. Tool results preserve alternation and the cached prefix.
         agent._buffer_vprint("⚠️  Injecting recovery tool results for invalid JSON...")
         agent._invalid_json_retries = 0  # Reset for next attempt
         # Append the assistant message with its (broken) tool_calls, then one

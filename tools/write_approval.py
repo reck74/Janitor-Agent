@@ -63,12 +63,35 @@ def _normalize_enabled(value: Any) -> bool:
 # --- Pending store (file-backed) ---
 
 def _pending_path(subsystem: str, pending_id: str) -> Path:
-    return get_hermes_home() / "pending" / subsystem / f"{pending_id}.json"
+    """Resolve a store identifier, never a caller-supplied path (#119997).
+
+    The empty id is only used internally to locate the parent. Symlinked stores
+    and records are rejected so aliases cannot cross profiles or escape pending.
+    """
+    if subsystem not in _SUBSYSTEMS or not isinstance(pending_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]*", pending_id):
+        raise ValueError("Invalid pending write identifier")
+    directory = get_hermes_home().resolve() / "pending" / subsystem
+    path = directory / f"{pending_id}.json"
+    if directory.parent.is_symlink() or directory.is_symlink() or path.is_symlink():
+        raise ValueError("Pending writes cannot use symbolic links")
+    if path.resolve().parent != directory:
+        raise ValueError("Pending write escaped its store")
+    return path
 
 
 def _pending_files(subsystem: str) -> list:
-    d = _pending_path(subsystem, "").parent
-    return list(d.glob("*.json")) if d.exists() else []
+    try:
+        directory = _pending_path(subsystem, "").parent
+        paths = list(directory.glob("*.json"))
+    except (OSError, ValueError):
+        return []
+    safe = []
+    for path in paths:
+        try:
+            safe.append(_pending_path(subsystem, path.stem))
+        except (OSError, ValueError):
+            continue
+    return safe
 
 
 def stage_write(subsystem: str, payload: dict[str, Any], *, summary: str, origin: str) -> dict[str, Any]:
@@ -94,9 +117,9 @@ def list_pending(subsystem: str) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for p in _pending_files(subsystem):
         try:
-            record = json.loads(p.read_text(encoding="utf-8-sig"))
-            if not isinstance(record, dict):
-                raise ValueError(f"expected a JSON object, got {type(record).__name__}")
+            record = get_pending(subsystem, p.stem)
+            if record is None:
+                raise ValueError("invalid pending record")
             records.append(record)
         except Exception:
             logger.warning("Skipping unreadable pending record: %s", p)
@@ -106,18 +129,22 @@ def list_pending(subsystem: str) -> list[dict[str, Any]]:
 
 def get_pending(subsystem: str, pending_id: str) -> Optional[dict[str, Any]]:
     """Return a single pending record by id, or None."""
-    path = _pending_path(subsystem, pending_id)
-    if not path.exists():
+    if not pending_id:
         return None
     try:
+        path = _pending_path(subsystem, pending_id)
         data = json.loads(path.read_text(encoding="utf-8-sig"))
-        return data if isinstance(data, dict) else None
+        if isinstance(data, dict) and data.get("id") == pending_id and data.get("subsystem") == subsystem:
+            return data
     except Exception:
         return None
+    return None
 
 
 def discard_pending(subsystem: str, pending_id: str) -> bool:
     """Delete a pending record. Returns True if it existed."""
+    if not pending_id:
+        return False
     try:
         path = _pending_path(subsystem, pending_id)
         if path.exists():
@@ -130,12 +157,7 @@ def discard_pending(subsystem: str, pending_id: str) -> bool:
 
 def pending_count(subsystem: str) -> int:
     """Cheap count of pending records (for notification badges)."""
-    d = _pending_path(subsystem, "").parent
-    if not d.exists():
-        return 0
-    with suppress(Exception):
-        return sum(1 for _ in d.glob("*.json"))
-    return 0
+    return len(_pending_files(subsystem))
 
 
 # --- Write origin ---

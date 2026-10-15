@@ -7,10 +7,6 @@ egress goes through the ``CatalogFake`` sentinel proxy, which refuses and record
 host. Cells assert user-visible outcomes: the device-code polling cadence the vendor sees, the
 reply on stdout, the bearer on the next wire request, and the tokens persisted to auth.json.
 
-Open bugs are merge-order-safe, message-gated run-time xfails (``KNOWN`` +
-``tests.e2e.core._pending_fixes.known_failure``): a cell XFAILs only while its gated assertion
-fails with that bug's signature, any other failure stays red, and a fixed bug simply passes.
-
 NOT COVERED (not redirectable to a loopback fake): openai-codex and qwen-oauth refresh (token URLs
 are module constants, no env/config override) and the Copilot token exchange (hardcoded
 api.github.com).
@@ -28,28 +24,17 @@ from typing import Any
 
 import pytest
 
-from tests.e2e.core.providers._catalog_helpers import Known, gate, known_gate
+from tests.e2e.core.providers._catalog_helpers import gate
 from tests.fakes.providers.catalog_fake import CatalogFake
 from tests.fakes.providers.catalog_oauth import NOUS_INVOKE_SCOPE, OAuthFake, make_jwt
 
-pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="POSIX harness")
+pytestmark = pytest.mark.platforms("posix")
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 PROD_NOUS_INFERENCE = "https://inference-api.nousresearch.com/v1"
 TURN_TIMEOUT = 120.0
 # Public, credential-free model-metadata catalog (pricing/context lookups); never carries a vendor token.
 CREDENTIAL_FREE_HOSTS = frozenset({"models.dev:443"})
-
-# Signature regex on the gated assertion's own text. Delete an entry when its fix lands.
-KNOWN: dict[str, Known] = {
-    "device_interval": Known(
-        r"^device poll gap \d+\.\d+s < server interval",
-        "#121163 Nous device-code login polls at 1s, ignoring the server's interval"),
-    "nous_401_retry_route": Known(
-        r"^401 recovery retry left NOUS_INFERENCE_BASE_URL: egress to \[[^\]]*'inference-api\.nousresearch\.com:443'",
-        "#121323 Nous 401 pool recovery retries on the stored production host, "
-        "dropping the NOUS_INFERENCE_BASE_URL override"),
-}
 
 _PASSTHROUGH_ENV = frozenset({"PATH", "LANG", "LANGUAGE", "USER", "LOGNAME", "SHELL", "TZ"})
 _SECRET_SUFFIXES = ("_API_KEY", "_TOKEN", "_SECRET", "_ACCESS_KEY")
@@ -169,7 +154,7 @@ def sentinel():
 # --- Nous device-code login ------------------------------------------------------------------
 
 # Two pendings around one slow_down: the gaps before slow_down show the base interval the client
-# honours, the gaps after it show the +1s RFC 8628 growth.
+# honours, the gaps after it show the permanent +5s RFC 8628 growth.
 DEVICE_SCRIPT = ["authorization_pending", "slow_down", "authorization_pending"]
 DEVICE_INTERVAL = 2
 
@@ -211,17 +196,16 @@ def test_nous_device_login_slow_down_grows_interval(device_login) -> None:
     gaps = device_login["gaps"]
     assert len(gaps) == len(DEVICE_SCRIPT), f"unexpected poll count, gaps={gaps}"
     before, after = gaps[0], gaps[1:]
-    assert all(g >= before + 0.9 for g in after), (
-        f"slow_down did not grow the poll interval by >=1s: gap before slow_down {before:.2f}s, "
+    assert all(g >= before + 4.9 for g in after), (
+        f"slow_down did not grow the poll interval by >=5s: gap before slow_down {before:.2f}s, "
         f"after {[round(g, 2) for g in after]}")
 
 
 def test_nous_device_login_honors_server_interval(device_login) -> None:
     gaps = device_login["gaps"]
     assert len(gaps) == len(DEVICE_SCRIPT), f"unexpected poll count, gaps={gaps}"
-    with known_gate(KNOWN["device_interval"]):
-        gate(gaps[0] >= DEVICE_INTERVAL - 0.1,
-             f"device poll gap {gaps[0]:.2f}s < server interval {DEVICE_INTERVAL}s (gaps={[round(g, 2) for g in gaps]})")
+    gate(gaps[0] >= DEVICE_INTERVAL - 0.1,
+         f"device poll gap {gaps[0]:.2f}s < server interval {DEVICE_INTERVAL}s (gaps={[round(g, 2) for g in gaps]})")
 
 
 # --- Nous token refresh ----------------------------------------------------------------------
@@ -273,9 +257,8 @@ def test_nous_inference_401_refreshes_rotates_and_retries(tmp_path, sentinel) ->
         info = _describe(proc, fake, sentinel)
         assert any(r.bearer == revoked for r in fake.inference()), f"the stale bearer was never tried\n{info}"
         fresh = _assert_rotation_persisted(home, seed, fake, info)
-        with known_gate(KNOWN["nous_401_retry_route"]):
-            gate(not _vendor_egress(sentinel),
-                 f"401 recovery retry left NOUS_INFERENCE_BASE_URL: egress to {_vendor_egress(sentinel)}\n{info}")
+        gate(not _vendor_egress(sentinel),
+             f"401 recovery retry left NOUS_INFERENCE_BASE_URL: egress to {_vendor_egress(sentinel)}\n{info}")
         assert any(r.bearer == fresh for r in fake.inference()), f"no retry with the refreshed token\n{info}"
         assert proc.returncode == 0 and fake.reply in proc.stdout, f"turn failed after refresh\n{info}"
 

@@ -167,6 +167,9 @@ def _background_review_delete_guard(name: str, skill_dir: Path) -> Optional[dict
     write is ledgered and reversible, while an archive removes a skill the user relies on."""
     if not _is_background_review():
         return None
+    # The usage ledger uses the resolved directory basename, including when the
+    # caller selected a category/name or a frontmatter display alias (#120528).
+    name = skill_dir.name
     refuse = "Refusing background curator delete for"
     if _is_pinned(name, "pinned skill guard"):
         return _refusal(

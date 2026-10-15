@@ -1344,3 +1344,27 @@ class TestCuratorConsolidationDeleteGuard:
             assert allowed["success"] is True, allowed
 
         _reset_background_review_read_marks()
+
+
+@pytest.mark.parametrize("spelling", ["my-skill", "research/my-skill", "display-alias"])
+@pytest.mark.parametrize("background", [False, True])
+def test_delete_aliases_respect_the_resolved_skills_pin(tmp_path, monkeypatch, spelling, background):
+    """#120528: the ledger is keyed by directory basename, not lookup spelling."""
+    from tools import skill_usage
+    from tools.skill_provenance import set_current_write_origin, reset_current_write_origin
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    skills = tmp_path / "skills"
+    skills.mkdir()
+    with _skill_dir(skills):
+        result = _create_skill("my-skill", VALID_SKILL_CONTENT.replace("test-skill", "display-alias"), category="research")
+        assert result["success"], result
+        assert skill_usage.set_pinned("my-skill", True)
+        token = set_current_write_origin("background_review" if background else "foreground")
+        try:
+            result = _delete_skill(spelling)
+        finally:
+            reset_current_write_origin(token)
+        assert result["success"] is False, result
+        assert "pinned" in result["error"].lower()
+        assert (skills / "research" / "my-skill" / "SKILL.md").is_file()

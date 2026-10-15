@@ -132,3 +132,34 @@ def test_agent_401_refresh_passes_failed_bearer_as_stale_hint(monkeypatch):
     assert agent._try_refresh_nous_client_credentials(force=True) is True
     assert seen["force_refresh"] is True
     assert seen["stale_access_token"] == "jwt-that-just-401d"
+
+
+def test_pool_nous_route_uses_profile_override_without_rewriting_stored_origin(monkeypatch):
+    from agent import secret_scope as scope
+
+    stored = "https://inference-api.nousresearch.com/v1"
+    entry = PooledCredential(id="route", provider="nous", label="test", auth_type="oauth",
+                             priority=0, source="manual", access_token="test-token", inference_base_url=stored)
+    monkeypatch.setenv("NOUS_INFERENCE_BASE_URL", "https://ambient.example/v1")
+    scope.set_multiplex_active(True)
+    try:
+        for values, expected in (
+            ({"NOUS_INFERENCE_BASE_URL": "https://profile-a.example/v1/"}, "https://profile-a.example/v1"),
+            ({"NOUS_INFERENCE_BASE_URL": "https://profile-b.example/v1"}, "https://profile-b.example/v1"),
+            ({}, stored),
+        ):
+            token = scope.set_secret_scope(values)
+            try:
+                assert entry.runtime_base_url == expected
+                assert entry.inference_base_url == stored
+            finally:
+                scope.reset_secret_scope(token)
+    finally:
+        scope.set_multiplex_active(False)
+
+
+def test_pool_nous_route_falls_back_to_base_url_without_override(monkeypatch):
+    monkeypatch.delenv("NOUS_INFERENCE_BASE_URL", raising=False)
+    entry = PooledCredential(id="route", provider="nous", label="test", auth_type="oauth",
+                             priority=0, source="manual", access_token="test-token", base_url="https://stored.example/v1")
+    assert entry.runtime_base_url == entry.base_url

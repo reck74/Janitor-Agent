@@ -11,6 +11,8 @@ from acp_adapter.session import SessionState
 
 
 def test_version_flag_displays_derived_version(monkeypatch, capsys):
+    # An upstream install has no distribution formatter; preserve that contract.
+    monkeypatch.setattr("hermes_cli.distribution_identity.distribution_provider", lambda *_args: None)
     monkeypatch.setattr(
         "hermes_cli.version_info.get_version_info",
         lambda: SimpleNamespace(base_version="1.2.3", derived_version="1.2.3+4.gabcdef0"),

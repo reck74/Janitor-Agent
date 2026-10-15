@@ -390,8 +390,8 @@ class TestBuildContextFilesPrompt:
         assert result.index("Root: use Ruff.") < result.index("Packages: pnpm")
         assert result.index("Packages: pnpm") < result.index("Webapp: React 19")
         # provenance headers point at each source file relative to cwd
-        assert f"## {os.path.join('..', '..', 'AGENTS.md')}" in result
-        assert f"## {os.path.join('..', 'AGENTS.md')}" in result
+        assert "## ../../AGENTS.md" in result
+        assert "## ../AGENTS.md" in result
         assert "## AGENTS.md" in result
 
     def test_agents_md_chain_skips_gaps(self, tmp_path):

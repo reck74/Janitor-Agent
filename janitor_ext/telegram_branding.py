@@ -71,7 +71,7 @@ class JanitorTelegramBrandingMixin:
             try:
                 await self._bot.do_api_request("removeMyProfilePhoto")
                 logger.debug("[%s] removeMyProfilePhoto (raw) succeeded", self.name)
-            except (TelegramError, AttributeError, RuntimeError) as raw_exc:
+            except (TelegramError, OSError, AttributeError, RuntimeError, TypeError, ValueError) as raw_exc:
                 logger.debug(
                     "[%s] removeMyProfilePhoto (raw) also failed: %s",
                     self.name, _safe_error(raw_exc),

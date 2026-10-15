@@ -30,6 +30,8 @@ from gateway.config import (
 from gateway.response_filters import (
     is_intentional_silence_response as _is_intentional_silence_response,
     is_partial_silence_marker as _is_partial_silence_marker)
+from agent.redact import redact_for_egress
+from agent.stream_redact import StreamingEgressRedactor
 from gateway.stream_consumer_fences import ensure_closed_code_fences
 from gateway.stream_consumer_transport import StreamTransportMixin
 from gateway.stream_consumer_fallback import StreamFallbackMixin
@@ -195,6 +197,8 @@ class GatewayStreamConsumer(StreamTransportMixin, StreamFallbackMixin, StreamThi
         # ``_stream_ledger`` mirrors ``_accumulated`` but is NOT truncated when
         # overflow splits seal head chunks (reconcilable turn-final payload).
         self._accumulated = self._stream_ledger = ""
+        self._egress_redactor = StreamingEgressRedactor()
+        self._think_at_line_start = True
         self._last_sent_text = ""    # skip redundant edits
         self._fallback_final_send = False
         self._fallback_prefix = ""
@@ -284,7 +288,19 @@ class GatewayStreamConsumer(StreamTransportMixin, StreamFallbackMixin, StreamThi
                     await result
 
     def _append_accumulated(self, text: str) -> None:
-        """Append to the live buffer and the split-stable stream ledger."""
+        """Scrub before any overflow slicing or transport can see streamed bytes."""
+        if text:
+            # Think-tag boundaries follow received prose, not its safe display
+            # prefix, which may still be retaining an ambiguous credential.
+            self._think_at_line_start = text.endswith("\n")
+        self._append_display_text(self._egress_redactor.feed(text))
+
+    def _flush_stream_redaction(self) -> None:
+        self._append_display_text(self._egress_redactor.finish())
+        self._egress_redactor = StreamingEgressRedactor()
+
+    def _append_display_text(self, text: str) -> None:
+        """Append safe display text without touching the model's prompt or history."""
         if not text:
             return
         if self._tool_progress_lines:  # real text overwrites the overlay
@@ -502,7 +518,7 @@ class GatewayStreamConsumer(StreamTransportMixin, StreamFallbackMixin, StreamThi
     async def _finalize_boundary_stream(self, _reason: str) -> bool:
         """Close the open native stream at a boundary; send() the pre-prompt text if that
         fails.  False only when both finalize and the fallback send failed."""
-        finalize_text = self._accumulated or self._boundary_placeholder
+        finalize_text = self._clean_for_display(self._accumulated or self._boundary_placeholder)
         try:
             if await self._send_frame(finalize_text, finalize=True):
                 logger.debug("%s boundary: finalized stream (chat=%s, turn=%s)",
@@ -552,6 +568,9 @@ class GatewayStreamConsumer(StreamTransportMixin, StreamFallbackMixin, StreamThi
                     await self._abandon_native_stream()
                     return
                 tick = self._drain_queue()
+                if not tick.is_interim or tick.approval_boundary is not None:
+                    self._flush_think_buffer()
+                    self._flush_stream_redaction()
 
                 # Boundary produces its own finalize and resets state, so it must
                 # run before got_done/segment_break processing.
@@ -696,6 +715,9 @@ class GatewayStreamConsumer(StreamTransportMixin, StreamFallbackMixin, StreamThi
         ownership).  Split delivery: wholesale adoption would repeat sealed heads, refusing
         makes the gateway resend the ENTIRE body — so append only the suffix when the final
         strictly prefix-extends the ledger."""
+        self._flush_think_buffer()
+        self._flush_stream_redaction()
+        final_raw = self._clean_for_display(final_raw)
         if not (self._accumulated or self._message_id or self._last_sent_text):
             return
         if not self._turn_split_delivery:
@@ -941,6 +963,7 @@ class GatewayStreamConsumer(StreamTransportMixin, StreamFallbackMixin, StreamThi
         platforms apply formatting; is_turn_final=False because this handler owns the flags.
         Only a successful edit confirms delivery — a partial send may be just "Let me
         search…", not the answer."""
+        self._flush_stream_redaction()
         best_effort_ok = False
         if self._accumulated and self._message_id:
             with contextlib.suppress(Exception):
@@ -970,4 +993,4 @@ class GatewayStreamConsumer(StreamTransportMixin, StreamFallbackMixin, StreamThi
     # text.
     def _clean_for_display(text: str) -> str:
         """Hide MEDIA:<path> / [[audio_as_voice]] directives; media is delivered post-stream."""
-        return _BasePlatformAdapter.strip_media_directives_for_display(text)
+        return redact_for_egress(_BasePlatformAdapter.strip_media_directives_for_display(text))

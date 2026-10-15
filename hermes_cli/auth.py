@@ -82,6 +82,7 @@ from hermes_cli.auth_codex import (
     _refresh_expired_codex_probe_token, _save_codex_tokens, clear_codex_pool_quota_cooldowns,
     refresh_codex_oauth_pure, resolve_codex_runtime_credentials)
 from hermes_cli.auth_openrouter import _openrouter_pkce_login
+from hermes_cli.auth_api_keys import resolve_api_key_provider_credentials
 from hermes_cli.auth_qwen import (
     _qwen_access_token_is_expiring, _qwen_cli_auth_path, _read_qwen_cli_tokens,
     _refresh_qwen_cli_tokens, _save_qwen_cli_tokens, get_qwen_auth_status,
@@ -2282,37 +2283,6 @@ _API_KEY_BASE_URL_RESOLVERS: dict[str, Callable[[str, str, str], str]] = {
     "copilot": _copilot_runtime_base_url,
     "lmstudio": lambda *a: _normalize_lmstudio_runtime_base_url(_default_api_key_base_url(*a)),
     "actual": lambda *a: normalize_actual_base_url(_default_api_key_base_url(*a))}
-
-
-def resolve_api_key_provider_credentials(provider_id: str) -> dict[str, Any]:
-    """Resolve API key and base URL for an API-key provider."""
-    pconfig = _registry_lookup(provider_id)
-    if not pconfig or pconfig.auth_type != "api_key":
-        raise AuthError(
-            f"Provider '{provider_id}' is not an API-key provider.",
-            provider=provider_id, code="invalid_provider")
-
-    api_key, key_source = _resolve_api_key_provider_secret(provider_id, pconfig)
-    # No-auth LM Studio: a placeholder so runtime / auxiliary_client see the local server as
-    # configured. doctor still reports unconfigured because the status path uses the raw secret.
-    if not api_key and provider_id == "lmstudio":
-        api_key = LMSTUDIO_NOAUTH_PLACEHOLDER
-        key_source = key_source or "default"
-
-    env_url = _provider_env_base_url(pconfig)
-    resolve_url = _API_KEY_BASE_URL_RESOLVERS.get(provider_id, _default_api_key_base_url)
-    base_url = resolve_url(api_key, pconfig.inference_base_url, env_url)
-    # An API-key provider must never hand back an empty base URL (a set-but-empty
-    # COPILOT_API_BASE_URL or similar env override otherwise wedges chat inference).
-    if not _nonempty_str(base_url):
-        base_url = pconfig.inference_base_url
-
-    if not api_key and provider_id == "actual" and is_actual_local_base_url(base_url):
-        api_key = ACTUAL_LOCAL_NOAUTH_PLACEHOLDER
-        key_source = key_source or "local-offline"
-    return {
-        "provider": provider_id, "api_key": api_key, "base_url": base_url.rstrip("/"),
-        "source": key_source or "default"}
 
 
 def resolve_external_process_provider_credentials(provider_id: str) -> dict[str, Any]:

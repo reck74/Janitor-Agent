@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, FrozenSet, Optional
 from urllib.parse import parse_qs, urlparse
 from hermes_cli.auth_constants import (
-    AuthError, DEFAULT_NOUS_PORTAL_URL, DEVICE_AUTH_POLL_INTERVAL_CAP_SECONDS,
+    AuthError, DEFAULT_NOUS_PORTAL_URL,
     DEVICE_CODE_GRANT_TYPE, OAUTH_OVER_SSH_DOCS_URL, httpx)
 from hermes_cli.auth_error_copy import DeviceCodeExpired
 from utils import is_truthy_value
@@ -321,15 +321,15 @@ def _poll_device_token_generic(
     on_timeout: Callable[[], Exception]) -> dict[str, Any]:
     """RFC 8628 device-code polling loop shared by the Nous and xAI flows.
 
-    ``authorization_pending`` sleeps and retries; ``slow_down`` grows the interval by 1s (cap 30s).
+    ``authorization_pending`` respects the server interval; each ``slow_down`` adds 5s permanently.
     A non-JSON 408/429/5xx, or a 403 carrying ``x-vercel-mitigated`` (edge/WAF mitigation, never a
-    real OAuth error), backs off — honoring ``Retry-After``, capped at 60s and at the device-code
+    real OAuth error), backs off — honoring ``Retry-After`` up to 60s, the server minimum and the device-code
     deadline — instead of aborting a login the user may still be approving. Every other error, a
     non-JSON error body, and the deadline become provider-specific exceptions via the supplied
     factories so each caller keeps its exact error contract.
     """
     deadline = time.monotonic() + max(1, expires_in)
-    current_interval = poll_interval
+    current_interval = max(1, poll_interval)
     edge_backoff = 0.0  # kept apart from current_interval so slow_down/pending pacing is untouched
     unavailable = 0  # HTTP status of the latest edge/service failure; 0 once the endpoint answers again
     while time.monotonic() < deadline:
@@ -352,6 +352,7 @@ def _poll_device_token_generic(
                     edge_backoff = min(max(current_interval, retry_after), 60)
                 else:
                     edge_backoff = min(max(edge_backoff * 2, current_interval * 2, 5), 60)
+                edge_backoff = max(current_interval, edge_backoff)
                 time.sleep(max(0.0, min(edge_backoff, deadline - time.monotonic())))
                 continue
             response.raise_for_status()
@@ -359,11 +360,11 @@ def _poll_device_token_generic(
         edge_backoff, unavailable = 0.0, 0
         error_code = str(error_payload.get("error") or "")
         if error_code == "authorization_pending":
-            time.sleep(current_interval)
+            time.sleep(max(0.0, min(current_interval, deadline - time.monotonic())))
             continue
         if error_code == "slow_down":
-            current_interval = min(current_interval + 1, 30)
-            time.sleep(current_interval)
+            current_interval += 5
+            time.sleep(max(0.0, min(current_interval, deadline - time.monotonic())))
             continue
         raise on_error(response, error_payload)
     # Still failing when the code ran out: a service outage (``__cause__``), not a sign-in left unapproved.
@@ -392,7 +393,7 @@ def _poll_for_token(
                 "grant_type": DEVICE_CODE_GRANT_TYPE, "client_id": client_id,
                 "device_code": device_code}),
         expires_in=expires_in,
-        poll_interval=max(1, min(poll_interval, DEVICE_AUTH_POLL_INTERVAL_CAP_SECONDS)),
+        poll_interval=max(1, poll_interval),
         validate_success=_validate, on_error=_error,
         on_non_json_error=lambda _r: RuntimeError(
             "Token endpoint returned a non-JSON error response"),

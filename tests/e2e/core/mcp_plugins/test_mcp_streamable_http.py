@@ -54,15 +54,7 @@ SERVER = "web"
 
 # Open bugs on origin/main: test id -> (the symptom's own message pattern, "#issue reason"). Run-time
 # gated around the symptom() check only (known_gate); drop an entry when its fix lands.
-KNOWN: dict[str, tuple[str, str]] = {
-    "test_no_information_free_meta_is_sent_over_http": (
-        r"^requests carried an empty/null params\._meta: \[.*'tools/call'",
-        "#120923 empty params._meta sent on every request; some hosted MCP servers answer HTTP 400"),
-    "test_401_on_tools_call_is_reported_as_an_auth_failure": (
-        r"^a 401 on tools/call reached the model without any sign it is an auth failure: "
-        r"\{'error': 'MCP call failed: MCPError",
-        "#121285 mcp 2.x folds a tools/call 401 into a generic MCPError; auth recovery never runs"),
-}
+KNOWN: dict[str, tuple[str, str]] = {}
 
 
 def _one_turn(root: Path, calls: list[tuple[str, dict]], *, unauthorized_calls: int = 0) -> dict[str, Any]:
@@ -101,8 +93,7 @@ def test_no_information_free_meta_is_sent_over_http(shape: dict[str, Any], reque
     requests = [m for m in inbound(shape["log"]) if isinstance(m, dict) and "id" in m and "method" in m]
     assert requests, "the server logged no requests"
     empty = [m["method"] for m in requests if "_meta" in (m.get("params") or {}) and not m["params"]["_meta"]]
-    with known_gate(KNOWN, request.node.name, raises=KnownSymptom):
-        symptom(not empty, f"requests carried an empty/null params._meta: {empty}")
+    symptom(not empty, f"requests carried an empty/null params._meta: {empty}")
 
 
 # 401 on tools/call ---------------------------------------------------------------------------------
@@ -120,9 +111,8 @@ def test_401_on_tools_call_is_reported_as_an_auth_failure(unauthorized: dict[str
         "fixture never answered 401 (vacuous)")
     first = payload(unauthorized["results"][0])
     assert "error" in first, first
-    with known_gate(KNOWN, request.node.name, raises=KnownSymptom):
-        symptom(re.search(r"auth|401|sign.?in|credential", json.dumps(first), re.IGNORECASE),
-                f"a 401 on tools/call reached the model without any sign it is an auth failure: {first}")
+    symptom(re.search(r"auth|401|sign.?in|credential", json.dumps(first), re.IGNORECASE),
+            f"a 401 on tools/call reached the model without any sign it is an auth failure: {first}")
 
 
 def test_the_call_after_a_401_reaches_the_server(unauthorized: dict[str, Any]) -> None:

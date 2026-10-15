@@ -11,11 +11,36 @@ def repo_root() -> Path:
 
 
 def install_root() -> Path:
-    """The tree this process runs from. ``HERMES_INSTALL_ROOT`` when a steward
-    wrapper sets it (Nix points it at the sealed tree whose install stamp lives
-    outside the package dir), else the executing checkout."""
+    """The install owning the executing code, distinct from a PM build snapshot.
+
+    A steward wrapper may explicitly bind it (Nix keeps its stamp outside the
+    package dir). PM generations use their existing checkout ownership record;
+    ``repo_root()`` continues to name the code actually executing.
+    """
     env = os.environ.get("HERMES_INSTALL_ROOT")
-    return Path(env) if env else repo_root()
+    root = repo_root()
+    return Path(env) if env else (_generation_install_root(root) or root)
+
+
+def _generation_install_root(root: Path) -> Path | None:
+    """Resolve only a recorded PM workspace, independent of the active profile."""
+    import re
+
+    from pm.environments import install_key
+
+    root = root.resolve()
+    generation, generations, state = root.parent, root.parent.parent, root.parent.parent.parent
+    if (root.name != "workspace" or generations.name != "environments"
+            or state.parent.name != "installs" or not re.fullmatch(r"[0-9a-f]{32}", generation.name)):
+        return None
+    try:
+        recorded = (state / "inputs" / ".project-root").read_text(encoding="utf-8-sig").strip()
+        owner = Path(recorded)
+        if owner.is_absolute() and owner.is_dir() and install_key(owner) == state.name:
+            return owner.resolve()
+    except (OSError, ValueError):
+        return None
+    return None
 
 
 def install_stamp_path(project_root: Path) -> Path:

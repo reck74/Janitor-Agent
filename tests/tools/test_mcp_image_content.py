@@ -93,10 +93,10 @@ class TestCacheMcpImageBlock:
         assert _cache_mcp_image_block(block) == ""
 
 
-    def test_returns_empty_when_bytes_dont_look_like_an_image(self, tmp_path, monkeypatch):
+    def test_reports_invalid_image_without_passing_through_its_payload(self, tmp_path, monkeypatch):
         """``cache_image_from_bytes`` has a format sniff; if the claimed
         ``image/png`` is actually an HTML error page, the cache raises and
-        we log + drop rather than propagate."""
+        return a safe notice instead of silently dropping the block (#120227)."""
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
         from tools.mcp_tool_content import _cache_mcp_image_block
 
@@ -104,7 +104,9 @@ class TestCacheMcpImageBlock:
             data=base64.b64encode(b"<html>error</html>").decode("ascii"),
             mimeType="image/png",
         )
-        assert _cache_mcp_image_block(block) == ""
+        notice = _cache_mcp_image_block(block)
+        assert "image" in notice and "could not be cached" in notice
+        assert "MEDIA:" not in notice and "<html>" not in notice
 
     def test_handles_jpeg(self, tmp_path, monkeypatch):
         """JPEG signature should also be accepted."""

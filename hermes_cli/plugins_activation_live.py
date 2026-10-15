@@ -29,7 +29,7 @@ def connect_plugin_mcp(activation: dict[str, Any], portable: dict[str, dict[str,
         return []
     try:
         from tools.mcp_tool_config import _filter_suspicious_mcp_servers, _load_mcp_config
-        from tools.mcp_tool_discovery import register_mcp_servers
+        from tools.mcp_tool_discovery import get_mcp_status, register_mcp_servers
         configured = _load_mcp_config()
     except Exception as exc:
         logger.warning("plugin MCP activation could not read server config: %s", exc)
@@ -45,12 +45,14 @@ def connect_plugin_mcp(activation: dict[str, Any], portable: dict[str, dict[str,
             register_mcp_servers({name: config})
             from tools.connectors.mcp import _registered_tool_names
             tools = [t for t in _registered_tool_names(name) if not t.endswith(_utility_suffixes())]
+            status = next((entry for entry in get_mcp_status({name: config})
+                           if entry.get("name") == name), {})
         except Exception as exc:
             rows.append({"name": name, "connected": False, "tools": [], "error": str(exc)})
             continue
-        row: dict[str, Any] = {"name": name, "connected": bool(tools), "tools": tools}
-        if not tools:
-            row["error"] = _server_error(name) or "the server did not connect"
+        row: dict[str, Any] = {"name": name, "connected": status.get("connected") is True, "tools": tools}
+        if not row["connected"]:
+            row["error"] = status.get("error") or "the server did not connect"
         rows.append(row)
     return rows
 
@@ -60,17 +62,6 @@ def _utility_suffixes() -> tuple:
     but they say nothing about what the plugin does, so they are left out of counts and listings."""
     from tools.mcp_tool_registration import _UTILITY_HANDLER_FACTORIES
     return tuple(f"_{kind}" for kind in _UTILITY_HANDLER_FACTORIES)
-
-
-def _server_error(name: str) -> Optional[str]:
-    try:
-        from tools.mcp_tool_discovery import get_mcp_status
-        for entry in get_mcp_status():
-            if entry.get("name") == name:
-                return entry.get("error")
-    except Exception:
-        return None
-    return None
 
 
 def plugin_skills(plugin_key: str) -> list[dict[str, str]]:

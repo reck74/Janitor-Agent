@@ -201,15 +201,16 @@ def print_fast_version_info(*, check_updates: bool = True) -> None:
         from hermes_cli.version_info import get_version_info
 
         print(f"Hermes Agent v{get_version_info().derived_version} ({__release_date__})")
-    print(f"Install directory: {project_root_str()}")
+    from pm.paths import install_root
+
+    owner = install_root()
+    print(f"Install directory: {owner}")
     # Authoritative resolver first (code-scoped stamp → managed → nix → git → pip; also self-heals
     # poisoned shared-home 'docker' stamps); cheap stdlib stamp probe only if it fails.
     try:
-        from pathlib import Path
-
         from hermes_cli.config import detect_install_method
 
-        install_method = detect_install_method(Path(project_root_str()))
+        install_method = detect_install_method(owner)
     except Exception:
         install_method = read_install_method()
     if install_method:

@@ -105,8 +105,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def _print_version() -> None:
+    from hermes_cli.distribution_identity import distribution_provider
     from hermes_cli.version_info import get_version_info
 
+    root = Path(__file__).resolve().parent.parent
+    formatter = distribution_provider(root, "version-label-provider")
+    if formatter is not None:
+        print(formatter(root))
+        return
     print(get_version_info().derived_version)
 
 

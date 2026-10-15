@@ -582,12 +582,12 @@ def _build_folder_listing(path: Path, cwd: Path, limit: int = 200, display_base:
         if base is None:
             continue
         try:
-            shown = f"{path.relative_to(base)}/"
+            shown = f"{path.relative_to(base).as_posix()}/"
             break
         except ValueError:
             continue
     if shown is None:
-        shown = f"{path}/"
+        shown = f"{path.as_posix()}/"
     lines = [shown]
     entries = _iter_visible_entries(path, cwd, limit=limit)
     for entry in entries:

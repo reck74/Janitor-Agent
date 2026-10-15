@@ -26,7 +26,7 @@ class StreamThinkFilterMixin:
 
         Prose that merely *mentions* a tag must not trigger.
         """
-        acc_boundary = not self._accumulated or self._accumulated.endswith("\n")
+        acc_boundary = self._think_at_line_start
         if idx == 0:
             return acc_boundary
         preceding = buf[:idx]

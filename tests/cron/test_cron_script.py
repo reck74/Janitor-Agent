@@ -832,3 +832,54 @@ class TestScriptTimeoutTreeKill:
                     psutil.Process(gpid).kill()
                 except psutil.NoSuchProcess:
                     pass
+
+
+@pytest.mark.platforms("windows")
+def test_cron_shell_uses_staged_pm_bash_over_windows_stub(tmp_path, monkeypatch):
+    from pathlib import PureWindowsPath
+    import json
+    from pm import shell
+    from cron.scheduler_script import _script_argv
+    staged = tmp_path / 'tools/git-test/usr/bin/bash.exe'
+    staged.parent.mkdir(parents=True)
+    staged.write_text('synthetic binary', encoding='utf-8')
+    facts = tmp_path / 'facts.json'
+    facts.write_text(json.dumps({'schema': 1, 'packages': {'git': {'entry': 'git-test'}}}), encoding='utf-8')
+    monkeypatch.setattr(shell.paths, 'facts_path', lambda: facts)
+    monkeypatch.setattr(shell.paths, 'store_root', lambda: tmp_path / 'tools')
+    monkeypatch.setattr(shell.shutil, 'which', lambda _: r'C:\Windows\System32\bash.exe')
+    probes = []
+    def start(argv, **kwargs):
+        probes.append(argv)
+        return subprocess.CompletedProcess(argv, 0)
+    monkeypatch.setattr(shell.subprocess, 'run', start)
+    path = PureWindowsPath(r'C:\my profile\scripts\report.sh')
+    argv, overlay, error = _script_argv(path)
+    assert (argv, overlay, error) == ([str(staged), path.as_posix()], {}, None)
+    assert probes == [[str(staged), '-c', 'exit 0']]
+
+
+
+@pytest.mark.platforms("windows")
+def test_cron_shell_rejects_windows_stub_when_no_real_bash_exists(tmp_path, monkeypatch):
+    from pm import shell
+    from cron.scheduler_script import _script_argv
+    monkeypatch.setattr(shell, '_staged_bash', lambda: None)
+    for name in ('ProgramFiles', 'ProgramFiles(x86)', 'LOCALAPPDATA'):
+        monkeypatch.setenv(name, str(tmp_path))
+    monkeypatch.delenv('HERMES_GIT_BASH_PATH', raising=False)
+    monkeypatch.setattr(shell.shutil, 'which', lambda _: r'C:\Windows\System32\bash.exe')
+    argv, overlay, error = _script_argv(tmp_path / 'report.sh')
+    assert argv is None and overlay == {}
+    assert 'bash' in error.lower()
+
+
+
+def test_cron_shell_argv_executes_real_script_with_spaces(tmp_path):
+    from cron.scheduler_script import _script_argv
+    script = tmp_path / 'script with spaces.sh'
+    script.write_text('printf "%s\\n" "cron-pm-canary"\n', encoding='utf-8', newline='\n')
+    argv, overlay, error = _script_argv(script)
+    assert error is None and argv is not None
+    result = subprocess.run(argv, env={**os.environ, **overlay}, text=True, capture_output=True, timeout=10, check=True)
+    assert result.stdout.strip() == 'cron-pm-canary'

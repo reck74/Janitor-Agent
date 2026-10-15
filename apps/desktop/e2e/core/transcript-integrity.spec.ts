@@ -27,6 +27,7 @@ import {
   currentSessionId,
   launchCoreApp,
   recordWebSockets,
+  reloadWithWebSocketRecorder,
   routePrimaryWebSocket,
   send,
   splitProfileRoute,
@@ -199,7 +200,7 @@ test('transcript oracle holds across every transition', async () => {
     await routePrimaryWebSocket(app, backendPort, proxy.port)
 
     await test.step('reload: hydrated transcript equals persisted', async () => {
-      await page.reload()
+      await reloadWithWebSocketRecorder(page, ws)
       await waitForInteractive(app, page)
       await installDuplicateSampler(page)
       await expect.poll(() => proxy.connections()).toBeGreaterThan(0)
@@ -310,12 +311,17 @@ test('transcript oracle holds across every transition', async () => {
           message: 'the forced turn reached more than one socket'
         })
         .toBeGreaterThan(1)
+      const backendPorts = new Set([String(backendPort), String(proxy.port)])
+      expect(
+        ws.sockets.filter(socket => !socket.closed && backendPorts.has(new URL(socket.url).port)),
+        'both real sockets in the new document remain counted after reload'
+      ).toHaveLength(2)
       sessionP2.expectUserMarkers.push(U(10))
       await assertTranscriptOracle(page, ws, provider, sessionP2, 'p2 tool turn over two sockets')
     })
 
     await test.step('final reload: every session re-hydrates exactly once', async () => {
-      await page.reload()
+      await reloadWithWebSocketRecorder(page, ws)
       await waitForInteractive(app, page)
       await installDuplicateSampler(page)
       await openSession(page, sessionA.sessionId, A(8))

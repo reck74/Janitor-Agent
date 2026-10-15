@@ -1,6 +1,7 @@
 """Tests for GatewayStreamConsumer — media directive stripping in streaming."""
 
 import asyncio
+from itertools import pairwise
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -922,6 +923,7 @@ class TestFilterAndAccumulate:
     def test_complete_think_block_stripped(self):
         c = _make_consumer()
         c._filter_and_accumulate("<think>internal reasoning</think>Answer here")
+        c._flush_stream_redaction()  # Complete the ambiguous JWT prefix in the final e.
         assert c._accumulated == "Answer here"
 
 
@@ -963,7 +965,17 @@ class TestFilterAndAccumulate:
         for chunk in (f"<{name}>", "hidden", f"</{name}>", "visible"):
             c._filter_and_accumulate(chunk)
         c._flush_think_buffer()
+        c._flush_stream_redaction()
         assert c._accumulated == "visible"
+
+    def test_redactor_retention_does_not_create_a_think_boundary(self):
+        c = _make_consumer()
+        # e is a possible JWT prefix, so the display scrubber briefly holds it.
+        c._filter_and_accumulate("e")
+        c._filter_and_accumulate("<think>literal prose</think>")
+        c._flush_think_buffer()
+        c._flush_stream_redaction()
+        assert c._accumulated == "e<think>literal prose"
 
     def test_prose_mention_not_stripped(self):
         """<think> mentioned mid-line in prose should NOT trigger filtering."""
@@ -977,6 +989,7 @@ class TestFilterAndAccumulate:
         """<think> preceded by only whitespace on its line is a boundary."""
         c = _make_consumer()
         c._filter_and_accumulate("  <think>hidden</think>visible")
+        c._flush_stream_redaction()
         # Leading whitespace before the tag is emitted, then block is stripped
         assert c._accumulated == "  visible"
 
@@ -1566,3 +1579,80 @@ class TestFlushPendingSync:
         consumer.finish()
         await task
 
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["edit", "draft", "native", "fallback"])
+@pytest.mark.parametrize("overflow", [False, True])
+async def test_stream_redaction_precedes_transport_and_overflow(mode, overflow):
+    from gateway.platforms.base import BasePlatformAdapter, SendResult
+    from agent.redact import redact_for_egress
+
+    adapter_type = type("EgressAdapter", (BasePlatformAdapter,), {
+        "MAX_MESSAGE_LENGTH": 600 if overflow else 4096,
+        "SUPPORTS_NATIVE_STREAMING": mode == "native",
+        "draft_stream_is_message": mode == "draft",
+    })
+    adapter_type.__abstractmethods__ = frozenset()
+    adapter = adapter_type.__new__(adapter_type)
+    adapter._typing_paused = set()
+    adapter._fatal_error_message = None
+    wire, frames = [], []
+
+    async def send(*, content, **kwargs):
+        wire.append(content)
+        return SendResult(success=True, message_id=f"m{len(wire)}")
+
+    async def edit(*, content, **kwargs):
+        if mode == "fallback":
+            return SendResult(success=False, error="cannot edit")
+        wire.append(content)
+        return SendResult(success=True, message_id="m1")
+
+    async def frame(text="", *, content=None, **kwargs):
+        value = text if content is None else content
+        frames.append(value)
+        wire.append(value)
+        return True if mode == "native" else SendResult(success=True)
+
+    adapter.send = send
+    adapter.edit_message = edit
+    adapter.delete_message = AsyncMock(return_value=True)
+    adapter.supports_native_streaming = lambda **kwargs: mode == "native"
+    adapter.supports_draft_streaming = lambda **kwargs: mode == "draft"
+    adapter.send_stream_frame = frame
+    adapter.send_draft = frame
+    consumer = GatewayStreamConsumer(adapter, "chat", StreamConsumerConfig(
+        edit_interval=0.01, buffer_threshold=1, cursor="", transport="auto", chat_type="dm"))
+    secret = "sk-proj-0123456789abcdefghijklmnopqrstuvwxyz"
+    prose = "Hello ordinary prose " * (30 if overflow else 1)
+    payload = prose + secret + " final answer"
+    processed = asyncio.Event()
+    original_filter = consumer._filter_and_accumulate
+
+    def observed_filter(text):
+        original_filter(text)
+        processed.set()
+
+    consumer._filter_and_accumulate = observed_filter
+    task = asyncio.create_task(consumer.run())
+    try:
+        for part in (prose, secret[:8], secret[8:20], secret[20:], " final answer"):
+            processed.clear()
+            consumer.on_delta(part)
+            await asyncio.wait_for(processed.wait(), 5)
+        assert any("Hello ordinary prose" in text for text in wire), "normal prose must stream before finish"
+        consumer.finish(payload)
+        await asyncio.wait_for(task, 5)
+    finally:
+        if not task.done():
+            task.cancel()
+            await task
+    expected = redact_for_egress(payload)
+    assert all(secret[6:-4] not in text for text in wire)
+    # No moving tail masks: even the middle of the credential is absent from all snapshots.
+    assert all(secret[8:16] not in text for text in wire)
+    assert consumer.delivered_final_matches(payload) is True
+    assert consumer._stream_ledger == expected
+    if mode in {"draft", "native"} and not overflow:
+        assert all(b.startswith(a) for a, b in pairwise(frames))

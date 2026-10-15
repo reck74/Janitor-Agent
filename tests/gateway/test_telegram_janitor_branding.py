@@ -418,3 +418,18 @@ async def test_branding_transport_failures_redact_credentials(operation, tmp_pat
         await adapter._handle_start(_start_update(), SimpleNamespace())
     assert "Failed to" in caplog.text
     assert secret not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [OSError, TypeError, ValueError])
+async def test_avatar_raw_remove_failure_still_allows_upload(tmp_path, monkeypatch, failure):
+    """A failed cosmetic API fallback must never escape into Telegram connect()."""
+    asset = tmp_path / "avatar.jpg"
+    asset.write_bytes(b"avatar-test")
+    monkeypatch.setattr(branding_module, "_JANITOR_TELEGRAM_AVATAR_PATH", asset)
+    adapter = _make_adapter()
+    adapter._bot.remove_my_profile_photo = AsyncMock(side_effect=RuntimeError("unsupported"))
+    adapter._bot.do_api_request = AsyncMock(side_effect=failure("cosmetic failure"))
+    await adapter._set_janitor_avatar()
+    adapter._bot.do_api_request.assert_awaited_once_with("removeMyProfilePhoto")
+    adapter._bot.set_my_profile_photo.assert_awaited_once()

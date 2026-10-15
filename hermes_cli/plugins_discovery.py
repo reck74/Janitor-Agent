@@ -218,16 +218,46 @@ def collect_directory_manifests() -> list[PluginManifest]:
     return manifests
 
 
+def _same_source_winner(key: str, first: PluginManifest, second: PluginManifest) -> PluginManifest:
+    """Prefer the canonical directory over a same-source backup; otherwise keep first discovery."""
+    canonical = key.rsplit("/", 1)[-1]
+    first_name = Path(first.path).name if first.path else ""
+    second_name = Path(second.path).name if second.path else ""
+    winner = second if first_name != canonical and second_name == canonical else first
+    logger.warning(
+        "Plugin name collision '%s' in %s: %s and %s; using %s",
+        key, first.source, first.path, second.path, winner.path,
+    )
+    return winner
+
+
+def resolve_listing_collision(first: Optional[tuple], second: tuple) -> tuple:
+    """Apply the same-source rule to CLI listing rows, including user clones labelled git."""
+    if first is None:
+        return second
+    sources = ["user" if row[3] == "git" else row[3] for row in (first, second)]
+    if sources[0] != sources[1]:
+        return second
+    manifests = [PluginManifest(name=row[0], source=source, path=str(row[4]), key=row[5])
+                 for row, source in zip((first, second), sources)]
+    winner = _same_source_winner(second[5], *manifests)
+    return first if winner is manifests[0] else second
+
+
 def resolve_manifest_winners(manifests: list[PluginManifest]) -> dict[str, PluginManifest]:
     """Later sources win on key collision (project > user > bundled): a same-named copy under
-    ``~/.hermes/plugins/<name>`` is the documented way to override a bundled plugin, and is logged. A flat
-    user/project manifest that claims a bundled key from a *differently named* directory is an impostor, not
+    ``~/.hermes/plugins/<name>`` is the documented way to override a bundled plugin, and is logged.
+    Same-source collisions prefer the directory named for the key and always warn; backups cannot silently
+    replace the live copy. A user/project manifest claiming a bundled key from a differently named directory is an impostor, not
     an override (``impostor_dir/plugin.yaml`` with ``name: kanban``): it is skipped with a warning so
     ``hermes plugins enable kanban`` never activates unrelated code under the bundled name."""
     winners: dict[str, PluginManifest] = {}
     for manifest in manifests:
         key = manifest_key(manifest)
         shadowed = winners.get(key)
+        if shadowed is not None and shadowed.source == manifest.source:
+            winners[key] = _same_source_winner(key, shadowed, manifest)
+            continue
         if shadowed is not None and shadowed.source == "bundled" and manifest.source in {"user", "project"}:
             own_dir = Path(manifest.path).name if manifest.path else ""
             bundled_dir = Path(shadowed.path).name if shadowed.path else ""

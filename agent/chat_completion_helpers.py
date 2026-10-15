@@ -33,6 +33,7 @@ from agent.sdk_transform_bypass import bypass_chat_sdk_request_transform
 from agent.errors import EmptyStreamError
 from agent.chat_completion_local import _streams_llamacpp, stale_giveup
 from agent.chat_completion_stream_monitor import StreamingWaitMonitor
+from agent.chat_completion_stream_tools import assemble_tool_calls
 from agent.transports.chat_completions import is_router_timeout_shim, router_timeout_shim_may_follow
 from agent.fast_mode import effective_request_overrides
 from agent.turn_context import substitute_api_content
@@ -44,7 +45,7 @@ from agent.model_metadata import is_local_endpoint
 from agent.message_content import flatten_message_text
 from agent.message_metadata import PERSISTENCE_ONLY_MESSAGE_FIELDS, append_message, stamp_message_timestamp
 from agent.message_sanitization import (
-    _sanitize_messages_surrogates, _sanitize_surrogates, _repair_tool_call_arguments,
+    _sanitize_messages_surrogates, _sanitize_surrogates,
     normalize_finish_reason as _normalize_finish_reason, sanitize_outbound_kwargs, strip_images_for_rejecting_model,
 )
 from agent.reasoning_summaries import (
@@ -3252,48 +3253,6 @@ class _StreamingCall(StreamingWaitMonitor):
                 self.agent._fire_stream_delta(content)  # not _emit_text: deltas_were_sent stays False here
         return final_response
 
-    @staticmethod
-    def _assemble_tool_calls(tool_calls_acc, finish_reason):
-        """Materialize accumulated tool calls; flag truncated/unrepairable args."""
-        mock_tool_calls = []
-        has_truncated_tool_args = False
-        for idx in sorted(tool_calls_acc):
-            tc = tool_calls_acc[idx]
-            arguments = tc["function"]["arguments"]
-            if arguments and arguments.strip():
-                try:
-                    json.loads(arguments)
-                except json.JSONDecodeError:
-                    # A dropped stream is never repaired: closing its prefix yields valid
-                    # JSON that silently lacks every key and digit not yet streamed.
-                    if finish_reason is None:
-                        has_truncated_tool_args = True
-                    else:
-                        # Repair before flagging (GLM via Ollama); "{}" = unrepairable.
-                        repaired = _repair_tool_call_arguments(arguments, tc["function"]["name"] or "?")
-                        if repaired != "{}":
-                            arguments = repaired
-                        else:
-                            has_truncated_tool_args = True
-                # Parseable JSON does not prove that a dropped stream completed its
-                # action. Treat degenerate argument loops as partial calls too.
-                # A provider-confirmed call may legitimately write repetitive data.
-                if finish_reason is None and is_repetition_dominated(arguments):
-                    logger.warning(
-                        "Tool call '%s' has repetition-dominated arguments without a "
-                        "finish_reason; treating as a dropped tool call.", tc["function"]["name"] or "?")
-                    has_truncated_tool_args = True
-            elif finish_reason is None:
-                # Name arrived, zero arg bytes, no finish_reason: unflagged this
-                # becomes a "stop" turn executing "{}" with no retry.
-                has_truncated_tool_args = True
-            mock_tool_calls.append(SimpleNamespace(
-                id=tc["id"], type=tc["type"], extra_content=tc.get("extra_content"),
-                function=SimpleNamespace(name=tc["function"]["name"], arguments=arguments,
-                                         args_repaired=arguments != tc["function"]["arguments"],
-                                         thought_signature=tc.get("thought_signature"))))
-        return mock_tool_calls or None, has_truncated_tool_args
-
     def _finish_chat_stream(self, stream, role, content_parts, reasoning_parts, tool_calls_acc, finish_reason,
         model_name, usage_obj, *, flush_pending, response_id=None, upstream_provider=None, reasoning_details=None,
         refusal_parts=None):
@@ -3309,7 +3268,7 @@ class _StreamingCall(StreamingWaitMonitor):
             from agent.agent_runtime_helpers import extract_reasoning
 
             full_reasoning = extract_reasoning(self.agent, SimpleNamespace(content=full_content))
-        mock_tool_calls, has_truncated_tool_args = self._assemble_tool_calls(tool_calls_acc, finish_reason)
+        mock_tool_calls, has_truncated_tool_args = assemble_tool_calls(tool_calls_acc, finish_reason)
         # Zero-chunk guard: nothing usable = upstream error / malformed SSE.
         if finish_reason is None and not content_parts and not reasoning_parts and not refusal_parts and not tool_calls_acc:
             raise EmptyStreamError(
@@ -3335,7 +3294,11 @@ class _StreamingCall(StreamingWaitMonitor):
                 "Clean EOF, no finish_reason: server ended the stream (no transport exception) after delivering "
                 "text with no tool calls. The server or a proxy closed the stream cleanly.")
             return _build_partial_stream_stub(role, full_content, full_reasoning, model_name, usage_obj, clean_eof=True)
-        effective_finish_reason = "length" if has_truncated_tool_args else (finish_reason or "stop")
+        # An explicit terminal reason belongs to the provider. Rewriting malformed
+        # completed calls to "length" silently drops them in the output-cap retry.
+        # Keep the raw arguments for validation to report the unexecuted action;
+        # genuine EOF drops above and reported output caps retain their recovery.
+        effective_finish_reason = finish_reason or "stop"
         provider_stream_error = _provider_stream_error_from_text(
             full_content or "", effective_finish_reason, response=getattr(stream, "response", None))
         if provider_stream_error is not None:

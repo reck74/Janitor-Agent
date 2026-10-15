@@ -1138,3 +1138,28 @@ class TestRuntimeAlibabaRegionalAndTokenPlan:
         assert result["api_mode"] == "chat_completions"
         assert result["api_key"] == "atp-key"
         assert result["base_url"] == "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+
+
+def test_explicit_catalog_endpoint_never_probes_native_regions(monkeypatch):
+    from hermes_cli import auth
+
+    monkeypatch.setenv("GLM_API_KEY", "test-glm-relay-key")
+    def probe(*args):
+        raise AssertionError("native credential probe must not run for a configured relay")
+    monkeypatch.setitem(auth._API_KEY_BASE_URL_RESOLVERS, "zai", probe)
+    result = resolve_api_key_provider_credentials("zai", base_url="http://127.0.0.1:9001/zai/v1/")
+    assert result["api_key"] == "test-glm-relay-key"
+    assert result["base_url"] == "http://127.0.0.1:9001/zai/v1"
+
+
+def test_blank_catalog_endpoint_preserves_native_resolution(monkeypatch):
+    from hermes_cli import auth
+
+    monkeypatch.setenv("GLM_API_KEY", "test-glm-native-key")
+    probes = []
+    def probe(key, default, env):
+        probes.append(key)
+        return "https://native.example/v1"
+    monkeypatch.setitem(auth._API_KEY_BASE_URL_RESOLVERS, "zai", probe)
+    assert resolve_api_key_provider_credentials("zai", base_url="  ")["base_url"] == "https://native.example/v1"
+    assert probes == ["test-glm-native-key"]

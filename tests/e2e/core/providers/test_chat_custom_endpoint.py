@@ -17,15 +17,12 @@
 
 from __future__ import annotations
 
-import sys
-
 import pytest
 
 from tests.e2e.core.providers._openai_helpers import (
     READ_TOOL,
     HarnessError,
     Home,
-    bug_assertions,
     chat_messages,
     custom_chat_config,
     db_tool_calls,
@@ -35,16 +32,9 @@ from tests.e2e.core.providers._openai_helpers import (
 )
 from tests.fakes.providers.chat_variants import CDropToolCall, CText, CTools, FakeChatVariantServer
 
-pytestmark = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="subprocess harness is Linux-gated")
+pytestmark = pytest.mark.platforms("linux")
 
 STRICT_TURN_BUDGET = 60.0
-
-KNOWN: dict[str, tuple[str, str]] = {
-    "unrepairable_args_surfaced": (
-        r"the unparseable write_file call vanished: the next request never told the model it did not run "
-        r"and the turn reported success",
-        "#119389 unrepairable tool_call arguments silently dropped, turn reports success"),
-}
 
 
 def test_ollama_strict_endpoint_always_receives_the_user_turn(tmp_path) -> None:
@@ -86,9 +76,12 @@ def test_ollama_strict_endpoint_always_receives_the_user_turn(tmp_path) -> None:
 
 
 @pytest.mark.parametrize("finish", ["stop", "tool_calls"])
-def test_unrepairable_tool_arguments_are_surfaced_not_dropped(tmp_path, finish) -> None:
+@pytest.mark.parametrize("broken", [
+    '{"path": "out.md", "content": "# Title\\n\\nsays "quoted" and then, ',
+    '{"path": "out.md", "content": unknown}',
+], ids=["cut_string", "closed_invalid_json"])
+def test_unrepairable_tool_arguments_are_surfaced_not_dropped(tmp_path, finish, broken) -> None:
     h = Home(tmp_path)
-    broken = '{"path": "out.md", "content": "# Title\\n\\nsays "quoted" and then, '  # unterminated, bad quotes
     with FakeChatVariantServer([CTools([("write_file", broken)], finish_reason=finish), CText("DONE")]) as srv:
         h.write(custom_chat_config(srv.base_url), dotenv={"OPENAI_API_KEY": "sk-fake"})
         (h.project / "out.md").write_text("OLD\n", encoding="utf-8")
@@ -100,7 +93,16 @@ def test_unrepairable_tool_arguments_are_surfaced_not_dropped(tmp_path, finish) 
         m.get("role") == "tool" or "write_file" in str(m.get("content") or "")
         for m in mains[1]["messages"][len(mains[0]["messages"]):])
     failed_visibly = run.proc.returncode != 0 or run.usage.get("failed")
-    with bug_assertions(KNOWN, "unrepairable_args_surfaced"):
-        assert told or failed_visibly, (
-            "the unparseable write_file call vanished: the next request never told the model it did not run "
-            f"and the turn reported success ({run.stdout.strip()!r}); out.md={(h.project / 'out.md').read_text()!r}")
+    assert told or failed_visibly, (
+        "the unparseable write_file call vanished: the next request never told the model it did not run "
+        f"and the turn reported success ({run.stdout.strip()!r}); out.md={(h.project / 'out.md').read_text()!r}")
+    assert (h.project / "out.md").read_text(encoding="utf-8") == "OLD\n"
+    if len(mains) >= 2:
+        prefix = mains[0]["messages"]
+        assert mains[1]["messages"][:len(prefix)] == prefix
+        continuation = mains[1]["messages"][len(prefix):]
+        assert [m["role"] for m in continuation] == ["assistant", "tool"]
+        calls = continuation[0]["tool_calls"]
+        assert len(calls) == 1
+        assert calls[0]["id"] == continuation[1]["tool_call_id"]
+        assert "Invalid JSON" in continuation[1]["content"]

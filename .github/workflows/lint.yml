@@ -191,7 +191,7 @@ jobs:
         uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
         with:
           ref: ${{ inputs.commit }}
-          fetch-depth: 2 # the merge commit and its first parent (the base branch tip)
+          fetch-depth: 0 # verify both PR-base and approved-engine ancestry
 
       - uses: ./.github/actions/setup-pm
         with:
@@ -204,7 +204,7 @@ jobs:
           command: python -m scripts.ci.python_packages "$(python -m scripts.code_health --print-pins)"
 
       - name: Ratchet the PR against the base branch tip
-        run: python scripts/check --only health --base HEAD^1
+        run: python -m janitor_ext.ci_baseline health --base HEAD^1
 
       - name: Check the checkout is clean
         # Last step of every job (tests/ci/test_clean_worktree_check.py): a test or CI step that

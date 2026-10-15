@@ -1479,12 +1479,13 @@ def _nous_catalog(normalized: str, force_refresh: bool) -> Optional[list[str]]:
     return get_curated_nous_model_ids() or None
 
 
-def _api_key_credentials(normalized: str) -> tuple[str, str]:
+def _api_key_credentials(normalized: str, *, base_url: str | None = None) -> tuple[str, str]:
     """``(api_key, base_url)`` from ``resolve_api_key_provider_credentials``; empty strings on any miss."""
     try:
         from hermes_cli.auth import resolve_api_key_provider_credentials
 
-        creds = resolve_api_key_provider_credentials(normalized)
+        kwargs = {"base_url": base_url} if base_url else {}
+        creds = resolve_api_key_provider_credentials(normalized, **kwargs)
         return str(creds.get("api_key") or "").strip(), str(creds.get("base_url") or "").strip()
     except Exception:
         return "", ""
@@ -1771,8 +1772,8 @@ def _configured_relay_base_url(provider: str) -> str:
 def _relay_model_catalog(normalized: str, relay: str) -> Optional[list[str]]:
     """Live catalog probed at a configured ``model.base_url`` relay, or None to fall through.
 
-    Returns only the relay's live ids (no curated merge): a relay user must see the relay's
-    catalog, and a failed/empty probe degrades to the canonical fetchers untouched.
+    Returns only the relay's live ids (no curated merge). Failure degrades to the local
+    curated list in the caller, without sending credentials to native discovery hosts.
     """
     try:
         from providers import get_provider_profile
@@ -1780,7 +1781,7 @@ def _relay_model_catalog(normalized: str, relay: str) -> Optional[list[str]]:
         profile = get_provider_profile(normalized)
         if profile is None or getattr(profile, "auth_type", "") != "api_key":
             return None
-        api_key, _ = _api_key_credentials(normalized)
+        api_key, _ = _api_key_credentials(normalized, base_url=relay)
         live = profile.fetch_models(api_key=api_key, base_url=relay)
         return [str(m) for m in (live or []) if m] or None
     except Exception:
@@ -1790,12 +1791,11 @@ def _relay_model_catalog(normalized: str, relay: str) -> Optional[list[str]]:
 
 # Canonical fetchers that already resolve `model.base_url` themselves for the configured
 # provider AND degrade to their curated list when that relay fails — `_anthropic_catalog`,
-# `_custom_catalog`, `_openai_catalog` (via `_openai_discovery_base_url`) and the simple
-# api-key fetchers (via `resolve_api_key_provider_credentials`). They already satisfy the
+# `_custom_catalog` and `_openai_catalog` (via `_openai_discovery_base_url`). They satisfy the
 # "no vendor egress when a relay is configured" invariant, so intercepting them would only
 # override correct, better-merged behaviour. Everything else is vendor-pinned (#121387).
 _RELAY_AWARE_CATALOG_FETCHERS = frozenset(
-    {"anthropic", "custom", "openai", "openai-api", "stepfun", "gmi"}
+    {"anthropic", "custom", "openai", "openai-api"}
 )
 
 
@@ -2225,7 +2225,9 @@ def _fetch_anthropic_models(
     except ImportError:
         return None
 
-    resolved_base_url = base_url
+    from hermes_cli.config import get_env_value_prefer_dotenv
+
+    resolved_base_url = base_url or get_env_value_prefer_dotenv("ANTHROPIC_BASE_URL")
     token = (api_key or "").strip() or resolve_anthropic_token()
     if not token:
         # A pool credential and its endpoint are one security boundary — never pair the pool key

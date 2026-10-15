@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import pytest
 from ruamel.yaml import YAML
 
 from janitor_ext.ci_contracts import janitor_test_files, workflow_interface_errors
@@ -306,9 +307,9 @@ def _janitor_manifest_runner():
     return runner
 
 
+@pytest.mark.platforms("windows")
 def test_manifest_runner_uses_pm_git_bash_instead_of_windows_wsl_stub(tmp_path, monkeypatch):
     import json
-    import platform
     import subprocess
     from pm import shell
 
@@ -317,7 +318,6 @@ def test_manifest_runner_uses_pm_git_bash_instead_of_windows_wsl_stub(tmp_path, 
     staged.write_text("synthetic Windows binary", encoding="utf-8")
     facts = tmp_path / "facts.json"
     facts.write_text(json.dumps({"schema": 1, "packages": {"git": {"entry": "git-test"}}}), encoding="utf-8")
-    monkeypatch.setattr(platform, "system", lambda: "Windows")
     monkeypatch.setattr(shell.paths, "facts_path", lambda: facts)
     monkeypatch.setattr(shell.paths, "store_root", lambda: tmp_path / "tools")
     monkeypatch.setattr(shell.shutil, "which", lambda name: r"C:\Windows\System32\bash.exe")
@@ -338,13 +338,14 @@ def test_manifest_runner_uses_pm_git_bash_instead_of_windows_wsl_stub(tmp_path, 
                       "-j", "2", "--file-retries", "0"]]
 
 
+@pytest.mark.platforms("windows")
 def test_manifest_runner_reports_unavailable_bash_but_keeps_list_accessible(tmp_path, monkeypatch, capsys):
-    import os
-    from types import SimpleNamespace
     from pm import shell
 
     monkeypatch.setattr(shell, "_staged_bash", lambda: None)
-    monkeypatch.setattr(shell, "os", SimpleNamespace(name="nt", path=os.path, environ={"ProgramFiles": str(tmp_path)}))
+    for name in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"):
+        monkeypatch.setenv(name, str(tmp_path))
+    monkeypatch.delenv("HERMES_GIT_BASH_PATH", raising=False)
     monkeypatch.setattr(shell.shutil, "which", lambda name: r"C:\Windows\System32\bash.exe")
     runner = _janitor_manifest_runner()
     monkeypatch.setattr(runner, "janitor_test_files", lambda root: ["tests/test_janitor_cli.py"])

@@ -13,7 +13,7 @@ unclosed brackets, Python None) don't kill the session.
 
 import json
 
-from agent.chat_completion_helpers import _StreamingCall
+from agent.chat_completion_stream_tools import assemble_tool_calls
 from agent.message_sanitization import _repair_tool_call_arguments
 
 
@@ -26,7 +26,7 @@ def test_streamed_misnested_arguments_are_repaired_not_flagged_truncated():
     # required (#115061); the assembler must hand the tool a repaired call, not drop it
     # as an unrepairable "{}" flagged as truncated args.
     raw = '{"edits": [{"path": "a.py", "mode": "w"}, {"path": "b.py", "mode": "w"}}'
-    calls, truncated = _StreamingCall._assemble_tool_calls(_accumulated(raw), "tool_calls")
+    calls, truncated = assemble_tool_calls(_accumulated(raw), "tool_calls")
     assert truncated is False
     assert json.loads(calls[0].function.arguments) == {
         "edits": [{"path": "a.py", "mode": "w"}, {"path": "b.py", "mode": "w"}],
@@ -36,7 +36,7 @@ def test_streamed_misnested_arguments_are_repaired_not_flagged_truncated():
 def test_streamed_mid_string_cut_stays_unrepairable():
     # Control: content cut inside a string is unrecoverable and must still be flagged,
     # never guessed into a wrong tool call.
-    calls, truncated = _StreamingCall._assemble_tool_calls(_accumulated('{"q": "unterminated string'), None)
+    calls, truncated = assemble_tool_calls(_accumulated('{"q": "unterminated string'), None)
     assert truncated is True
     assert calls[0].function.arguments == '{"q": "unterminated string'
 

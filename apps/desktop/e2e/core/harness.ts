@@ -326,6 +326,19 @@ export function recordWebSockets(page: Page): WsRecorder {
   return rec
 }
 
+/** Reload replaces the document, but Playwright can omit its socket close events. */
+export async function reloadWithWebSocketRecorder(page: Page, rec: WsRecorder): Promise<void> {
+  const previousDocumentSockets = [...rec.sockets]
+  await page.reload()
+
+  // Only retire sockets from the replaced document. New sockets may already
+  // exist when reload resolves; they must remain counted, including duplicates.
+  // A failed navigation leaves this bookkeeping unchanged.
+  for (const socket of previousDocumentSockets) {
+    socket.closed = true
+  }
+}
+
 // ─── Network fault injection ────────────────────────────────────────────
 
 export interface TcpProxy {

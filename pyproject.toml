@@ -576,6 +576,7 @@ opt-in-extras = ["kittentts"]
 
 [tool.hermes.distribution]
 identity-provider = "janitor_ext.version:distribution_identity"
+version-label-provider = "janitor_version:format_version"
 source-update-hook = "janitor_ext.migrate:prepare_source_update"
 desktop-build-provider = "janitor_ext.desktop:build_desktop_product"
 

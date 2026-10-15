@@ -62,3 +62,24 @@ El hub `AGENTS.md` mantiene las quince directivas del fork y la tabla de áreas 
 `legacy/fork-inventory.json` registra por ruta las diferencias históricas y actuales frente al motor fijado, su clasificación, consumidores y sustitutos. Tras resolver un sync, ejecutar `python scripts/build_janitor_fork_inventory.py` y revisar el diff. El generador falla si una familia nueva no tiene clasificación; no valida por sí solo que una función sea innecesaria. Los residuos Desktop tienen además un análisis de imports en `apps/desktop/janitor/retired-files.json`.
 
 La guía `website/SECURITY-DEPENDENCIES.md` registra la validación separada de dependencias del sitio. El gate del website conserva un audit completo y sólo permite la excepción acotada de braces 3.0.3 hasta el 29 de octubre de 2026; cualquier advisory alto/crítico nuevo o fecha vencida bloquea CI. El build del sitio no autoriza publicar una release Desktop.
+
+
+## Comparación de CI durante esta sincronización
+
+La autorización del usuario del 15 de octubre de 2026 está registrada en `JANITOR_CI_BASELINE_PROPOSAL.md`. `janitor_ext/ci_baseline.py` sólo permite comparar salud con el commit exacto del motor cuando éste es ancestro del candidato y la base del PR aún no lo contiene. Lee `ENFORCEMENT` de la base del PR; una vez incorporado el motor vuelve al ratchet ordinario del PR. Exige historia completa y rechaza revisiones no relacionadas. El control de blobs conserva el límite de 500 KiB y reconoce únicamente objetos Git idénticos al motor fijado. Esta autorización no cubre supply-chain ni atribución.
+
+```bash
+python -m janitor_ext.ci_baseline health --base <base-del-PR>
+python -m janitor_ext.ci_baseline blob-size --base <base-del-PR>
+```
+
+## Reparaciones de aceptación que debe conservar el siguiente sync
+
+- Streams: `agent/chat_completion_stream_tools.py` posee el ensamblador extraído; las llamadas terminadas con JSON inválido deben producir un resultado de herramienta visible, mientras un corte real conserva su recuperación. Comprobar prefijo de conversación, ids y alternancia.
+- Credenciales: `hermes_cli/auth_api_keys.py` conserva la API pública de `auth.py`; un endpoint explícito evita los probes nativos. Polling OAuth respeta intervalo, `slow_down` de cinco segundos y deadline. Una rotación Nous conserva el destino del perfil sin reescribir el origen persistido.
+- MCP: `tools/mcp_tool_wire.py` sólo retira `_meta` vacío del request y clasifica el HTTP 401 de la llamada bajo su lock. Conservar ids, metadata útil y argumentos; no atribuir rechazos antiguos a otra llamada. Plugins con el mismo manifiesto usan una selección común en runtime/listado, con aviso de colisión.
+- Gateway: la redacción incremental actúa sobre la salida, antes de transportes y overflow; no cambia contexto ni historial. Verificar además el filtro de razonamiento al reiniciar segmentos. Sus límites por segmento y las excepciones URL de la política de redacción deben seguir documentados.
+- PM: `repo_root()` sigue siendo el código ejecutado. `install_root()` puede resolver su propietario sólo mediante el registro existente y el identificador verificado de la generación. Probar versiones desde una generación real; para el E2E install/update el fixture clona `HEAD`, así que requiere un checkpoint comprometido.
+- Desktop E2E: la fixture del motor usa una distribución privada de prueba; no se retira el guard de SHA público de Janitor. El recorder de sockets debe invalidar handles al cambiar de documento y seguir detectando conexiones duplicadas reales.
+
+Los fallos conocidos sólo se retiran de `KNOWN` después de reproducirlos y pasar su ruta funcional. La ejecución Python con `strict_acceptance=1` no cambia por sí sola el tratamiento de casos esperados de Desktop. Registrar resultados originales y reparados por SHA; no sumar suites solapadas como una suite completa.

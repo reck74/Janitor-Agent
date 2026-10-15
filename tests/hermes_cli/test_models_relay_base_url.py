@@ -77,7 +77,7 @@ def test_relay_base_url_is_probed_for_configured_provider(monkeypatch):
     import providers
 
     monkeypatch.setattr(providers, "get_provider_profile", lambda name: profile)
-    monkeypatch.setattr(models, "_api_key_credentials", lambda name: (None, None))
+    monkeypatch.setattr(models, "_api_key_credentials", lambda name, **kwargs: (None, None))
     monkeypatch.setattr(
         models,
         "_PROVIDER_CATALOG_FETCHERS",
@@ -143,7 +143,7 @@ def test_a_failed_relay_probe_never_falls_back_to_the_vendor_host(monkeypatch, p
             auth_type="api_key", fetch_models=_probe, fallback_models=[]
         ),
     )
-    monkeypatch.setattr(models, "_api_key_credentials", lambda name: (None, None))
+    monkeypatch.setattr(models, "_api_key_credentials", lambda name, **kwargs: (None, None))
 
     # Sentinels on EVERY live-egress seam below the relay probe.
     def _egress(*a, **k):

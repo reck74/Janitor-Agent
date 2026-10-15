@@ -430,3 +430,67 @@ def test_staged_hint_keeps_command_for_chat_gateway_platform(hermes_home, monkey
     monkeypatch.setenv("HERMES_SESSION_PLATFORM", "telegram")
     r = _stage_one_memory_write()
     assert "/memory pending" in r["message"], r["message"]
+
+
+@pytest.mark.parametrize("subsystem", ["memory", "skills"])
+@pytest.mark.parametrize("spelling", ["relative", "absolute", "windows", "empty"])
+def test_pending_identifier_cannot_address_another_file(hermes_home, tmp_path, subsystem, spelling):
+    from pathlib import Path
+    from tools import write_approval as wa
+
+    victim = Path(hermes_home) / "auth.json"
+    original = json.dumps({"id": "victim", "payload": {"content": "PRIVATE-CANARY"}})
+    victim.write_text(original, encoding="utf-8")
+    wa.stage_write(subsystem, {"action": "add", "content": "allowed"}, summary="safe", origin="foreground")
+    candidate = {"relative": "../../auth", "absolute": str(victim.with_suffix("")),
+                 "windows": r"..\..\auth", "empty": ""}[spelling]
+    assert wa.get_pending(subsystem, candidate) is None
+    assert wa.discard_pending(subsystem, candidate) is False
+    assert victim.read_text(encoding="utf-8") == original
+    assert len(wa.list_pending(subsystem)) == 1
+
+
+@pytest.mark.require_symlinks
+@pytest.mark.parametrize("redirect", ["record", "subsystem", "pending"])
+def test_pending_symlink_cannot_read_or_mutate_outside_store(hermes_home, tmp_path, redirect):
+    from pathlib import Path
+    from tools import write_approval as wa
+
+    root = Path(hermes_home)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    record = {"id": "abcdef12", "subsystem": "memory", "payload": {"content": "PRIVATE-CANARY"}}
+    victim = outside / "abcdef12.json"
+    victim.write_text(json.dumps(record), encoding="utf-8")
+    if redirect == "record":
+        (root / "pending" / "memory").mkdir(parents=True)
+        (root / "pending" / "memory" / victim.name).symlink_to(victim)
+    elif redirect == "subsystem":
+        (root / "pending").mkdir()
+        (root / "pending" / "memory").symlink_to(outside, target_is_directory=True)
+    else:
+        (outside / "memory").mkdir()
+        victim.rename(outside / "memory" / victim.name)
+        victim = outside / "memory" / victim.name
+        (root / "pending").symlink_to(outside, target_is_directory=True)
+    before = victim.read_bytes()
+    assert wa.get_pending("memory", record["id"]) is None
+    assert wa.list_pending("memory") == []
+    assert wa.pending_count("memory") == 0
+    assert wa.discard_pending("memory", record["id"]) is False
+    assert victim.read_bytes() == before
+
+
+def test_pending_record_identity_must_match_its_file_and_subsystem(hermes_home):
+    from tools import write_approval as wa
+
+    record = wa.stage_write("memory", {"action": "add", "content": "allowed"},
+                            summary="safe", origin="foreground")
+    path = wa._pending_path("memory", record["id"])
+    for invalid in ({**record, "id": "../../auth"}, {**record, "subsystem": "skills"}):
+        path.write_text(json.dumps(invalid), encoding="utf-8")
+        assert wa.get_pending("memory", record["id"]) is None
+        assert wa.list_pending("memory") == []
+    path.write_text(json.dumps(record), encoding="utf-8")
+    assert wa.get_pending("memory", record["id"]) == record
+    assert wa.discard_pending("memory", record["id"]) is True

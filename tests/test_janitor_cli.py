@@ -78,17 +78,22 @@ def test_unknown_profile_does_not_fall_back_to_default(tmp_path, monkeypatch, ca
     assert not (tmp_path / "profiles" / "missing").exists()
 
 
-def test_version_fast_path_is_independent_of_credentials(tmp_path):
+@pytest.mark.parametrize("module", ["janitor_cli", "acp_adapter.entry"])
+def test_version_fast_path_is_independent_of_credentials(tmp_path, module):
     env = dict(os.environ, HERMES_HOME=str(tmp_path / "home"), HOME=str(tmp_path), USERPROFILE=str(tmp_path))
     for name in list(env):
         if name.endswith(("_API_KEY", "_TOKEN", "_SECRET", "_PASSWORD")):
             env.pop(name)
-    result = subprocess.run([sys.executable, str(ROOT / "janitor_cli.py"), "--version"],
+    result = subprocess.run([sys.executable, "-m", module, "--version"],
                             env=env, capture_output=True, text=True, timeout=15, check=False)
     assert result.returncode == 0, result.stderr
     metadata = json.loads((ROOT / "janitor_ext" / "release.json").read_text())
     assert f"THE JANITOR v{metadata['janitorVersion']}" in result.stdout  # AGENTS.md #12
     assert f"Hermes {metadata['upstreamVersion']}" in result.stdout
+    assert metadata["upstreamRef"][:12] in result.stdout
+    commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True,
+                            text=True, timeout=15, check=True).stdout.strip()
+    assert commit[:12] in result.stdout
     assert not (tmp_path / "home").exists()
 
 

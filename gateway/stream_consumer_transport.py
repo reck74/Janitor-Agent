@@ -66,7 +66,7 @@ class StreamTransportMixin:
     async def _send_frame(self, text: str, *, finalize: bool):
         """One native-stream frame; every frame carries the same chat/reply/turn routing."""
         return await self.adapter.send_stream_frame(
-            text, finalize=finalize, chat_id=self.chat_id, reply_to=self._initial_reply_to_id,
+            self._clean_for_display(text), finalize=finalize, chat_id=self.chat_id, reply_to=self._initial_reply_to_id,
             turn_id=self._turn_id)
 
     def _close_native_state(self) -> None:

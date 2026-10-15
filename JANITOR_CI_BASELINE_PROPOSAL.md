@@ -1,6 +1,6 @@
-# Propuesta pendiente: comparación de CI durante la sincronización
+# Propuesta autorizada: comparación de CI durante la sincronización
 
-No aplicada. El control automático rechazó modificar estos gates sin aprobación explícita del alcance. Los workflows actuales permanecen intactos.
+El usuario autorizó explícitamente este alcance y sus pruebas el 15 de octubre de 2026. La implementación aislada y las dos entradas de workflow están aplicadas; mantienen los límites y las reglas originales. La revisión automática anterior había requerido esa aprobación. Las 21 regresiones del comparador y 57 pruebas de su familia pasan; la ejecución real contra el motor fijado tiene cero bloqueos de salud y ningún blob nuevo fuera de las reglas.
 
 ## Evidencia
 
@@ -44,4 +44,4 @@ El cambio acepta como deuda heredada la salud del motor estable elegido, en luga
 
 Alternativa más estricta, si no se acepta ese cambio de referencia: conservar por unidad los límites previos del fork y reconocer únicamente unidades idénticas al motor aprobado, en lugar de cambiar todo el baseline. Requiere implementar y probar ese comparador de dos padres; no está aplicado ni se da por autorizado.
 
-Sin esta aprobación, los gates originales se conservan y el PR no puede declararse listo para publicación. El resto de reparaciones y validaciones puede continuar.
+La aprobación resuelve únicamente esta comparación de CI. No autoriza excepciones de supply-chain, atribución ni publicación estable; los demás gates y la aceptación funcional siguen pendientes de sus resultados.

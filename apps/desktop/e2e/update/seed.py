@@ -18,9 +18,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -49,6 +51,25 @@ def _fail(what: str, cp: subprocess.CompletedProcess) -> None:
     raise SystemExit(1)
 
 
+def stock_engine_manifest(source: str) -> str:
+    """This lane installs Hermes; Janitor AppImage acceptance is a separate lane.
+
+    Local synthetic commits cannot be published Janitor releases. Remove the
+    whole distribution declaration from the private fixture, so identity,
+    maintenance and Desktop builds all use the real upstream implementations.
+    Production release provenance checks remain unchanged.
+    """
+    document = tomllib.loads(source)
+    if "distribution" not in document.get("tool", {}).get("hermes", {}):
+        return source
+    rendered = re.sub(r"(?ms)^\[tool\.hermes\.distribution\][^\n]*\n.*?(?=^\[|\Z)", "", source)
+    expected = tomllib.loads(source)
+    expected["tool"]["hermes"].pop("distribution")
+    if tomllib.loads(rendered) != expected:
+        raise ValueError("Cannot isolate the upstream Desktop fixture distribution")
+    return rendered
+
+
 def install(root: Path) -> None:
     p = _paths(root)
     root.mkdir(parents=True, exist_ok=True)
@@ -57,6 +78,11 @@ def install(root: Path) -> None:
         shutil.rmtree(p[key], ignore_errors=True)
     head = os.environ.get("HERMES_E2E_UPDATE_INSTALL_REF") or I.head_sha()
     origin = I.make_origin(root, head)
+    manifest = I.git("show", f"{head}:pyproject.toml", cwd=origin)
+    stock_manifest = stock_engine_manifest(manifest)
+    if stock_manifest != manifest:
+        head = I.publish_commit(origin, root, "test: isolate the upstream Desktop distribution",
+                                {"pyproject.toml": stock_manifest})
     # Serve full clones. When a CI runner's git honours the installer's --filter=tree:0 against a
     # local file:// origin, the clone's lazy tree fetches fan out into more than 1300 concurrent
     # upload-packs, and the runner is OOM-killed about 90 s into seeding. The Desktop cells need an

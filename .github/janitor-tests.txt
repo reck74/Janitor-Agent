@@ -20,3 +20,6 @@ tests/test_janitor_installer_e2e.py
 tests/skills/test_janitor_optional_skills.py
 tests/test_janitor_desktop.py
 tests/skills/test_janitor_opendesign_skill.py
+tests/janitor_ext/test_janitor_ci_baseline.py
+tests/tools/test_janitor_mcp_wire.py
+tests/hermes_cli/test_janitor_plugin_collision.py

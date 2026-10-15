@@ -485,3 +485,128 @@ class TestHomeWorkingDirGuard:
         tracker = SubdirectoryHintTracker(working_dir=str(project))
         result = tracker.check_tool_call("read_file", {"path": str(sub / "f.py")})
         assert result is not None and "Package rules" in result
+
+
+@pytest.mark.parametrize(('command', 'expected'), [
+    (r'python backend\src\main.py', r'backend\src\main.py'),
+    (r'python "backend dir\src\main.py"', r'backend dir\src\main.py'),
+    (r'cd backend\src && dir', r'backend\src'),
+    (r'cd "backend dir\src";dir', r'backend dir\src'),
+])
+@pytest.mark.platforms("windows")
+def test_hint_extractor_preserves_windows_path_tokens(command, expected, tmp_path, monkeypatch):
+    import agent.subdirectory_hints as hints
+    tracker = hints.SubdirectoryHintTracker(str(tmp_path))
+    seen = []
+    monkeypatch.setattr(tracker, '_add_path_candidate', lambda path, candidates: seen.append(path))
+    tracker._extract_paths_from_command(command, set())
+    assert expected in seen
+
+
+
+@pytest.mark.parametrize('command', ['python "backend dir/src/main.py"', r'python backend\ dir/src/main.py', "cd 'backend dir' && ls"])
+def test_hint_discovery_preserves_shell_quoting_and_prompt_prefix(command, tmp_path):
+    import agent.subdirectory_hints as hints
+    from agent.prompt_builder import build_context_files_prompt
+    (tmp_path / '.git').mkdir()
+    (tmp_path / 'AGENTS.md').write_text('Root stable context', encoding='utf-8')
+    backend = tmp_path / 'backend dir'
+    (backend / 'src').mkdir(parents=True)
+    (backend / 'AGENTS.md').write_text('backend-context-canary', encoding='utf-8')
+    (backend / 'src/main.py').write_text('print(1)', encoding='utf-8')
+    tracker = hints.SubdirectoryHintTracker(str(tmp_path))
+    before = build_context_files_prompt(cwd=str(tmp_path), skip_soul=True).encode('utf-8')
+    result = tracker.check_tool_call('terminal', {'command': command})
+    assert result and 'backend-context-canary' in result
+    assert tracker.check_tool_call('terminal', {'command': command}) is None
+    assert build_context_files_prompt(cwd=str(tmp_path), skip_soul=True).encode('utf-8') == before
+
+
+
+def test_hint_path_discovery_retains_real_containment(tmp_path):
+    import agent.subdirectory_hints as hints
+    root = tmp_path / 'project'; root.mkdir()
+    outside = tmp_path / 'outside'; outside.mkdir()
+    (outside / 'AGENTS.md').write_text('outside-canary', encoding='utf-8')
+    tracker = hints.SubdirectoryHintTracker(str(root))
+    # A real relative path traversing outside the project stays rejected.
+    assert tracker.check_tool_call('terminal', {'command': 'python ../outside/main.py'}) is None
+
+
+
+@pytest.mark.parametrize(('command', 'expected'), [
+    (r'python backend\ dir/src/main.py', 'backend dir/src/main.py'),
+    (r'cd backend\ dir && ls', 'backend dir'),
+    ("python 'backend dir/src/main.py'", 'backend dir/src/main.py'),
+    ("cd 'backend dir' && ls", 'backend dir'),
+])
+@pytest.mark.platforms("windows")
+def test_windows_git_bash_path_quoting_still_discovers_hints(command, expected, tmp_path, monkeypatch):
+    import agent.subdirectory_hints as hints
+    tracker = hints.SubdirectoryHintTracker(str(tmp_path))
+    seen = []
+    monkeypatch.setattr(tracker, '_add_path_candidate', lambda path, candidates: seen.append(path))
+    tracker._extract_paths_from_command(command, set())
+    assert expected in seen
+
+
+@pytest.mark.parametrize('already_loaded', [False, True])
+@pytest.mark.platforms("windows")
+def test_windows_hint_discovery_prefers_existing_git_bash_target(tmp_path, monkeypatch, already_loaded):
+    import subprocess
+    import agent.subdirectory_hints as hints
+    from pm.shell import bash
+    posix_target = tmp_path / 'backendsrc'
+    native_target = tmp_path / 'backend/src'
+    posix_target.mkdir(); native_target.mkdir(parents=True)
+    (posix_target / 'AGENTS.md').write_text('correct-shell-target', encoding='utf-8')
+    (native_target / 'AGENTS.md').write_text('ambiguous-native-target', encoding='utf-8')
+    shell = bash(); assert shell
+    command = r'cd backend\src && pwd'
+    actual = subprocess.run([shell, '-c', command], cwd=tmp_path, capture_output=True, text=True, timeout=10, check=True)
+    assert actual.stdout.strip().replace('\\', '/').endswith('/backendsrc')
+    tracker = hints.SubdirectoryHintTracker(str(tmp_path))
+    if already_loaded:
+        tracker._loaded_dirs.add(posix_target)
+    seen = []
+    original = tracker._add_path_candidate
+    def capture(path, candidates):
+        seen.append(path)
+        original(path, candidates)
+    monkeypatch.setattr(tracker, '_add_path_candidate', capture)
+    result = tracker.check_tool_call('terminal', {'command': command})
+    assert r'backend\src' not in seen
+    assert (result is None) if already_loaded else ('correct-shell-target' in result)
+    assert result is None or 'ambiguous-native-target' not in result
+
+
+@pytest.mark.platforms("windows")
+def test_windows_hint_extensionless_posix_operand_blocks_native_fallback(tmp_path, monkeypatch):
+    import subprocess
+    import agent.subdirectory_hints as hints
+    from pm.shell import bash
+    (tmp_path / 'backendREADME').write_text('actual-shell-target', encoding='utf-8')
+    (tmp_path / 'backend').mkdir()
+    (tmp_path / 'backend/README').write_text('different-native-target', encoding='utf-8')
+    (tmp_path / 'backend/AGENTS.md').write_text('must-not-load-native-hint', encoding='utf-8')
+    shell = bash(); assert shell
+    command = r'cat backend\README'
+    actual = subprocess.run([shell, '-c', command], cwd=tmp_path, capture_output=True, text=True, timeout=10, check=True)
+    assert actual.stdout == 'actual-shell-target'
+    tracker = hints.SubdirectoryHintTracker(str(tmp_path))
+    seen = []
+    monkeypatch.setattr(tracker, '_add_path_candidate', lambda path, candidates: seen.append(path))
+    tracker.check_tool_call('terminal', {'command': command})
+    assert r'backend\README' not in seen
+
+
+def test_unreadable_posix_target_prevents_native_reinterpretation(tmp_path, monkeypatch):
+    import agent.subdirectory_hints as hints
+    from types import SimpleNamespace
+    tracker = hints.SubdirectoryHintTracker(str(tmp_path))
+    def denied():
+        raise PermissionError('filesystem denies metadata')
+    target = SimpleNamespace(is_absolute=lambda: True, stat=denied, exists=lambda: False)
+    target.expanduser = lambda: target
+    monkeypatch.setattr(hints, 'Path', lambda raw: target)
+    assert tracker._command_target_exists('backendREADME') is True

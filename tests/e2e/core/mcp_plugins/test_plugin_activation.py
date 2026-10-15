@@ -62,23 +62,9 @@ pytestmark = [
 # Confirmed-live open bugs: test id -> (the symptom's own message pattern, "#issue reason"). Run-time
 # gated around the symptom() check only (known_gate); drop an entry when its fix lands.
 KNOWN: dict[str, tuple[str, str]] = {
-    "test_resource_only_plugin_activated_live_is_reported_connected": (
-        r"^a resource-only MCP server that completed the handshake is reported as failed: "
-        r"\{.*'connected': False",
-        "#119751 live activation filters resource/prompt wrappers before the connected check"),
     "test_portable_mcp_env_placeholder_is_interpolated": (
         r"^the portable plugin's server received the literal placeholder: ENV:NO-CANARY:\$\{E2E_PORTABLE_KEY\}",
         "#120526 portable mcp.json env ${VAR} reaches the server literally"),
-    "test_enabled_portable_plugin_server_is_not_reported_as_an_unknown_toolset": (
-        r"^`hermes chat` warned about the enabled plugin's MCP server: \[.*Unknown toolsets: .*\bplug\b",
-        "#119457 startup 'Unknown toolsets' warning names a plugin-provided MCP server"),
-    "test_same_name_backup_dir_does_not_shadow_the_live_plugin": (
-        r"^(`hermes plugins list` shows the backup copy instead of plugins/foo \(v2\.0\.0\)"
-        r"|a real turn ran the backup dir's MCP server, not plugins/foo's)",
-        "#121078 the later-sorting plugins/foo.bak-* wins a same-name user collision"),
-    "test_same_name_plugin_collision_is_reported": (
-        r"^two user plugin dirs declare the same name 'foo' \(.+\) but no user-visible surface names both",
-        "#121078 same-source manifest name collision is silent"),
 }
 
 
@@ -200,9 +186,8 @@ def test_resource_only_plugin_activated_live_is_reported_connected(tmp_path: Pat
             # Guard: the server really completed the MCP handshake with this host.
             assert "initialize" in methods and "notifications/initialized" in methods, methods
             assert [r["name"] for r in rows] == [SERVER], rows
-            with known_gate(KNOWN, request.node.name, raises=KnownSymptom):
-                symptom(rows[0]["connected"] is True and not rows[0].get("error"),
-                        f"a resource-only MCP server that completed the handshake is reported as failed: {rows[0]}")
+            symptom(rows[0]["connected"] is True and not rows[0].get("error"),
+                    f"a resource-only MCP server that completed the handshake is reported as failed: {rows[0]}")
 
 
 # 3. #120526 ${VAR} in a portable mcp.json env (native config.yaml is the control) ---------------
@@ -264,8 +249,7 @@ def test_enabled_portable_plugin_server_is_not_reported_as_an_unknown_toolset(en
     """The enabled plugin's server worked in that very run (the fixture asserts its tool result), so a
     startup warning calling it an unknown toolset is a false alarm the user sees on every launch."""
     warned = [line for line in env_echo_results["output"].splitlines() if "Unknown toolsets" in line]
-    with known_gate(KNOWN, request.node.name, raises=KnownSymptom):
-        symptom(not warned, f"`hermes chat` warned about the enabled plugin's MCP server: {warned}")
+    symptom(not warned, f"`hermes chat` warned about the enabled plugin's MCP server: {warned}")
 
 
 # 4. #121078 same manifest name in two user plugin dirs ------------------------------------------
@@ -310,20 +294,18 @@ def test_same_name_backup_dir_does_not_shadow_the_live_plugin(name_collision: di
                                                               request: pytest.FixtureRequest) -> None:
     rows = [line for line in name_collision["listing"].splitlines() if re.search(r"\bfoo\s*$", line)]
     assert rows, name_collision["listing"]
-    with known_gate(KNOWN, request.node.name, raises=KnownSymptom):
-        symptom("2.0.0" in rows[0],
-                f"`hermes plugins list` shows the backup copy instead of plugins/foo (v2.0.0): {rows}")
-        symptom(any("RO:CANARY-LIVE:dup" in r for r in name_collision["results"]),
-                f"a real turn ran the backup dir's MCP server, not plugins/foo's: {name_collision['results']}")
+    symptom("2.0.0" in rows[0],
+            f"`hermes plugins list` shows the backup copy instead of plugins/foo (v2.0.0): {rows}")
+    symptom(any("RO:CANARY-LIVE:dup" in r for r in name_collision["results"]),
+            f"a real turn ran the backup dir's MCP server, not plugins/foo's: {name_collision['results']}")
 
 
 def test_same_name_plugin_collision_is_reported(name_collision: dict[str, Any], request: pytest.FixtureRequest) -> None:
     live, backup = str(name_collision["live"]), str(name_collision["backup"])
     surfaces = {"hermes plugins list": name_collision["listing"], "logs/*.log": name_collision["logs"]}
     named_both = [where for where, text in surfaces.items() if live in text and backup in text]
-    with known_gate(KNOWN, request.node.name, raises=KnownSymptom):
-        symptom(named_both, f"two user plugin dirs declare the same name 'foo' ({live} and {backup}) but no "
-                            f"user-visible surface names both: {', '.join(surfaces)}")
+    symptom(named_both, f"two user plugin dirs declare the same name 'foo' ({live} and {backup}) but no "
+                        f"user-visible surface names both: {', '.join(surfaces)}")
 
 
 # A portable package's own trust request ------------------------------------------------------------------

@@ -92,3 +92,26 @@ def test_janitor_cli_build_only_serializes_prepare_and_own_builder(tmp_path, mon
     desktop.install_cli_adapter(main)
     main.cmd_desktop(argparse.Namespace(build_only=True))
     assert order == ['lock', 'prepare', 'build', 'unlock']
+
+
+def test_upstream_update_fixture_removes_the_entire_distribution_without_changing_dependencies(tmp_path):
+    import copy
+    import runpy
+    import tomllib
+
+    from hermes_cli.distribution_identity import distribution_identity, distribution_provider
+
+    root = Path(__file__).resolve().parents[1]
+    seed = runpy.run_path(str(root / "apps/desktop/e2e/update/seed.py"))
+    source = (root / "pyproject.toml").read_text(encoding="utf-8")
+    before = tomllib.loads(source)
+    rendered = seed["stock_engine_manifest"](source)
+    expected = copy.deepcopy(before)
+    declared = expected["tool"]["hermes"].pop("distribution")
+    assert set(declared) >= {"identity-provider", "source-update-hook", "desktop-build-provider"}
+    assert tomllib.loads(rendered) == expected
+    assert seed["stock_engine_manifest"](rendered) == rendered
+    (tmp_path / "pyproject.toml").write_text(rendered, encoding="utf-8")
+    assert distribution_identity(tmp_path) == {}
+    assert all(distribution_provider(tmp_path, key) is None for key in declared)
+    assert (root / "pyproject.toml").read_text(encoding="utf-8") == source

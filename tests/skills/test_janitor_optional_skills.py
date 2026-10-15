@@ -67,9 +67,12 @@ def test_compose_is_pinned_isolated_and_docker_accepts_config(name, tmp_path, mo
     values = ('POSTGRES_PASSWORD=test-pg\nNOCODB_DB_PASSWORD=test-noco\nN8N_ENCRYPTION_KEY=test-key\n'
               'WAHA_API_KEY=test-waha\nLIGHTRAG_API_KEY=test-lightrag\nAUTH_ACCOUNTS=admin:test\n')
     env_file = docker_dir / (name + '.env'); env_file.write_text(values)
-    env = dict(os.environ, HERMES_HOME=str(tmp_path), HOME=str(tmp_path))
+    docker_config = tmp_path / 'docker-config'
+    docker_config.mkdir()
+    env = dict(os.environ, HERMES_HOME=str(tmp_path), HOME=str(tmp_path), USERPROFILE=str(tmp_path),
+               DOCKER_CONFIG=str(docker_config))
     result = subprocess.run(['docker', 'compose', '-f', str(source), '--env-file', str(env_file), 'config', '--quiet'],
-                            env=env, capture_output=True, text=True, timeout=15, check=False)
+                            env=env, capture_output=True, text=True, timeout=60, check=False)
     assert result.returncode == 0, result.stderr
 
 
@@ -333,11 +336,14 @@ def _require_absolute_mktemp_template(binary):
     native = shutil.which('mktemp')
     assert native
     wrapper = binary / 'mktemp'
-    _python_stub(wrapper,
-        "import os, sys\n"
-        "if len(sys.argv) != 2 or not os.path.isabs(sys.argv[1]):\n"
-        "    sys.exit(64)\n"
-        f"os.execv({native!r}, [{native!r}, sys.argv[1]])\n")
+    # Keep the MSYS executable in its shell: Python's Windows execv does not
+    # quote argv containing spaces, unlike subprocess and Bash's "$@".
+    wrapper.write_text(
+        '#!/bin/sh\n[ "$#" = 1 ] || exit 64\n'
+        'case "$1" in /*|[A-Za-z]:/*) ;; *) exit 64;; esac\n'
+        + f'exec {shlex.quote(Path(native).as_posix())} "$@"\n',
+        encoding='utf-8', newline='\n',
+    )
     wrapper.chmod(0o755)
 
 
@@ -371,6 +377,7 @@ print('500' if os.environ['CURL_RESPONSE'] == 'http-error' else '200', end='')
                  JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON=Path(shutil.which('true')).as_posix(),
                  CURL_CAPTURE=capture.as_posix(), CURL_RESPONSE=response),
         capture_output=True, text=True, timeout=15, check=False)
+    assert capture.is_file(), result.stdout + result.stderr
     record = json.loads(capture.read_text(encoding='utf-8'))
     assert Path(record['path']).parent == scratch
     if os.name == 'posix':
@@ -417,6 +424,7 @@ else:
                  JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON=Path(sys.executable).as_posix(),
                  QR_CAPTURE=capture.as_posix(), QR_VALID='1' if valid else '0'),
         capture_output=True, text=True, timeout=15, check=False)
+    assert capture.is_file(), result.stdout + result.stderr
     record = json.loads(capture.read_text(encoding='utf-8'))
     output = Path(record['path'])
     assert output.parent == scratch

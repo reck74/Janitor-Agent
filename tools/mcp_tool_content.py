@@ -107,22 +107,26 @@ _WAV_MIME_EXT = {"audio/wav": ".wav", "audio/x-wav": ".wav", "audio/wave": ".wav
 
 
 def _cache_mcp_media_block(block, kind: str, writer: str, ext_for, *, cap_what: Optional[str] = None) -> str:
-    """Cache an image/audio block and return a ``MEDIA:<path>`` tag. "" (logging, not raising)
-    when the block isn't ``kind`` media, the base64 is malformed, or the cache rejects the
-    bytes: the caller falls through to any text blocks."""
+    """Cache media as ``MEDIA:<path>``; surface decode/cache failure without losing sibling text.
+    Non-matching block types return "" so the next renderer can handle them."""
     data = getattr(block, "data", None)
     mime = _base_mime(mcp_field(block, "mime_type", "mimeType"))
     if data is None or not mime.startswith(f"{kind}/"):
         return ""
-    raw_bytes, err = _decode_block_b64(data, f"{kind} block", mime, cap_what=cap_what)
+    raw_bytes, err = _decode_block_b64(
+        data, f"{kind} block", mime, cap_what=cap_what,
+        decode_fail=f"[MCP {kind} could not be decoded]")
     if raw_bytes is None:
         return err
-    path, err = _write_block_cache(writer, f"{kind} block", kind, raw_bytes, ext=ext_for(mime))
+    path, err = _write_block_cache(
+        writer, f"{kind} block", kind, raw_bytes, ext=ext_for(mime),
+        unavailable=f"[MCP {kind} cache unavailable]",
+        failed=f"[MCP {kind} could not be cached: unsupported or invalid media]")
     return err if path is None else f"MEDIA:{path}"
 
 
 def _cache_mcp_image_block(block) -> str:
-    """Cache an ``ImageContent`` block and return a ``MEDIA:<path>`` tag ("" on any failure)."""
+    """Cache an ``ImageContent`` block and return a ``MEDIA:<path>`` tag or an explicit image failure notice."""
     return _cache_mcp_media_block(block, "image", "cache_image_from_bytes", _mcp_image_extension_for_mime_type)
 
 
@@ -236,7 +240,7 @@ def _mcp_result_with_native_images(text: str, image_paths: list[str]) -> Any:
 
 
 def _cache_mcp_audio_block(block) -> str:
-    """Cache an ``AudioContent`` block and return a ``MEDIA:<path>`` tag ("" on any failure)."""
+    """Cache an ``AudioContent`` block and return a ``MEDIA:<path>`` tag or an explicit audio failure notice."""
     return _cache_mcp_media_block(
         block, "audio", "cache_audio_from_bytes",
         lambda mime: _WAV_MIME_EXT.get(mime) or mimetypes.guess_extension(mime) or ".ogg",

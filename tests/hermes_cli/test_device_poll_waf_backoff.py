@@ -90,3 +90,18 @@ def test_persistent_block_ends_at_deadline_without_oversleeping(monkeypatch):
     # A 403 without x-vercel-mitigated is a real rejection, not edge mitigation: fail fast.
     with pytest.raises(httpx.HTTPStatusError):
         _poll(_post_returning(_non_json(403)))
+
+
+def test_edge_backoff_keeps_server_minimum_above_network_cap(monkeypatch):
+    sleeps = _fake_clock(monkeypatch)
+    assert _poll(_post_returning(_non_json(503), _ok()), poll_interval=70) == {"access_token": "tok"}
+    assert sleeps == [70]
+
+
+@pytest.mark.parametrize("error", ["authorization_pending", "slow_down"])
+def test_oauth_wait_stops_at_device_deadline(monkeypatch, error):
+    sleeps = _fake_clock(monkeypatch)
+    response = httpx.Response(400, request=_REQ, json={"error": error})
+    with pytest.raises(TimeoutError, match="device code expired"):
+        _poll(_post_returning(response), poll_interval=70, expires_in=3)
+    assert sleeps == [3]

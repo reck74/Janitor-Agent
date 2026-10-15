@@ -13,6 +13,7 @@ from typing import Dict, Any, Optional, Set
 
 from agent.prompt_builder import _read_text_with_timeout, _scan_context_content, _truncate_content
 from agent.search_policy import SEARCH_PRUNE_DIR_NAMES
+from hermes_cli._subprocess_compat import IS_WINDOWS, split_command_line
 
 logger = logging.getLogger(__name__)
 
@@ -89,10 +90,12 @@ _NAV_COMMANDS = frozenset({"cd", "pushd"})
 _SHELL_OPERATORS = frozenset({"&&", "||", "|", ";", "&", ";;", "|&", "(", ")"})
 
 
-def _nav_targets(cmd: str) -> list:
+def _nav_targets(cmd: str, *, native_paths: bool = False) -> list:
     """Operands of `cd` / `pushd` that begin a shell segment. `cd -` and bare `cd` yield nothing."""
     lexer = shlex.shlex(cmd, posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
+    if native_paths:
+        lexer.escape = ""  # Native path separators are not POSIX escapes.
     try:
         tokens = list(lexer)
     except ValueError:
@@ -114,6 +117,23 @@ def _nav_targets(cmd: str) -> list:
 # container's default /home (or /root) home must not start hint discovery either — the same
 # vacuous-containment hazard as the desktop home pin, just container-shaped (#76902).
 _CONTAINER_HOMES = frozenset({Path("/home"), Path("/root"), Path("/workspace")})
+
+
+def _command_path_operands(cmd: str, *, native_paths: bool = False) -> tuple[list[str], list[str]]:
+    """Hint paths and all non-option words, for conservative ambiguity detection."""
+    try:
+        tokens = split_command_line(cmd) if native_paths else shlex.split(cmd)
+    except ValueError:
+        tokens = cmd.split()
+    paths = _nav_targets(cmd, native_paths=native_paths)
+    words = []
+    for token in tokens:
+        if token.startswith(("-", "http://", "https://", "git@")):
+            continue
+        words.append(token)
+        if "/" in token or "." in token or (native_paths and "\\" in token):
+            paths.append(token)
+    return list(dict.fromkeys(paths)), words
 
 
 def _is_home_like_working_dir(working_dir: Path) -> bool:
@@ -224,21 +244,29 @@ class SubdirectoryHintTracker:
             pass
 
     def _extract_paths_from_command(self, cmd: str, candidates: set[Path]):
-        """Extract path-like tokens (contain / or .; not flags or URLs) from a shell command."""
+        """Prefer the executed Git Bash spelling; recover native paths only if unresolved."""
+        paths, words = _command_path_operands(cmd)
+        for path in paths:
+            self._add_path_candidate(path, candidates)
+        # A native Windows spelling can help recover from a model's invalid Bash command,
+        # but must not inject another directory's instructions when Bash found a target.
+        # Existence is independent of already-loaded/excluded/denied hint state.
+        if IS_WINDOWS and not any(self._command_target_exists(word) for word in words):
+            native_paths, _ = _command_path_operands(cmd, native_paths=True)
+            for path in native_paths:
+                self._add_path_candidate(path, candidates)
+
+    def _command_target_exists(self, raw_path: str) -> bool:
         try:
-            tokens = shlex.split(cmd)
-        except ValueError:
-            tokens = cmd.split()
-        # `cd backend && ls`: a bare directory name has no `/` or `.`, so the generic filter below drops
-        # it; the operand of a navigation command is a path by construction (#11032). Only a `cd` at the
-        # START of a shell segment counts (`echo cd backend` is prose); punctuation-aware tokenizing keeps
-        # a quoted `'backend;'` literal while splitting bare `backend;ls` at the operator.
-        for target in _nav_targets(cmd):
-            self._add_path_candidate(target, candidates)
-        for token in tokens:
-            if token.startswith(("-", "http://", "https://", "git@")) or ("/" not in token and "." not in token):
-                continue
-            self._add_path_candidate(token, candidates)
+            path = Path(raw_path).expanduser()
+            if not path.is_absolute():
+                path = self.working_dir / path
+            path.stat()
+            return True
+        except FileNotFoundError:
+            return False
+        except (OSError, ValueError, RuntimeError):
+            return True  # An unreadable/invalid target is not permission to reinterpret it.
 
     def _within_working_dir(self, path: Path) -> bool:
         """Reject paths outside the working-dir tree: loading ~/.codex/AGENTS.md
