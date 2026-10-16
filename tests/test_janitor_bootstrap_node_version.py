@@ -1,147 +1,157 @@
-"""Regression tests for the Node.js version pinned by Janitor's bootstrap.sh.
+"""Node acquisition belongs to PM and its pin must satisfy every workspace engine.
 
-Context (the bug these tests lock out):
-  The root ``package.json`` declares ``engines.node >= 22.22.0``.  An older
-  ``scripts/bootstrap.sh`` hardcoded ``nvm install 20``, which can never
-  satisfy that constraint — every fresh ``curl | bash`` install died at
-  ``npm install`` with ``EBADENGINE``.  Worse, the PATH it exported lived
-  only inside the ``curl | bash`` subshell, so the user's login shell saw
-  ``npm: command not found`` immediately afterwards.
-
-The fix delegates to ``scripts/lib/node-bootstrap.sh`` (the shared,
-upstream-maintained helper).  These tests assert the three properties that
-must hold for the bug to stay fixed:
-
-1. The shared helper targets Node major 22 by default (so even a ``curl |
-   bash`` install lands on a version the engines field accepts).
-2. ``bootstrap.sh`` no longer hardcodes the old, sub-floor ``nvm install
-   20`` (string-level regression guard — the same pattern used by
-   ``tests/test_janitor_no_duplicate_methods.py`` for structural guards).
-3. ``bootstrap.sh`` delegates Node provisioning to the shared helper
-   rather than rolling its own ``nvm install`` call.
-
-Tests run hermetically: they only ``source`` the helper in a subprocess
-and inspect exported variables.  No network, no tarball download.
+The original regression installed Node20 below the application engine floor.
+The modern contract follows pm/lock.json rather than freezing Node22 or nvm.
 """
-
+import json
+import os
+from pathlib import Path
+import shutil
 import subprocess
 import sys
-from pathlib import Path
 
+from packaging.specifiers import SpecifierSet
+from packaging.version import Version
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-
-BOOTSTRAP = REPO_ROOT / "scripts" / "bootstrap.sh"
-NODE_HELPER = REPO_ROOT / "scripts" / "lib" / "node-bootstrap.sh"
+ROOT = Path(__file__).resolve().parents[1]
+BOOTSTRAP = ROOT / "scripts/bootstrap.sh"
 
 
-def _source_helper_get_var(varname: str) -> str:
-    """Source node-bootstrap.sh in a fresh bash and return an exported var.
-
-    Runs in ``--noprofile --norc`` so the user's shell doesn't leak anything
-    into the probe.  The helper only sets variables on source (no side
-    effects until ``ensure_node`` is actually invoked), so this is safe.
-    """
-    result = subprocess.run(
-        [
-            "bash",
-            "--noprofile",
-            "--norc",
-            "-c",
-            f'source "{NODE_HELPER}" && printf "%s" "${{{varname}:-}}"',
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return result.stdout.strip()
+def _satisfies(version, engines):
+    """Evaluate the release-only caret and comparator forms declared by this repo."""
+    selected = Version(version)
+    for alternative in engines.split("||"):
+        alternative = alternative.strip()
+        if alternative.startswith("^"):
+            minimum = Version(alternative[1:])
+            upper = f"{minimum.major + 1}.0.0" if minimum.major else f"0.{minimum.minor + 1}.0"
+            alternative = f">={minimum},<{upper}"
+        if selected in SpecifierSet(alternative):
+            return True
+    return False
 
 
-@pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="helper targets POSIX installs; the documented Windows runtime is WSL2",
-)
-def test_node_helper_targets_major_22_by_default():
-    """The shared helper must default to Node 22 (satisfies engines >=22.22.0).
-
-    A Janitor bootstrap that delegates to this helper inherits the target —
-    if the default drops below 22, ``npm install`` will fail EBADENGINE on
-    a fresh install exactly like the original bug.
-    """
-    target = _source_helper_get_var("HERMES_NODE_TARGET_MAJOR")
-    assert target == "22", (
-        f"node-bootstrap.sh targets Node major '{target}', expected '22'. "
-        "A fresh Janitor install would fail EBADENGINE — bump "
-        "HERMES_NODE_TARGET_MAJOR back to 22."
-    )
+def test_pm_node_pin_satisfies_all_workspace_engines():
+    root = json.loads((ROOT / "package.json").read_text())
+    pin = json.loads((ROOT / "pm/lock.json").read_text())["packages"]["node"]["version"]
+    manifests = [ROOT / "package.json"]
+    for pattern in root["workspaces"]:
+        manifests.extend(path / "package.json" for path in ROOT.glob(pattern))
+    for path in manifests:
+        manifest = json.loads(path.read_text())
+        constraint = manifest.get("engines", {}).get("node")
+        if constraint:
+            assert _satisfies(pin, constraint), f"PM Node{pin} violates {path.relative_to(ROOT)}: {constraint}"
 
 
-def test_bootstrap_does_not_hardcode_node_20():
-    """An active ``nvm install 20`` statement must NOT appear in bootstrap.sh.
-
-    This is the exact line that caused the EBADENGINE regression. Once the
-    bootstrap delegates to the shared helper, no Node version literal
-    should be hardcoded — the helper owns the version.  Same structural-
-    guard style as ``test_janitor_no_duplicate_methods.py`` (directive #15)
-    and ``test_janitor_monkeypatch_signatures.py`` (directive #14).
-
-    Comment lines are skipped: a comment may legitimately reference the
-    historical bug (e.g. "previously hardcoded nvm install 20") without
-    re-introducing it. Only an active, uncommented statement fails.
-    """
-    text = BOOTSTRAP.read_text(encoding="utf-8")
-    active_lines = [
-        line for line in text.splitlines()
-        if line.lstrip() and not line.lstrip().startswith("#")
-    ]
-    for line in active_lines:
-        assert "nvm install 20" not in line, (
-            f"scripts/bootstrap.sh executes 'nvm install 20' (line: {line!r}) "
-            "— this causes EBADENGINE because package.json requires Node "
-            ">=22.22.0. Delegate to scripts/lib/node-bootstrap.sh via "
-            "ensure_node instead."
-        )
+def test_engine_or_caret_ranges_reject_the_original_subfloor_regression():
+    assert not _satisfies("20.19.0", "^22.22.0 || ^24.11.0 || >=26.0.0")
+    assert _satisfies("22.22.0", "^22.22.0 || ^24.11.0 || >=26.0.0")
+    assert not _satisfies("23.0.0", "^22.22.0 || ^24.11.0 || >=26.0.0")
+    assert _satisfies("26.7.0", "^22.22.0 || ^24.11.0 || >=26.0.0")
 
 
-def test_bootstrap_delegates_to_shared_node_helper():
-    """bootstrap.sh must source scripts/lib/node-bootstrap.sh and call ensure_node.
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux bootstrap stage protocol")
+def test_products_stage_uses_pm_without_global_node_uv_or_nvm(tmp_path):
+    source = tmp_path / "source"; (source / "scripts").mkdir(parents=True)
+    shutil.copy2(BOOTSTRAP, source / "scripts/bootstrap.sh")
+    (source / "janitor_cli.py").write_text("# local bootstrap source marker\n")
+    (source / "scripts/install.sh").write_text(f"bootstrap_python() {{ boot_py={str(sys.executable)!r}; }}\n")
+    package = source / "hermes_cli"; package.mkdir(); (package / "__init__.py").touch()
+    calls = tmp_path / "calls"
+    (package / "_launchers.py").write_text(
+        "import os\nfrom pathlib import Path\ndef ensure_install_launchers(root, target):\n"
+        "    Path(os.environ['JANITOR_TEST_CALLS']).write_text(str(target)+'\\n')\n"
+        "    return {'hermes': str(target / 'hermes')}\n")
+    launcher = source / "scripts/janitor"
+    launcher.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$JANITOR_TEST_CALLS"\n')
+    launcher.chmod(0o755)
+    binary = tmp_path / "bin"; binary.mkdir()
+    # No global Node, npm, uv or nvm is visible; only shell primitives the wrapper needs.
+    for name in ("bash", "dirname", "rm"):
+        (binary / name).symlink_to(shutil.which(name))
+    env = {"PATH": str(binary), "HOME": str(tmp_path / "home"), "JANITOR_TEST_CALLS": str(calls)}
+    result = subprocess.run([str(binary / "bash"), str(source / "scripts/bootstrap.sh"), "--dir", str(source),
+                             "--stage", "products", "--non-interactive", "--json"],
+                            env=env, text=True, capture_output=True, check=False, timeout=20)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert calls.read_text().splitlines() == [str(source / ".hermes/bin"),
+        "--run-module janitor_ext.install --publish-only", "--run-module janitor_ext.products"]
+    assert json.loads(result.stdout.splitlines()[-1])["ok"] is True
 
-    This is the structural contract introduced by the fix.  If either side
-    disappears, the bootstrap has no Node provisioning (or, worse, has gone
-    back to rolling its own nvm block).
-    """
-    text = BOOTSTRAP.read_text(encoding="utf-8")
-    assert "node-bootstrap.sh" in text, (
-        "scripts/bootstrap.sh must source scripts/lib/node-bootstrap.sh "
-        "(the shared Node provisioning helper)."
-    )
-    assert "ensure_node" in text, (
-        "scripts/bootstrap.sh must call ensure_node() after sourcing the "
-        "shared helper — that's the function that actually provisions Node."
-    )
 
-
-@pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="bash -n probe for the POSIX bootstrap; Windows runtime is WSL2",
-)
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX bootstrap syntax")
 def test_bootstrap_passes_bash_syntax_check():
-    """bootstrap.sh must be syntactically valid bash (``bash -n``).
+    result = subprocess.run(["bash", "-n", str(BOOTSTRAP)], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
 
-    Guards against regressions where the refactor breaks shell parsing.
-    Cheap and catches a wide class of typos before the next ``curl | bash``
-    user hits them at runtime.
-    """
-    result = subprocess.run(
-        ["bash", "-n", str(BOOTSTRAP)],
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, (
-        f"bash -n found syntax errors in bootstrap.sh:\n{result.stderr}"
-    )
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX bootstrap stage routing")
+@pytest.mark.parametrize(("stage", "arguments", "resolves_release"), [
+    ("repository", [], True),
+    ("repository", ["--commit", "a" * 40], False),
+    ("repository", ["--branch", "development"], False),
+    ("config", [], False),
+    ("config", ["--non-interactive", "--honcho-mode", "cloud"], False),
+    ("setup", [], False),
+    ("profile", [], False),
+    ("complete", [], False),
+    ("gateway", [], False),
+])
+def test_bootstrap_stage_routes_do_not_require_extglob(tmp_path, stage, arguments, resolves_release):
+    source, env, calls, lookup = _stage_routing_fixture(tmp_path)
+    result = subprocess.run(["bash", str(source / "scripts/bootstrap.sh"), "--dir", str(source),
+                             "--stage", stage, "--json", *arguments],
+                            env=env, text=True, capture_output=True, check=False, timeout=10)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert lookup.exists() is resolves_release
+    assert calls.exists() is (stage != "gateway"), result.stdout + result.stderr
+    if "--honcho-mode" in arguments:
+        assert calls.read_text().strip() == "--non-interactive --honcho-mode cloud"
+    if resolves_release:
+        assert "--commit " + "a" * 40 in calls.read_text()
+    assert json.loads(result.stdout.splitlines()[-1])["ok"] is True
 
 
-if __name__ == "__main__":
-    sys.exit(subprocess.run(["pytest", "-v", __file__]).returncode)
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX bootstrap stage routing")
+@pytest.mark.parametrize("failure", ["missing-release", "installer"])
+def test_bootstrap_stage_routes_preserve_failures(tmp_path, failure):
+    source, env, calls, _lookup = _stage_routing_fixture(tmp_path)
+    env["JANITOR_TEST_STABLE"] = "missing" if failure == "missing-release" else "a" * 40
+    env["JANITOR_TEST_INSTALL_EXIT"] = "17"
+    result = subprocess.run(["bash", str(source / "scripts/bootstrap.sh"), "--dir", str(source),
+                             "--stage", "repository", "--json"],
+                            env=env, text=True, capture_output=True, check=False, timeout=10)
+    assert result.returncode == (1 if failure == "missing-release" else 17), result.stdout + result.stderr
+    if failure == "missing-release":
+        assert not calls.exists()
+        assert "stable v1.0.0 is unavailable" in result.stderr
+    else:
+        assert json.loads(result.stdout.splitlines()[-1])["ok"] is False
+
+
+def _stage_routing_fixture(tmp_path):
+    source = tmp_path / "source"
+    scripts = source / "scripts"
+    scripts.mkdir(parents=True)
+    shutil.copy2(BOOTSTRAP, scripts / "bootstrap.sh")
+    (source / "janitor_cli.py").write_text("# local installer marker\n")
+    calls, lookup = tmp_path / "calls", tmp_path / "lookup"
+    for name in ("install.sh", "janitor-install.sh", "janitor"):
+        target = scripts / name
+        target.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$JANITOR_TEST_CALLS"\n'
+                          'exit "${JANITOR_TEST_INSTALL_EXIT:-0}"\n')
+        target.chmod(0o755)
+    binary = tmp_path / "bin"
+    binary.mkdir()
+    git = binary / "git"
+    git.write_text('#!/bin/sh\nprintf "%s\\n" "$*" > "$JANITOR_TEST_LOOKUP"\n'
+                   'printf "%s\\trefs/tags/v1.0.0\\n" "$JANITOR_TEST_STABLE"\n')
+    git.chmod(0o755)
+    home = tmp_path / "home"
+    home.mkdir()
+    env = {**os.environ, "PATH": str(binary) + os.pathsep + os.environ["PATH"],
+           "HOME": str(home), "JANITOR_HOME": str(home / ".janitor"), "HERMES_HOME": str(home / ".janitor"),
+           "JANITOR_TEST_CALLS": str(calls), "JANITOR_TEST_LOOKUP": str(lookup),
+           "JANITOR_TEST_STABLE": "a" * 40, "JANITOR_TEST_INSTALL_EXIT": "0"}
+    return source, env, calls, lookup

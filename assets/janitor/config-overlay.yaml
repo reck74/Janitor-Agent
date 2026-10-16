@@ -1,0 +1,11 @@
+# Janitor-owned defaults layered over the current Hermes schema.
+model:
+  default: MiniMax-M2.7
+  provider: minimax
+  base_url: https://api.minimax.io/anthropic
+memory:
+  provider: honcho
+display:
+  skin: sentry-janitor
+janitor:
+  language_instruction: Responde en español o inglés según el usuario.

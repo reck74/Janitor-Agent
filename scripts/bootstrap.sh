@@ -1,184 +1,125 @@
 #!/usr/bin/env bash
+# Janitor's public installer and Desktop stage protocol. Upstream owns PM acquisition.
 set -euo pipefail
-
-# ============================================================
-# JANITOR bootstrap.sh — Zero-Friction One-Liner Installer
-# ============================================================
-
-# Config — el usuario puede cambiar estas variables
-JANITOR_REPO_URL="${JANITOR_REPO_URL:-https://github.com/reck74/Janitor-Agent.git}"
-JANITOR_SOURCE_DIR="${HOME}/.janitor/janitor-core"
-JANITOR_VENV_DIR="${JANITOR_SOURCE_DIR}/.venv"
-JANITOR_INSTALL_SCRIPT="${JANITOR_SOURCE_DIR}/scripts/janitor-install.sh"
-
-# Janitor aísla su estado bajo ~/.janitor (no ~/.hermes). Lo exportamos antes
-# de invocar la librería compartida node-bootstrap.sh para que Node se
-# instale en ~/.janitor/node, consistente con el resto del fork.
-export HERMES_HOME="${HOME}/.janitor"
-
-# ============================================================
-# 1. Banner silencioso
-# ============================================================
-echo "Descargando e instalando el motor de Janitor..."
-
-# ============================================================
-# 1b. Kill-Switch: Docker Daemon Gate
-# ============================================================
-check_docker_hard() {
-    local BLUE='\033[0;34m'
-    local YELLOW='\033[1;33m'
-    local RED='\033[0;31m'
-    local GREEN='\033[0;32m'
-    local NC='\033[0m'
-
-    echo -e "→ Checking Docker Daemon..."
-
-    # Pre-authenticate sudo with TTY access (curl | bash pipe lock workaround)
-    echo -e "${YELLOW}Se requieren permisos de administrador para validar Docker...${NC}"
-    sudo -v < /dev/tty || { echo -e "${RED}Autenticación fallida.${NC}"; exit 1; }
-
+export JANITOR_HOME="${JANITOR_HOME:-$HOME/.janitor}"
+export HERMES_HOME="${HERMES_HOME:-$JANITOR_HOME}"
+repo_url="${JANITOR_REPO_URL:-https://github.com/reck74/Janitor-Agent.git}"
+install_dir="$JANITOR_HOME/janitor-core"
+commit=""; branch="main"; stage=""; json=false; non_interactive=false; honcho_mode=""; explicit_dir=false; explicit_branch=false
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --manifest)
+            printf '%s\n' '{"protocol_version":1,"stages":[{"name":"prerequisites","title":"Docker y dependencias","category":"runtime","needs_user_input":false},{"name":"repository","title":"Descargar Janitor","category":"runtime","needs_user_input":false},{"name":"venv","title":"Python administrado","category":"runtime","needs_user_input":false},{"name":"python-deps","title":"Dependencias Janitor","category":"runtime","needs_user_input":false},{"name":"products","title":"Interfaz y comandos","category":"runtime","needs_user_input":false},{"name":"config","title":"MiniMax y Honcho","category":"configuration","needs_user_input":true},{"name":"complete","title":"Verificar instalación","category":"runtime","needs_user_input":false}]}'
+            exit 0 ;;
+        --dir|--hermes-home|--commit|--branch|--stage|--honcho-mode)
+            [[ $# -ge 2 && -n "$2" && "$2" != --* ]] || { echo "$1 needs a value" >&2; exit 2; }
+            case "$1" in
+                --dir) install_dir="$2"; explicit_dir=true ;;
+                --hermes-home) export JANITOR_HOME="$2" HERMES_HOME="$2" ;;
+                --commit) commit="$2" ;;
+                --branch) branch="$2"; explicit_branch=true ;;
+                --stage) stage="$2" ;;
+                --honcho-mode) honcho_mode="$2" ;;
+            esac
+            shift 2 ;;
+        --non-interactive|--skip-setup) non_interactive=true; shift ;;
+        --json) json=true; shift ;;
+        --verbose) shift ;;
+        --help|-h) echo 'Usage: bootstrap.sh [--dir PATH] [--hermes-home PATH] [--commit SHA | --branch NAME] [--non-interactive] [--honcho-mode local|cloud] [--manifest | --stage NAME] [--json]'; exit 0 ;;
+        *) echo "Unknown argument: $1" >&2; exit 2 ;;
+    esac
+done
+[[ "$explicit_dir" == true ]] || install_dir="$JANITOR_HOME/janitor-core"
+[[ -z "$commit" || "$commit" =~ ^[a-fA-F0-9]{40}$ ]] || { echo '--commit must be a full SHA' >&2; exit 2; }
+case "$stage" in ''|prerequisites|repository|venv|python-deps|products|config|setup|gateway|complete|runtime|profile) ;; *) echo "Unknown stage: $stage" >&2; exit 2 ;; esac
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || pwd)"
+temporary=""
+cleanup() { [[ -z "$temporary" ]] || rm -rf -- "$temporary"; }
+trap cleanup EXIT
+if [[ -f "$script_dir/install.sh" && -f "$script_dir/../janitor_cli.py" ]]; then
+    upstream_installer="$script_dir/install.sh"
+else
+    temporary="$(mktemp -d)"
+    # The public bootstrap must resolve a Janitor stable release, never upstream/main.
+    ref="${commit:-v1.0.0}"
+    upstream_installer="$temporary/install.sh"
+    curl --fail --location --silent --show-error "https://raw.githubusercontent.com/reck74/Janitor-Agent/$ref/scripts/install.sh" -o "$upstream_installer"
+fi
+if [[ -z "$commit" && "$explicit_branch" == false ]]; then
+    # macOS ships Bash 3.2, which needs extglob enabled to parse @(...) in [[ ]].
+    case "$stage" in
+        products|config|setup|profile|complete|gateway) ;;
+        *)
+            commit="$(git ls-remote "$repo_url" 'refs/tags/v1.0.0^{}' refs/tags/v1.0.0 | awk 'END {print $1}')"
+            [[ "$commit" =~ ^[a-fA-F0-9]{40}$ ]] || { echo 'Janitor stable v1.0.0 is unavailable; choose an explicit --commit for development.' >&2; exit 1; } ;;
+    esac
+fi
+upstream_args=(--dir "$install_dir" --hermes-home "$HERMES_HOME" --branch "$branch" --non-interactive --skip-browser --skip-computer-use)
+[[ -z "$commit" ]] || upstream_args+=(--commit "$commit")
+export HERMES_REPO_URL="$repo_url"
+docker_gate() {
     if ! command -v docker >/dev/null 2>&1; then
-        echo -e "Docker CLI not found. Attempting install..."
-        curl -fsSL https://get.docker.com -o /tmp/get-docker.sh 2>/dev/null && sudo sh /tmp/get-docker.sh 2>/dev/null < /dev/tty
-        if [ $? -ne 0 ]; then
-            echo -e "FATAL: Docker installation failed. Please install Docker Desktop manually."
-            exit 1
+        if [[ "$non_interactive" == true ]]; then
+            echo 'Docker is required. Install Docker and retry.' >&2; return 1
         fi
+        printf 'Docker is required. Install it using get.docker.com? [y/N] ' >/dev/tty
+        read -r answer </dev/tty
+        [[ "$answer" == y || "$answer" == Y ]] || return 1
+        local download
+        download="$(mktemp)"
+        curl --fail --location --silent --show-error https://get.docker.com -o "$download"
+        sudo sh "$download" </dev/tty
+        rm -f "$download"
     fi
-
-    set +e
-    DOCKER_OUT=$(docker info 2>&1)
-    DOCKER_STATUS=$?
-    set -e
-    if [ $DOCKER_STATUS -ne 0 ]; then
-        if echo "$DOCKER_OUT" | grep -q "permission denied"; then
-            echo -e "Permission denied on docker.sock. Auto-fixing group permissions..."
-            sudo usermod -aG docker "$USER" < /dev/tty || sudo adduser "$USER" docker < /dev/tty
-            echo -e "[ACCIÓN REQUERIDA] Tu usuario fue añadido al grupo 'docker'."
-            echo -e "Debes reiniciar tu terminal (o ejecutar 'newgrp docker') y volver a correr este instalador."
-            exit 1
-        else
-            echo -e "Docker daemon not running. Attempting to start service..."
-            sudo systemctl start docker 2>/dev/null < /dev/tty || sudo service docker start 2>/dev/null < /dev/tty
-            sleep 3
-            if ! docker info >/dev/null 2>&1; then
-                echo -e "FATAL: Docker daemon is dead. Start Docker Desktop manually and retry."
-                exit 1
-            fi
-        fi
-    fi
-    echo -e "✓ Docker is active and accessible."
+    docker info >/dev/null 2>&1 || { echo 'Docker is unavailable. Start it and grant this user access, then retry.' >&2; return 1; }
 }
-
-check_docker_hard
-
-# ============================================================
-# 2. Validación de dependencias
-# ============================================================
-check_dep() {
-    if ! command -v "$1" &>/dev/null; then
-        echo "Error: '$1' no encontrado. Instálalo primero."
-        exit 1
-    fi
+run_stage() {
+    case "$1" in
+        prerequisites) docker_gate; bash "$upstream_installer" "${upstream_args[@]}" --stage prerequisites ;;
+        repository|venv|python-deps) bash "$upstream_installer" "${upstream_args[@]}" --stage "$1" ;;
+        products)
+            # PM publishes private launchers only; preserve any existing global Hermes command.
+            selected_python="$(
+                set -- "${upstream_args[@]}" --manifest
+                source "$upstream_installer"
+                bootstrap_python >&2
+                printf '%s\n' "$boot_py"
+            )"
+            "$selected_python" - "$install_dir" <<'PY'
+import sys
+from pathlib import Path
+root = Path(sys.argv[1]); sys.path.insert(0, str(root))
+from hermes_cli._launchers import ensure_install_launchers
+if not ensure_install_launchers(root, root / '.hermes/bin'):
+    raise SystemExit('PM launchers are unavailable')
+PY
+            "$install_dir/scripts/janitor" --run-module janitor_ext.install --publish-only
+            "$install_dir/scripts/janitor" --run-module janitor_ext.products ;;
+        config|setup|profile)
+            local options=()
+            [[ "$non_interactive" != true ]] || options+=(--non-interactive)
+            [[ -z "$honcho_mode" ]] || options+=(--honcho-mode "$honcho_mode")
+            # Bash 3.2 treats an empty array as unset under nounset.
+            bash "$install_dir/scripts/janitor-install.sh" ${options[@]+"${options[@]}"} ;;
+        gateway) echo 'Gateway service installation is explicit: janitor gateway install' ;;
+        complete)
+            "$install_dir/scripts/janitor" --run-module janitor_ext.install --home "$HERMES_HOME" --verify-honcho
+            "$install_dir/scripts/janitor" --version ;;
+        runtime)
+            for part in prerequisites repository venv python-deps products; do run_stage "$part"; done ;;
+    esac
 }
-
-check_dep git
-check_dep python3
-
-# Verificar o instalar uv
-if ! command -v uv &>/dev/null; then
-    echo "Instalando uv..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    source "${HOME}/.local/bin/env" 2>/dev/null || true
-fi
-
-# ============================================================
-# 3. Clonación o pull
-# ============================================================
-mkdir -p "${HOME}/.janitor"
-if [ -d "${JANITOR_SOURCE_DIR}/.git" ]; then
-    echo "Janitor ya instalado. Ejecutando git pull..."
-    cd "${JANITOR_SOURCE_DIR}"
-    git pull origin main
+stage_result() {
+    local result="$?"
+    if [[ "$json" == true ]]; then
+        printf '{"ok":%s,"stage":"%s","skipped":false,"reason":"%s"}\n' "$([[ $result == 0 ]] && echo true || echo false)" "$stage" "$([[ $result == 0 ]] || echo 'stage failed; see installer output')"
+    fi
+    cleanup
+    return "$result"
+}
+if [[ -n "$stage" ]]; then
+    trap stage_result EXIT
+    run_stage "$stage"
 else
-    echo "Clonando Janitor..."
-    git clone --depth 1 "${JANITOR_REPO_URL}" "${JANITOR_SOURCE_DIR}"
+    for stage in prerequisites repository venv python-deps products config complete; do run_stage "$stage"; done
 fi
-
-# ============================================================
-# 3b. Node.js — delegar al helper compartido de Hermes
-# ============================================================
-# El root package.json exige node >=22.22.0 y npm "<11.10.0 || >=11.17.0".
-# Una versión previa de este bootstrap hardcodeaba `nvm install 20`, que
-# NUNCA puede cumplir engines.node y mataba el `npm install` del TUI con
-# EBADENGINE. Peor, el PATH exportado solo vivía dentro del sub-bash del
-# curl, así que la shell de login del usuario veía `npm: command not found`
-# apenas terminara el instalador.
-#
-# node-bootstrap.sh resuelve los tres problemas:
-#   1. instala Node major 22 (HERMES_NODE_TARGET_MAJOR=22),
-#   2. crea symlinks en /usr/local/bin (root) o ~/.local/bin (user),
-#      que SÍ sobreviven al sub-bash porque están en PATH estándar,
-#   3. respeta un Node existente en PATH si cumple la versión mínima,
-#      y como fallback descarga un tarball pinneado de nodejs.org.
-NODE_HELPER="${JANITOR_SOURCE_DIR}/scripts/lib/node-bootstrap.sh"
-if [ ! -s "$NODE_HELPER" ]; then
-    echo "FATAL: $NODE_HELPER no encontrado tras el clone."
-    echo "       El repo está corrupto o el clone se cortó. Reintenta el install."
-    exit 1
-fi
-# shellcheck source=scripts/lib/node-bootstrap.sh
-source "$NODE_HELPER"
-if ! ensure_node; then
-    echo "FATAL: no se pudo provisionar Node >= 22.22.0."
-    echo "       Instálalo manualmente (https://nodejs.org/) y reejecuta este script."
-    exit 1
-fi
-
-# ============================================================
-# 4. Compilación Python
-# ============================================================
-echo "Configurando entorno Python..."
-cd "${JANITOR_SOURCE_DIR}"
-uv venv .venv --python 3.11
-# shellcheck disable=SC1091
-source .venv/bin/activate
-uv pip install -e ".[all]"
-
-# ============================================================
-# 4b. Playwright Browser
-# ============================================================
-echo "Instalando navegador Playwright (chromium)..."
-set +e
-uv pip install playwright 2>/dev/null
-uv run playwright install --with-deps chromium < /dev/tty
-PW_RESULT=$?
-set -e
-if [ $PW_RESULT -ne 0 ]; then
-    echo "⚠️  Playwright install failed — browser tools may not work."
-    echo "   You can install manually later: uv run playwright install --with-deps chromium"
-else
-    echo "✓ Playwright chromium installed."
-fi
-
-# ============================================================
-# 6. Compilación React/TUI
-# ============================================================
-echo "Compilando interfaz TUI..."
-cd "${JANITOR_SOURCE_DIR}/ui-tui"
-npm install
-npm run build
-
-# ============================================================
-# 7. Enlace global
-# ============================================================
-echo "Creando enlace global..."
-mkdir -p "${HOME}/.local/bin"
-ln -sf "${JANITOR_VENV_DIR}/bin/janitor" "${HOME}/.local/bin/janitor"
-
-# ============================================================
-# 8. Handoff al instalador interactivo
-# ============================================================
-echo "Lanzando instalador interactivo..."
-cd "${JANITOR_SOURCE_DIR}"
-bash "${JANITOR_INSTALL_SCRIPT}" < /dev/tty

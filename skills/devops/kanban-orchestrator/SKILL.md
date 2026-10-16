@@ -12,6 +12,9 @@ metadata:
     related_skills: [kanban-worker]
 ---
 
+> Compatibility status: experimental manual playbook retained for existing users. Current Hermes Kanban uses its built-in lifecycle guidance; the dispatcher does not auto-load this skill. Use it only when explicitly selected. `tests/hermes_cli/test_kanban_core_functionality.py` verifies the no-auto-load contract. The active board/worker implementation remains upstream-owned.
+
+
 # Kanban Orchestrator — Decomposition Playbook
 
 > The **core worker lifecycle** (including the `kanban_create` fan-out pattern and the "decompose, don't execute" rule) is auto-injected into every kanban process via the `KANBAN_GUIDANCE` system-prompt block. This skill is the deeper playbook when you're an orchestrator profile whose whole job is routing.

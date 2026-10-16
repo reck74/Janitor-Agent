@@ -6,7 +6,7 @@ description: "开箱即用的自动化配方——定时任务、GitHub 事件�
 
 # 自动化模板
 
-常见自动化模式的复制粘贴配方。每个模板使用 Hermes 内置的 [cron 调度器](/user-guide/features/cron) 实现基于时间的触发，使用 [webhook 平台](/user-guide/messaging/webhooks) 实现事件驱动触发。
+常见自动化模式的复制粘贴配方。每个模板使用 Hermes 内置的 [cron 调度器](../user-guide/features/cron.md) 实现基于时间的触发，使用 [webhook 平台](../user-guide/messaging/webhooks.md) 实现事件驱动触发。
 
 所有模板适用于**任意模型**——不绑定单一提供商。
 

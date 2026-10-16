@@ -14,7 +14,13 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OD_SOURCE_DIR="${OD_SOURCE_DIR:-${HOME}/open-design}"
+OD_SOURCE_DIR="${OD_SOURCE_DIR:-${OD_INSTALL_DIR:-${HOME}/open-design}}"
+if [[ -n "${OD_INSTALL_DIR:-}" && "${OD_INSTALL_DIR}" != "${OD_SOURCE_DIR}" ]]; then
+  echo "ERROR: OD_SOURCE_DIR y OD_INSTALL_DIR deben indicar el mismo checkout." >&2
+  exit 2
+fi
+export OD_SOURCE_DIR
+export OD_INSTALL_DIR="${OD_SOURCE_DIR}"
 
 DAEMON_PORT="${OD_DAEMON_PORT:-45351}"
 WEB_PORT="${OD_WEB_PORT:-45343}"
@@ -34,6 +40,11 @@ if [[ ! -d "${OD_SOURCE_DIR}" ]]; then
   echo "Ejecuta primero opendesign-install." >&2
   exit 1
 fi
+
+# Gate de versión Node — aborta con exit 2 si engines.node no coincide
+# con la versión que ejecutarán los comandos hijos. CRÍTICO para evitar segfault de
+# better-sqlite3 que corrompe el bridge PRIME del framebuffer.
+bash "${SCRIPT_DIR}/check-node-version.sh" || exit $?
 
 if ! command -v janitor &>/dev/null; then
   echo "ERROR: 'janitor' no está en PATH." >&2
@@ -98,6 +109,6 @@ echo "   ${SCRIPT_DIR}/integrate-janitor.sh start    # arrancar con puertos fijo
 echo "   ${SCRIPT_DIR}/integrate-janitor.sh status   # health check"
 echo "   ${SCRIPT_DIR}/integrate-janitor.sh stop     # detener"
 echo ""
-echo " Endpoint MCP persistente:"
-echo "   http://127.0.0.1:${DAEMON_PORT}/mcp"
+echo " Configuración MCP stdio:"
+echo "   http://127.0.0.1:${DAEMON_PORT}/api/mcp/install-info"
 echo "=========================================="

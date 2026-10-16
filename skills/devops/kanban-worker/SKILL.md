@@ -12,6 +12,9 @@ metadata:
     related_skills: [kanban-orchestrator]
 ---
 
+> Compatibility status: experimental manual playbook retained for existing users. Current Hermes Kanban uses its built-in lifecycle guidance; the dispatcher does not auto-load this skill. Use it only when explicitly selected. `tests/hermes_cli/test_kanban_core_functionality.py` verifies the no-auto-load contract. The active board/worker implementation remains upstream-owned.
+
+
 # Kanban Worker — Pitfalls and Examples
 
 > You're seeing this skill because the Hermes Kanban dispatcher spawned you as a worker with `--skills kanban-worker` — it's loaded automatically for every dispatched worker. The **lifecycle** (6 steps: orient → work → heartbeat → block/complete) also lives in the `KANBAN_GUIDANCE` block that's auto-injected into your system prompt. This skill is the deeper detail: good handoff shapes, retry diagnostics, edge cases.

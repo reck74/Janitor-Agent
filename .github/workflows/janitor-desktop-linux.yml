@@ -1,0 +1,136 @@
+name: Janitor Desktop Linux
+
+on:
+  pull_request:
+    paths:
+      - 'apps/desktop/**'
+      - 'apps/shared/**'
+      - 'assets/janitor/**'
+      - 'janitor_ext/**'
+      - 'scripts/**'
+      - 'pm/**'
+      - 'package*.json'
+      - 'skills/janitor-desktop-launcher/**'
+      - '.github/workflows/janitor-desktop-linux.yml'
+  workflow_dispatch:
+    inputs:
+      publish_candidate:
+        description: Publish a prerelease only after Desktop and full sync acceptance pass.
+        type: boolean
+        default: false
+      candidate_tag:
+        description: Candidate tag vX.Y.Z-rc.N, matching janitor_ext/release.json.
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: janitor-desktop-linux-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  linux:
+    name: Janitor source/bootstrap AppImage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-pm
+        with:
+          toolchain: all
+          extras: '[]'
+      - name: Install native build and smoke prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse2t64 libgtk-3-0t64 libnss3 libgbm1 libasound2t64 libx11-xcb1 xvfb
+          npm ci
+      - name: Verify Janitor Desktop contracts
+        working-directory: apps/desktop
+        run: |
+          npx vitest run scripts/janitor-desktop.test.mjs scripts/janitor-setup.test.mjs --maxWorkers=2
+          npx eslint janitor/ electron/ src/ e2e/
+      - name: Build the Janitor overlay
+        env:
+          JANITOR_DEVELOPMENT_BUILD: ${{ github.event_name == 'pull_request' }}
+        run: |
+          args=()
+          if [[ "$JANITOR_DEVELOPMENT_BUILD" == true ]]; then args+=(--development); fi
+          node apps/desktop/janitor/build.mjs --output "$RUNNER_TEMP/janitor-desktop-artifacts" "${args[@]}"
+      - name: Verify provenance, checksums and packaged smoke
+        env:
+          JANITOR_DEVELOPMENT_BUILD: ${{ github.event_name == 'pull_request' }}
+        run: |
+          args=()
+          if [[ "$JANITOR_DEVELOPMENT_BUILD" == true ]]; then args+=(--development); fi
+          node apps/desktop/scripts/janitor-artifacts.mjs --directory "$RUNNER_TEMP/janitor-desktop-artifacts" --commit "$GITHUB_SHA" "${args[@]}"
+          mapfile -t images < <(find "$RUNNER_TEMP/janitor-desktop-artifacts" -maxdepth 1 -name '*.AppImage' -type f)
+          test "${#images[@]}" = 1
+          node apps/desktop/scripts/janitor-smoke.mjs --appimage "${images[0]}" --report "$RUNNER_TEMP/janitor-desktop-artifacts/janitor-smoke.json"
+      - name: Check the checkout is clean
+        uses: ./.github/actions/check-clean-worktree
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: janitor-desktop-linux-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/janitor-desktop-artifacts/*.AppImage
+            ${{ runner.temp }}/janitor-desktop-artifacts/*.sha256
+            ${{ runner.temp }}/janitor-desktop-artifacts/*.json
+          if-no-files-found: error
+          retention-days: 14
+
+  acceptance:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_candidate
+    uses: ./.github/workflows/tests.yml
+    with:
+      commit: ${{ github.sha }}
+      upstream_verify: true
+      e2e: true
+      e2e_upgrade: true
+      strict_acceptance: '1'
+
+  candidate:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_candidate
+    needs: [linux, acceptance]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          ref: ${{ github.sha }}
+      - name: Download this run's validated artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download "$GITHUB_RUN_ID" --name "janitor-desktop-linux-$GITHUB_SHA" --dir artifacts
+      - name: Validate candidate name and retained evidence
+        env:
+          JANITOR_CANDIDATE_TAG: ${{ inputs.candidate_tag }}
+        run: |
+          python3 - <<'PYCODE'
+          import json, os, pathlib, re
+          version = json.loads(pathlib.Path('janitor_ext/release.json').read_text())['janitorVersion']
+          assert re.fullmatch(r'v' + re.escape(version) + r'-rc\.[1-9][0-9]*', os.environ['JANITOR_CANDIDATE_TAG']), 'Only a matching prerelease candidate tag is allowed'
+          metadata = json.loads(pathlib.Path('artifacts/janitor-release.json').read_text())
+          assert metadata['commit'] == os.environ['GITHUB_SHA'] and metadata['buildKind'] == 'release' and not metadata['sourceDirty']
+          smoke = json.loads(pathlib.Path('artifacts/janitor-smoke.json').read_text())
+          assert smoke['ok'] and smoke['native']['commit'] == os.environ['GITHUB_SHA']
+          PYCODE
+          cd artifacts
+          sha256sum --check ./*.sha256
+      - name: Publish a new prerelease candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JANITOR_CANDIDATE_TAG: ${{ inputs.candidate_tag }}
+        run: |
+          if gh release view "$JANITOR_CANDIDATE_TAG" >/dev/null 2>&1; then
+            echo 'Refusing to replace an existing release candidate' >&2; exit 1
+          fi
+          test -z "$(git ls-remote --tags origin "refs/tags/$JANITOR_CANDIDATE_TAG")"
+          gh release create "$JANITOR_CANDIDATE_TAG" artifacts/* --prerelease --target "$GITHUB_SHA" --title "Janitor $JANITOR_CANDIDATE_TAG — Linux acceptance candidate" --notes-file apps/desktop/janitor/CANDIDATE.md

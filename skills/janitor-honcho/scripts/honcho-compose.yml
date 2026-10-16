@@ -1,99 +1,57 @@
+name: janitor-honcho
 services:
-  honcho-api:
+  janitor-honcho-api:
+    image: janitor-honcho:e2d2aba18286
     build:
-      context: ../src/honcho
-      dockerfile: Dockerfile
+      context: ${JANITOR_HONCHO_SOURCE:?Run scripts/setup-honcho.sh}
     container_name: janitor-honcho-api
-    entrypoint: ["sh", "docker/entrypoint.sh"]
-    ports:
-      - "127.0.0.1:1973:8000"
-    environment:
-      - DB_CONNECTION_URI=postgresql+psycopg://janitor_bea9db7d:vPwptI+4UO+v+B+xnNdzoFltM3cKTLlp@honcho-database:5432/honcho
-      - CACHE_URL=redis://honcho-redis:6379/0?suppress=true
-      - CACHE_ENABLED=true
-    env_file:
-      - path: ~/.janitor/.env
-        required: false
-    volumes:
-      - honcho-api-data:/data
-    restart: unless-stopped
-    networks:
-      - honcho-network
+    entrypoint: [sh, docker/entrypoint.sh]
+    ports: ["127.0.0.1:1973:8000"]
+    env_file: ["${JANITOR_HONCHO_ENV:?Missing honcho.env}"]
+    volumes: ["${JANITOR_HONCHO_CONFIG:?Missing honcho.toml}:/app/config.toml:ro", "janitor-honcho-api-data:/data"]
+    networks: [janitor-honcho-network]
     depends_on:
-      honcho-database:
-        condition: service_healthy
-      honcho-redis:
-        condition: service_healthy
+      janitor-honcho-database: {condition: service_healthy}
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
       interval: 10s
       timeout: 5s
-      retries: 6
-      start_period: 30s
-
-  honcho-deriver:
-    build:
-      context: ../src/honcho
-      dockerfile: Dockerfile
+      retries: 18
+  janitor-honcho-deriver:
+    image: janitor-honcho:e2d2aba18286
     container_name: janitor-honcho-deriver
-    entrypoint: ["python", "-m", "src.deriver"]
-    environment:
-      - DB_CONNECTION_URI=postgresql+psycopg://janitor_bea9db7d:vPwptI+4UO+v+B+xnNdzoFltM3cKTLlp@honcho-database:5432/honcho
-      - CACHE_URL=redis://honcho-redis:6379/0?suppress=true
-      - CACHE_ENABLED=true
-    env_file:
-      - path: ~/.janitor/.env
-        required: false
-    restart: unless-stopped
-    networks:
-      - honcho-network
+    entrypoint: [python, -m, src.deriver]
+    env_file: ["${JANITOR_HONCHO_ENV:?Missing honcho.env}"]
+    volumes: ["${JANITOR_HONCHO_CONFIG:?Missing honcho.toml}:/app/config.toml:ro"]
+    networks: [janitor-honcho-network]
     depends_on:
-      honcho-database:
-        condition: service_healthy
-      honcho-redis:
-        condition: service_healthy
-
-  honcho-database:
-    image: pgvector/pgvector:pg15
+      janitor-honcho-api: {condition: service_healthy}
+    restart: unless-stopped
+  janitor-honcho-database:
+    image: pgvector/pgvector:0.8.1-pg15@sha256:94aee7e88f98125114657cab98e28c5dfa8dd517a6bf83fd98b503439f1e3de6
     container_name: janitor-honcho-database
     environment:
-      POSTGRES_USER: janitor_bea9db7d
-      POSTGRES_PASSWORD: vPwptI+4UO+v+B+xnNdzoFltM3cKTLlp
+      POSTGRES_USER: ${HONCHO_POSTGRES_USER:?Missing database user}
+      POSTGRES_PASSWORD: ${HONCHO_POSTGRES_PASSWORD:?Missing database password}
       POSTGRES_DB: honcho
-    volumes:
-      - ../src/honcho/database/init.sql:/docker-entrypoint-initdb.d/init.sql
-      - honcho-pgdata:/var/lib/postgresql/data
+    volumes: [janitor-honcho-pgdata:/var/lib/postgresql/data]
+    networks: [janitor-honcho-network]
     restart: unless-stopped
-    networks:
-      - honcho-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${HONCHO_POSTGRES_USER:-janitor}"]
-      interval: 10s
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
       timeout: 5s
-      retries: 6
-      start_period: 15s
-
-  honcho-redis:
-    image: redis:8.2
+      retries: 12
+  janitor-honcho-redis:
+    image: redis:8.2@sha256:47670742d7924adbcdb404d1288b6327815b23141969c0939b8e5d61f78c2634
     container_name: janitor-honcho-redis
+    networks: [janitor-honcho-network]
+    volumes: [janitor-honcho-redis-data:/data]
     restart: unless-stopped
-    networks:
-      - honcho-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
-      start_period: 10s
-
 volumes:
-  honcho-pgdata:
-    name: janitor-honcho-pgdata
-  honcho-redis-data:
-    name: janitor-honcho-redis-data
-  honcho-api-data:
-    name: janitor-honcho-api-data
-
+  janitor-honcho-pgdata: {name: janitor-honcho-pgdata}
+  janitor-honcho-api-data: {name: janitor-honcho-api-data}
+  janitor-honcho-redis-data: {name: janitor-honcho-redis-data}
 networks:
-  honcho-network:
-    name: janitor-honcho-network
+  janitor-honcho-network: {name: janitor-honcho-network}

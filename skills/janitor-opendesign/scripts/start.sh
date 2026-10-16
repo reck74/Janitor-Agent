@@ -18,10 +18,18 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OD_INSTALL_DIR="${OD_INSTALL_DIR:-${HOME}/open-design}"
+OD_INSTALL_DIR="${OD_INSTALL_DIR:-${OD_SOURCE_DIR:-${HOME}/open-design}}"
 
 DAEMON_PORT="${OD_DAEMON_PORT:-45351}"
 WEB_PORT="${OD_WEB_PORT:-45343}"
+
+# ------------------------------------------------------------
+# Node version gate (engines.node = "~24" en package.json).
+# Delega a check-node-version.sh — exit 2 si hay mismatch.
+# CRÍTICO: si esto falla, pnpm install segfaultea better-sqlite3
+# y corrompe el bridge PRIME NVIDIA↔AMD → pantalla congelada.
+# ------------------------------------------------------------
+bash "${SCRIPT_DIR}/check-node-version.sh" || exit $?
 
 if [[ ! -x "${OD_INSTALL_DIR}/node_modules/.bin/tools-dev" ]]; then
   echo "ERROR: tools-dev no encontrado en ${OD_INSTALL_DIR}/node_modules/.bin/" >&2
@@ -34,10 +42,10 @@ echo " Open Design — Start (puertos persistentes)"
 echo "==========================================="
 echo "  Daemon: http://127.0.0.1:${DAEMON_PORT}"
 echo "  Web:    http://127.0.0.1:${WEB_PORT}"
-echo "  MCP:    http://127.0.0.1:${DAEMON_PORT}/mcp"
+echo "  MCP config: http://127.0.0.1:${DAEMON_PORT}/api/mcp/install-info"
 echo "==========================================="
 
 cd "${OD_INSTALL_DIR}"
-exec ./node_modules/.bin/tools-dev start \
+exec ./node_modules/.bin/tools-dev start "$@" \
   --daemon-port "${DAEMON_PORT}" \
   --web-port    "${WEB_PORT}"

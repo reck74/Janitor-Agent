@@ -65,7 +65,7 @@ def test_fork_validator_runs_when_upstream_helper_unavailable(tmp_path):
     (tmp_path / "janitor_version.py").write_text("def broken(: pass\n", encoding="utf-8")
     validator = juc._make_fork_syntax_validator(None)
 
-    ok, failing_path, error = validator(tmp_path)
+    ok, failing_path, _error = validator(tmp_path)
 
     assert ok is False
     assert failing_path == str(tmp_path / "janitor_version.py")

@@ -1,69 +1,54 @@
 ---
 name: janitor-honcho
-description: "Deploy Honcho memory service locally for Janitor."
+description: "Deploy and verify Janitor's mandatory Honcho memory."
 version: 1.0.0
 author: Janitor Agent
 license: MIT
 platforms: [linux, macos]
-
 metadata:
   hermes:
     tags: [memory, honcho, docker, local-setup]
     category: devops
-    config:
-      janitor.honcho_port:
-        description: "Local port for Honcho service"
-        default: 1973
-        type: integer
 ---
 
-# janitor-honcho
+# Janitor Honcho
 
-Deploy a local Honcho memory instance for Janitor. This is the only service
-considered fundamental for a functional Janitor installation.
+Honcho is part of the base installation. Choose local Docker or Honcho cloud during setup. Docker and MiniMax are required in both modes. Local memory additionally needs `OPENAI_API_KEY` for embeddings; cloud only needs `MINIMAX_API_KEY` and `HONCHO_API_KEY`.
 
-## Prerequisites
+Run `janitor setup` to repair configuration. The shared installer installs the catalog provider at `e2d2aba182862deeb846e5cd4a30a41bce0ed82a`, prepares dependencies through PM and checks the memory API before reporting success. The local server uses the same audited source commit.
 
-- Docker daemon running
-- `docker compose` available
-- Port 1973 free on localhost
-- `~/.janitor/.env` with `MINIMAX_API_KEY` (used as Anthropic backend for Honcho)
-
-## Usage
+To redeploy local memory from a configured installation:
 
 ```bash
-bash skills/janitor-honcho/scripts/setup-honcho.sh
+bash skills/janitor-honcho/scripts/deploy.sh
 ```
 
-Or if already copied to `~/.janitor/scripts/`:
+The compatibility entry `bash scripts/setup-honcho.sh` delegates here. Set `HERMES_HOME` to the profile you intend to repair; it takes precedence over the installation root in `JANITOR_HOME`. The installed skill resolves the `janitor` PM launcher even outside the source checkout. Secrets are read as dotenv data, never evaluated as shell commands.
+
+| Component | Container | Exposure |
+|---|---|---|
+| API | `janitor-honcho-api` | `127.0.0.1:1973` |
+| Deriver | `janitor-honcho-deriver` | Internal |
+| PostgreSQL + pgvector | `janitor-honcho-database` | Internal |
+| Redis | `janitor-honcho-redis` | Internal |
+
+MiniMax handles reasoning; OpenAI handles local embeddings. The compose file, private service environment and model configuration are installed under the profile home. Existing database credentials and named volumes are preserved. Upgrades take a database dump before running server migrations; a stopped existing database must be started before upgrading.
+
+To stop this deployment without deleting data:
 
 ```bash
-bash ~/.janitor/scripts/setup-honcho.sh
+docker compose --project-name janitor-honcho --env-file "$HOME/.janitor/honcho.env" \
+  -f "$HOME/.janitor/docker/honcho-compose.yml" down
 ```
 
-## What Gets Started
+Backups live under the selected profile's `backups/`. The checksum manifest includes service secrets and configuration under `docker/`, committed SQLite state, and the PostgreSQL dump taken before server migrations. Do not remove volumes during a reinstall.
 
-| Service | Container | Port | Purpose |
-|---------|-----------|------|---------|
-| Honcho API | `janitor-honcho-api` | 1973 | Long-term memory & session storage |
-| Honcho Deriver | `janitor-honcho-deriver` | — | Background inference worker |
-| Honcho Database | `janitor-honcho-database` | — | Postgres + pgvector |
-| Honcho Redis | `janitor-honcho-redis` | — | Cache & pub/sub |
-
-## Post-Activation
-
-After starting Honcho, update `~/.janitor/.env`:
+To verify and restore a snapshot into a **new** recovery directory:
 
 ```bash
-echo "HONCHO_BASE_URL=http://localhost:1973" >> ~/.janitor/.env
+janitor --run-module janitor_ext.migrate --restore /path/to/backup --home /path/to/new-recovery
 ```
 
-Then restart Janitor. The OWASP fail-safe will pass.
+Restoration verifies every checksum before writing, never replaces live files, and reports database dumps separately under `externalArtifacts`. Review the recovered configuration before copying it back. Restore a Honcho database dump with PostgreSQL's `pg_restore` against a separately prepared database; the file restoration command never writes to Docker volumes.
 
-## Rollback
-
-```bash
-cd ~/.janitor/docker && docker compose -f honcho-compose.yml down
-```
-
-Data volumes are preserved unless explicitly removed.
+`bash scripts/migrate-janitor-1.0.sh --apply` migrates only the selected profile. Add `--all-profiles` explicitly to migrate its root and all named profiles.

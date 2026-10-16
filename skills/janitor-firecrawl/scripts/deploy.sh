@@ -10,7 +10,19 @@
 # =========================================================
 set -euo pipefail
 
-JANITOR_HOME="${JANITOR_HOME:-$HOME/.janitor}"
+# Enter this installation's PM Python; load profile secrets without shell evaluation.
+if [[ "${JANITOR_SERVICE_ENV:-}" != "1" ]]; then
+    skill_source="$(readlink -f "${BASH_SOURCE[0]}")"
+    skill_root="$(cd "$(dirname "$skill_source")/../../.." && pwd)"
+    launcher="$skill_root/scripts/janitor"
+    [[ -x "$launcher" ]] || launcher="$(command -v janitor || true)"
+    [[ -n "$launcher" && -x "$launcher" ]] || { echo "Install/repair Janitor before deploying this skill." >&2; exit 1; }
+    export JANITOR_HOME="${HERMES_HOME:-${JANITOR_HOME:-$HOME/.janitor}}"
+    exec "$launcher" --run-module janitor_ext.optional_deploy "$skill_source" "$@"
+fi
+umask 077
+
+JANITOR_HOME="${HERMES_HOME:-${JANITOR_HOME:-$HOME/.janitor}}"
 JANITOR_SOURCE_DIR="${JANITOR_SOURCE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 SKILL_SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -138,12 +150,11 @@ ensure_compose_file() {
 
 launch_firecrawl() {
     log_info "Pulling imagenes..."
-    if ! docker compose -f "$COMPOSE_DST" pull; then
-        log_warn "docker compose pull tuvo errores — continuando con imagenes cacheadas."
-    fi
+    docker compose -f "$COMPOSE_DST" --env-file "$ENV_FILE" pull
 
+    "$JANITOR_SERVICE_PYTHON" -m janitor_ext.volumes --compose "$COMPOSE_DST" --env-file "$ENV_FILE"
     log_info "Levantando stack (docker compose up -d)..."
-    if ! docker compose -f "$COMPOSE_DST" up -d; then
+    if ! docker compose -f "$COMPOSE_DST" --env-file "$ENV_FILE" up -d; then
         log_fail "docker compose up fallo."
         log_info "Logs: docker compose -f ${COMPOSE_DST} logs"
         exit 1
@@ -205,25 +216,32 @@ inject_firecrawl_env() {
 }
 
 verify_scrape() {
-    log_info "Verificando endpoint /v0/scrape con example.com..."
-    local response
-    if ! response=$(curl -sf -X POST "${FIRECRAWL_LOCAL_API_URL}/v0/scrape" \
-            -H "Authorization: Bearer ${FIRECRAWL_LOCAL_API_KEY}" \
-            -H "Content-Type: application/json" \
-            -d '{"url":"https://example.com","formats":["markdown"]}' 2>&1); then
-        log_warn "Scrape de prueba fallo (Firecrawl puede tardar en calentar)."
-        log_info "Intenta manualmente: curl -X POST ${FIRECRAWL_LOCAL_API_URL}/v0/scrape \\"
-        log_info "  -H 'Authorization: Bearer ${FIRECRAWL_LOCAL_API_KEY}' \\"
-        log_info "  -H 'Content-Type: application/json' \\"
-        log_info "  -d '{\"url\":\"https://example.com\",\"formats\":[\"markdown\"]}'"
-        return 0
-    fi
-
-    if echo "$response" | grep -q '"success":true'; then
-        log_ok "Scrape de prueba exitoso — Firecrawl 100% funcional."
-    else
-        log_warn "Scrape respondio pero sin success:true: ${response:0:200}..."
-    fi
+    log_info "Verificando scraping con contenido de example.com..."
+    local response attempt
+    for attempt in 1 2 3; do
+        if response=$(curl -sf --connect-timeout 5 --max-time 30 -X POST "${FIRECRAWL_LOCAL_API_URL}/v0/scrape" \
+                -H "Authorization: Bearer ${FIRECRAWL_LOCAL_API_KEY}" \
+                -H "Content-Type: application/json" \
+                -d '{"url":"https://example.com","formats":["markdown"]}' 2>/dev/null); then
+            if printf '%s' "$response" | "$JANITOR_SERVICE_PYTHON" -c '
+import json, sys
+try:
+    payload = json.load(sys.stdin)
+    content = payload.get("data", {}).get("markdown", "")
+    valid = payload.get("success") is True and isinstance(content, str) and bool(content.strip())
+except (ValueError, AttributeError):
+    valid = False
+sys.exit(0 if valid else 1)
+'; then
+                log_ok "Scraping verificado: respuesta correcta con contenido Markdown."
+                return 0
+            fi
+        fi
+        log_warn "Scrape de prueba no valido (intento ${attempt}/3)."
+        [[ "$attempt" == 3 ]] || sleep 3
+    done
+    log_fail "Firecrawl no pudo completar el scraping de prueba; no se activo la integracion."
+    return 1
 }
 
 print_summary() {
@@ -256,8 +274,8 @@ main() {
     launch_firecrawl
 
     if wait_for_health 180; then
+        verify_scrape || return 1
         inject_firecrawl_env
-        verify_scrape || true
         print_summary
         exit 0
     else

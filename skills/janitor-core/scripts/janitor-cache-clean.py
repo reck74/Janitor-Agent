@@ -112,7 +112,7 @@ def main() -> int:
         print(f"  [{reason}] {path}", file=sys.stderr)
 
     if args.dry_run:
-        print(f"[janitor-cache-clean] DRY RUN — no files deleted.", file=sys.stderr)
+        print("[janitor-cache-clean] DRY RUN — no files deleted.", file=sys.stderr)
         return 0
 
     deleted = 0

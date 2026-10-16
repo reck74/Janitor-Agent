@@ -42,6 +42,8 @@ The script is idempotent — re-running it preserves existing credentials and
 data volumes, only refreshing the compose file and restarting containers if
 needed.
 
+The deployment succeeds only after a functional scrape returns nonempty Markdown; health alone is insufficient. It makes at most three attempts with a 30-second request timeout, then exits nonzero without activating the integration.
+
 After a successful deploy, the script injects `FIRECRAWL_API_URL` and
 `FIRECRAWL_API_KEY` into `~/.janitor/.env`. **Restart Janitor** for the web
 tools to detect these variables and activate.
@@ -55,6 +57,8 @@ tools to detect these variables and activate.
 | Firecrawl Postgres | `janitor-firecrawl-postgres` | `ghcr.io/firecrawl/nuq-postgres:latest` | — | Queue & metadata DB (pg_cron) |
 | Firecrawl Redis | `janitor-firecrawl-redis` | `redis:alpine` | — | Rate limiting & caching |
 | Firecrawl RabbitMQ | `janitor-firecrawl-rabbitmq` | `rabbitmq:3-management` | 5672 | Job queue broker |
+
+The displayed image tags are fixed to audited SHA256 digests in `scripts/firecrawl-compose.yml`; the installer pulls those exact artifacts.
 
 All containers, volumes (`janitor-firecrawl-redis-data`, `janitor-firecrawl-pgdata`), and the network (`janitor-firecrawl-network`) carry the `janitor-` prefix per AGENTS.md directive #5.
 
@@ -108,3 +112,17 @@ rm ~/.janitor/docker/firecrawl.env ~/.janitor/docker/firecrawl-compose.yml
 To deactivate web tools without removing the stack, comment out (or delete) the
 `FIRECRAWL_API_URL` and `FIRECRAWL_API_KEY` lines in `~/.janitor/.env` and
 restart Janitor.
+
+## Deployment and data preservation (Janitor 1.0)
+
+The bundled Compose images are fixed by digest. Re-running deploy preserves
+existing credentials, loads profile `.env` secrets as data through Janitor PM,
+and exits nonzero if pull/start/health fails. Set `HERMES_HOME` to target a
+profile explicitly. Each stack has a separate `janitor-*` Compose project.
+
+Named legacy volumes are discovered from the existing Janitor containers and
+copied offline to stable `janitor-*` names before replacement. Original volumes
+remain intact; old containers are stopped and retained as `janitor-legacy-*`.
+Do not delete migration receipts or volumes during recovery. Conflicting or
+shared destination data requires manual inspection; the deploy refuses to
+overwrite it. Existing bind-mounted data (WAHA sessions/media) stays in place.

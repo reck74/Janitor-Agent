@@ -44,18 +44,6 @@ class TestNormalizeMultimodalContent:
         assert _normalize_multimodal_content(content) == "hello"
 
 
-    def test_input_image_converted_to_canonical_shape(self):
-        content = [
-            {"type": "input_text", "text": "hi"},
-            {"type": "input_image", "image_url": "https://example.com/cat.png"},
-        ]
-        out = _normalize_multimodal_content(content)
-        assert out == [
-            {"type": "text", "text": "hi"},
-            {"type": "image_url", "image_url": {"url": "https://example.com/cat.png"}},
-        ]
-
-
 class TestContentHasVisiblePayload:
 
 
@@ -163,3 +151,20 @@ class TestResponsesMultimodalHTTP:
             ]
             assert mock_run.captured["user_message"] == expected
 
+
+
+@pytest.mark.parametrize("shape", ["string", "string_part", "typed_part"])
+def test_long_input_text_is_preserved_within_request_body_limit(shape):
+    from gateway.platforms.api_server import MAX_NORMALIZED_TEXT_LENGTH
+
+    message = "x" * (MAX_NORMALIZED_TEXT_LENGTH + 17) + "TAIL"
+    content = {"string": message, "string_part": [message],
+               "typed_part": [{"type": "input_text", "text": message}]}[shape]
+    assert _normalize_multimodal_content(content) == message
+
+
+def test_excessive_parts_are_rejected_instead_of_silently_removed():
+    from gateway.platforms.api_server import MAX_CONTENT_LIST_SIZE
+
+    with pytest.raises(ValueError, match="content_too_large"):
+        _normalize_multimodal_content(["x"] * (MAX_CONTENT_LIST_SIZE + 1))

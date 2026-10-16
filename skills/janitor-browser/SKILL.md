@@ -1,50 +1,29 @@
 ---
 name: janitor-browser
-description: "Install Playwright browser automation for Janitor."
+description: "Install browser automation managed by Janitor PM."
 version: 1.0.0
 author: Janitor Agent
 license: MIT
-platforms: [linux, macos, win32]
-
+platforms: [linux, macos]
 metadata:
   hermes:
-    tags: [browser, playwright, automation, scraping]
+    tags: [browser, automation, scraping]
     category: devops
 ---
 
 # janitor-browser
 
-Install Playwright browser automation tools for Janitor. Optional — only needed
-if you want browser automation capabilities (scraping JavaScript-heavy sites,
-taking screenshots, etc.).
-
-## Prerequisites
-
-- Python 3.11+ with `uv` or `pip`
-- `apt-get` available on Debian/Ubuntu for system dependencies
-
-## Usage
+Browser automation is explicitly installed after the base Janitor setup:
 
 ```bash
-bash skills/janitor-browser/scripts/install.sh
+bash ~/.janitor/skills/janitor-browser/scripts/install.sh
 ```
 
-## What Gets Installed
+The script enters the owning installation's PM runtime and installs its pinned
+`agent-browser`, Chromium, and `cua-driver` packages. It uses the same packages
+as the upstream browser tools, preserves PM receipts, and propagates failures.
+Use WSL2 on Windows. No host pip environment is modified.
 
-- Python package `playwright`
-- Chromium browser binary and system dependencies
-
-## Verification
-
-```bash
-python3 -c "from playwright.sync_api import sync_playwright; print('Playwright OK')"
-```
-
-## Rollback
-
-```bash
-uv pip uninstall playwright
-# Or: pip uninstall playwright
-```
-
-System dependencies installed via `apt-get` are not automatically removed.
+Verify with `janitor pm status`. To opt out of future default installs, use
+`janitor pm install --without agent-browser --without cua-driver`; PM owns the
+package lifecycle and any retained cache bytes.

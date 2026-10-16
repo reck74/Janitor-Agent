@@ -74,13 +74,7 @@ export function ToolCall({ tool }: { tool: ToolEntry }) {
     ? fmtElapsed((tool.completedAt ?? now) - tool.startedAt)
     : null;
 
-  const hasBody = !!(
-    tool.context ||
-    tool.preview ||
-    tool.summary ||
-    tool.error ||
-    tool.inline_diff
-  );
+  const hasBody = toolHasBody(tool);
 
   const Chevron = open ? ChevronDown : ChevronRight;
 
@@ -172,6 +166,10 @@ export function ToolCall({ tool }: { tool: ToolEntry }) {
       )}
     </div>
   );
+}
+
+function toolHasBody(tool: ToolEntry): boolean {
+  return Boolean(tool.context || tool.preview || tool.summary || tool.error || tool.inline_diff);
 }
 
 function Section({

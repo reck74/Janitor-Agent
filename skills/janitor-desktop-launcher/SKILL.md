@@ -1,148 +1,78 @@
 ---
 name: janitor-desktop-launcher
-description: "Launch the compiled Janitor Desktop AppImage."
-version: 1.1.0
+description: "Build or launch the Janitor Agent Linux desktop AppImage."
+version: 2.0.1
 author: Janitor Agent
 license: MIT
 platforms: [linux]
-
 metadata:
   hermes:
     tags: [desktop, electron, appimage, launcher]
     category: devops
 ---
 
-# janitor-desktop-launcher
+# Janitor Desktop
 
-Launches the already-compiled Janitor Desktop binary (Electron AppImage) that
-ships under `apps/desktop/release/`. Resolves the install location across
-multiple known layouts so the same script works for end users (`HERMES_HOME`),
-developers running from a checkout, and CI/sandbox scenarios.
+Janitor retains the upstream Electron interface and builds its own identity and
+runtime adapters in a temporary source tree. Upstream source files remain intact.
+The AppImage prepares the Janitor runtime on first launch; configuration requires
+MiniMax and a local or cloud Honcho connection. Other integrations are opt-in.
 
-## When to Use
+## Build
 
-- An AppImage or unpacked ELF already exists from a prior build or `janitor update`.
-- You want to launch the desktop UI without paying the build cost again.
+Install the locked root workspace dependencies with `npm ci`, then run:
 
-If you need to *rebuild* the AppImage first, use `npm run dist:linux` from
-`apps/desktop/` directly — this skill only launches existing artifacts.
+```bash
+node apps/desktop/janitor/build.mjs
+```
 
-## Prerequisites
+Artifacts, their SHA-256 sidecars, and `janitor-release.json` are written to
+`apps/desktop/release/`. Publish these files together in the fork's GitHub release;
+binaries are not committed to Git or Git LFS. Native Janitor versions use stable
+SemVer independently of the recorded upstream engine version.
 
-- Linux x86_64 host (AppImage is built against glibc ≥ 2.6.18).
-- For headless servers, `xvfb-run` (provides a virtual X display).
-- The release artifact must exist in one of the searched locations.
-  If it does not, run `cd apps/desktop && npm run dist:linux` once.
-- The AppImage ships via Git LFS in this repo (138 MB exceeds
-  GitHub's 100 MB push limit). New clones need `git lfs install`
-  on first run before `git pull` to materialize the binary.
-  Without LFS the launcher falls back to the unpacked ELF path.
-
-## Path Resolution
-
-The script searches for `apps/desktop/` in the following locations,
-in priority order, and uses the first one that contains both
-`package.json` and a `release/` directory:
-
-| # | Location | When this matches |
-|---|----------|-------------------|
-| 1 | `$HERMES_HOME/janitor-core/apps/desktop` | **Default for end users.** `janitor-install.sh` mirrors the repo to `~/.janitor/janitor-core/`, and `janitor update` keeps the AppImage current under `release/`. |
-| 2 | `$HERMES_HOME/apps/desktop` | Alternative layout if a future installer drops `janitor-core/` from the path. |
-| 3 | Path relative to this script (`../..` from `scripts/launch.sh`) | Developer running from the repo checkout — the same place `npm run dist:linux` produces the binary. |
-| 4 | `./apps/desktop` from current working dir | CI / sandbox scenarios where the repo is the CWD. |
-
-`HERMES_HOME` defaults to `$HOME/.janitor` when unset. Use
-`HERMES_HOME=/custom/path bash launch.sh` to override.
-
-Run `launch.sh --print-path` to see exactly which path was selected
-without launching anything — useful for debugging "wrong binary" reports.
-
-## How to Run
+## Launch
 
 ```bash
 bash skills/janitor-desktop-launcher/scripts/launch.sh
 ```
 
-### Flags
+`HERMES_HOME` selects an explicit profile before `JANITOR_HOME`, then defaults to `~/.janitor`.
+Both variables are passed to the application. The launcher checks the installed
+runtime's build, the checkout beside this skill, and the current checkout. It
+skips incomplete candidates and chooses the newest matching architecture.
+`JANITOR_DESKTOP_DIR` explicitly selects one `apps/desktop` directory.
 
-| Flag | Effect |
-|------|--------|
-| `--unpacked` | Run the unpacked binary at `release/linux-unpacked/janitor` instead of the AppImage. Faster cold start; use during development. |
-| `--headless` | Wrap the launch in `xvfb-run` so the app runs on a server with no display. |
-| `--background` | Fork and detach so the shell does not block waiting for the GUI. |
-| `--version` | Print detected app version and exit. |
-| `--print-path` | Print the resolved AppImage path and exit. |
+Flags:
 
-### Examples
+- `--unpacked`: use `release/linux-unpacked/janitor-desktop`.
+- `--print-path`: print the selected artifact without executing or chmodding it.
+- `--version`: print the selected build's metadata without starting Electron.
+- `--headless`: launch through `xvfb-run`.
+- `--background`: detach the process and print its PID.
+- `-- APP_ARGS`: pass explicit arguments to Electron.
 
-```bash
-# Foreground, AppImage (default) — uses whatever location matches
-bash skills/janitor-desktop-launcher/scripts/launch.sh
+The AppImage updater uses stable GitHub releases from `reck74/Janitor-Agent`,
+requires matching SHA-256 assets, updates runtime through `scripts/janitor`, and
+replaces/relaunches the AppImage only after successful verification and runtime
+update. A package managed outside the writable AppImage path requires its owner
+to update it. Failures preserve the previous AppImage and are recorded privately
+under `JANITOR_HOME/.janitor-desktop-update-result.json`.
 
-# Debug: see which binary the launcher picked
-bash skills/janitor-desktop-launcher/scripts/launch.sh --print-path
+Boot logs are under `JANITOR_HOME/logs/desktop.log`. A missing runtime or setup
+credential is surfaced by the existing setup/retry interface. Do not disable the
+Electron sandbox as an installation workaround.
 
-# Custom HERMES_HOME (e.g., multi-profile setup)
-HERMES_HOME=$HOME/.janitor-prod bash skills/janitor-desktop-launcher/scripts/launch.sh
+Release builds require a clean, completed Git checkout and verify that the exact
+commit's Janitor bootstrap is publicly available from the fork. They refuse
+dirty sources, unfinished merges and unpublished/mismatched bootstrap bytes.
+For local development use `node apps/desktop/janitor/build.mjs --development`;
+this writes a `-dev.<commit>` product into `release-development/`, never a stable
+release artifact. Development builds are not distribution candidates.
 
-# Faster: run the unpacked binary (dev only)
-bash skills/janitor-desktop-launcher/scripts/launch.sh --unpacked
-
-# Headless server (CI, VPS)
-bash skills/janitor-desktop-launcher/scripts/launch.sh --headless --background
-
-# Just check what version is bundled
-bash skills/janitor-desktop-launcher/scripts/launch.sh --version
-```
-
-## What the Script Does
-
-1. Walks the candidate list above, picks the first one with `package.json` and `release/`.
-2. Reads the app version from `<selected>/apps/desktop/package.json`.
-3. Locates the AppImage (or `--unpacked` ELF) under that tree.
-4. `chmod +x` the AppImage if needed (the LFS pointer replacement can land as non-executable).
-5. Optionally wraps in `xvfb-run` (`--headless`) and/or `nohup` (`--background`).
-6. `exec`s the binary.
-
-## Quick Reference
-
-| Artifact | Path (relative to resolved apps/desktop) |
-|----------|----------|
-| AppImage | `release/J4nitor-Agent-0.15.1-linux-x86_64.AppImage` |
-| Unpacked binary | `release/linux-unpacked/janitor` |
-| Version source | `package.json` (`name`, `version`) |
-
-## Pitfalls
-
-- **AppImage is x86_64-only.** It will not run on ARM hosts (Raspberry Pi,
-  Apple Silicon under Linux). Rebuild with `npm run dist:linux` on the
-  target arch if needed.
-- **First launch needs network.** The packaged Electron app installs the
-  Hermes Agent runtime into `HERMES_HOME` on first boot — same as a CLI
-  install. Make sure outbound HTTPS to the install endpoint is reachable.
-- **`--background` does not stop the app.** It only detaches from the
-  current shell. Kill the process via `pkill janitor` or your process
-  manager when done.
-- **Do not run as root inside the AppImage.** Electron's `chrome-sandbox`
-  refuses to escalate; either run as your normal user or pass
-  `--no-sandbox` (not recommended).
-- **Binary ships via Git LFS.** End users who clone the repo must run
-  `git lfs install` once on the host so `git pull` materializes the
-  AppImage. Without LFS, the file appears as a 3-line pointer and the
-  launcher errors out with "no AppImage found" — fallback to
-  `--unpacked` (still requires `npm run pack` locally) or install LFS.
-- **Path resolution is file-based, not registry-based.** The script does
-  not call into Janitor or Hermes to ask "where is the install?" — it
-  reads the filesystem. If you reorganize Janitor's directory layout in
-  the future, update the `CANDIDATES` array at the top of `launch.sh`.
-
-## Verification
-
-After launch, check that the process is alive:
-
-```bash
-pgrep -af 'J4nitor-Agent|janitor' | head
-```
-
-Boot logs land in `HERMES_HOME/logs/desktop.log` (defaults to
-`~/.janitor/logs/desktop.log` for this fork).
+`janitor-desktop-linux.yml` builds and smokes the actual Janitor source overlay.
+A manual candidate publication additionally requires full sync/E2E acceptance
+and accepts only `vX.Y.Z-rc.N` tags. It cannot publish a stable release.
+The updater confirms the new product/version and loaded renderer, watches for
+premature exit, and rolls the AppImage back if that handshake fails. Runtime
+success is reported separately when Desktop rollback is necessary.

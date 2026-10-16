@@ -1,130 +1,55 @@
 ---
 name: janitor-onboarding
-description: "Janitor orientation and capability selector."
-version: 2.1.0
+description: "Janitor orientation and optional capability selector."
+version: 3.0.0
 author: Janitor Agent
 license: MIT
 platforms: [linux, macos]
-
 metadata:
   hermes:
     tags: [onboarding, orientation, skills, capabilities]
     category: devops
 ---
 
-# janitor-onboarding
+# Primer arranque de Janitor
 
-Welcome to Janitor. This skill does not deploy infrastructure itself.
-Instead, it guides you through available capabilities that can be
-installed as separate skills post-first-run.
+La instalación base requiere **Docker, MiniMax y Honcho**. Honcho puede ser local o cloud. Local requiere además `OPENAI_API_KEY` para embeddings; cloud requiere `HONCHO_API_KEY`. MiniMax es el proveedor principal en ambos modos. El instalador comprueba dependencias, memoria y credenciales antes de anunciar éxito.
 
-## What Janitor Installed by Default
-
-The first-run installer (`scripts/janitor-install.sh`) gives you a working agent with:
-
-- `~/.janitor/.env` — environment variables (API keys)
-- `~/.janitor/config.yaml` — agent configuration
-- `~/.janitor/SOUL.md` — agent persona
-- `~/.janitor/skins/sentry-janitor.yaml` — visual theme
-- Optional: local Honcho memory (if you chose local setup during install)
-- Optional: local Firecrawl web scraping (the installer prompts for it after Honcho)
-
-Per AGENTS.md directive #9, none of this requires external services — you can
-run `janitor` immediately after the base install.
-
-## Optional Capabilities (Install as Skills)
-
-Each skill has its own `deploy.sh` (or equivalent) under `~/.janitor/skills/<name>/scripts/`.
-Install whichever you need; they are fully independent.
-
-| Skill | What It Does | Install Command |
-|-------|-------------|-----------------|
-| janitor-honcho | Local Honcho memory (if skipped at install) | `bash ~/.janitor/skills/janitor-honcho/scripts/setup-honcho.sh` |
-| janitor-firecrawl | Web scraping service | `bash ~/.janitor/skills/janitor-firecrawl/scripts/deploy.sh` |
-| janitor-browser | Playwright browser automation | `bash ~/.janitor/skills/janitor-browser/scripts/install.sh` |
-
-## Verification
-
-Each skill's `SKILL.md` documents its own health checks. Common patterns:
+CLI y Desktop comparten `~/.janitor`, sus perfiles y sesiones. La instalación prepara `.env`, `config.yaml`, `SOUL.md` y la skin `sentry-janitor`. Una reinstalación conserva elecciones, secretos y persona y crea backups antes de migrar. Ayuda, diagnóstico y reparación permanecen accesibles cuando faltan credenciales:
 
 ```bash
-# Honcho
-curl -f http://localhost:1973/health
-
-# Firecrawl
-curl -f http://127.0.0.1:1974/v0/health/liveness
-
-# Generic Docker health
-docker ps --filter "name=janitor-" --format "{{.Names}}\t{{.Status}}"
+janitor --help
+janitor doctor
+janitor setup
+janitor update --check
 ```
 
-## Rollback
+Browser, Firecrawl y el resto de capacidades se instalan **explícitamente después del arranque base**. Infisical y AgentMemory no forman parte del stack. Este onboarding no despliega servicios.
 
-Each skill ships a compose file under `~/.janitor/docker/`. Stop a skill with:
+| Capacidad | Activación desde la raíz del repositorio |
+| --- | --- |
+| Honcho base (reparar local) | `bash skills/janitor-honcho/scripts/deploy.sh` |
+| Browser | `bash skills/janitor-browser/scripts/install.sh` |
+| Firecrawl | `bash skills/janitor-firecrawl/scripts/deploy.sh` |
+| LightRAG + Ollama propio | `bash skills/janitor-lightrag/scripts/deploy.sh` |
+| n8n | `bash skills/janitor-n8n/scripts/deploy.sh` |
+| NocoDB | `bash skills/janitor-nocodb/scripts/deploy.sh` |
+| WAHA | `bash skills/janitor-waha/scripts/deploy.sh` |
+| OpenDesign | Seguir `skills/janitor-opendesign/SKILL.md` e integrar explícitamente |
+| OpenCode experimental | Health explícito en `skills/janitor-opencode/SKILL.md` |
+| Integración de skills externas | `skills/janitor-skill-integration/SKILL.md` |
+| Revisión de código | Cargar `janitor-code-review-agent` y delegar explícitamente |
+| Investigación de repositorios | Cargar `janitor-repo-research-agent` y delegar explícitamente |
+| Auditoría de configuración | `janitor-config-audit`: preview y merge con backup |
+| Higiene y cachés | `janitor-core`: revisar alcance antes de limpiar |
+| Desktop Linux | `skills/janitor-desktop-launcher/scripts/launch.sh --help` |
+
+Ejecuta los scripts desde una instalación PM preparada. Usa `JANITOR_HOME` para un home personalizado; los comandos CLI admiten `--profile`. Cada skill describe credenciales, puertos, uso de recursos, verificación y recuperación. Los instaladores propagan errores y los volúmenes anteriores se conservan durante migraciones.
+
+Para comprobar servicios instalados, sin activar otros:
 
 ```bash
-docker compose -f ~/.janitor/docker/<skill>-compose.yml down
+bash skills/janitor-onboarding/scripts/local-services.sh status
 ```
 
-Data volumes are preserved unless you pass `-v` or explicitly `docker volume rm`.
-
-## Post-Activation
-
-After installing a capability skill, **restart Janitor** to pick up new
-environment variables or configuration changes. The web tools (in particular)
-only activate when `FIRECRAWL_API_URL` and `FIRECRAWL_API_KEY` are present in
-`~/.janitor/.env` — `janitor-firecrawl`'s `deploy.sh` injects them for you.
-
-## Requirements
-
-- Docker daemon running (`docker info` must succeed)
-- `docker compose` v2+ available
-- For individual skills, check their `SKILL.md` for port and RAM requirements
-
-## Troubleshooting
-
-### Docker not found or not running
-
-Install Docker via the official script, then start the daemon:
-
-```bash
-curl -fsSL https://get.docker.com | sh
-sudo systemctl enable --now docker
-sudo usermod -aG docker "$USER"  # then log out and back in
-```
-
-Verify with `docker info` — it must return server info without errors.
-
-### Port conflicts
-
-If a skill's container cannot bind its port (e.g. `1974` for Firecrawl,
-`1973` for Honcho), find what is holding it:
-
-```bash
-ss -tlnp | grep -E ':(1973|1974|5672)\b'
-# or
-sudo lsof -iTCP:1974 -sTCP:LISTEN
-```
-
-Kill the conflicting process or change the port mapping in the skill's
-compose file (`~/.janitor/docker/<skill>-compose.yml`).
-
-### Service won't start
-
-Check container logs first:
-
-```bash
-docker logs <container-name> --tail 100
-# e.g.
-docker logs janitor-firecrawl-api --tail 100
-```
-
-Common causes: insufficient RAM (Firecrawl needs ~4GB across its 5 containers),
-missing `~/.janitor/docker/<skill>.env` file (re-run the skill's `deploy.sh`),
-or stale credentials (delete the env file and re-run `deploy.sh`).
-
-### `janitor update` fails with "Fast-forward not possible"
-
-If `janitor update` fails with "Fast-forward not possible (history diverged)",
-run `bash scripts/migrate-janitor-update-flow.sh` from the Janitor repo, then
-re-run `janitor update`.
+Los errores de Docker o de credenciales se reparan desde la configuración correspondiente. No borres un archivo de secretos o un volumen para resolver un problema de arranque. Consulta `MERGE_GUIDE.md` y las guías Janitor vigentes; `legacy/` conserva material histórico sin soporte runtime.

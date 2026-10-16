@@ -1,0 +1,44 @@
+{
+  "files": [
+    "apps/desktop/src/app/overlays/overlay-search-input.tsx",
+    "apps/desktop/src/components/assistant-ui/streaming.test.tsx",
+    "apps/desktop/src/components/assistant-ui/thread-list.tsx",
+    "apps/desktop/src/components/assistant-ui/todo-tool.tsx",
+    "apps/desktop/src/components/assistant-ui/tool-approval-group.test.tsx",
+    "apps/desktop/src/components/assistant-ui/tool-approval.test.tsx",
+    "apps/desktop/src/components/assistant-ui/tool-approval.tsx",
+    "apps/desktop/src/components/assistant-ui/tool-fallback-model.test.ts",
+    "apps/desktop/src/components/assistant-ui/tool-fallback-model.ts",
+    "apps/desktop/src/components/assistant-ui/user-message-edit.test.tsx",
+    "apps/desktop/src/components/assistant-ui/user-message-text.tsx",
+    "apps/desktop/src/components/chat/generated-image-context.tsx",
+    "apps/desktop/src/components/ui/braille-spinner.tsx"
+  ],
+  "imports": [
+    {
+      "consumer": "apps/desktop/src/components/assistant-ui/tool-approval.test.tsx",
+      "target": "apps/desktop/src/components/assistant-ui/tool-approval.tsx",
+      "literal": "./tool-approval"
+    },
+    {
+      "consumer": "apps/desktop/src/components/assistant-ui/tool-approval.test.tsx",
+      "target": "apps/desktop/src/components/assistant-ui/tool-fallback-model.ts",
+      "literal": "./tool-fallback-model"
+    },
+    {
+      "consumer": "apps/desktop/src/components/assistant-ui/tool-approval.tsx",
+      "target": "apps/desktop/src/components/assistant-ui/tool-fallback-model.ts",
+      "literal": "./tool-fallback-model"
+    },
+    {
+      "consumer": "apps/desktop/src/components/assistant-ui/tool-fallback-model.test.ts",
+      "target": "apps/desktop/src/components/assistant-ui/tool-fallback-model.ts",
+      "literal": "./tool-fallback-model"
+    }
+  ],
+  "externalConsumers": [],
+  "method": "TypeScript resolveModuleName over static import/export, dynamic literal import and require; all tracked Desktop TS/JS",
+  "upstream": "d923a5eb487a17c0a68801bba9ef0f56c81040a8",
+  "reason": "Pre-refactor Desktop files absent from Hermes stable; only four internal imports within the retired set, no active consumers. Current thread/*, tool/* and app/session own those behaviors.",
+  "support": "Removed from runtime; historical source is preserved in Git."
+}

@@ -1,7 +1,12 @@
 name: sentry-janitor
-description: "The Janitor V3.5 — Sentry Dark IDE + Cyberpunk Flamethrower"
+description: "Janitor — Sentry Dark IDE + Cyberpunk Flamethrower"
 
 colors:
+  background: "#150f23"
+  status_bar_good: "#c2ef4e"
+  status_bar_warn: "#FFE135"
+  status_bar_bad: "#fa7faa"
+  status_bar_critical: "#FF073A"
   # ── CAPA TUI REACT (Llaves Ocultas & Oficiales) ──────────────────────────
   ui_primary: "#c2ef4e"         # Lime Green: Títulos y CTA principal
   ui_border: "#362d59"          # Border Purple: Líneas estructurales
@@ -55,11 +60,12 @@ spinner:
     - ["⟪/ ", " /⟫"]
 
 branding:
-  agent_name: "J4nitor Agent"
+  agent_name: "THE JANITOR"
+  icon: "🛠"
   welcome: "Sistema en línea. Terminal activa. Más te vale que esto no sea otro error de Capa 8. Habla."
   goodbye: "Basura recolectada. Procesos aniquilados. No me llames a menos que producción esté ardiendo."
-  response_label: " 🧹 J4nitor "
-  prompt_symbol: "🧹"
+  response_label: " 🛠 THE JANITOR "
+  prompt_symbol: "❯"
   help_header: "(☣) Comandos Tácticos (Lee antes de romper algo)"
 
 tool_prefix: "│"
