@@ -1204,19 +1204,26 @@ class GatewayBusySessionMixin:
         ]
 
     def _is_stale_restart_redelivery(self, event: MessageEvent) -> bool:
-        """True if this /restart is a Telegram re-delivery we already handled.
+        """True if this /restart is a recorded transport message redelivery.
 
         The previous gateway wrote ``.restart_last_processed.json`` (platform + update_id). A
         /restart with update_id <= that value is a redelivery when this process booted from that
         restart; otherwise the marker must be < 5 minutes old. Telegram only (numeric ordering).
         """
         from gateway.run import _hermes_home
-        if event is None or event.source is None or event.platform_update_id is None:
+        if event is None or event.source is None:
             return False
-        try:
-            if event.source.platform.value != "telegram":
-                return False
-        except Exception:
+        if getattr(event.source.platform, "value", None) != "telegram":
+            from gateway.restart_dedup import is_recorded_restart
+
+            recorded = is_recorded_restart(
+                event, _hermes_home / ".restart_last_processed.json", now=time.time(),
+                booted_from_restart=getattr(self, "_booted_from_restart", False),
+            )
+            if recorded:
+                self._booted_from_restart = False
+            return recorded
+        if event.platform_update_id is None:
             return False
 
         try:

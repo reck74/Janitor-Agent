@@ -55,7 +55,18 @@ def reported_success(cp: subprocess.CompletedProcess) -> bool:
 
 
 def n1_tag() -> str:
-    """N-1: the newest release tag strictly before HEAD."""
+    """A CI-pinned historical release, or upstream's newest release before HEAD.
+
+    Fork tags describe the product rather than its engine. CI fetches and
+    verifies the engine fixture separately without altering product tags.
+    """
+    fixture = os.environ.get("HERMES_E2E_N1_TAG")
+    if fixture:
+        commit = commit_of(fixture)
+        head = commit_of("HEAD")
+        assert commit != head, "N-1 fixture must precede HEAD"
+        I.git("merge-base", "--is-ancestor", commit, head, cwd=H.WORKTREE)
+        return fixture
     return I.git("describe", "--tags", "--abbrev=0", "--match", "v20[0-9][0-9].*", "HEAD~1", cwd=H.WORKTREE)
 
 

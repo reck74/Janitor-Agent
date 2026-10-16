@@ -564,6 +564,11 @@ class GatewaySlashCommandsMixin(
                     "requested_at": time.time()}
             if event.platform_update_id is not None:
                 data["update_id"] = event.platform_update_id
+            from gateway.restart_dedup import restart_message_identity
+
+            identity = restart_message_identity(event)
+            if identity is not None:
+                data["message_identity"] = identity
             return data
 
         # Save the requester's routing info so the new gateway process can notify them once back.

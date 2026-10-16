@@ -18,8 +18,8 @@ Real processes throughout:
 Scenarios (the listener answering the advertised port):
 
 * ``impersonator`` echoes every query parameter it was sent plus its OWN ``websocket_url`` carrying a
-  canary token (a rogue process that took over the port). KNOWN: the handshake only compares the reply
-  with what the client just sent, so the echo is accepted (#120604).
+  canary token (a rogue process that took over the port). It must not prove ownership by echoing
+  the challenge (#120604).
 * ``foreign_owner`` replies with a lease id that is not the registry's (another runtime answering on
   the port). Must be refused today and under any fix.
 * control ``test_genuine_owner_is_attached``: the lease holder itself serves the endpoint and answers with
@@ -28,9 +28,9 @@ Scenarios (the listener answering the advertised port):
 Why the owner side is a test process: no shipped Hermes runtime advertises ``shared_runtime_url`` or
 serves ``/api/session-attach`` yet (``hermes serve`` and the dashboard do not register one), so the
 closest real owner is a process holding the real lease that answers from its own lease knowledge. It
-speaks both the current dialect (``lease_id`` in the reply) and the proof dialect of the candidate fix
-(``attach_proof`` = HMAC-SHA256 keyed by the lease over the client's nonce), so the control holds on main
-and under that fix.
+speaks the proof contract: ``attach_proof`` is HMAC-SHA256 keyed by the private lease over a versioned
+JSON tuple of session, nonce, profile and socket URL. This certifies the consumer boundary, not a
+distributed product owner endpoint (none exists yet).
 """
 
 from __future__ import annotations
@@ -47,7 +47,6 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from tests.e2e.core._pending_fixes import known_gate
 from tests.e2e.core.security._helpers import (
     BoundaryBreach,
     canary,
@@ -59,15 +58,10 @@ from tests.e2e.core.security._helpers import (
 )
 
 pytestmark = [
-    pytest.mark.skipif(sys.platform == "win32", reason="process groups + POSIX loopback listeners"),
+    pytest.mark.platforms("posix"),
     pytest.mark.skipif(shutil.which("node") is None, reason="the TUI hand-off needs node on PATH"),
 ]
 
-KNOWN: dict[str, tuple[str, str]] = {
-    "impersonator": (r"^impersonator: TUI was attached to the rogue listener's socket: "
-                     r"ws://127\.0\.0\.1:\d+/api/ws\?token=stolen-ws-token-",
-                     "#120604 attach handshake accepts an echoing loopback listener"),
-}
 SCENARIOS = ["impersonator", "foreign_owner"]
 
 # The lease holder: creates the session, takes the real lease advertising ``argv[2]`` (or its own
@@ -98,14 +92,18 @@ class Owner(BaseHTTPRequestHandler):
             self.end_headers()
             return
         q = {k: v[0] for k, v in parse_qs(parts.query).items()}
+        assert "lease_id" not in q, "the caller must not disclose proof material"
         lease_id = state["lease"].lease_id
         port = self.server.server_port
-        reply = {"session_id": sid, "lease_id": lease_id, "profile_home": home,
+        reply = {"session_id": sid, "profile_home": home,
                  "websocket_url": f"ws://127.0.0.1:{port}/api/ws?token={token}"}
         if "nonce" in q:
             reply["nonce"] = q["nonce"]
-            msg = f"hermes-session-attach:{sid}:{q['nonce']}".encode()
+            msg = json.dumps(["hermes-session-attach-v1", sid, q["nonce"], home,
+                              reply["websocket_url"]], ensure_ascii=False,
+                             separators=(",", ":")).encode()
             reply["attach_proof"] = hmac.new(lease_id.encode(), msg, hashlib.sha256).hexdigest()
+        assert "lease_id" not in reply
         body = json.dumps(reply).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -278,11 +276,10 @@ def test_rogue_listener_is_not_attached(home: Path, scenario: str) -> None:
 
     gateway = (handoff or {}).get("gateway_url") or ""
     leaked = [name for name, text in (("stdout", result.stdout), ("stderr", result.stderr)) if stolen in text]
-    with known_gate(KNOWN, scenario, raises=BoundaryBreach):
-        if stolen in gateway or gateway.startswith(listener.origin.replace("http:", "ws:")):
-            raise BoundaryBreach(f"{scenario}: TUI was attached to the rogue listener's socket: {gateway}")
-        if leaked:
-            raise BoundaryBreach(f"{scenario}: the rogue listener's token was echoed to {leaked}")
+    if stolen in gateway or gateway.startswith(listener.origin.replace("http:", "ws:")):
+        raise BoundaryBreach(f"{scenario}: TUI was attached to the rogue listener's socket: {gateway}")
+    if leaked:
+        raise BoundaryBreach(f"{scenario}: the rogue listener's token was echoed to {leaked}")
 
 
 def test_genuine_owner_is_attached(home: Path) -> None:

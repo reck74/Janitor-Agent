@@ -161,3 +161,50 @@ async def test_marker_missing_but_booted_from_restart_ignores_redelivery(tmp_pat
     assert runner._booted_from_restart is False
 
 
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("platform_name", ["slack", "discord"])
+@pytest.mark.parametrize("changed", [None, "message_id", "chat_id", "scope_id", "profile", "user_id", "thread_id"])
+async def test_restart_identity_survives_new_process_without_crossing_conversations(
+    tmp_path, monkeypatch, platform_name, changed,
+):
+    """#121325: exact replay is ignored, while new messages and other scopes still work."""
+    import dataclasses
+    from gateway.config import Platform
+    from gateway.session import SessionSource
+
+    monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+    source = SessionSource(
+        platform=Platform(platform_name), chat_id="room", user_id="owner",
+        scope_id="workspace", profile="personal", thread_id="thread",
+    )
+    event = MessageEvent(text="/restart", source=source, message_type=MessageType.TEXT, message_id="msg")
+    old, _ = make_restart_runner()
+    old.request_restart = MagicMock(return_value=True)
+    await old._handle_restart_command(event)
+    old.request_restart.assert_called_once()
+
+    fresh, _ = make_restart_runner()
+    fresh.request_restart = MagicMock(return_value=True)
+    fresh._booted_from_restart = True
+    if changed == "message_id":
+        event = dataclasses.replace(event, message_id="other")
+    elif changed:
+        event = dataclasses.replace(event, source=dataclasses.replace(source, **{changed: "other"}))
+    await fresh._handle_restart_command(event)
+    assert fresh.request_restart.call_count == (0 if changed is None else 1)
+
+
+@pytest.mark.parametrize("marker", [None, {}, [], {"message_identity": {}}, "broken"])
+def test_unidentified_restart_marker_cannot_suppress_fresh_commands(tmp_path, marker):
+    from gateway.config import Platform
+    from gateway.session import SessionSource
+    from gateway.restart_dedup import is_recorded_restart
+
+    path = tmp_path / "marker.json"
+    if marker is not None:
+        path.write_text(marker if isinstance(marker, str) else json.dumps(marker))
+    event = MessageEvent(text="/restart", source=SessionSource(platform=Platform.SLACK, chat_id="room"),
+                         message_type=MessageType.TEXT, message_id="msg")
+    assert not is_recorded_restart(event, path, now=time.time(), booted_from_restart=True)

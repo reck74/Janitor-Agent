@@ -6,6 +6,7 @@ test patches on ``update_cmd`` stay effective).
 """
 
 import logging
+import shutil
 from contextlib import nullcontext, suppress
 import subprocess
 import sys
@@ -545,7 +546,9 @@ def _probe_fork_bomb(argv: list) -> Optional[bool]:
         result = run_git(argv, ["--version"], timeout=15, **_GIT_TEXT_KW)
     except Exception:
         return None
-    return "fork bomb" in ((result.stdout or "") + (result.stderr or "")).lower()
+    if "fork bomb" in ((result.stdout or "") + (result.stderr or "")).lower():
+        return True
+    return False if result.returncode == 0 else None
 
 
 def _git_is_trampoline(git_cmd: list) -> bool:
@@ -590,6 +593,13 @@ def _locate_real_git() -> Optional[Path]:
         for base in (r"C:\Program Files", r"C:\Program Files (x86)")
         for arch in ("clangarm64", "mingw64", "mingw32")
     ] + _portable_git_candidates()
+    # A healthy PATH installation may use a different layout. Keep direct
+    # binaries first, but do not abandon a usable Git merely because its
+    # git-core directory differs. The same probe rejects broken trampolines
+    # and inconclusive failures, so this never blindly retries the bad shim.
+    path_git = shutil.which("git")
+    if path_git:
+        candidates.append(Path(path_git))
     return next((c for c in candidates if c.exists() and _probe_fork_bomb([str(c)]) is False), None)
 
 

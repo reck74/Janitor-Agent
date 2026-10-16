@@ -238,3 +238,13 @@ class TestAdapterWireShape:
         v1 = decl("https://generativelanguage.googleapis.com/v1")
         assert "parametersJsonSchema" not in v1
         assert v1["parameters"]["properties"]["g"]["anyOf"]  # legacy translator still applied
+
+
+def test_legacy_parameters_inline_refs_before_filtering():
+    original = {"type": "object", "$defs": {"Choice": {"type": "string", "enum": ["a", "b"]}},
+                "properties": {"choice": {"$ref": "#/$defs/Choice"}, "values": {"type": "array"}}}
+    before = copy.deepcopy(original)
+    result = sanitize_gemini_tool_parameters(original)
+    assert result["properties"]["choice"] == {"type": "string", "enum": ["a", "b"]}
+    assert result["properties"]["values"]["items"] == {}
+    assert original == before

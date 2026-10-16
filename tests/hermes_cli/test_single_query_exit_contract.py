@@ -107,3 +107,13 @@ def test_quiet_kanban_worker_exits_tempfail_when_credentials_are_rate_limited(mo
     with pytest.raises(SystemExit) as exc:
         cli._run_single_query_mode(stub, "do the thing", None, True, True)
     assert exc.value.code == expected
+
+
+@pytest.mark.parametrize('response, expected_stderr', [('partial answer', True), ('Provider said: terminal failure', False), ('', True)])
+def test_quiet_failure_keeps_partial_text_without_duplicate_error(capsys, response, expected_stderr):
+    from hermes_cli.cli_single_query import _print_quiet_result
+    _print_quiet_result(response, {'failed': True, 'error': 'terminal failure'})
+    out = capsys.readouterr()
+    assert out.out == (response + '\n' if response else '')
+    assert ('terminal failure' in out.err) is expected_stderr
+    assert (out.out + out.err).count('terminal failure') == 1

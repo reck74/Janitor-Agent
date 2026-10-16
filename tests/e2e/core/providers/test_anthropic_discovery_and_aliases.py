@@ -38,10 +38,7 @@ class AliasNotReverseMapped(AssertionError):
 
 # Red on main for a tracked, open bug: key -> (the bug's own failure-message pattern, reason). Each
 # gate accepts only its dedicated exception, so harness failures in a KNOWN cell stay failures.
-KNOWN: dict[str, tuple[str, str]] = {
-    "alias_describe": (r"tool_describe did not resolve the advertised alias: .*not_found.*chat_history_lookup",
-                       "#120858 wire alias chat_history_lookup not reverse-mapped in tool_describe args"),
-}
+KNOWN: dict[str, tuple[str, str]] = {}
 RELAY_ONLY_MODEL = "claude-e2e-relay-only-7"
 OAUTH_TOKEN = "sk-ant-oat01-e2e-fake-oauth-token"
 

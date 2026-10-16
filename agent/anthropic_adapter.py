@@ -590,6 +590,9 @@ def _apply_claude_code_identity(system, anthropic_tools, anthropic_messages, to_
     content filters), tool/description aliasing, and the same tool renames on replayed tool_use
     blocks so history matches ``tools[]``. Returns the new ``system``; tools and messages are
     mutated in place."""
+    from agent.anthropic_discovery_aliases import map_discovery_history
+    map_discovery_history(anthropic_messages, lambda name: to_wire(name).removeprefix(_MCP_TOOL_PREFIX)
+                          if name in _OAUTH_TOOL_NAME_ALIASES else name)
     cc_block = {"type": "text", "text": _CLAUDE_CODE_SYSTEM_PREFIX}
     if isinstance(system, str) and system:
         system = [{"type": "text", "text": system}]

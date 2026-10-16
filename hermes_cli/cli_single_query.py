@@ -196,6 +196,15 @@ def _single_query_exit_code(result, *, credentials_rate_limited: bool = False,
     return 1
 
 
+def _print_quiet_result(response, result):
+    """Keep partial output and report a terminal error exactly once."""
+    if response:
+        print(response)
+    if (isinstance(result, dict) and result.get("error") and (result.get("failed") or result.get("partial"))
+            and str(result["error"]) not in str(response or "")):
+        print(t("gateway.model.error_prefix", error=result["error"]), file=sys.stderr)
+
+
 def _run_quiet_single_query(cli, effective_query, emitter=None):
     """Quiet (-Q) one-shot turn: run, print the response (stderr for errors/session_id), then sys.exit with the automation exit code.
     With a ``StreamJsonEmitter`` the final answer and the exit line become the terminal ``result`` JSONL record instead.
@@ -302,17 +311,10 @@ def _run_quiet_single_query(cli, effective_query, emitter=None):
                 # A teammate's reply displaced the answer this run prints; tell the spawner.
                 _report_turn(result)
         response = result.get("final_response", "") if isinstance(result, dict) else str(result)
-    # Surface backend errors that produced no visible output (e.g. invalid model slug
-    # -> provider 4xx) on stderr so piped stdout stays clean.
-    if emitter is not None:
-        pass  # the result record below carries text/error; nothing else may touch stdout
-    elif (
-        not response and isinstance(result, dict) and result.get("error")
-        and (result.get("failed") or result.get("partial"))
-    ):
-        print(t("gateway.model.error_prefix", error=result["error"]), file=sys.stderr)
-    elif response:
-        print(response)
+    # A failed turn may still contain valid partial text. Preserve that stdout
+    # and report its failure on stderr; structured emitters own both fields.
+    if emitter is None:
+        _print_quiet_result(response, result)
 
     # ONE exit-code decision point for this driver, shared with the non-quiet one-shot
     # path via _single_query_exit_code: a quota/billing wall keeps the EX_TEMPFAIL

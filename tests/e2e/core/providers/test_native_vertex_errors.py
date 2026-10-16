@@ -34,13 +34,7 @@ from tests.fakes.providers.vertex import (
     hermes_setup,
 )
 
-_API_KEY_BLAME = (r"Vertex auth failure blamed on an API key",
-                  "#121295 Vertex 401/403 are reported as 'rejected your API key' (Vertex has no API "
-                  "key; the fix is the service account / IAM role)")
-KNOWN: dict[str, tuple[str, str]] = {
-    "guidance:permission_denied": _API_KEY_BLAME,
-    "guidance:unauthenticated": _API_KEY_BLAME,
-}
+KNOWN: dict[str, tuple[str, str]] = {}
 
 QUOTA_MSG = ("Resource exhausted. Please try again later. Please refer to "
              "https://cloud.google.com/vertex-ai/generative-ai/docs/error-code-429 for more details.")

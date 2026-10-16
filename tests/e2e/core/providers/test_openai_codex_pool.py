@@ -44,11 +44,7 @@ from tests.fakes.providers.openai_responses import FakeResponsesServer, Message,
 
 pytestmark = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="subprocess harness is Linux-gated")
 
-KNOWN: dict[str, tuple[str, str]] = {
-    "independent_login_survives": (
-        r"login A was quarantined by B's invalid_grant: live pool is ",
-        "#120741 terminal refresh failure on one pooled login quarantines an independent login"),
-}
+KNOWN: dict[str, tuple[str, str]] = {}
 
 
 TOKEN_URL = "https://auth.openai.com/oauth/token"

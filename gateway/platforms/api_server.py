@@ -499,23 +499,23 @@ def _normalize_image_part(part: dict[str, Any]) -> dict[str, Any]:
 
 
 def _normalize_multimodal_content(content: Any) -> Any:
-    """Validate multimodal content: a plain string when text-only, else canonical ``text`` /
-    ``image_url`` parts (native OpenAI vision shape; Anthropic conversion happens downstream).
+    """Normalize text/images losslessly within the HTTP request-body bound.
 
-    Raises ``ValueError("<code>:<message>")`` with codes ``unsupported_content_type`` (file
-    parts, non-image data URLs, unknown types), ``invalid_image_url``, ``invalid_content_part``.
+    Invalid/excessive parts raise ``ValueError("<code>:<message>")``; prompts are never cut.
     """
     if content is None:
         return ""
     if isinstance(content, str):
-        return _cap_text(content)
+        return content
     if not isinstance(content, list):
         return _normalize_chat_content(content)
+    if len(content) > MAX_CONTENT_LIST_SIZE:
+        raise ValueError("content_too_large:Too many content parts")
     normalized_parts: list[dict[str, Any]] = []
-    for part in _cap_list(content):
+    for part in content:
         if isinstance(part, str):
             if part:
-                normalized_parts.append({"type": "text", "text": _cap_text(part)})
+                normalized_parts.append({"type": "text", "text": part})
             continue
         if not isinstance(part, dict):
             continue  # unknown scalars are ignored for forward compatibility (e.g. ``refusal``)
@@ -524,7 +524,7 @@ def _normalize_multimodal_content(content: Any) -> Any:
         if part_type in _TEXT_PART_TYPES:
             text = part.get("text")
             if text is not None and str(text):
-                normalized_parts.append({"type": "text", "text": _cap_text(str(text))})
+                normalized_parts.append({"type": "text", "text": str(text)})
         elif part_type in _IMAGE_PART_TYPES:
             normalized_parts.append(_normalize_image_part(part))
         elif part_type in _FILE_PART_TYPES:

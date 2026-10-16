@@ -56,11 +56,7 @@ pytestmark = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="su
 
 # Scenario -> (pattern, "#issue one-line symptom") for scenarios red on origin/main: a
 # KnownBugError from bug_assertions() matching the pattern XFAILs the cell (known_gate).
-KNOWN: dict[str, tuple[str, str]] = {
-    "soft_failure_recovers_on_primary": (
-        r"(?s)fallback engaged instead of replay recovery: .*stdout='FROM-FALLBACK",
-        "#120399 HTTP-200 invalid_encrypted_content skips replay-strip recovery"),
-}
+KNOWN: dict[str, tuple[str, str]] = {}
 
 
 def _encs(body: dict) -> list:

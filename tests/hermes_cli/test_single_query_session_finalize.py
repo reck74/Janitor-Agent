@@ -262,3 +262,19 @@ def test_quiet_single_query_main_finalizes_while_preserving_exit_code(monkeypatc
     assert ("claim", "cli", True) in calls
     assert ("run", "hello", []) in calls
     assert calls[-1] == ("finalize", "quiet-session")
+
+
+def test_native_transport_closes_only_after_settlement_and_background_drain(monkeypatch):
+    calls = []
+    transport = SimpleNamespace(close=lambda: calls.append('transport'))
+    agent = SimpleNamespace(_codex_session=transport)
+    owner = SimpleNamespace(agent=agent, _release_active_session=lambda: calls.append('release'))
+    for name, label in [('_flush_one_shot_session_store', 'flush'),
+                        ('_notify_single_query_session_finalize', 'finalize'),
+                        ('_shutdown_agent_memory_provider', 'memory'),
+                        ('_wait_for_oneshot_background_completions', 'drain'),
+                        ('_run_cleanup', 'cleanup')]:
+        monkeypatch.setattr(cli, name, lambda *args, _label=label, **kwargs: calls.append(_label))
+    cli._finalize_single_query(owner)
+    assert calls == ['flush', 'finalize', 'memory', 'release', 'drain', 'transport', 'cleanup']
+    assert agent._codex_session is None

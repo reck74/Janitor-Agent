@@ -45,8 +45,8 @@ class ApiCallVerdict:
 
 def _should_stream(agent: Any) -> bool:
     """Streaming is preferred even without consumers (stale-stream / read-timeout health
-    checks); disabled on provider signal, ACP providers (``acp://`` scheme or an
-    external-process provider profile), MoA without a display consumer, or Mock clients in
+    checks); disabled on provider signal, ACP providers without incremental
+    streaming support, MoA without a display consumer, or Mock clients in
     tests (SimpleNamespace, not stream iterators)."""
     if getattr(agent, "_disable_streaming", False):
         return False
@@ -54,7 +54,8 @@ def _should_stream(agent: Any) -> bool:
     from hermes_cli.runtime_provider_backends import _is_external_process_provider
 
     if _base.startswith(("acp://", "acp+tcp://")) or _is_external_process_provider(agent.provider):
-        return False
+        if getattr(getattr(agent, "client", None), "supports_incremental_streaming", False) is not True:
+            return False
     if not agent._has_stream_consumers():
         if agent.provider == "moa":
             return False

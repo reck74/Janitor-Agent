@@ -664,12 +664,14 @@ def _part_function_call(part: dict[str, Any]) -> Optional[dict[str, Any]]:
 
 def translate_gemini_response(resp: dict[str, Any], model: str) -> SimpleNamespace:
     candidates = resp.get("candidates") or []
-    cand = parts = None
+    blocked = (resp.get("promptFeedback") or {}).get("blockReason")
+    cand = {"finishReason": "SAFETY"} if blocked else None
+    parts = None
     if isinstance(candidates, list) and candidates:
         cand = candidates[0] if isinstance(candidates[0], dict) else {}
         content_obj = cand.get("content")
         parts = content_obj.get("parts") if isinstance(content_obj, dict) else []
-    pieces: dict[bool, list[str]] = {False: [], True: []}  # is_thought → text pieces
+    pieces: dict[bool, list[str]] = {False: ["The prompt was blocked by Google."] if blocked else [], True: []}
     tool_calls: list[SimpleNamespace] = []
     text_signature = None
     for index, part in enumerate(parts or []):
@@ -773,6 +775,8 @@ def _tool_call_slot(fc: dict[str, Any], part: dict[str, Any], part_index: int, a
 def translate_stream_event(event: dict[str, Any], model: str, tool_call_indices: dict[str, dict[str, Any]]) -> list[_GeminiStreamChunk]:
     candidates = event.get("candidates") or []
     if not candidates:
+        if (event.get("promptFeedback") or {}).get("blockReason"):
+            return [_make_stream_chunk(model=model, content="The prompt was blocked by Google.", finish_reason="content_filter")]
         return []
     cand = candidates[0] if isinstance(candidates[0], dict) else {}
     parts = (cand.get("content") or {}).get("parts") or []

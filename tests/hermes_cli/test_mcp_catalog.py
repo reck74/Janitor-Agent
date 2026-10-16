@@ -1023,3 +1023,35 @@ class TestShippedCatalog:
                     )
 
         assert not problems, "unpinned catalog entries:\n" + "\n".join(problems)
+
+
+def test_noninteractive_credentials_use_supplied_or_default_values_without_prompt(monkeypatch):
+    import hermes_cli.mcp_catalog as mc
+
+    def no_prompt(*args, **kwargs):
+        pytest.fail("noninteractive catalog installation read stdin")
+
+    monkeypatch.setattr(mc, "_prompt_input", no_prompt)
+    specs = [mc.EnvVarSpec("DEMO_TOKEN", "Token"),
+             mc.EnvVarSpec("DEMO_REGION", "Region", secret=False, default="local")]
+    assert mc._prompt_env_vars(specs, {"DEMO_TOKEN": "fixture-token"}, interactive=False) == {
+        "DEMO_TOKEN": "fixture-token", "DEMO_REGION": "local"}
+    with pytest.raises(mc.CatalogError, match="DEMO_TOKEN is required"):
+        mc._prompt_env_vars(specs, interactive=False)
+
+
+@pytest.mark.parametrize("prior", [None, [], ["second"]])
+def test_noninteractive_tty_install_keeps_prior_selection(catalog_dir, monkeypatch, prior):
+    import sys
+    import hermes_cli.mcp_catalog as mc
+    from hermes_cli.mcp_config import _save_mcp_server
+
+    _write_manifest(catalog_dir, "demo", _basic_manifest("demo", tools={"default_enabled": ["first"]}))
+    if prior is not None:
+        assert _save_mcp_server("demo", {"command": "npx", "args": ["-y", "demo-mcp"],
+                                         "tools": {"include": prior}})
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(mc, "_probe_tools", lambda name: [("first", "A"), ("second", "B")])
+    monkeypatch.setattr("hermes_cli.curses_ui.curses_checklist", lambda *a, **k: pytest.fail("unexpected checklist"))
+    mc.install_entry(_entry("demo"), interactive=False)
+    assert mc.installed_servers()["demo"]["tools"]["include"] == (prior if prior is not None else ["first"])

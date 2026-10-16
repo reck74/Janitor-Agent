@@ -221,6 +221,11 @@ _NONRETRYABLE_DEFAULT_COPY = (
 )
 _AUTH_COPY: dict[str, str] = {
     "oauth": "{label} rejected your sign-in, so the model can't be reached. Sign in again: `{relogin}`.",
+    "vertex": (
+        "{label} rejected the Google Cloud credentials or permissions. Check the service account "
+        "or Application Default Credentials, the configured project, and its Vertex AI IAM permissions. "
+        "Verify VERTEX_CREDENTIALS_PATH or GOOGLE_APPLICATION_CREDENTIALS if configured."
+    ),
     "api_key": (
         "{label} rejected your API key, so the model can't be reached. Update it in "
         "Settings → Providers, or run `hermes setup` in a terminal."
@@ -400,6 +405,8 @@ def oauth_relogin_command(provider: Any) -> str:
     from hermes_constants import profile_cli_selector
 
     slug = str(provider or "").strip().lower()
+    if slug == "copilot-acp":
+        return "copilot login"
     if slug == "nous":
         return f"hermes {profile_cli_selector()}portal"
     return f"hermes {profile_cli_selector()}auth add {slug} --type oauth"
@@ -430,7 +437,8 @@ def nonretryable_copy(
     if getattr(classified, "is_auth", False):
         from agent.error_surface import auth_kind
 
-        template = _AUTH_COPY[auth_kind(str(provider or ""))]
+        slug = str(provider or "").strip().lower()
+        template = _AUTH_COPY["vertex" if slug == "vertex" else auth_kind(slug)]
     else:
         template = _NONRETRYABLE_COPY.get(classified.reason.value, _NONRETRYABLE_DEFAULT_COPY)
     prefix_hint = (

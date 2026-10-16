@@ -54,8 +54,10 @@ from gateway.platforms.event import MessageEvent, MessageType, ProcessingOutcome
 
 try:  # sibling module; support both package and flat plugin-dir import
     from .block_kit import render_blocks, sanitize_blocks
+    from .stream_text import continuation_offset, stream_relation
 except ImportError:  # pragma: no cover - plugin loaded outside package context
     from block_kit import render_blocks, sanitize_blocks  # type: ignore
+    from stream_text import continuation_offset, stream_relation  # type: ignore
 
 
 logger = logging.getLogger(__name__)
@@ -2524,7 +2526,7 @@ class SlackAdapter(BasePlatformAdapter):
                     "[Slack] Native draft stream %s expired (message_not_in_streaming_state); "
                     "reopening a fresh stream for chat %s", stream["ts"], chat_id)
                 return await self._start_stream(
-                    client, stream_key, draft_id, text, metadata, base=len(sent))
+                    client, stream_key, draft_id, text, metadata, base=continuation_offset(text, sent))
             stream["sent"] = text
             return SendResult(success=True, message_id=stream["ts"])
         except Exception as e:  # pragma: no cover - network/API errors
@@ -2598,28 +2600,6 @@ class SlackAdapter(BasePlatformAdapter):
         that only restyled the streamed answer (``*Done:*`` → ``_Done:_``) still matches it."""
         return " ".join(re.sub(r"[*_~]", "", text).split())
 
-    @staticmethod
-    def _stream_relation(sent: str, text: str) -> tuple[str, str]:
-        """Classify turn-final ``text`` against the streamed ``sent``: ``("equal", "")`` — the
-        streamed message already shows the whole final; ``("extends", delta)`` — the final
-        continues it, ``delta`` being the exact raw tail still to append; ``("unrelated", "")`` —
-        not this stream's final (interim commentary, a rewritten answer, an empty stream).
-
-        The agent strips its final response and appends footers with ``rstrip()``, so the final
-        may differ from the streamed frames by surrounding whitespace only. The delta is sliced
-        from the RAW ``text`` where the streamed core ends — never from a normalized copy — so
-        nothing inside the answer (blank lines, fences, tables) is dropped or repeated."""
-        core = sent.strip()
-        if not core:
-            return "unrelated", ""
-        if text.startswith(sent):
-            delta = text[len(sent):]
-            return ("extends" if delta else "equal"), delta
-        lead = len(text) - len(text.lstrip())
-        if text[lead:].startswith(core):
-            delta = text[lead + len(core):]
-            return ("extends" if delta.strip() else "equal"), delta
-        return "unrelated", ""
 
     async def _seal_stream(
         self, key: tuple[str, str, str], stream: dict[str, Any], delta: Optional[str] = None
@@ -2660,7 +2640,7 @@ class SlackAdapter(BasePlatformAdapter):
             return None
         text = self._strip_stream_cursor(content)
         sent = stream.get("sent", "")
-        kind, delta = self._stream_relation(sent, text)
+        kind, delta = stream_relation(sent, text)
         if kind == "unrelated":
             # A turn-final that only restyled the streamed answer (mrkdwn conversion turned
             # ``*Done:*`` into ``_Done:_``) replaces it in place so the thread holds ONE answer.

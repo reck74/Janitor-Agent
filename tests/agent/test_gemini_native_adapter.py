@@ -977,3 +977,17 @@ def test_long_decode_continues_across_hops_and_reports_first_hop_prompt(monkeypa
     assert [c.choices[0].finish_reason for c in finishes] == ["stop"]  # CONTINUATION is not the end
     assert "".join(c.choices[0].delta.content or "" for c in chunks) == "part one part two"
     assert (finishes[0].usage.prompt_tokens, finishes[0].usage.initial_prompt_tokens) == (32968, 100)
+
+
+def test_prompt_feedback_block_is_terminal_with_and_without_streaming():
+    from agent.gemini_native_adapter import translate_gemini_response, translate_stream_event
+
+    event = {"promptFeedback": {"blockReason": "SAFETY"}}
+    response = translate_gemini_response(event, "gemini-test")
+    assert response.choices[0].finish_reason == "content_filter"
+    assert "blocked" in response.choices[0].message.content
+    chunks = translate_stream_event(event, "gemini-test", {})
+    assert len(chunks) == 1
+    assert chunks[0].choices[0].finish_reason == "content_filter"
+    assert "blocked" in chunks[0].choices[0].delta.content
+    assert translate_stream_event({"usageMetadata": {}}, "gemini-test", {}) == []

@@ -20,6 +20,8 @@ def _unprefix_oauth_tool_name(name: str) -> str:
     for candidate in (name, "mcp_" + bare, bare):
         if _tool_registry.get_entry(candidate):
             return candidate
+    if bare in {"tool_search", "tool_describe", "tool_call"}:
+        return bare  # bridge tools are dispatched outside the registry
     return _OAUTH_TOOL_NAME_REVERSE_ALIASES.get(bare, name)
 
 
@@ -89,7 +91,12 @@ class AnthropicTransport(ProviderTransport):
                 name = block.name
                 if strip_tool_prefix and name.startswith(_MCP_PREFIX):
                     name = _unprefix_oauth_tool_name(name)
-                tool_calls.append(ToolCall(id=block.id, name=name, arguments=json.dumps(block.input)))
+                arguments = block.input
+                if strip_tool_prefix:
+                    from agent.anthropic_discovery_aliases import map_discovery_arguments
+                    arguments = map_discovery_arguments(name, arguments, lambda value:
+                        _unprefix_oauth_tool_name(value if value.startswith(_MCP_PREFIX) else _MCP_PREFIX + value))
+                tool_calls.append(ToolCall(id=block.id, name=name, arguments=json.dumps(arguments)))
         provider_data = {"reasoning_details": reasoning_details} if reasoning_details else {}
         stop_details = _to_plain_data(getattr(response, "stop_details", None))
         if stop_details is not None:

@@ -54,6 +54,8 @@ from typing import Any, Iterable
 
 import pytest
 
+from tests.e2e.core.windows_update._owned_directory import OwnedDirectory
+
 from tests.e2e.core.windows._helpers import (
     _PASSTHROUGH_ENV,
     _SECRET_SUFFIXES,
@@ -156,6 +158,7 @@ class Machine:
     _seq: int = 0
     _spawned: list[subprocess.Popen] = field(default_factory=list)
     _lock_depth: int = 0
+    _owned_dirs: list[OwnedDirectory] = field(default_factory=list)
     timings: list[tuple[str, float]] = field(default_factory=list)
 
     # -- layout ---------------------------------------------------------------
@@ -218,7 +221,8 @@ class Machine:
 
     def stage(self) -> None:
         """serve.git at HEAD (+ NEXT in its object store), the URL redirect, a seeded home."""
-        self.root.mkdir(parents=True, exist_ok=True)
+        self._owned_dirs.append(OwnedDirectory.create(self.root))
+        self._owned_dirs.append(OwnedDirectory.create(self.profile))
         self.head = harness_git("-C", str(REPO_ROOT), "rev-parse", "HEAD")
         harness_git("clone", "--bare", "--quiet", str(REPO_ROOT), str(self.serve))
         harness_git("-C", str(self.serve), "update-ref", "refs/heads/main", self.head)
@@ -499,6 +503,7 @@ class Machine:
         """Receipts, logs and the process table: what a failure message must carry."""
         parts = [f"machine root: {self.root}", f"profile: {self.profile}", f"HEAD={self.head} NEXT={self.next}",
                  f"installed checkout: {self.installed_head()}", f"timings (s): {self.timings}"]
+        parts.append(f"disk usage: {shutil.disk_usage(self.root)}")
         receipt = self.hermes_home / "logs" / "update_receipts" / "latest.json"
         if receipt.is_file():
             parts.append(self._tail(receipt, 4000))
@@ -530,7 +535,9 @@ class Machine:
             pass
         artifacts = os.environ.get("HERMES_E2E_ARTIFACTS")
         if artifacts:
-            dest = Path(artifacts) / self.root.name
+            dest = (Path(artifacts) / self.root.name).resolve()
+            if any(dest.is_relative_to(owned.path) for owned in self._owned_dirs):
+                raise ValueError('Evidence destination must be outside disposable fixture directories')
             shutil.copytree(self.logs, dest / "transcripts", dirs_exist_ok=True)
             for sub in ("logs",):
                 src = self.hermes_home / sub
@@ -539,6 +546,12 @@ class Machine:
                                     ignore=shutil.ignore_patterns("*.db", "*.db-*"))
             (dest / "evidence.txt").write_text(self.evidence(), encoding="utf-8", errors="replace")
             (dest / "timings.json").write_text(json.dumps(self.timings, indent=1), encoding="utf-8")
+            # Keep local fixtures when no evidence destination was configured. In CI,
+            # release only directories this instance created exclusively, after export.
+            if self.owned_processes():
+                raise RuntimeError('Fixture processes remain; refusing directory cleanup')
+            for owned in reversed(self._owned_dirs):
+                owned.remove()
 
 
 def new_machine(tmp_root: Path, base_url: str, *, label: str, person: str = "",

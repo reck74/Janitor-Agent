@@ -1,11 +1,14 @@
 """Local owner discovery must fence profile and lease identity."""
 
+import hashlib
+import hmac
 import json
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
+from urllib.parse import parse_qs, urlsplit
 
 from hermes_cli.active_sessions import try_acquire_active_session
 
@@ -17,11 +20,29 @@ def test_discovery_uses_exact_profile_and_owner_handshake(tmp_path):
     other = tmp_path / "other"
     reply = {}
     requests = []
+    proof_mode = []
+    proofs = []
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             requests.append(self.path)
-            payload = json.dumps(reply).encode()
+            query = parse_qs(urlsplit(self.path).query)
+            body = {**reply, "nonce": query["nonce"][0]}
+            message = json.dumps(
+                ["hermes-session-attach-v1", "same-id", body["nonce"], str(home.resolve()),
+                 reply["websocket_url"]], ensure_ascii=False, separators=(",", ":"),
+            ).encode()
+            body["attach_proof"] = hmac.new(lease.lease_id.encode(), message, hashlib.sha256).hexdigest()
+            proofs.append(body["attach_proof"])
+            if proof_mode:
+                if proof_mode[0] == "missing":
+                    body.pop("attach_proof")
+                elif proof_mode[0] == "replay":
+                    body["attach_proof"] = proofs[0]
+                elif proof_mode[0] == "tamper":
+                    body["websocket_url"] += "-changed"
+            assert "lease_id" not in body
+            payload = json.dumps(body).encode()
             self.send_response(200)
             self.end_headers()
             self.wfile.write(payload)
@@ -38,7 +59,7 @@ def test_discovery_uses_exact_profile_and_owner_handshake(tmp_path):
         metadata={"live_session_id": "live", "shared_runtime_url": origin},
     )
     assert error is None
-    reply.update(session_id="same-id", lease_id=lease.lease_id,
+    reply.update(session_id="same-id",
                  profile_home=str(home.resolve()), websocket_url=origin.replace("http:", "ws:") + "/api/ws?token=real-token")
     try:
         assert discover_attach_url("same-id", registry_home=other) is None
@@ -49,6 +70,14 @@ def test_discovery_uses_exact_profile_and_owner_handshake(tmp_path):
         env = {"HERMES_TUI_GATEWAY_URL": "   "}
         configure_tui_attachment(env, "same-id", registry_home=home)
         assert env["HERMES_TUI_GATEWAY_URL"] == reply["websocket_url"]
+        queries = [parse_qs(urlsplit(path).query) for path in requests]
+        assert all("lease_id" not in q for q in queries)
+        assert queries[0]["nonce"] != queries[1]["nonce"]
+        for mode in ("missing", "replay", "tamper"):
+            proof_mode[:] = [mode]
+            with pytest.raises(ValueError, match="prove session ownership"):
+                discover_attach_url("same-id", registry_home=home)
+        proof_mode.clear()
         reply["profile_home"] = str(other.resolve())
         with pytest.raises(ValueError, match="identity"):
             discover_attach_url("same-id", registry_home=home)

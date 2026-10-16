@@ -1397,7 +1397,12 @@ def _status_of(exc: Any) -> Optional[int]:
     if isinstance(code, int):
         return code
     code = getattr(exc, "status", None)  # some SDKs use .status
-    return code if isinstance(code, int) and 100 <= code < 600 else None
+    if isinstance(code, int) and 100 <= code < 600:
+        return code
+    response = getattr(exc, "response", None)  # botocore ClientError
+    metadata = response.get("ResponseMetadata") if isinstance(response, dict) else None
+    code = metadata.get("HTTPStatusCode") if isinstance(metadata, dict) else None
+    return code if isinstance(code, int) and not isinstance(code, bool) and 400 <= code < 600 else None
 
 
 def _body_of(exc: Any) -> Optional[dict]:

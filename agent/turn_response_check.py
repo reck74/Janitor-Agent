@@ -272,6 +272,10 @@ def retry_invalid_response(
     # pool-recoverable reasons FIRST (a healthy sibling account beats burning cross-provider
     # fallback); content-policy and other failures keep the fallback/retry path (#24159).
     _soft, _soft_ctx = classify_codex_soft_failure(agent, response)
+    if _soft is not None and _soft.reason == FailoverReason.invalid_encrypted_content:
+        from agent.turn_recovery_codex import _recover_stale_codex_reasoning
+        if _recover_stale_codex_reasoning(agent, _retry, messages, api_messages):
+            return _verdict("continue")
     if _soft is not None and (_soft.reason in (FailoverReason.rate_limit, FailoverReason.billing) or _soft.is_auth):
         _recovered, _retry.has_retried_429 = agent._recover_with_credential_pool(
             status_code=None, has_retried_429=_retry.has_retried_429, classified_reason=_soft.reason,

@@ -364,4 +364,11 @@ def _finalize_single_query(cli) -> None:
         _wait_for_oneshot_background_completions(cli)
     except Exception:
         logger.debug("one-shot background completion wait failed", exc_info=True)
+    # Native sessions own subprocess trees. Retire them after the final turn,
+    # durable settlement and background completion drain, before CLI exit.
+    # Closing this transport does not mutate the session after lease release.
+    from agent.codex_runtime import _close_codex_session
+    agent = getattr(cli, "agent", None) or cli_module._active_agent_ref
+    if agent is not None and getattr(agent, "_codex_session", None) is not None:
+        _close_codex_session(agent)
     _run_cleanup(notify_session_finalize=False)

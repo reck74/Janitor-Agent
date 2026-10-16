@@ -5,6 +5,8 @@ import sqlite3
 import time
 from typing import Any, Optional
 
+MAX_DECOMPOSE_CHILDREN = 64
+
 def inherit_creator_origin(
     conn: sqlite3.Connection, task_id: str, creator_task_id: Optional[str], *,
     created_at: int,
@@ -54,6 +56,8 @@ def initial_task_state(
 def _validate_children_graph(children: list) -> None:
     """DB-free shape check + Kahn's cycle check on the sibling graph (a cycle
     would deadlock every involved child in ``todo`` forever)."""
+    if len(children) > MAX_DECOMPOSE_CHILDREN:
+        raise ValueError(f"decomposition exceeds {MAX_DECOMPOSE_CHILDREN} children")
     for idx, child in enumerate(children):
         if not isinstance(child, dict):
             raise ValueError(f"child[{idx}] is not a dict")

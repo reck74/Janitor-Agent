@@ -735,7 +735,11 @@ def run_codex_scenario(root: Path, turns: list[dict], runs: list[dict], *, confi
     for run in runs:
         results.append(run_chat(home, run["prompt"], args=tuple(run.get("args", ())), resume=session_id,
                                 timeout=run.get("timeout", 120)))
-        session_id = latest_session(home)
+        try:
+            session_id = latest_session(home)
+        except AssertionError as exc:
+            from agent.redact import redact_for_egress
+            raise AssertionError(f"{exc}\n{redact_for_egress(results[-1].describe())}") from exc
         if run.get("then"):
             fake.set_scenario(**run["then"])
     assert session_id is not None

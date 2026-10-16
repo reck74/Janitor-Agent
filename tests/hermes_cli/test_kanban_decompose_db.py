@@ -92,3 +92,14 @@ def test_decompose_records_audit_comment_and_event(kanban_home):
 
 
 
+
+
+def test_oversized_fanout_is_rejected_without_partial_children(kanban_home):
+    from hermes_cli.kanban_db_graph import MAX_DECOMPOSE_CHILDREN
+    with kbc.connect_closing() as conn:
+        tid = _create_triage(conn)
+        children = [{"title": f"child {i}"} for i in range(MAX_DECOMPOSE_CHILDREN + 1)]
+        with pytest.raises(ValueError, match="exceeds"):
+            decompose_triage_task(conn, tid, root_assignee="default", children=children)
+        assert kb.get_task(conn, tid).status == "triage"
+        assert conn.execute("SELECT count(*) FROM tasks").fetchone()[0] == 1

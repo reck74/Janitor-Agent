@@ -24,12 +24,11 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from tests.e2e.core._pending_fixes import known_gate
 from tests.e2e.core.kanban._helpers import Board, pid_alive, wait_until
 from tests.fakes.fake_llm_provider import FakeLLMServer, Hang, Text, ToolCall
 
 pytestmark = [
-    pytest.mark.skipif(not sys.platform.startswith("linux"), reason="SIGKILL + /proc liveness"),
+    pytest.mark.platforms("linux"),
     # Workers are grandchildren (spawned by the dispatcher child, then reparented); the only
     # signals sent are SIGKILLs to PIDs this module read from its own scratch board.
     pytest.mark.live_system_guard_bypass,
@@ -41,23 +40,11 @@ TICK = ("--failure-limit", "5")
 ATTEMPT_ONE_PROSE = "ATTEMPT_ONE_PROSE the card could not be finished in this run."
 ATTEMPT_TWO_MARK = "ATTEMPT_TWO_MARK heartbeat sent, about to call the provider again."
 
-# Open tracked bugs, test name -> (pattern, reason) for ``known_gate`` (matches ``KnownGap`` only).
 # Delete an entry once its fix lands.
-KNOWN: dict[str, tuple[str, str]] = {
-    "test_fresh_claim_does_not_inherit_previous_heartbeat": (
-        r"fresh run \d+ \(started \d+\) carries last_heartbeat_at=\d+, attempt 2's value",
-        "#119155 a fresh claim keeps the previous run's last_heartbeat_at"),
-    "test_sigkilled_attempt_is_booked_as_a_crash_of_its_own": (
-        r"SIGKILLed attempt booked as \w+ .*'exit_code': 0\b",
-        "#121255 a SIGKILLed worker is booked with the previous attempt's rc=0 trailer"),
-    "test_crash_diagnostic_comes_from_the_crashed_attempt": (
-        r"attempt 2's crash diagnostic quotes attempt 1: ",
-        "#119618 crash diagnostic carries an older attempt's output"),
-}
 
 
 class KnownGap(AssertionError):
-    """The tracked bug's own assertion, the only type ``known_gate`` accepts; any harness failure
+    """The tracked bug's own assertion; any harness failure
     stays red."""
 
 
@@ -173,11 +160,10 @@ def test_fresh_claim_does_not_inherit_previous_heartbeat(scenario: Scenario) -> 
     assert run["outcome"] is None and run["status"] == "running", sc.board.diag(sc.tid)
     assert sc.after_claim["current_run_id"] == run["id"]
     hb = sc.after_claim["last_heartbeat_at"]
-    with known_gate(KNOWN, "test_fresh_claim_does_not_inherit_previous_heartbeat", raises=KnownGap):
-        if hb is not None and int(hb) < int(run["started_at"]):
-            raise KnownGap(
-                f"fresh run {run['id']} (started {run['started_at']}) carries last_heartbeat_at={hb}, "
-                f"attempt 2's value {sc.hb_before_kill}")
+    if hb is not None and int(hb) < int(run["started_at"]):
+        raise KnownGap(
+            f"fresh run {run['id']} (started {run['started_at']}) carries last_heartbeat_at={hb}, "
+            f"attempt 2's value {sc.hb_before_kill}")
 
 
 def test_sigkilled_attempt_is_booked_as_a_crash_of_its_own(scenario: Scenario) -> None:
@@ -188,9 +174,8 @@ def test_sigkilled_attempt_is_booked_as_a_crash_of_its_own(scenario: Scenario) -
     booked = [(k, p) for k, p in kinds if k in ("crashed", "protocol_violation", "rate_limited")]
     assert len(booked) == 1, kinds
     kind, payload = booked[0]
-    with known_gate(KNOWN, "test_sigkilled_attempt_is_booked_as_a_crash_of_its_own", raises=KnownGap):
-        if kind != "crashed" or (payload or {}).get("exit_code") == 0:
-            raise KnownGap(f"SIGKILLed attempt booked as {kind} {payload}")
+    if kind != "crashed" or (payload or {}).get("exit_code") == 0:
+        raise KnownGap(f"SIGKILLed attempt booked as {kind} {payload}")
 
 
 def test_crash_diagnostic_comes_from_the_crashed_attempt(scenario: Scenario) -> None:
@@ -198,6 +183,5 @@ def test_crash_diagnostic_comes_from_the_crashed_attempt(scenario: Scenario) -> 
     run1, run2 = _run_of_attempt(sc, 1), _run_of_attempt(sc, 2)
     # Vacuity guard: attempt 1's own diagnostic does carry its prose.
     assert "ATTEMPT_ONE_PROSE" in (run1["error"] or ""), run1
-    with known_gate(KNOWN, "test_crash_diagnostic_comes_from_the_crashed_attempt", raises=KnownGap):
-        if "ATTEMPT_ONE_PROSE" in (run2["error"] or ""):
-            raise KnownGap(f"attempt 2's crash diagnostic quotes attempt 1: {run2['error'][-300:]!r}")
+    if "ATTEMPT_ONE_PROSE" in (run2["error"] or ""):
+        raise KnownGap(f"attempt 2's crash diagnostic quotes attempt 1: {run2['error'][-300:]!r}")

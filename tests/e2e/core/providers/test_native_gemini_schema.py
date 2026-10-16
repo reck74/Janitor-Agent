@@ -27,12 +27,7 @@ from tests.e2e.core._pending_fixes import known_gate
 from tests.e2e.core.providers import _native_helpers as nh
 from tests.fakes.providers.gemini_native import HERMES_ENV, Call, Calls, GeminiFake, Recorded, Text, hermes_model
 
-KNOWN: dict[str, tuple[str, str]] = {
-    "ref_dropped_v1": (r"\$ref-typed parameter lost its shape on the v1 wire",
-                       "#99438 legacy `parameters` path drops $ref/$defs instead of inlining (empty schema)"),
-    "array_items_v1": (r"Google rejected the item-less array: .*items: missing field",
-                       "#71804 array parameter without `items` is sent as-is; Google 400s 'items: missing field'"),
-}
+KNOWN: dict[str, tuple[str, str]] = {}
 
 TOOL = "mcp__hostile__lookup"
 MCP_CANARY = "GEMINI-MCP-CANARY-7731"

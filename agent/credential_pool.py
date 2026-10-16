@@ -1187,15 +1187,15 @@ class CredentialPool(CredentialPoolAdminMixin, CredentialPoolModelCooldownMixin)
         return updated
 
     def _quarantine_sources(self, entry: PooledCredential, sources: set[str]) -> None:
-        """Drop every entry seeded from *sources* and persist the removal.
+        """Drop only rows of this rejected grant seeded from *sources*.
 
         Atomic read-modify-write of ``self._entries``: this runs on the
-        DEFERRED refresh path (outside the pool lock), so take the RLock here;
-        still-locked callers re-enter safely.
+        DEFERRED refresh takes the RLock; still-locked callers re-enter safely.
         """
         with self._lock:
-            removed_ids = [item.id for item in self._entries if item.source in sources]
-            self._entries = [item for item in self._entries if item.source not in sources]
+            removed_ids = [item.id for item in self._entries if item.source in sources and (item.id == entry.id
+                           or bool(entry.refresh_token) and item.refresh_token == entry.refresh_token)]
+            self._entries = [item for item in self._entries if item.id not in removed_ids]
             if self._current_id == entry.id:
                 self._current_id = None
             self._persist(removed_ids=removed_ids)

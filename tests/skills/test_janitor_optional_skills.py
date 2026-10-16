@@ -347,6 +347,13 @@ def _require_absolute_mktemp_template(binary):
     wrapper.chmod(0o755)
 
 
+def _stubbed_shell_command(shell, binary, script, *args):
+    # Set fixture precedence after the native shell has initialized its PATH.
+    # Native cd also converts Windows drive paths into the shell path syntax.
+    return [shell, '-c', 'export PATH="$(cd "$1" && pwd):$PATH"; shift; source "$0"',
+            script.as_posix(), binary.as_posix(), *args]
+
+
 @pytest.mark.parametrize('response', ['healthy', 'http-error', 'network-error'])
 def test_waha_health_uses_private_scratch_and_cleans_after_every_outcome(tmp_path, response, janitor_bash):
     binary = tmp_path / 'bin'
@@ -371,7 +378,7 @@ if os.environ['CURL_RESPONSE'] == 'network-error':
 print('500' if os.environ['CURL_RESPONSE'] == 'http-error' else '200', end='')
 ''')
     curl.chmod(0o755)
-    result = subprocess.run([janitor_bash, (ROOT / 'skills/janitor-waha/scripts/deploy.sh').as_posix()],
+    result = subprocess.run(_stubbed_shell_command(janitor_bash, binary, ROOT / 'skills/janitor-waha/scripts/deploy.sh'),
         env=dict(os.environ, PATH=binary.as_posix() + os.pathsep + os.environ['PATH'],
                  HERMES_HOME=(tmp_path / 'profile').as_posix(), TMPDIR=scratch.as_posix(),
                  JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON=Path(shutil.which('true')).as_posix(),
@@ -418,7 +425,7 @@ else:
         stub = binary / name
         stub.write_text('#!/bin/sh\nexit 0\n', encoding='utf-8', newline='\n')
         stub.chmod(0o755)
-    result = subprocess.run([janitor_bash, (ROOT / 'skills/janitor-waha/scripts/pair-waha.sh').as_posix(), '--qr'],
+    result = subprocess.run(_stubbed_shell_command(janitor_bash, binary, ROOT / 'skills/janitor-waha/scripts/pair-waha.sh', '--qr'),
         env=dict(os.environ, PATH=binary.as_posix() + os.pathsep + os.environ['PATH'],
                  HERMES_HOME=profile.as_posix(), TMPDIR=scratch.as_posix(), WAHA_QR_OUTPUT='',
                  JANITOR_SERVICE_ENV='1', JANITOR_SERVICE_PYTHON=Path(sys.executable).as_posix(),

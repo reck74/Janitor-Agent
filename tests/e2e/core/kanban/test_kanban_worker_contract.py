@@ -19,22 +19,14 @@ from pathlib import Path
 
 import pytest
 
-from tests.e2e.core._pending_fixes import known_gate
 from tests.e2e.core.kanban._helpers import Board, wait_until
 from tests.fakes.fake_llm_provider import FakeLLMServer, Text, ToolCall
 
 pytestmark = [
-    pytest.mark.skipif(not sys.platform.startswith("linux"), reason="/proc worker liveness"),
+    pytest.mark.platforms("linux"),
     pytest.mark.live_system_guard_bypass,  # teardown SIGKILLs this board's reparented workers
 ]
 
-KNOWN: dict[str, tuple[str, str]] = {
-    "outside": (r"card done with its declared outside-workspace artifact never attached",
-                "#120647 kanban_complete artifact outside the workspace is silently never attached"),
-    "test_worker_with_unresolvable_pinned_skill_still_starts_its_session": (
-        r"worker died before its session \(exits=",
-        "#119619 dispatcher-owned worker with a stale --skill pin exits rc=1 before its session"),
-}
 
 _TASK_RE = re.compile(r"work kanban task (t_[0-9a-f]+)")
 _EXIT_RE = re.compile(r"\[kanban-worker-exit\] rc=(-?\d+)")
@@ -43,7 +35,7 @@ SKILL_MARK = "E2E_PINNED_SKILL_BODY_7f3a"
 
 
 class KnownGap(AssertionError):
-    """The tracked bug's own assertion, the only type ``known_gate`` accepts; any harness failure
+    """The tracked bug's own assertion; any harness failure
     stays red."""
 
 
@@ -99,10 +91,9 @@ def test_declared_artifact_is_attached_or_reported(tmp_path, where: str) -> None
             status = board.task(tid)["status"]
             attached = board._q("SELECT * FROM task_attachments WHERE task_id = ?", (tid,))
             stored = [Path(a["stored_path"]) for a in attached]
-            with known_gate(KNOWN, where, raises=KnownGap):
-                if status == "done" and not attached:
-                    raise KnownGap(f"card done with its declared {where}-workspace artifact never attached\n"
-                                   f"{board.diag(tid)}")
+            if status == "done" and not attached:
+                raise KnownGap(f"card done with its declared {where}-workspace artifact never attached\n"
+                               f"{board.diag(tid)}")
             assert status == "done" or where == "outside", board.diag(tid)
             if status != "done":
                 _assert_visible_refusal(board, srv, tid, _artifact_location(board, tid, where))
@@ -176,10 +167,8 @@ def test_worker_with_unresolvable_pinned_skill_still_starts_its_session(tmp_path
             exits = [int(rc) for rc in _EXIT_RE.findall(log)]
             # The bug's own signature: no model call at all, and the worker died of the stale pin
             # (nonzero exit trailer, or its log names the missing skill). Anything else stays red.
-            with known_gate(KNOWN, "test_worker_with_unresolvable_pinned_skill_still_starts_its_session",
-                            raises=KnownGap):
-                if not srv.main_requests() and ((exits and exits[-1] != 0) or "e2e-archived" in log):
-                    raise KnownGap(f"worker died before its session (exits={exits}); board:\n{board.diag(tid)}")
+            if not srv.main_requests() and ((exits and exits[-1] != 0) or "e2e-archived" in log):
+                raise KnownGap(f"worker died before its session (exits={exits}); board:\n{board.diag(tid)}")
             assert SKILL_MARK not in str(srv.main_requests()[0]["messages"]), "removed skill still loaded"
             assert board.task(tid)["status"] == "done", board.diag(tid)
         finally:

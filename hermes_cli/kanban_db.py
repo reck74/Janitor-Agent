@@ -2160,7 +2160,7 @@ def _claim_and_open_run(
            SET status        = 'running',
                claim_lock    = ?,
                claim_expires = ?,
-               started_at    = COALESCE(started_at, ?)
+               started_at    = COALESCE(started_at, ?), last_heartbeat_at = NULL
          WHERE id = ?
            AND status = '{source_status}'
            AND claim_lock IS NULL
@@ -2975,8 +2975,8 @@ def _persist_scratch_completion_artifacts(
             continue
 
         if not resolved_src.is_relative_to(workspace_root):
-            persisted.append(artifact)
-            continue
+            _discard_copies()
+            raise ArtifactPreservationError(f"declared artifact is outside the scratch workspace: {artifact}")
 
         problem = None
         if not src.is_file():

@@ -24,13 +24,13 @@ from types import SimpleNamespace
 from typing import Any
 
 from agent.acp_openai_bridge import (
-    completion_to_stream_chunks as _completion_to_stream_chunks,
     extract_tool_calls_from_text as _extract_tool_calls_from_text,
     render_tool_bridge_sections as _render_tool_bridge_sections,
 )
 from agent.file_safety import (
     get_nt_namespace_error, get_read_block_error, get_write_denied_error, is_write_approval_required)
 from agent.redact import redact_sensitive_text
+from agent.memory_provider import spawn_context_thread
 from tools.environments.local import hermes_subprocess_env
 
 ACP_MARKER_BASE_URL = "acp://copilot"
@@ -283,6 +283,7 @@ class CopilotACPClient:
     # already a complete client (never re-dispatch through a wire adapter) and async-safe as-is.
     HERMES_SKIP_TRANSPORT_WRAP = True
     HERMES_SKIP_ASYNC_WRAP = True
+    supports_incremental_streaming = True
 
     def __init__(
         self, *, api_key: str | None = None, base_url: str | None = None, default_headers: dict[str, str] | None = None,
@@ -331,10 +332,17 @@ class CopilotACPClient:
 
     def _create_chat_completion(
         self, *, model: str | None = None, messages: list[dict[str, Any]] | None = None, timeout: float | None = None,
-        tools: list[dict[str, Any]] | None = None, tool_choice: Any = None, stream: bool = False, **_: Any,
+        tools: list[dict[str, Any]] | None = None, tool_choice: Any = None, stream: bool = False,
+        _on_update=None, _cancelled=None, **_: Any,
     ) -> Any:
+        if stream:
+            from agent.copilot_acp_stream import stream_completion
+            return stream_completion(lambda callback, cancelled: self._create_chat_completion(
+                model=model, messages=messages, timeout=timeout, tools=tools, tool_choice=tool_choice,
+                _on_update=callback, _cancelled=cancelled))
         prompt_text = _format_messages_as_prompt(messages or [], model=model, tools=tools, tool_choice=tool_choice)
-        response_text, reasoning = self._run_prompt(prompt_text, timeout_seconds=_effective_timeout(timeout), model=model)
+        kwargs = {"on_update": _on_update, "cancelled": _cancelled} if _on_update is not None else {}
+        response_text, reasoning = self._run_prompt(prompt_text, timeout_seconds=_effective_timeout(timeout), model=model, **kwargs)
         tool_calls, cleaned_text = _extract_tool_calls_from_text(response_text)
         message = SimpleNamespace(
             content=cleaned_text, tool_calls=tool_calls, reasoning=reasoning or None, reasoning_content=reasoning or None,
@@ -345,7 +353,7 @@ class CopilotACPClient:
             usage=SimpleNamespace(prompt_tokens=0, completion_tokens=0, total_tokens=0, prompt_tokens_details=SimpleNamespace(cached_tokens=0)),
             model=model or "copilot-acp",
         )
-        return _completion_to_stream_chunks(completion) if stream else completion
+        return completion
 
     def _spawn(self) -> subprocess.Popen[str]:
         # Fast-fail when the CLI rejects --acp (else the parent waits the full child timeout for stdout that
@@ -381,7 +389,7 @@ class CopilotACPClient:
 
     @contextlib.contextmanager
     def _session(
-        self, timeout_seconds: float, *, allow_file_requests: bool = True
+        self, timeout_seconds: float, *, allow_file_requests: bool = True, cancelled=None
     ) -> Iterator[tuple[dict[str, Any], Callable[..., Any]]]:
         """Start one ACP process and yield its ``session/new`` result plus request callable."""
         proc = self._spawn()
@@ -394,13 +402,20 @@ class CopilotACPClient:
             except Exception:
                 return {"raw": line.rstrip("\n")}
 
-        def _pump(stream, sink) -> None:
-            for line in stream or ():
-                sink(line)
+        eof = object()
 
-        threading.Thread(target=_pump, args=(proc.stdout, lambda line: inbox.put(_decode(line))), daemon=True).start()
-        stderr_pump = threading.Thread(
-            target=_pump, args=(proc.stderr, lambda line: stderr_tail.append(line.rstrip("\n"))), daemon=True)
+        def _pump(stream, sink, finished=None) -> None:
+            try:
+                for line in stream or ():
+                    sink(line)
+            finally:
+                if finished is not None:
+                    sink(finished)
+
+        spawn_context_thread(_pump, name="copilot-acp-stdout",
+                             args=(proc.stdout, lambda line: inbox.put(eof if line is eof else _decode(line)), eof)).start()
+        stderr_pump = spawn_context_thread(
+            _pump, name="copilot-acp-stderr", args=(proc.stderr, lambda line: stderr_tail.append(line.rstrip("\n"))))
         stderr_pump.start()
         request_ids = iter(range(1, 1 << 62))
         # One budget for the WHOLE session (initialize + session/new + any prompt), not per
@@ -414,10 +429,14 @@ class CopilotACPClient:
             proc.stdin.flush()
             deadline = session_deadline
             while time.monotonic() < deadline and proc.poll() is None:
+                if cancelled is not None and cancelled.is_set():
+                    raise RuntimeError("Copilot ACP request cancelled")
                 try:
                     msg = inbox.get(timeout=0.1)
                 except queue.Empty:
                     continue
+                if msg is eof:
+                    break
                 if self._handle_server_message(
                     msg, process=proc, cwd=self._acp_cwd, text_parts=text_parts,
                     reasoning_parts=reasoning_parts, allow_file_requests=allow_file_requests,
@@ -426,7 +445,25 @@ class CopilotACPClient:
                 if "error" in msg:
                     err = msg.get("error") or {}
                     raise RuntimeError(f"Copilot ACP {method} failed: {err.get('message') or err}")
-                return msg.get("result")
+                result = msg.get("result")
+                if method == "session/prompt":
+                    # This client owns one turn per process. EOF requests a graceful
+                    # shutdown; drain notifications the server queued after its result.
+                    proc.stdin.close()
+                    drain_until = min(deadline, time.monotonic() + 1.0)
+                    while time.monotonic() < drain_until:
+                        if cancelled is not None and cancelled.is_set():
+                            break
+                        try:
+                            trailing = inbox.get(timeout=min(0.1, max(0.001, drain_until - time.monotonic())))
+                        except queue.Empty:
+                            continue
+                        if trailing is eof:
+                            break
+                        self._handle_server_message(trailing, process=proc, cwd=self._acp_cwd,
+                                                    text_parts=text_parts, reasoning_parts=reasoning_parts,
+                                                    allow_file_requests=False)
+                return result
             if proc.poll() is not None:
                 # The pump can still hold the crash text when poll() first sees the exit; reading
                 # it too early turned a dead CLI into a TimeoutError, which retries differently.
@@ -451,11 +488,12 @@ class CopilotACPClient:
         with self._session(timeout_seconds, allow_file_requests=False) as (session, _):
             return _session_model_ids(session)
 
-    def _run_prompt(self, prompt_text: str, *, timeout_seconds: float, model: str | None = None) -> tuple[str, str]:
+    def _run_prompt(self, prompt_text: str, *, timeout_seconds: float, model: str | None = None,
+                    on_update=None, cancelled=None) -> tuple[str, str]:
         # The CLI's `--model` spawn flag is deliberately NOT used: `copilot --acp` validates it (unknown id
         # aborts the spawn) but ignores it for the session; the model is applied after session/new instead.
         requested_model = str(model or "").strip()
-        with self._session(timeout_seconds) as (session, _request):
+        with self._session(timeout_seconds, cancelled=cancelled) as (session, _request):
             session_id = str(session.get("sessionId") or "").strip()
             if requested_model and requested_model != "copilot-acp":
                 try:
@@ -465,8 +503,18 @@ class CopilotACPClient:
                         logger.warning("Copilot ACP does not offer model %r; using the session default.", requested_model)
                 except Exception as exc:
                     logger.warning("Copilot ACP model selection for %r failed; continuing with the session default: %s", requested_model, exc)
-            text_parts: list[str] = []
-            reasoning_parts: list[str] = []
+            class Parts(list):
+                def __init__(self, kind):
+                    super().__init__()
+                    self.kind = kind
+
+                def append(self, chunk):
+                    super().append(chunk)
+                    if on_update is not None:
+                        on_update(self.kind, chunk)
+
+            text_parts = Parts("text")
+            reasoning_parts = Parts("reasoning")
             prompt = {"sessionId": session_id, "prompt": [{"type": "text", "text": prompt_text}]}
             _request("session/prompt", prompt, text_parts=text_parts, reasoning_parts=reasoning_parts)
             return "".join(text_parts), "".join(reasoning_parts)
@@ -487,7 +535,7 @@ class CopilotACPClient:
             if chunk_text and (sink := sinks.get(str(update.get("sessionUpdate") or "").strip())) is not None:
                 sink.append(chunk_text)
             return True
-        if process.stdin is None:
+        if process.stdin is None or process.stdin.closed:
             return True
         message_id = msg.get("id")
         if method == "session/request_permission":

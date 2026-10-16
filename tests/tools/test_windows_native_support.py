@@ -692,26 +692,22 @@ class TestCronSchedulerBashResolution:
         script = tmp_path / "job.sh"
         script.write_text("echo hi\n", encoding="utf-8")
         found = str(tmp_path / "git" / "bin" / "bash.exe")
-        monkeypatch.setattr(scheduler_script.shutil, "which",
-                            lambda name: found if name == "bash" else None)
+        monkeypatch.setattr("pm.shell.bash", lambda: found)
 
         argv, _overlay, error = scheduler_script._script_argv(script)
 
         assert error is None
-        assert argv == [found, str(script)]
+        assert argv == [found, script.as_posix()]
 
     def test_missing_bash_returns_actionable_error(self, tmp_path, monkeypatch):
         from cron import scheduler_script
 
         script = tmp_path / "job.sh"
         script.write_text("echo hi\n", encoding="utf-8")
-        real_isfile = os.path.isfile
-        monkeypatch.setattr(scheduler_script.shutil, "which", lambda name: None)
-        monkeypatch.setattr(scheduler_script.os.path, "isfile",
-                            lambda p: False if p == "/bin/bash" else real_isfile(p))
+        monkeypatch.setattr("pm.shell.bash", lambda: None)
 
         argv, _overlay, error = scheduler_script._script_argv(script)
 
         assert argv is None
-        assert "bash not found" in error
+        assert "no usable bash found" in error
         assert "job.sh" in error

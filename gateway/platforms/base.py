@@ -613,9 +613,9 @@ get_image_cache_dir, cleanup_image_cache = _cache_dir_accessors(
 
 def _looks_like_image(data: bytes) -> bool:
     """Return True if *data* starts with a known image magic-byte sequence."""
-    return len(data) >= 4 and (data[:8] == b"\x89PNG\r\n\x1a\n" or data[:3] == b"\xff\xd8\xff"
-               or data[:6] in {b"GIF87a", b"GIF89a"} or data[:2] == b"BM"
-               or (data[:4] == b"RIFF" and len(data) >= 12 and data[8:12] == b"WEBP"))
+    from agent.image_routing import _sniff_mime_from_bytes
+    # Reuse routing's raster support (HEIC/AVIF); active SVG content stays excluded.
+    return len(data) >= 4 and _sniff_mime_from_bytes(data) not in {None, "image/svg+xml"}
 
 
 def _secure_media_cache_dir(cache_dir: Path) -> None:

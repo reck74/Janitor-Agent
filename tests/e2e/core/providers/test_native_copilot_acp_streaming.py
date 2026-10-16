@@ -12,8 +12,8 @@ Two real surfaces, each timestamped against the fake's own clock (same host):
 * ACP composition — Hermes itself served as an ACP agent (``hermes acp``) on top of the copilot-acp
   provider: the outer client must get ``session/update`` chunks before the inner turn ends (#101507).
 
-Both are red on main (the ACP client buffers the whole response, then replays it as a stream), so
-both are ``known_gate`` cells that XFAIL only on :class:`KnownSymptom` for "no progress before the result".
+Both surfaces must deliver progress before the result; buffering the whole response
+and replaying it afterwards is a regression.
 """
 
 from __future__ import annotations
@@ -33,14 +33,13 @@ from typing import Any, Callable
 
 import pytest
 
-from tests.e2e.core._pending_fixes import known_gate
 from tests.e2e.core.providers._native_helpers import TURN_TIMEOUT, KnownSymptom, NativeHome, make_home
 from tests.fakes.providers import copilot_acp as acp
 
 pytest.importorskip("acp.schema", reason="the fake validates against the agent-client-protocol package (acp extra)")
 
 pytestmark = [
-    pytest.mark.skipif(not sys.platform.startswith("linux"), reason="POSIX launcher script + /proc pid checks"),
+    pytest.mark.platforms("linux"),
     pytest.mark.live_system_guard_bypass,
 ]
 
@@ -50,13 +49,6 @@ MIN_SPAN_S = THOUGHT_STEPS * STEP_S * 0.75  # vacuity: the agent really spent se
 MARKERS = (HEAD.strip(), THOUGHT, ANSWER)
 
 
-# Red on current main for a tracked, open bug: key -> (the bug's own failure-message pattern, reason).
-KNOWN: dict[str, tuple[str, str]] = {
-    "tui_stream": (r"^tui_stream: no agent chunk reached the surface during the [\d.]+s turn",
-                   "#120550 copilot-acp buffers the whole turn: no reasoning/message delta reaches the UI in flight"),
-    "nested_acp": (r"^nested_acp: no agent chunk reached the surface during the [\d.]+s turn",
-                   "#101507 hermes acp over copilot-acp forwards inner ACP chunks only after the inner turn ends"),
-}
 
 
 def _deep_turn() -> list[dict[str, Any]]:
@@ -223,11 +215,10 @@ def test_long_reasoning_turn_streams_progress_before_it_completes(observed, surf
     first, done = _agent_timeline(obs.fake)
     assert done - first >= MIN_SPAN_S, f"vacuity: the agent streamed for only {done - first:.2f}s"
     seen_at = _first_marker_arrival(obs.received)
-    with known_gate(KNOWN, surface, raises=KnownSymptom):
-        if seen_at is None or seen_at >= done - 0.3:
-            late = [round(t - done, 2) for t, m in obs.received if _chunk_text(m)]
-            raise KnownSymptom(f"{surface}: no agent chunk reached the surface during the {done - first:.1f}s turn; "
-                               f"chunk arrivals relative to the result: {late}")
+    if seen_at is None or seen_at >= done - 0.3:
+        late = [round(t - done, 2) for t, m in obs.received if _chunk_text(m)]
+        raise KnownSymptom(f"{surface}: no agent chunk reached the surface during the {done - first:.1f}s turn; "
+                           f"chunk arrivals relative to the result: {late}")
     assert seen_at >= first, "a chunk cannot arrive before the agent sent it"
 
 

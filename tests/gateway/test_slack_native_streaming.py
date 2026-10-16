@@ -193,11 +193,11 @@ class TestSendDraft:
         assert result.success
         assert result.message_id == "124.000"
         kwargs = client.chat_startStream.await_args.kwargs
-        assert kwargs["markdown_text"] == "rld!"  # sealed message already shows "Hello wo"
+        assert kwargs["markdown_text"] == "world!"  # new messages begin at a whole word (#124219)
         (reopened,) = _open_streams(adapter)  # same per-thread key, dead ts replaced
         assert reopened["ts"] == "124.000"
         assert reopened["sent"] == "Hello world!"  # full segment: deltas diff against it
-        assert reopened["base"] == len("Hello wo")
+        assert reopened["base"] == len("Hello ")
         assert kwargs["thread_ts"] == META["thread_id"]
         assert adapter._native_stream_unsupported is False  # not the feature-gate path
 

@@ -44,11 +44,7 @@ pytestmark = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="su
 
 # Scenario -> (pattern, "#issue one-line symptom") for scenarios red on origin/main: a
 # KnownBugError from bug_assertions() matching the pattern XFAILs the cell (known_gate).
-KNOWN: dict[str, tuple[str, str]] = {
-    "unreachable_portal_falls_back": (
-        r"(?s)fallback_providers never consulted: .*agent failed: \[Errno 111\] Connection refused",
-        "#120608 transport error during credential resolution skips fallback_providers"),
-}
+KNOWN: dict[str, tuple[str, str]] = {}
 
 FALLBACK_MODEL = "fallback-model"
 PROMPT = "CANARY-PROMPT say hello"

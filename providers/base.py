@@ -200,6 +200,14 @@ class ProviderProfile:
         """
         return messages
 
+    def prepare_api_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Project final SDK kwargs onto a provider wire format without mutating inputs.
+
+        Runs after cache identity is derived from the canonical tools/messages.
+        Vertex uses this to preserve JSON Schema through its native tool override.
+        """
+        return kwargs
+
     def build_extra_body(
         self, *, session_id: str | None = None, **context: Any
     ) -> dict[str, Any]:

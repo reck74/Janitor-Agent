@@ -25,10 +25,8 @@ import pytest
 
 pytest.importorskip("google.auth", reason="Vertex minting needs google-auth (CI installs it)")
 
-from tests.e2e.core._pending_fixes import known_gate
 from tests.e2e.core.providers._native_helpers import (
     ChatResult,
-    KnownSymptom,
     NativeHome,
     latest_session,
     make_home,
@@ -46,13 +44,6 @@ from tests.fakes.providers.vertex import (
     hermes_setup,
     signatures_on_wire,
 )
-
-# key -> (symptom pattern, "#issue reason"), gated at run time by ``known_gate``.
-KNOWN: dict[str, tuple[str, str]] = {
-    "default_toolset": (r"Vertex rejected the tool declarations: .*schema type should be ARRAY",
-                        "#109115 terminal.notify anyOf[boolean, array] is rejected by Vertex's FunctionDeclaration "
-                        "translator, so every default-toolset turn 400s"),
-}
 
 SECRET_1 = "PINEAPPLE-42"
 SECRET_2 = "MANGO-77"
@@ -242,8 +233,32 @@ def test_default_toolset_schemas_accepted_by_vertex(results: dict[str, Any]) -> 
     res = results["default_toolset"]
     fake = res["fake"]
     require(fake.requests and fake.requests[0]["auth"].startswith("Bearer ya29."), "turn never reached Vertex")
-    schema_rejects = [r["rejected"] for r in fake.rejected() if "schema type should be ARRAY" in (r["rejected"] or "")]
-    with known_gate(KNOWN, "default_toolset", raises=KnownSymptom):
-        if schema_rejects:
-            raise KnownSymptom(f"Vertex rejected the tool declarations: {schema_rejects[0]}")
+    assert not fake.rejected(), f"Vertex rejected declarations: {_rejections(fake)}"
     assert "Default toolset answer." in res["turn"].stdout, res["turn"].describe()
+
+
+def test_native_declarations_survive_every_signed_turn(results: dict[str, Any]) -> None:
+    """The native route retains tools across calls, token refresh, and resume.
+
+    This exercises our SDK/CLI against a contract emulator, not live Google.
+    """
+    from jsonschema import Draft202012Validator
+
+    for scenario in ("session", "refresh", "default_toolset"):
+        requests = results[scenario]["fake"].main_requests()
+        assert requests
+        for request in requests:
+            body = request["body"]
+            assert "tools" not in body
+            google = body["extra_body"]["google"]
+            declarations = [d for tool in google["tools"] for d in tool.get("functionDeclarations", [])]
+            names = [d["name"] for d in declarations]
+            assert len(names) == len(set(names))
+            assert "read_file" in names
+            if scenario == "default_toolset":
+                terminal = next(d for d in declarations if d["name"] == "terminal")
+                notify = terminal["parametersJsonSchema"]["properties"]["notify"]
+                validator = Draft202012Validator(notify)
+                assert validator.is_valid(True)
+                assert validator.is_valid(["ready"])
+                assert not validator.is_valid([42])

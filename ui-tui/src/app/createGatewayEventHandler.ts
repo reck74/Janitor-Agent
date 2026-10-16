@@ -749,6 +749,9 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       return
     }
 
+    // An explicit /resume or session selection during startup wins over automatic setup.
+    if (ctx.session.hasSessionSelection?.()) {return}
+
     if (STARTUP_RESUME_ID) {
       patchUiState({ status: t('session.status.resuming') })
       resumeById(STARTUP_RESUME_ID)
@@ -765,6 +768,8 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     // users aren't surprised.  (Shares the memoized full-config read.)
     getFullConfigOnce()
       .then(cfg => {
+        if (ctx.session.hasSessionSelection?.()) {return}
+
         if (!cfg?.config?.display?.tui_auto_resume_recent) {
           patchUiState({ status: t('gatewayMsg.status.forgingSession') })
           newSession()
@@ -774,6 +779,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         }
 
         return rpc<SessionMostRecentResponse>('session.most_recent', {}).then(r => {
+          if (ctx.session.hasSessionSelection?.()) {return}
           const target = r?.session_id
 
           if (target) {
@@ -790,6 +796,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         })
       })
       .catch(() => {
+        if (ctx.session.hasSessionSelection?.()) {return}
         patchUiState({ status: t('gatewayMsg.status.forgingSession') })
         newSession()
         scheduleStartupPrompt()

@@ -52,6 +52,8 @@ class CodexEventProjector:
         item = (notification.get("params", {}) or {}).get("item") or {}
         item_type = item.get("type") or ""
         item_id = item.get("id") or ""
+        if item_type == "contextCompaction":
+            return ProjectionResult()  # Accounting event, never assistant conversation text.
         if item_type == "agentMessage":
             return self._project_agent_message(item)
         if item_type == "reasoning":

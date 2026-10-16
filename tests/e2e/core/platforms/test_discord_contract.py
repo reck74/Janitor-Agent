@@ -22,9 +22,6 @@ pytestmark = [
 ]
 
 KNOWN: dict[str, tuple[str, str]] = {
-    "planned_restart_notice": (
-        r"a redelivered /restart restarted the gateway again|a second restart ack means the replayed /restart was obeyed",
-        "#121325 a replayed /restart restarts the gateway again (guard needs Telegram update ids)"),
 }
 SKIP: dict[str, str] = {
     "heic_as_image": "image attachments are fetched by URL behind the SSRF guard, which refuses the loopback "

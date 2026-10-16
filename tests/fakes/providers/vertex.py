@@ -325,6 +325,48 @@ def _check_tools(tools: Any) -> str | None:
     return None
 
 
+def _check_native_tools(body: dict[str, Any]) -> str | None:
+    """Validate the native Tool/FunctionDeclaration JSON Schema contract independently.
+
+    https://docs.cloud.google.com/gemini-enterprise-agent-platform/reference/rest/Shared.Types/FunctionDeclaration
+    This emulator does not certify acceptance by a live Google service.
+    """
+    from jsonschema import Draft202012Validator, SchemaError
+
+    tools = body.get("extra_body", {}).get("google", {}).get("tools", [])
+    if not isinstance(tools, list):
+        return "google.tools must be a list"
+    seen = {t.get("function", {}).get("name") for t in body.get("tools", [])}
+    for tool in tools:
+        if not isinstance(tool, dict):
+            return "google.tools entries must be objects"
+        declarations = tool.get("functionDeclarations", [])
+        if not isinstance(declarations, list):
+            return "functionDeclarations must be a list"
+        for declaration in declarations:
+            if not isinstance(declaration, dict):
+                return "functionDeclarations entries must be objects"
+            name = declaration.get("name", "")
+            if not isinstance(name, str) or not _FUNC_NAME_RE.fullmatch(name):
+                return "Invalid native function name"
+            if name in seen:
+                return f"Duplicate function declaration found: {name}"
+            seen.add(name)
+            schema = declaration.get("parametersJsonSchema")
+            if schema is None:
+                # Parameter-free declarations are valid in the native contract.
+                continue
+            if "parameters" in declaration:
+                return "parameters and parametersJsonSchema are mutually exclusive"
+            if not isinstance(schema, dict) or schema.get("type") != "object":
+                return "parametersJsonSchema must describe an object"
+            try:
+                Draft202012Validator.check_schema(schema)
+            except SchemaError as exc:
+                return f"Invalid parametersJsonSchema: {exc.message}"
+    return None
+
+
 def validate_chat_body(body: dict[str, Any], issued_signatures: set[str]) -> str | None:
     """The first contract violation Vertex would 400 on, or None."""
     if not _MODEL_RE.match(str(body.get("model", ""))):
@@ -341,7 +383,8 @@ def validate_chat_body(body: dict[str, Any], issued_signatures: set[str]) -> str
             bad = _check_tool_call_shape(tc)
             if bad:
                 return f"messages[{idx}]: {bad}"
-    return _check_tools(body.get("tools")) or _check_pairing(messages) or _check_signatures(messages, issued_signatures)
+    return (_check_tools(body.get("tools")) or _check_native_tools(body)
+            or _check_pairing(messages) or _check_signatures(messages, issued_signatures))
 
 
 # Server ----------------------------------------------------------------------------------------------
@@ -578,7 +621,9 @@ def _handler_for(fake: FakeVertex) -> type[BaseHTTPRequestHandler]:
             except json.JSONDecodeError:
                 body = None
             record["body"] = body
-            record["kind"] = "main" if isinstance(body, dict) and body.get("tools") else "aux"
+            record["kind"] = "main" if isinstance(body, dict) and (
+                body.get("tools") or body.get("extra_body", {}).get("google", {}).get("tools")
+            ) else "aux"
             with fake._lock:
                 fake.requests.append(record)
             problem = self._precheck(record)

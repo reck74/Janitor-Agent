@@ -116,12 +116,15 @@ def sanitize_gemini_schema(schema: Any) -> dict[str, Any]:
             cleaned.pop("required", None)
         elif len(valid_required) != len(required_val):
             cleaned["required"] = valid_required
+    if cleaned.get("type") == "array":
+        # Missing items means unconstrained elements, not an implicit string type.
+        cleaned.setdefault("items", {})
     return cleaned
 
 
 def sanitize_gemini_tool_parameters(parameters: Any) -> dict[str, Any]:
     """Normalize tool parameters to a valid Gemini object schema."""
-    return sanitize_gemini_schema(parameters) or {"type": "object", "properties": {}}
+    return sanitize_gemini_schema(prepare_gemini_tool_parameters(parameters))
 
 
 # ── parametersJsonSchema (full JSON Schema) ─────────────────────────────────

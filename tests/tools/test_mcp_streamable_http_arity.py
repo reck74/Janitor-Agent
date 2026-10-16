@@ -17,7 +17,7 @@ range actually yields".
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -100,6 +100,7 @@ def test_the_session_streams_are_the_first_two_yielded():
 
     server = MCPServerTask("remote")
     read, write = MagicMock(), MagicMock()
+    write.send = AsyncMock()
     passed: dict = {}
 
     class _CapturingSession(_DummySession):
@@ -122,7 +123,13 @@ def test_the_session_streams_are_the_first_two_yielded():
 
     asyncio.run(_drive())
 
-    assert passed["args"][:2] == (read, write)
+    assert passed["args"][0] is read
+    # The metadata adapter must forward to the second stream, never the
+    # optional SDK session-id callback. Assert the observable send boundary.
+    envelope = MagicMock()
+    envelope.message.params = None
+    asyncio.run(passed["args"][1].send(envelope))
+    write.send.assert_awaited_once_with(envelope)
 
 
 def test_the_seeded_protocol_header_matches_the_handshake_the_client_sends():

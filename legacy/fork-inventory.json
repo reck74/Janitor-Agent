@@ -9,10 +9,10 @@
   },
   "classification_note": "Active names indicate ownership/consumers, not completed live acceptance. Consumer entries include declared command/discovery interfaces. Legacy retained in place is explicitly identified.",
   "counts": {
-    "active": 421,
+    "active": 526,
     "experimental": 7,
     "legacy": 40,
-    "replaced_by_upstream": 124
+    "replaced_by_upstream": 123
   },
   "entries": [
     {
@@ -445,7 +445,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "f3427a1cbfa657613feee37c0d4f534d94b9425e705e4267dcda7f95657dba5c",
+      "sha256": "9e2e2d890ef08f864d2a6fbc87b97ad6e901763ad6199619897177865d5de49d",
       "classification": "active",
       "consumers": [
         "GitHub Actions",
@@ -526,7 +526,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "ec1cc7fe08e4664d52d86007cfd3b29475d4a8839fce5980a40f5b4a4ca9c6d9",
+      "sha256": "7ef60bf1ca4c36e781a5245ec6062dbfb4a5aac602ffe8dfca220e250040f9f7",
       "classification": "active",
       "consumers": [
         "GitHub Actions",
@@ -632,6 +632,19 @@
       "replacement": null
     },
     {
+      "path": "JANITOR_CI_191_REPAIR.md",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "85b634f57640d33f67aa2c4d9e90453a4917df77e70157c9013096465aa89265",
+      "classification": "active",
+      "consumers": [
+        "repository documentation entrypoint"
+      ],
+      "reason": "Product instructions, contracts, provenance or recovery evidence; audit records retain their observation date.",
+      "replacement": null
+    },
+    {
       "path": "JANITOR_CI_BASELINE_PROPOSAL.md",
       "historical_fork_delta": false,
       "current_engine_delta": true,
@@ -688,7 +701,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "4b10a25df7116627fbd7c5a21dbbd0a2e67f02c23818309c5c16d2ff9bce7edf",
+      "sha256": "b0e368338cd03c5b164a0ead4d6ed237811a89f567cb418712ee8cda8d46d438",
       "classification": "active",
       "consumers": [
         "repository documentation entrypoint"
@@ -736,6 +749,32 @@
       "replacement": null
     },
     {
+      "path": "agent/anthropic_adapter.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "05264e433234a4b9c503a0bd589b798ef8004a02489a83780213b007e590d458",
+      "classification": "active",
+      "consumers": [
+        "agent/transports/anthropic.py"
+      ],
+      "reason": "Render OAuth discovery names consistently in the copied outbound tool history.",
+      "replacement": null
+    },
+    {
+      "path": "agent/anthropic_discovery_aliases.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "a3ed7cc81bf88b36299d380b460679938a6297011f44b66d699656c49c2811f3",
+      "classification": "active",
+      "consumers": [
+        "agent/anthropic_adapter.py"
+      ],
+      "reason": "Round-trip only structured OAuth discovery references; preserve user data, schema literals and stored history.",
+      "replacement": null
+    },
+    {
       "path": "agent/auxiliary_client.py",
       "historical_fork_delta": true,
       "current_engine_delta": false,
@@ -766,7 +805,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "f00ced89d59e9c388cddeb000a45da1ea2e8d07202a31bf4e50065bc4089c340",
+      "sha256": "fc68066e48cab2a9dae81aa1c0f92e9980fd71d3ab7bd77895bd4b241674dd48",
       "classification": "active",
       "consumers": [
         "agent/chat_completion_helpers.py"
@@ -788,11 +827,37 @@
       "replacement": null
     },
     {
+      "path": "agent/copilot_acp_client.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "1cbeb0469e94869b1b7db828836531cd124de64e11cbab6dd1ca4468bc0ccf96",
+      "classification": "active",
+      "consumers": [
+        "agent/client_lifecycle.py"
+      ],
+      "reason": "Incremental text/reasoning delivery and bounded draining of trailing ACP notifications.",
+      "replacement": null
+    },
+    {
+      "path": "agent/copilot_acp_stream.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "55994e25ecc6a74aa29d2bf4040893c5845d6d48757aad88114c158318681b35",
+      "classification": "active",
+      "consumers": [
+        "agent/copilot_acp_client.py"
+      ],
+      "reason": "Stream ACP progress with profile context, bounded lifecycle and per-call cancellation; hold tool envelopes for parsing.",
+      "replacement": null
+    },
+    {
       "path": "agent/credential_pool.py",
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "a09ac5205dd3b2091b905d73711e69aa1363a420d31dff97afc863dc170cf35d",
+      "sha256": "fdb498d487542fa96138de7c4f0c622cab46ea18380e6e665c1f66ed15e9fb68",
       "classification": "active",
       "consumers": [
         "agent/client_lifecycle.py"
@@ -803,15 +868,15 @@
     {
       "path": "agent/error_classifier.py",
       "historical_fork_delta": true,
-      "current_engine_delta": false,
+      "current_engine_delta": true,
       "present": true,
-      "sha256": "b246068b83ce6cd7ab5967eacf930ec50a91387491f5ded37aa3622dfd1c7e23",
-      "classification": "replaced_by_upstream",
+      "sha256": "58586a4d11858b0bf5b58e6e95b81a212bfa50d26f53e74eeba6e8702c8bddfd",
+      "classification": "active",
       "consumers": [
-        "agent/error_classifier.py"
+        "agent/turn_api_error.py"
       ],
-      "reason": "The previous fork delta is gone; the current file uses the pinned stable implementation.",
-      "replacement": "d923a5eb487a17c0a68801bba9ef0f56c81040a8:agent/error_classifier.py"
+      "reason": "Read botocore HTTP status from structured response metadata so validation errors remain terminal.",
+      "replacement": null
     },
     {
       "path": "agent/file_safety.py",
@@ -824,6 +889,32 @@
         "tools/file_tools.py"
       ],
       "reason": "Protect corrupt credential copies through the same read/search boundary as auth.json.",
+      "replacement": null
+    },
+    {
+      "path": "agent/gemini_native_adapter.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "7e135b6f1c3bb16ad4a22a4d2fd53ed3f13efcd4ab6ed29c12721909040fe963",
+      "classification": "active",
+      "consumers": [
+        "agent/client_lifecycle.py"
+      ],
+      "reason": "Translate promptFeedback blocks into explicit terminal content-filter results in stream and non-stream paths.",
+      "replacement": null
+    },
+    {
+      "path": "agent/gemini_schema.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "20dc77dfefbc82105be3128b18ddd4cadf4722221982ed6f8936eaf553b795a9",
+      "classification": "active",
+      "consumers": [
+        "agent/gemini_native_adapter.py"
+      ],
+      "reason": "Resolve local schema references before legacy filtering and preserve unconstrained array elements.",
       "replacement": null
     },
     {
@@ -983,6 +1074,97 @@
       "replacement": null
     },
     {
+      "path": "agent/transports/anthropic.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "6dc92469c2aaebfc5c391ebdebcbad9fb9bdb1dd8f682204508590d430c1d14c",
+      "classification": "active",
+      "consumers": [
+        "agent/turn_truncation.py"
+      ],
+      "reason": "Resolve OAuth bridge names and structured references before dispatch without rewriting arbitrary arguments.",
+      "replacement": null
+    },
+    {
+      "path": "agent/transports/chat_completions.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "78dfba80cbbc11c1f91e03648b0cf61f34ca6589cc516fb99065e0e1631859f5",
+      "classification": "active",
+      "consumers": [
+        "agent/turn_api_call.py"
+      ],
+      "reason": "Apply provider wire projection after canonical cache identity construction.",
+      "replacement": null
+    },
+    {
+      "path": "agent/transports/codex_app_server_session.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "24af77b1dbe56572e85345ff73abfb393e4102841e3475358075b98e7632f536",
+      "classification": "active",
+      "consumers": [
+        "agent/codex_runtime.py"
+      ],
+      "reason": "Return the protocol-defined empty permission grant for declined escalation requests.",
+      "replacement": null
+    },
+    {
+      "path": "agent/transports/codex_event_projector.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "ba388380eb6df96e9ecd16863281c920374280e3a9c7146d6ae44a97de8476ba",
+      "classification": "active",
+      "consumers": [
+        "agent/transports/codex_app_server_session.py"
+      ],
+      "reason": "Keep native compaction accounting events out of assistant conversation text.",
+      "replacement": null
+    },
+    {
+      "path": "agent/turn_api_call.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "66ad7bb99b449f7a3cfc5ec04eb214fded78bedd293e18560f116322340f4ddc",
+      "classification": "active",
+      "consumers": [
+        "agent/conversation_loop.py"
+      ],
+      "reason": "Enable incremental ACP delivery only for clients declaring the implemented streaming capability.",
+      "replacement": null
+    },
+    {
+      "path": "agent/turn_failure_copy.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "29f19ec3281f221655e970722deba622d7039dce052d856774f1e051268d630d",
+      "classification": "active",
+      "consumers": [
+        "agent/turn_api_error.py"
+      ],
+      "reason": "Use Vertex credential/IAM and Copilot CLI remedies appropriate to their authentication modes.",
+      "replacement": null
+    },
+    {
+      "path": "agent/turn_response_check.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "016f73472a01f32d0aebaf3f84be74355e5945934051d70e8a92e2cbfea34f10",
+      "classification": "active",
+      "consumers": [
+        "agent/conversation_loop.py"
+      ],
+      "reason": "Apply existing encrypted-replay recovery to HTTP-200 Responses failures before cross-provider fallback.",
+      "replacement": null
+    },
+    {
       "path": "agent/turn_tool_validation.py",
       "historical_fork_delta": false,
       "current_engine_delta": true,
@@ -1056,7 +1238,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "403d6015291543f6add8a322ab5d975e127a1838d6971de1534bd72bb4c55005",
+      "sha256": "18c596cdc40b8fbf44de6e39af89d49c3308dbee4f56b4c8721b840768b9396e",
       "classification": "active",
       "consumers": [
         "apps/desktop/package.json",
@@ -1070,7 +1252,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "b6853df089ee700f53e7fad6809360d40ed86928ca458eafd9aac188b53ac9f0",
+      "sha256": "febc409d55d42eae438413ec0e04c76dc81a1207678171f89185cbc554aa1724",
       "classification": "active",
       "consumers": [
         "apps/desktop/package.json",
@@ -1336,7 +1518,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "c079f520e08cd0402a62cc45aa761eb5e32dc9015fc6b80ce939ea6d71d5c5b1",
+      "sha256": "2bc1812b065dcd38ad8ebab7a5d60b06d6a91bd1a1448251be1f27b52aa14d33",
       "classification": "active",
       "consumers": [
         "apps/desktop/package.json",
@@ -3125,6 +3307,45 @@
       "replacement": "legacy/docs/pre-1.0/specialized-agents/README.md"
     },
     {
+      "path": "gateway/kanban_watchers_dispatcher.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "3ce94fdc811b64aa5ce442c80b761e1b8729dbea9f9aa61a750757adbfbb8019",
+      "classification": "active",
+      "consumers": [
+        "hermes_cli/kanban_decompose.py"
+      ],
+      "reason": "Reserve durable automatic-decomposition budgets before any billable auxiliary call.",
+      "replacement": null
+    },
+    {
+      "path": "gateway/platforms/api_server.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "527cf9830ee098dfc70330ab11d3fbf8d88c452afe44c72241bec6d7199a0c65",
+      "classification": "active",
+      "consumers": [
+        "hermes_cli/web_server.py"
+      ],
+      "reason": "Preserve accepted text inside the existing request-body bound and reject excess multimodal parts explicitly.",
+      "replacement": null
+    },
+    {
+      "path": "gateway/platforms/base.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "5edbdb6bb64b8d69c652b8052aab147deba18c8d52b48abf7819ed900bfd3220",
+      "classification": "active",
+      "consumers": [
+        "plugins/platforms/telegram/adapter.py"
+      ],
+      "reason": "Recognize supported HEIC raster input through the existing detector while rejecting unsupported formats.",
+      "replacement": null
+    },
+    {
       "path": "gateway/platforms/feishu_meeting_invite.py",
       "historical_fork_delta": true,
       "current_engine_delta": false,
@@ -3151,6 +3372,19 @@
       "replacement": "legacy/prototypes/gateway/whatsapp.py.txt"
     },
     {
+      "path": "gateway/restart_dedup.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "345a56ca016570eecd4a2a264f5d3183b89b9c81f73080a613ee62be1e30019d",
+      "classification": "active",
+      "consumers": [
+        "gateway/run_busy.py"
+      ],
+      "reason": "Bind restart redelivery identity to platform, conversation, profile and sender.",
+      "replacement": null
+    },
+    {
       "path": "gateway/run.py",
       "historical_fork_delta": true,
       "current_engine_delta": false,
@@ -3162,6 +3396,32 @@
       ],
       "reason": "The previous fork delta is gone; the current file uses the pinned stable implementation.",
       "replacement": "d923a5eb487a17c0a68801bba9ef0f56c81040a8:gateway/run.py"
+    },
+    {
+      "path": "gateway/run_busy.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "bf67bbcda522f904d7cb7c02b64de2d19c334c91f34d832cd68e7681097682de",
+      "classification": "active",
+      "consumers": [
+        "gateway/run.py"
+      ],
+      "reason": "Suppress only the original restart message using stable scoped transport identity.",
+      "replacement": null
+    },
+    {
+      "path": "gateway/slash_commands.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "c4078b965040f90544d38effd1197db9a1c554585ed34659b24aaf567272a465",
+      "classification": "active",
+      "consumers": [
+        "gateway/run_busy.py"
+      ],
+      "reason": "Persist stable restart-command identity alongside the existing restart marker.",
+      "replacement": null
     },
     {
       "path": "gateway/stream_consumer.py",
@@ -3246,7 +3506,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "3c134350a8ff451e68bc98313f65226e03e30e94f71ac1ca45da5b928a45e74f",
+      "sha256": "fabc0ceab22a750882b636ca16d0d6fd62b8861858a38839e4b70591f12d7213",
       "classification": "active",
       "consumers": [
         "hermes_cli/auth.py"
@@ -3304,6 +3564,32 @@
         "cli.py"
       ],
       "reason": "Accept explicitly enabled portable plugin MCP server toolsets using the existing manifest cache.",
+      "replacement": null
+    },
+    {
+      "path": "hermes_cli/cli_shutdown.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "3ccf1f8ced28c9d58779762b84c1667e8be69ce33a428865dee501f9da727400",
+      "classification": "active",
+      "consumers": [
+        "hermes_cli/cli_single_query.py"
+      ],
+      "reason": "Close only the native Codex session after durable settlement and background drain.",
+      "replacement": null
+    },
+    {
+      "path": "hermes_cli/cli_single_query.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "ecc3ff12b333099f43c5ac3b157cf811e8e0eae02114a852ace0ee19749873c9",
+      "classification": "active",
+      "consumers": [
+        "hermes_cli/main.py"
+      ],
+      "reason": "Preserve partial stdout and surface a terminal error once, including after native agent text.",
       "replacement": null
     },
     {
@@ -3383,6 +3669,97 @@
       ],
       "reason": "The previous fork delta is gone; the current file uses the pinned stable implementation.",
       "replacement": "d923a5eb487a17c0a68801bba9ef0f56c81040a8:hermes_cli/goals.py"
+    },
+    {
+      "path": "hermes_cli/kanban_db.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "3c24f0ae64e2215bc6bfc20c7ed8f814db54f1c576202e475f435e26d4846e25",
+      "classification": "active",
+      "consumers": [
+        "hermes_cli/kanban.py"
+      ],
+      "reason": "Report artifacts outside the owned scratch directory as rejected instead of silently succeeding.",
+      "replacement": null
+    },
+    {
+      "path": "hermes_cli/kanban_db_dispatch.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "146ec89bb76bc0a07ee7b748f07978ca7d85b619666d4d8292e0cb6acafbbaed",
+      "classification": "active",
+      "consumers": [
+        "gateway/kanban_watchers_dispatcher.py"
+      ],
+      "reason": "Initialize fresh worker heartbeat and use attempt-scoped crash evidence without stale review errors.",
+      "replacement": null
+    },
+    {
+      "path": "hermes_cli/kanban_db_graph.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "ffbc3f1c02010216cbe7acfdc51896f96f609519cf8bbc50b2325fb201b6c4fd",
+      "classification": "active",
+      "consumers": [
+        "hermes_cli/kanban_decompose.py"
+      ],
+      "reason": "Reject oversized child graphs before database writes.",
+      "replacement": null
+    },
+    {
+      "path": "hermes_cli/kanban_decompose.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "95acd62a09a44e8af1671b5b0a20b25992df82fc89d029dbcb536c2ab4394e9f",
+      "classification": "active",
+      "consumers": [
+        "gateway/kanban_watchers_dispatcher.py"
+      ],
+      "reason": "Enforce automatic-attempt reservations while keeping manual decomposition explicit.",
+      "replacement": null
+    },
+    {
+      "path": "hermes_cli/kanban_decompose_retry.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "9b4656098551767d6e1796bc396a37d64a55ec98601041d349fba1999d9b7908",
+      "classification": "active",
+      "consumers": [
+        "hermes_cli/kanban_decompose.py"
+      ],
+      "reason": "Persist bounded retries and cooldowns in existing task events; explicit manual retries remain available.",
+      "replacement": null
+    },
+    {
+      "path": "hermes_cli/kanban_worker_log.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "c145495d276641a47f9e4b01dab00bf5b80c5c0fa5b5ac3a20d70c739349e85e",
+      "classification": "active",
+      "consumers": [
+        "hermes_cli/kanban_db_dispatch.py"
+      ],
+      "reason": "Fence diagnostics and exit trailers by worker attempt while retaining append-only history.",
+      "replacement": null
+    },
+    {
+      "path": "hermes_cli/mcp_catalog.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "190418f3660fc17c1f958fce6cbcce08e0f4810707415f018b24e38ed1fd47a2",
+      "classification": "active",
+      "consumers": [
+        "hermes_cli/web_routers/mcp.py"
+      ],
+      "reason": "Support non-interactive catalog installation independent of the server process TTY.",
+      "replacement": null
     },
     {
       "path": "hermes_cli/mcp_config.py",
@@ -3502,6 +3879,32 @@
       "replacement": null
     },
     {
+      "path": "hermes_cli/runtime_provider.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "ac85e678cad1c21d8a4e37044d3dcea5156eca20927f210b656479565be93229",
+      "classification": "active",
+      "consumers": [
+        "hermes_cli/oneshot.py"
+      ],
+      "reason": "Walk explicitly configured fallbacks after credential transport outages; keep configuration errors visible.",
+      "replacement": null
+    },
+    {
+      "path": "hermes_cli/shared_session_attach.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "583358137e827875bbf61fd0035467fa094ef01955f8315bf7de58ae71adf0cd",
+      "classification": "active",
+      "consumers": [
+        "hermes_cli/tui.py"
+      ],
+      "reason": "Authenticate owner discovery with a nonce-bound HMAC without transmitting the lease; unsupported owners keep their lease.",
+      "replacement": null
+    },
+    {
       "path": "hermes_cli/source_build.py",
       "historical_fork_delta": false,
       "current_engine_delta": true,
@@ -3541,6 +3944,19 @@
       "replacement": null
     },
     {
+      "path": "hermes_cli/update_cmd_git.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "f9efa8e223e33bc766d5be1d1bd2f98c167572ff9ed7903c11ed1204e13d617f",
+      "classification": "active",
+      "consumers": [
+        "hermes_cli/update_cmd.py"
+      ],
+      "reason": "Accept alternate Git paths only after a successful safe version probe.",
+      "replacement": null
+    },
+    {
       "path": "hermes_cli/version_info.py",
       "historical_fork_delta": false,
       "current_engine_delta": true,
@@ -3558,7 +3974,7 @@
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "445aa980c12f948f63e1fd4b67b49fcb3fd1b6f9cf2b9536baada5635213a85f",
+      "sha256": "7985f50404e076e9513d6ba482b06008b99668ff41337c272060fc5eee29176f",
       "classification": "active",
       "consumers": [
         "hermes_cli/web_server.py"
@@ -4243,6 +4659,19 @@
       "replacement": "d923a5eb487a17c0a68801bba9ef0f56c81040a8 (removal)"
     },
     {
+      "path": "plugins/model-providers/vertex/__init__.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "aef7d7d6fc668bdc3c64fd9831c9e54d98f980386d3f33b7e30c5766fac8cd87",
+      "classification": "active",
+      "consumers": [
+        "providers/base.py"
+      ],
+      "reason": "Preserve tool JSON Schema via documented native Google override instead of the lossy OpenAI translator.",
+      "replacement": null
+    },
+    {
       "path": "plugins/platforms/matrix/adapter.py",
       "historical_fork_delta": true,
       "current_engine_delta": false,
@@ -4254,6 +4683,32 @@
       ],
       "reason": "The previous fork delta is gone; the current file uses the pinned stable implementation.",
       "replacement": "d923a5eb487a17c0a68801bba9ef0f56c81040a8:plugins/platforms/matrix/adapter.py"
+    },
+    {
+      "path": "plugins/platforms/slack/adapter.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "f20c08963e95adfd32bfe6e541dbb0596b11dd759e4072b338c1714fcf247933",
+      "classification": "active",
+      "consumers": [
+        "gateway/stream_consumer.py"
+      ],
+      "reason": "Use shared stream relation and continuation boundaries without splitting words.",
+      "replacement": null
+    },
+    {
+      "path": "plugins/platforms/slack/stream_text.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "b33cbc08a427269f16903240a5c70970024e1da643cb71ac07a44693412bf6bf",
+      "classification": "active",
+      "consumers": [
+        "plugins/platforms/slack/adapter.py"
+      ],
+      "reason": "Preserve complete word boundaries when restarting a rejected streamed message.",
+      "replacement": null
     },
     {
       "path": "plugins/platforms/telegram/adapter.py",
@@ -4308,6 +4763,19 @@
       "replacement": null
     },
     {
+      "path": "providers/base.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "ac15b45c1b274f152e57bdb8d56fc76390b09237db244fbe6275fa9e04a445f1",
+      "classification": "active",
+      "consumers": [
+        "agent/transports/chat_completions.py"
+      ],
+      "reason": "Identity-by-default final request projection with a concrete Vertex native-schema consumer.",
+      "replacement": null
+    },
+    {
       "path": "pyproject.toml",
       "historical_fork_delta": true,
       "current_engine_delta": true,
@@ -4353,7 +4821,7 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "63028d7b92fafde14ebdac8aee2f7aa9ccd413272ad759223e70fbe221d51ebd",
+      "sha256": "d50ba848e5fb068aedcd89849983d78205f41b9e371645853a7fab8c43355f21",
       "classification": "active",
       "consumers": [
         "MERGE_GUIDE.md"
@@ -4548,6 +5016,20 @@
       "consumers": [
         ".github/workflows/ci.yaml",
         ".github/workflows/docs-site-checks.yml"
+      ],
+      "reason": "Declared installer, validation, migration adapter or pinned tooling dependency.",
+      "replacement": null
+    },
+    {
+      "path": "scripts/run_tests.sh",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "d19f7cace0a0fc601de72252440c32ede93783e51f4317d7a457b8741c8b17ad",
+      "classification": "active",
+      "consumers": [
+        "scripts/bootstrap.sh",
+        "skills/janitor-onboarding/SKILL.md"
       ],
       "reason": "Declared installer, validation, migration adapter or pinned tooling dependency.",
       "replacement": null
@@ -5886,6 +6368,32 @@
       "replacement": null
     },
     {
+      "path": "tests/agent/test_anthropic_discovery_aliases.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "c2750d7d89baa664077ad9a1e7d3c9edc6e672d4ba768962fbc23763496d8bec",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/agent/test_anthropic_discovery_history.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "794ff5888c5f8b83e7471fe26faf11e7b41573e292e7478d6f865e85949e1c2e",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
       "path": "tests/agent/test_context_references.py",
       "historical_fork_delta": false,
       "current_engine_delta": true,
@@ -5899,11 +6407,102 @@
       "replacement": null
     },
     {
+      "path": "tests/agent/test_copilot_acp_client.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "43eaab379bddd78a335d33b0e7fbd140425a2e090a6852eeeb713cd15d827e58",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/agent/test_copilot_acp_stream.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "5303c3453a75c85a49632091c3d0867b7a11d9f0b7cff7d5d02b54b733f72678",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/agent/test_credential_pool_grant_quarantine.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "4693ebd078c69eb8366921f1b93829bde680752a0a33925b6d8f6a7b454b79d1",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
       "path": "tests/agent/test_credential_pool_nous_refresh_stampede.py",
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
       "sha256": "61154d95f9fbed6203e4acb970550785d6257e5bf5628bed6227d7f6b067c9f3",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/agent/test_error_classifier_bedrock.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "1600af839fc190fc4e34ba2c53187a4cbc5b9f2b5c9146da5f2ab86a19658892",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/agent/test_external_process_provider_init.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "eee22df14eacd5b9684c231669b07cac5ac4da041b4c185f97c1ab7332279cec",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/agent/test_gemini_native_adapter.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "bcccaa2a10e7b25353553f704af77f5d2b7eee9cc95a327686111e9316613072",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/agent/test_gemini_schema.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "e7f798a1ca779e81a86996cee0aec368487d869e86a423263e5f2f0bbcf1e10c",
       "classification": "active",
       "consumers": [
         ".github/workflows/tests.yml"
@@ -6003,11 +6602,102 @@
       "replacement": null
     },
     {
+      "path": "tests/ci/test_upgrade_n1_fixture.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "09406e804003d964c142682de4c29dcd87e0edd489ca7c9e55819efebbaa730b",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
       "path": "tests/cron/test_cron_script.py",
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
       "sha256": "2479d6ed0cb17cb1bfa41ffbbd3f60d18a55e0713234f6bcc2c16b65270c3d05",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/e2e/core/dashboard/test_api_session_chat_limits.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "24aeaf772b5fc1af994b58dfab03a77a6aa18547cf0b5a1577fe499c494e3f47",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/e2e/core/dashboard/test_dashboard_mcp_install.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "50c41ae31fb6286f6f8ded7fc5205013d901494b75223928ef69b926573124df",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/e2e/core/kanban/test_kanban_decompose_billing.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "df344d186a56dee6eae9f2678bb44734ae18a28cac7729d883d3f11b84a0117d",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/e2e/core/kanban/test_kanban_rate_limit_review.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "59f914ca45935905a1f09f4b0c8aa29a33449fbe3b44e014cc994f3087a7b35c",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/e2e/core/kanban/test_kanban_worker_contract.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "3ecc7ef6f1ba41b0adfd7eead1e48baa86bfc6d970b6aff104c8ddfd37984b29",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/e2e/core/kanban/test_kanban_worker_sigkill.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "b9ed05033cb5a0d254da5406a53bb7aa86d9eeca2307724e1a35d14f45b1fa01",
       "classification": "active",
       "consumers": [
         ".github/workflows/tests.yml"
@@ -6055,11 +6745,50 @@
       "replacement": null
     },
     {
+      "path": "tests/e2e/core/platforms/test_discord_contract.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "a9a7332e957338476d57a5a99d7cc066a724fad1e08c4d6e75d59c4a6c6d215b",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/e2e/core/platforms/test_slack_contract.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "ff03595d5eec415f67763f3d26da0c32fb03b791d32318258cb84283ba6c98b3",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/e2e/core/platforms/test_telegram_contract.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "805055d12f7654d8b165a91cc11103d5d0c8468d6ef14e1a2e8802baff048458",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
       "path": "tests/e2e/core/providers/test_anthropic_discovery_and_aliases.py",
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "ae1fdba3078bb563e52815744c42dfc5ebf3ccbc57db4354475554d8531d8918",
+      "sha256": "b215be05d5d96ba457ad6d70c8145d32cae1b77bec3d33adf7c4fab094210c11",
       "classification": "active",
       "consumers": [
         ".github/workflows/tests.yml"
@@ -6107,11 +6836,193 @@
       "replacement": null
     },
     {
+      "path": "tests/e2e/core/providers/test_fallback_providers.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "3156576c8548c3f4767044687d794835f27aee82e88669c3e29e2a7a45e0ff6a",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/e2e/core/providers/test_native_bedrock_converse_faults.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "8eabd69dc1b27c4e936d296727d7bc754721b6aa6e66fb8f170fdac7e19c1d5c",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/e2e/core/providers/test_native_codex_app_server.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "06dc9f5fecc7636144105ea4947f59348ce24c18b155b8ee004ffed03e55f35a",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/e2e/core/providers/test_native_codex_app_server_faults.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "e045cb2e1f7791c1ae1a7dcb694ddd0fdd92ce03b9789631ef4576ec4aa30983",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/e2e/core/providers/test_native_copilot_acp.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "20b320d32c58467f774c0e9be790aa880f7bd6e39300d213351103d9ff0dda62",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/e2e/core/providers/test_native_copilot_acp_errors.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "db8c9dba949a0ecb8ab4f707afbafa7cea498c5c301907fa0c8b9c5c8075918d",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/e2e/core/providers/test_native_copilot_acp_streaming.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "fc61c573ccf63247212737ed3e58549f4b149965126b11a5ad8e019e95165ed8",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/e2e/core/providers/test_native_gemini_errors.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "cadeeae8ad895945c7735e96257a9703667c501d3fd0f15d188d785722cfd0c9",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/e2e/core/providers/test_native_gemini_schema.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "9fee6e9e181bac8965442f76e87299954fe4093b90bb6b6513dcdc8738ffe841",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/e2e/core/providers/test_native_vertex_errors.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "b66ced599ecd16ae1b2d3d69fa2d8b6013b734a7bbf9e1533e14abd3de4ed43b",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/e2e/core/providers/test_native_vertex_tools.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "8607cfc58ea6f6a59d2cf7c20ee90fdc7a19d3662c763c131835de0dd975839a",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
       "path": "tests/e2e/core/providers/test_oauth_device_flow.py",
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
       "sha256": "a396bc9503ea7c3b77c4a3887959b63d4925242a171be0aefac85e686c837163",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/e2e/core/providers/test_openai_codex_pool.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "180f5bbaa5bce22e165e00cba17a2471fce53ccc27e1b7a245f880dcfc5d3726",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/e2e/core/providers/test_openai_responses.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "ec0aebfed4be302e014987445bd0191bfa19f83778ffc3731663e0ada94afff9",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/e2e/core/security/test_attach_handshake.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "4d47a18753f7bc8b81c6537012488186076df33b8e4c344b35f1421f4c310261",
       "classification": "active",
       "consumers": [
         ".github/workflows/tests.yml"
@@ -6146,6 +7057,32 @@
       "replacement": null
     },
     {
+      "path": "tests/e2e/core/tui_pty/test_resume_compress.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "0d1d3099a80bacdb09ca89fb02a963e4009d5b420cbee809c61c250eb5049a4e",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/e2e/core/upgrade/git/_git_world.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "33a2c17520d2c38f675283ae67ca8cd4fc2230472952b378f25f29f30cc6aa6e",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
       "path": "tests/e2e/core/upgrade/pm/test_stamps_and_doctor.py",
       "historical_fork_delta": false,
       "current_engine_delta": true,
@@ -6164,6 +7101,58 @@
       "current_engine_delta": true,
       "present": true,
       "sha256": "3cd0d5aa3233929f5c8eba7fd77920448b4d4274bf829aafdc8b8c40fe47b5a8",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/e2e/core/windows_update/_machine.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "4ff6f0fca09667dc25194f8860d195991e8a262934b1291f181459a6d5234ae2",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/e2e/core/windows_update/_owned_directory.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "817346abf13826efb240074421364011732f5a94a8a913306a7993d9202eb85e",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/fakes/providers/codex_app_server.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "416390f0fc8aefb2b5c14991894b8c5f4f2d151e207b5eb568b3ff1fd1c9497d",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/fakes/providers/vertex.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "ebd7d578e7ec524910c319266559ae0620b94042aa56034e9f4ed7504348666b",
       "classification": "active",
       "consumers": [
         ".github/workflows/tests.yml"
@@ -6302,6 +7291,19 @@
       "replacement": null
     },
     {
+      "path": "tests/fixtures/resolution_allowlist.json",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "3d67d47524039b9fcb694012d9e10ac7c6510a09a7ad32c66d453bdf46b81d4c",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
       "path": "tests/gateway/test_75349_whatsapp_multiplex_secret_scope.py",
       "historical_fork_delta": true,
       "current_engine_delta": false,
@@ -6313,11 +7315,102 @@
       "replacement": "d923a5eb487a17c0a68801bba9ef0f56c81040a8 (removal)"
     },
     {
+      "path": "tests/gateway/test_api_server_multimodal.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "be8058f98cbdb0b58c4de385e03d010349f60ab53bef26fe04bbdc89d47816d6",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/gateway/test_hosted_rooms.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "eb34f1288950c57af661135b1dd1a70b1ad2ca221443ac56b296147dcb5e5abc",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/gateway/test_image_cache_formats.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "b095e95f61629dd9118dfd6d6b1fd5e0db2ab05cfefa834f57f0b655f3f67c70",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/gateway/test_kanban_auto_decompose_secret_scope.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "4d52e728ff48b8d05e407ddb1c8b458981f11f2ea03ec166dcb8a1cf447ea53b",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/gateway/test_restart_redelivery_dedup.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "d76865db697cf21981481e8e7c3fc88749a6499d6f8922dea6f91a33b95e6a4f",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
       "path": "tests/gateway/test_session.py",
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
       "sha256": "b6e33ab11ff691fab74e1d48e66ecc958884038fc544e6080e0401b880131485",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/gateway/test_slack_native_streaming.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "27db30173d7419f2268a92d3bfd19838c484cfa2c762448c361cef676fd784d2",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/gateway/test_slack_stream_boundaries.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "c755b6c485c2cd4996e9f7dad469b94a7d0623f56b15a2ca1e99d4b4880651da",
       "classification": "active",
       "consumers": [
         ".github/workflows/tests.yml"
@@ -6417,6 +7510,19 @@
       "replacement": null
     },
     {
+      "path": "tests/hermes_cli/test_cmd_update.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "700ed860ed682e9862a4e4a5164d5e58b1b1d6ad1dd85be2a363b75e3397eca8",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
       "path": "tests/hermes_cli/test_copilot_in_model_list.py",
       "historical_fork_delta": false,
       "current_engine_delta": true,
@@ -6469,6 +7575,45 @@
       "replacement": "d923a5eb487a17c0a68801bba9ef0f56c81040a8:tests/hermes_cli/test_kanban_db.py"
     },
     {
+      "path": "tests/hermes_cli/test_kanban_decompose_db.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "c883242960ead01e6dc2f9e3275ec7a5d18b446908f457e935af7961e09e4de4",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/hermes_cli/test_kanban_decompose_retry.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "caaf32c3adf30b3ac537bd2770eb4fb9f4b508d0c3c0e61e627a3ed59b75a298",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/hermes_cli/test_mcp_catalog.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "0abb5050c0c7b72dae72d955d9d7e397a7a2353a1dabc7d198f2aebed71b1636",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
       "path": "tests/hermes_cli/test_mcp_router_discover.py",
       "historical_fork_delta": true,
       "current_engine_delta": true,
@@ -6513,6 +7658,58 @@
       "current_engine_delta": true,
       "present": true,
       "sha256": "c8d297196f82018fd79c9846247ca717ae266a0118181d694101454324e330ee",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/hermes_cli/test_runtime_provider_transport_fallback.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "e7e43a0ed1a2d68a83eb67e6191d36129a59cacc1e5ed020fe2ac83d5b0209d6",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/hermes_cli/test_shared_session_attach.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "b78de54f3859cfd80d18330c7f366bed80c6c552c1de8f776deea481331ec9d9",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/hermes_cli/test_single_query_exit_contract.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "a8d8733c31d92baf93a2ea65185720be505d10db4ea25043cc5f41616fb1ba2a",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/hermes_cli/test_single_query_session_finalize.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "a439d42cc9a9bb9ceef2124aa5472aacdffcad93a28080ff194106d1a1dfa574",
       "classification": "active",
       "consumers": [
         ".github/workflows/tests.yml"
@@ -6638,11 +7835,50 @@
       "replacement": null
     },
     {
+      "path": "tests/providers/test_vertex_native_tools.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "fbf2946b758c3f35586b6c03b7ec114f2f945cb29b7fd7142e6070e0be1e0c8b",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/scripts/desktop_update/test_desktop_update_windows_commit_outcome.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "5bc61df2698b875d6e68f31aea31e8f84fa6a361dbac5a06d007b1e9126a0d60",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
       "path": "tests/scripts/install/test_install_sh_shell_path.py",
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
       "sha256": "f4e84dc9c301e184c5801f59eb53cc0dbb66c3d1ef42721764db52808bdf8c6c",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/scripts/test_run_tests_shell.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "2809ed842e15dcdb2cb3609a7b7e25c5bd551fbfe0d64a3d45cef069c457dd6d",
       "classification": "active",
       "consumers": [
         ".github/workflows/tests.yml"
@@ -6720,10 +7956,23 @@
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
-      "sha256": "3b957db73d41f0819d6a85552c9feb78659ad763332a71dcf5696aced17d5bdb",
+      "sha256": "7c1fd14bdf471a2fa3a6a3fad2dc202bad98a9d9f404224b6aa83b58e775a656",
       "classification": "active",
       "consumers": [
         ".github/janitor-tests.txt"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/test_e2e_owned_directories.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "f925aedb7689c93af1b44b10a72a58834e994615161c5dec3ababd99e73b250d",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
       ],
       "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
       "replacement": null
@@ -6924,11 +8173,37 @@
       "replacement": null
     },
     {
+      "path": "tests/tools/test_mcp_streamable_http_arity.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "0be09bd719b7cf2b8c9e4d460cb7757c464a99df92f3fd246e331e3c5db70922",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
       "path": "tests/tools/test_skill_manager_tool.py",
       "historical_fork_delta": false,
       "current_engine_delta": true,
       "present": true,
       "sha256": "3610cf26ba693a61730160e122636b076dfcb98374178eadd808b71eda11270a",
+      "classification": "active",
+      "consumers": [
+        ".github/workflows/tests.yml"
+      ],
+      "reason": "Behavior/regression coverage or generated prompt surface; upstream tests remain available in sync verification.",
+      "replacement": null
+    },
+    {
+      "path": "tests/tools/test_windows_native_support.py",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "ab5e62293aa87d229dd8da34ebf27b339083657772bedeea98f9761e0c487639",
       "classification": "active",
       "consumers": [
         ".github/workflows/tests.yml"
@@ -7199,11 +8474,39 @@
       "replacement": null
     },
     {
+      "path": "ui-tui/src/__tests__/gatewayStartupSelection.test.ts",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "bc50774023018b1a90775c7d3cda8ebce5967f24676d7f765506dd1d3e09fba4",
+      "classification": "active",
+      "consumers": [
+        "ui-tui/package.json",
+        "janitor_cli.py"
+      ],
+      "reason": "Skin-compatible branding/contract tests or lint-only preservation of stable behavior.",
+      "replacement": null
+    },
+    {
       "path": "ui-tui/src/__tests__/janitorSkin.test.ts",
       "historical_fork_delta": true,
       "current_engine_delta": true,
       "present": true,
       "sha256": "9511d12e55cc241b902071a90387ed49364fa2db9b6850f8125c68667e09900b",
+      "classification": "active",
+      "consumers": [
+        "ui-tui/package.json",
+        "janitor_cli.py"
+      ],
+      "reason": "Skin-compatible branding/contract tests or lint-only preservation of stable behavior.",
+      "replacement": null
+    },
+    {
+      "path": "ui-tui/src/__tests__/sessionStartupNavigation.test.ts",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "0827bc442456b5a42b377e4a2945cefee08dffe816bb08d20bf12266501fcd0a",
       "classification": "active",
       "consumers": [
         "ui-tui/package.json",
@@ -7232,6 +8535,62 @@
       "current_engine_delta": true,
       "present": true,
       "sha256": "294e01f6044ec5ca449d77705b6c9279376ab12ef12a7b2f3f2234518273242c",
+      "classification": "active",
+      "consumers": [
+        "ui-tui/package.json",
+        "janitor_cli.py"
+      ],
+      "reason": "Skin-compatible branding/contract tests or lint-only preservation of stable behavior.",
+      "replacement": null
+    },
+    {
+      "path": "ui-tui/src/app/createGatewayEventHandler.ts",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "ce03c32f47ba80f20b1fd24f6d8683a23019ac0be8106c0eb2196631dce62e07",
+      "classification": "active",
+      "consumers": [
+        "ui-tui/package.json",
+        "janitor_cli.py"
+      ],
+      "reason": "Skin-compatible branding/contract tests or lint-only preservation of stable behavior.",
+      "replacement": null
+    },
+    {
+      "path": "ui-tui/src/app/interfaces.ts",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "62027b9f34131d0da83138ff9dac40e1a364916754361c3182c2a23d251e0e29",
+      "classification": "active",
+      "consumers": [
+        "ui-tui/package.json",
+        "janitor_cli.py"
+      ],
+      "reason": "Skin-compatible branding/contract tests or lint-only preservation of stable behavior.",
+      "replacement": null
+    },
+    {
+      "path": "ui-tui/src/app/useMainApp.ts",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "2ae90432a4f4057338b510b117ecf2149d85b7a220ddb50e54a49b2a56ed6dac",
+      "classification": "active",
+      "consumers": [
+        "ui-tui/package.json",
+        "janitor_cli.py"
+      ],
+      "reason": "Skin-compatible branding/contract tests or lint-only preservation of stable behavior.",
+      "replacement": null
+    },
+    {
+      "path": "ui-tui/src/app/useSessionLifecycle.ts",
+      "historical_fork_delta": false,
+      "current_engine_delta": true,
+      "present": true,
+      "sha256": "b9d759e6a2cba8269aa8eb0834ed58118396d00277c9634b929744266e395c03",
       "classification": "active",
       "consumers": [
         "ui-tui/package.json",

@@ -26,7 +26,7 @@ from typing import Mapping
 from typing import Optional
 from typing import TYPE_CHECKING
 
-from hermes_cli.quiet_single_query import KANBAN_WORKER_EXIT_TRAILER
+from hermes_cli import kanban_worker_log as worker_log
 
 if TYPE_CHECKING:
     from hermes_cli.kanban_db import Task
@@ -258,25 +258,8 @@ def _exit_code_kind(code: int) -> tuple[str, int]:
     return ("nonzero_exit", code)
 
 
-_EXIT_TRAILER_RE = re.compile(
-    r"^" + re.escape(KANBAN_WORKER_EXIT_TRAILER) + r"(\d+)\s*$", re.MULTILINE,
-)
 
 
-def _worker_log_exit_code(task_id: str, board: Optional[str] = None) -> Optional[int]:
-    """Exit code from the trailer the worker CLI wrote to its own log; None when absent.
-
-    The durable twin of ``_recent_worker_exits``: written by the worker itself
-    (``hermes_cli.quiet_single_query.exit_single_query``), so it is there whether
-    or not the process running this sweep ever reaped the worker. Last trailer
-    wins — the log is append-mode across re-runs.
-    """
-    try:
-        raw = _kb.read_worker_log(task_id, tail_bytes=4000, board=board)
-    except Exception:
-        return None
-    matches = _EXIT_TRAILER_RE.findall(raw or "")
-    return int(matches[-1]) if matches else None
 
 
 def reap_worker_zombies() -> list[int]:
@@ -976,51 +959,12 @@ _PROTOCOL_VIOLATION_ERROR = (
 
 
 # Rich panel/rule chrome around the rendered response, and the CLI's own preamble lines.
-_LOG_CHROME = re.compile(r"[─━═╭╮╰╯│┃┌┐└┘]+|☤\s*Hermes")
 
 
-def _exit_summary_marker() -> str:
-    """The CLI exit-summary header (``cli_session_mixin.show_exit_summary``), in the active language."""
-    from agent.i18n import t
-    return t("cli.session.exit_resume_hint")
 
 
-def _log_noise_prefixes() -> tuple[str, ...]:
-    from agent.i18n import t
-    return ("session_id:", "Query:", t("cli.chat.initializing_agent"))
 
 
-def _worker_final_output(task_id: str, board: Optional[str] = None) -> str:
-    """Best-effort read of a dead worker's last printed text, for the board diagnostic.
-
-    A ``chat -q`` worker's stdout/stderr are redirected to its per-task log
-    (``_default_spawn``), so when it exits without a terminal board call the
-    reason is usually sitting there: the model's own explanation of why it could
-    not comply (#88603), or the rendered provider error (#46593). The reap used to
-    discard it in favour of a canned message on every retry. Trims the CLI exit
-    summary, rule lines and the ``session_id:`` trailer; returns "" (never raises)
-    on a missing/empty log.
-
-    ``board`` must come from the dispatching tick: ambient current-board resolution
-    is wrong for every board but the one the dispatcher thread happens to call
-    "current", so the log would silently not be found.
-    """
-    try:
-        raw = _kb.read_worker_log(task_id, tail_bytes=4000, board=board)
-    except Exception:
-        return ""
-    if not raw:
-        return ""
-    raw = _EXIT_TRAILER_RE.sub("", raw)
-    cut = raw.rfind(_exit_summary_marker())
-    if cut != -1:
-        raw = raw[:cut]
-    lines = []
-    for ln in raw.splitlines():
-        ln = _LOG_CHROME.sub("", ln).strip()
-        if ln and not ln.startswith(_log_noise_prefixes()):
-            lines.append(ln)
-    return " ".join(lines)[-400:]
 
 
 @dataclass
@@ -1056,7 +1000,7 @@ def _classify_dead_worker(
     """
     dead = _classify_dead_worker_exit(pid, claimer, task_id=task_id, board=board)
     if task_id and not dead.rate_limited:
-        worker_output = _worker_final_output(task_id, board=board)
+        worker_output = worker_log.final_output(task_id, board=board)
         if worker_output:
             dead.error_text += f" Worker's last output: {worker_output!r}"
             dead.event_payload["worker_output"] = worker_output
@@ -1080,7 +1024,7 @@ def _classify_dead_worker_exit(
     """
     kind, code = _classify_worker_exit(pid)
     if kind == "unknown" and task_id:
-        logged = _worker_log_exit_code(task_id, board=board)
+        logged = worker_log.exit_code(task_id, board=board)
         if logged is not None:
             kind, code = _exit_code_kind(logged)
     if kind == "clean_exit":
@@ -1589,7 +1533,7 @@ def check_respawn_guard(
     # benign commands such as ``claude auth status`` (#117097).
     err = _kb._lossy_text(row["last_failure_error"])
     latest_outcome = latest_run["outcome"] if latest_run is not None else None
-    if err and latest_outcome != "crashed" and _RESPAWN_BLOCKER_RE.search(err):
+    if err and latest_outcome not in {"crashed", "completed", "review_requested"} and _RESPAWN_BLOCKER_RE.search(err):
         return "blocker_auth"
 
     # Review-lane spawns stop here: a recent completed run and a fresh PR URL
@@ -2737,6 +2681,20 @@ def _retag_legacy_worker_sessions(workspaces_root_path: str) -> None:
         _kb._log.debug("kanban worker: legacy session retag skipped (%s)", exc)
 
 
+def _available_worker_skills(skills, hermes_home):
+    """A removed pin must not prevent the worker from opening its task session."""
+    from agent.skill_commands import _load_skill_payload
+    from hermes_constants import get_hermes_home
+    available = []
+    with _worker_profile_scope(hermes_home or str(get_hermes_home())):
+        for name in skills or ():
+            if _load_skill_payload(name) is not None:
+                available.append(name)
+            else:
+                _kb._log.warning("Kanban worker skipped unavailable pinned skill %r", name)
+    return available
+
+
 def _worker_argv(task: Task, profile_arg: str, hermes_home: Optional[str]) -> list[str]:
     """Build the ``hermes -p <profile> --cli ... chat -q ...`` worker command."""
     cmd = [
@@ -2752,7 +2710,7 @@ def _worker_argv(task: Task, profile_arg: str, hermes_home: Optional[str]) -> li
     ]
     # One `--skills X` pair per name: easier to read in `ps` and avoids quoting
     # ambiguity if a skill name contains unusual chars.
-    for sk in task.skills or ():
+    for sk in _available_worker_skills(task.skills, hermes_home):
         if sk:
             cmd.extend(["--skills", sk])
     if task.model_override:
@@ -2784,7 +2742,9 @@ def _open_worker_log(task: Task, board: Optional[str]):
     log_path = log_dir / f"{task.id}.log"
     rotate_bytes, backup_count = worker_log_rotation_config()
     _rotate_worker_log(log_path, rotate_bytes, backup_count)
-    return open(log_path, "ab")
+    stream = open(log_path, "ab")
+    worker_log.begin_attempt(stream, task.current_run_id)
+    return stream
 
 
 def _restart_safe_worker_argv(task: Task, command: list[str]) -> list[str]:

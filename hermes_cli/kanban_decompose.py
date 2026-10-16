@@ -305,6 +305,7 @@ def decompose_task(
     *,
     author: Optional[str] = None,
     timeout: Optional[int] = None,
+    automatic: bool = False,
 ) -> DecomposeOutcome:
     """Decompose a triage task into a graph of child tasks. Expected failures
     (not in triage, no aux client, API error, malformed/empty reply) surface
@@ -312,6 +313,11 @@ def decompose_task(
     task, reason = _load_triage_task(task_id)
     if task is None:
         return DecomposeOutcome(task_id, False, reason)
+
+    if automatic:
+        from hermes_cli.kanban_decompose_retry import reserve_attempt
+        if reason := reserve_attempt(task_id):
+            return DecomposeOutcome(task_id, False, reason)
 
     routing = _load_routing(root_assignee=task.assignee)
     raw, reason = _call_aux(

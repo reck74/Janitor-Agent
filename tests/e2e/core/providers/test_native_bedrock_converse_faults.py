@@ -36,10 +36,7 @@ IAM_DENIAL = ("User: arn:aws:iam::123456789012:user/e2e is not authorized to per
               + MODEL)
 
 # Red on current main for a tracked, open bug: key -> (the bug's own failure-message pattern, reason).
-KNOWN: dict[str, tuple[str, str]] = {
-    "validation_retried": (r"^400 ValidationException retried: fake saw [2-9]\d* requests",
-                           "#121294 a Bedrock 400 ValidationException is retried and reported as 'temporarily unavailable'"),
-}
+KNOWN: dict[str, tuple[str, str]] = {}
 
 
 CHUNK = 7

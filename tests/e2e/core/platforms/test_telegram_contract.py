@@ -22,9 +22,6 @@ pytestmark = [
 ]
 
 KNOWN: dict[str, tuple[str, str]] = {
-    "heic_as_image": (
-        r"a HEIC photo sent as a file did not reach the model as an image",
-        "#119593 HEIC photo sent as a file is refused by the image cache (never reaches the model)"),
 }
 SKIP: dict[str, str] = {}
 

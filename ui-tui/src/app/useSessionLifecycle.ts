@@ -146,6 +146,10 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
     sys
   } = opts
 
+  // A newer navigation owns the visible transcript, including while startup RPCs are pending.
+  const selectionRef = useRef(0)
+  const hasSessionSelection = useCallback(() => selectionRef.current > 0, [])
+
   // Plugin on_session_finalize text comes back on the close result and is shown as system lines (never a
   // model turn). `deferMessages`: the caller resets the transcript next and shows them itself afterwards.
   const closeSession = useCallback(
@@ -206,7 +210,10 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
 
   const startNewSession = useCallback(
     async (msg?: string, title?: string, keepCurrent = false) => {
+      const selection = ++selectionRef.current
       const setup = await rpc<SetupStatusResponse>('setup.status', {})
+
+      if (selection !== selectionRef.current) {return null}
 
       if (setup?.provider_configured === false) {
         panel(setupRequiredTitle(), buildSetupRequiredSections())
@@ -218,10 +225,18 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
       const previousSid = getUiState().sid
       const closed = keepCurrent ? null : await closeSession(previousSid, true)
 
+      if (selection !== selectionRef.current) {return null}
+
       const r = await rpc<SessionCreateResponse>('session.create', {
         cols: colsRef.current,
         ...(STARTUP_WORKSPACE_CWD ? { cwd: STARTUP_WORKSPACE_CWD } : {})
       })
+
+      if (selection !== selectionRef.current) {
+        if (r?.session_id && r.session_id !== getUiState().sid) {void closeSession(r.session_id, true)}
+
+        return null
+      }
 
       if (!r) {
         patchUiState({ status: 'ready' })
@@ -314,6 +329,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
 
   const activateLiveSession = useCallback(
     (id: string) => {
+      const selection = ++selectionRef.current
       patchOverlayState({ sessions: false })
       patchUiState({ status: t('session.status.switchingSession') })
       // The card belongs to the session being left; the activated one answers with its own.
@@ -321,6 +337,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
 
       gw.request<SessionActivateResponse>('session.activate', { session_id: id })
         .then(raw => {
+          if (selection !== selectionRef.current) {return}
           const r = asRpcResult<SessionActivateResponse>(raw)
 
           if (!r) {
@@ -358,6 +375,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
           cancelResumeScrollRef.current = scheduleResumeScrollToBottom(scrollRef)
         })
         .catch((e: Error) => {
+          if (selection !== selectionRef.current) {return}
           sys(`error: ${e.message}`)
           patchUiState({ status: 'ready' })
         })
@@ -367,10 +385,13 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
 
   const resumeById = useCallback(
     (id: string) => {
+      const selection = ++selectionRef.current
       patchOverlayState({ sessions: false })
       patchUiState({ status: t('session.status.resuming') })
 
       return rpc<SetupStatusResponse>('setup.status', {}).then(setup => {
+        if (selection !== selectionRef.current) {return}
+
         if (setup?.provider_configured === false) {
           panel(setupRequiredTitle(), buildSetupRequiredSections())
           patchUiState({ status: t('session.status.setupRequired') })
@@ -383,6 +404,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
         return gw
           .request<SessionResumeResult>('session.resume', { cols: colsRef.current, session_id: id })
           .then(raw => {
+            if (selection !== selectionRef.current) {return}
             const r = asRpcResult<SessionResumeResult>(raw)
 
             if (!r) {
@@ -427,6 +449,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
             }
           })
           .catch((e: Error) => {
+            if (selection !== selectionRef.current) {return}
             sys(`error: ${e.message}`)
             patchUiState({ status: 'ready' })
           })
@@ -453,6 +476,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
       activateLiveSession,
       closeSession,
       guardBusySessionSwitch,
+      hasSessionSelection,
       newLiveSession,
       newSession,
       resetSession,
@@ -464,6 +488,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
       activateLiveSession,
       closeSession,
       guardBusySessionSwitch,
+      hasSessionSelection,
       newLiveSession,
       newSession,
       resetSession,

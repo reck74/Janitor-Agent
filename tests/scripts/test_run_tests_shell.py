@@ -16,6 +16,7 @@ def test_shell_runner_executes_tests_and_propagates_failure(tmp_path):
         "def test_canary():\n"
         f"    Path({str(marker)!r}).write_text('executed')\n"
         "    assert os.environ['PATHEXT'] == '.COM;.EXE;.BAT;.CMD'\n"
+        "    assert os.environ['HERMES_E2E_N1_TAG'] == 'refs/janitor-ci/upgrade-n1'\n"
         "    assert False, 'runner failure propagation canary'\n",
         encoding="utf-8",
     )
@@ -24,6 +25,7 @@ def test_shell_runner_executes_tests_and_propagates_failure(tmp_path):
         ["bash", str(root / "scripts/run_tests.sh"), "-j", "1", str(case)],
         cwd=tmp_path, capture_output=True, text=True, timeout=180,
         env={**os.environ, "HERMES_PYTHON": sys.executable, "HERMES_TEST_FILE_RETRIES": "0",
+             "HERMES_E2E_N1_TAG": "refs/janitor-ci/upgrade-n1",
              "PATHEXT": ".COM;.EXE;.BAT;.CMD"},
              check=False,
     )

@@ -110,3 +110,8 @@ El siguiente lote conserva las reproducciones rojas y los resultados finales por
 - Windows: las fixtures restantes usan Bash delegado, HTTP loopback real y configuración Docker privada; 64 pruebas locales aprobadas. La causa precisa del antiguo stub Firecrawl no quedó establecida, y el timeout Compose sólo apareció en x64. Las modificaciones conservan los casos funcionales y requieren confirmación nativa x64/ARM64.
 
 También siguen pendientes los diecinueve casos estrictos adicionales de dashboard, delivery, Kanban, plataformas y TUI/PTY. La clasificación externa documenta causas y rutas; que un archivo coincida con Hermes estable no convierte un fallo en aceptación.
+
+
+## Revisión de CI 191ca84b1f (16 de octubre)
+
+El resultado remoto y las reparaciones posteriores se detallan en [JANITOR_CI_191_REPAIR.md](JANITOR_CI_191_REPAIR.md). Linux E2E mejoró a 857 aprobados, 39 fallos y 16 omitidos; todavía no es aceptación completa. Los nuevos resultados locales no reemplazan el CI del próximo checkpoint ni la memoria Honcho y el AppImage finales. La actualización desde el instalador histórico reveló además un exceso de descarga Git antes del swap, conservado como fallo real. La publicación continúa bloqueada.

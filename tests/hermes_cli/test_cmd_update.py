@@ -106,6 +106,36 @@ class TestGitTrampolineSelfHeal:
         assert result == git_cmd
         run.assert_not_called()
 
+    @pytest.mark.parametrize('returncode, stderr, expected', [
+        (0, '', False), (1, 'BUG (fork bomb)', True), (1, 'missing DLL', None),
+    ])
+    def test_git_probe_rejects_failed_version_commands(self, monkeypatch, returncode, stderr, expected):
+        from hermes_cli import update_custody, update_cmd_git
+        monkeypatch.setattr(update_custody, 'run_git', lambda *args, **kwargs:
+                            subprocess.CompletedProcess(args, returncode, stdout='', stderr=stderr))
+        assert update_cmd_git._probe_fork_bomb(['fixture-git']) is expected
+
+    @pytest.mark.parametrize('probe_result', [False, True, None])
+    def test_locator_probes_path_git_when_direct_layout_is_unavailable(self, tmp_path, monkeypatch, probe_result):
+        import shutil
+        from pathlib import Path
+        from hermes_cli import update_cmd_git
+
+        candidate = tmp_path / 'git.exe'
+        candidate.touch()
+        monkeypatch.setattr(shutil, 'which', lambda command: str(candidate) if command == 'git' else None)
+        monkeypatch.setattr(update_cmd_git, '_portable_git_candidates', list)
+        monkeypatch.setattr(Path, 'exists', lambda path: path == candidate)
+        probes = []
+
+        def probe(command):
+            probes.append(command)
+            return probe_result
+
+        monkeypatch.setattr(update_cmd_git, '_probe_fork_bomb', probe)
+        assert update_cmd_git._locate_real_git() == (candidate if probe_result is False else None)
+        assert probes == [[str(candidate)]]
+
     def test_portable_git_candidates_check_shared_root_first(self, tmp_path, monkeypatch):
         # Profile-scoped layout: HERMES_HOME = <root>/profiles/foo, but the
         # PortableGit tree lives under the SHARED root (monerostar review on

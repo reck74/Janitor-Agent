@@ -495,6 +495,7 @@ export interface GatewayEventHandlerContext {
   gateway: GatewayServices
   session: {
     STARTUP_RESUME_ID: string
+    hasSessionSelection?: () => boolean
     colsRef: MutableRefObject<number>
     newSession: (msg?: string, title?: string) => void
     // Session carried across a transport loss or child exit, cleared after resume.

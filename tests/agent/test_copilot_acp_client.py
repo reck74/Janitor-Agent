@@ -40,7 +40,7 @@ class CopilotACPClientSafetyTests(unittest.TestCase):
                 stream=True,
             )
 
-        chunks = list(stream)
+            chunks = list(stream)
         delta = chunks[0].choices[0].delta
         self.assertIsNone(delta.content)
         self.assertEqual(chunks[0].choices[0].finish_reason, "tool_calls")

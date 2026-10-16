@@ -679,9 +679,11 @@ class ChatCompletionsTransport(ProviderTransport):
                 extra_body = {k: v for k, v in extra_body.items() if k in ("thinking_config", "thinkingConfig", "max_output_tokens")}
             if extra_body:
                 api_kwargs["extra_body"] = extra_body
-        return _finish_kwargs(
+        finished = _finish_kwargs(
             api_kwargs, sanitized, params, supports_prompt_cache_key=bool(getattr(profile, "supports_prompt_cache_key", False)),
         )
+        prepare = getattr(profile, "prepare_api_kwargs", None)
+        return prepare(finished) if callable(prepare) else finished
 
     def normalize_response(self, response: Any, **kwargs) -> NormalizedResponse:
         """Normalize an OpenAI ChatCompletion.

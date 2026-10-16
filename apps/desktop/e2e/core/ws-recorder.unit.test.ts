@@ -50,3 +50,16 @@ test('a close during reload stays closed while a new connection remains observab
   await reloadWithWebSocketRecorder(page, rec)
   expect(rec.sockets.map(socket => socket.closed)).toEqual([true, false])
 })
+
+
+test('a new-document socket that closes after delivery remains recorded as closed', async () => {
+  const rec = recorder()
+  const page = { reload: vi.fn(async () => {
+    rec.sockets.push({ id: 1, url: rec.sockets[0]!.url, closed: true })
+    rec.events.push({ socket: 1, type: 'message.complete', sessionId: 'session', seq: 2, payload: {} })
+  }) } as unknown as Page
+
+  await reloadWithWebSocketRecorder(page, rec)
+  expect(rec.sockets[1]).toMatchObject({ id: 1, closed: true })
+  expect(rec.events.at(-1)?.socket).toBe(1)
+})

@@ -5,8 +5,11 @@ registry entry is discovery information, not authority to mint a credential.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import ipaddress
 import json
+import secrets
 from pathlib import Path
 from urllib.parse import urlencode, urlsplit
 
@@ -54,7 +57,10 @@ def discover_attach_url(session_id: str, *, registry_home: str | Path | None = N
     parts = urlsplit(endpoint)
     if parts.path not in ("", "/") or parts.query:
         raise ValueError("Shared runtime endpoint must be an origin without a path or query.")
-    query = urlencode({"session_id": session_id, "lease_id": owner["lease_id"],
+    # The registry's unguessable lease is proof material, never a query value
+    # sent to whoever happens to be listening on a recycled loopback port.
+    nonce = secrets.token_hex(32)
+    query = urlencode({"session_id": session_id, "nonce": nonce,
                        "profile_home": str(home)})
     try:
         # Ignore proxy env and redirects: local discovery must stay on the
@@ -75,14 +81,33 @@ def discover_attach_url(session_id: str, *, registry_home: str | Path | None = N
                          "close it there and run hermes --resume " + session_id + " here.\n"
                          + session_owner_details(session_id, owner)) from exc
     if not isinstance(reply, dict) or any(reply.get(key) != value for key, value in {
-        "session_id": session_id, "lease_id": owner["lease_id"], "profile_home": str(home),
+        "session_id": session_id, "profile_home": str(home),
     }.items()):
         raise ValueError("Shared runtime handshake identity does not match the requested owner.")
     websocket_url = reply.get("websocket_url")
     if (not isinstance(websocket_url, str) or _local_origin(websocket_url, "ws") != origin
             or urlsplit(websocket_url).path != "/api/ws"):
         raise ValueError("Shared runtime handshake returned a different endpoint.")
+    _verify_attach_proof(reply, owner["lease_id"], session_id, nonce, home, websocket_url)
     return websocket_url
+
+
+def _verify_attach_proof(reply: dict, lease_id: str, session_id: str, nonce: str,
+                         home: Path, websocket_url: str) -> None:
+    # Bind the fresh challenge AND the chosen socket/profile to the owner.
+    # No distributed runtime advertises this endpoint yet; producers must
+    # implement this proof contract before advertising shared_runtime_url.
+    message = json.dumps(
+        ["hermes-session-attach-v1", session_id, nonce, str(home), websocket_url],
+        ensure_ascii=False, separators=(",", ":"),
+    ).encode("utf-8")
+    expected = hmac.new(lease_id.encode(), message, hashlib.sha256).hexdigest()
+    proof = reply.get("attach_proof")
+    if (reply.get("nonce") != nonce or not isinstance(proof, str)
+            or not hmac.compare_digest(proof.encode("utf-8"), expected.encode("ascii"))):
+        raise ValueError("Shared runtime could not prove session ownership. Use the chat where "
+                         "it is open, or close it there and run hermes --resume "
+                         + session_id + " here.")
 
 
 def configure_tui_attachment(env: dict[str, str], session_id: str | None, *,

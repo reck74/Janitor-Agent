@@ -97,3 +97,14 @@ def test_should_stream_is_off_for_any_external_process_profile(monkeypatch):
 
     assert _should_stream(make("acme-acp")) is False
     assert _should_stream(make("acme-http")) is True
+
+
+def test_external_process_streaming_requires_explicit_client_capability(monkeypatch):
+    from agent.turn_api_call import _should_stream
+    from agent.copilot_acp_client import CopilotACPClient
+
+    agent = SimpleNamespace(provider='copilot-acp', base_url='acp://copilot',
+                            client=CopilotACPClient(), _has_stream_consumers=lambda: True)
+    assert _should_stream(agent) is True
+    agent._disable_streaming = True
+    assert _should_stream(agent) is False

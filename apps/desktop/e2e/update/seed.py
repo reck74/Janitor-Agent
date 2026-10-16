@@ -28,8 +28,6 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT))
 
-from tests.e2e.core.upgrade import _helpers as H
-from tests.e2e.core.upgrade import _install_helpers as I
 
 
 def _paths(root: Path) -> dict[str, Path]:
@@ -41,12 +39,16 @@ def _paths(root: Path) -> dict[str, Path]:
     }
 
 
-def _sandbox(root: Path) -> I.Sandbox:
+def _sandbox(root: Path):
+    from tests.e2e.core.upgrade import _install_helpers as I
+
     facts = json.loads(_paths(root)["facts"].read_text(encoding="utf-8"))
     return I.Sandbox(root=Path(facts["sandboxRoot"]), env=facts["env"])
 
 
 def _fail(what: str, cp: subprocess.CompletedProcess) -> None:
+    from tests.e2e.core.upgrade import _helpers as H
+
     sys.stderr.write(f"{what} failed:\n{H.describe(cp)}\n")
     raise SystemExit(1)
 
@@ -71,6 +73,8 @@ def stock_engine_manifest(source: str) -> str:
 
 
 def install(root: Path) -> None:
+    from tests.e2e.core.upgrade import _install_helpers as I
+
     p = _paths(root)
     root.mkdir(parents=True, exist_ok=True)
     p["facts"].unlink(missing_ok=True)
@@ -130,6 +134,8 @@ def restore(root: Path) -> None:
 
 
 def publish(root: Path, message: str, rel: str, content_file: str) -> None:
+    from tests.e2e.core.upgrade import _install_helpers as I
+
     p = _paths(root)
     scratch = root / "publish"
     scratch.mkdir(exist_ok=True)

@@ -27,7 +27,6 @@ from typing import Any
 
 import pytest
 
-from tests.e2e.core._pending_fixes import known_gate
 from tests.e2e.core.providers._native_helpers import (
     ChatResult,
     KnownSymptom,
@@ -43,7 +42,7 @@ from tests.fakes.providers import copilot_acp as acp
 pytest.importorskip("acp.schema", reason="the fake validates against the agent-client-protocol package (acp extra)")
 
 pytestmark = [
-    pytest.mark.skipif(not sys.platform.startswith("linux"), reason="POSIX launcher script + /proc pid checks"),
+    pytest.mark.platforms("linux"),
     pytest.mark.live_system_guard_bypass,
 ]
 
@@ -53,11 +52,6 @@ PARTIAL = "PARTIAL-BEFORE-CRASH "
 CRASH_STDERR = "fatal: agent segfaulted (fake)"
 
 
-# Red on current main for a tracked, open bug: key -> (the bug's own failure-message pattern, reason).
-KNOWN: dict[str, tuple[str, str]] = {
-    "auth_remedy": (r"^remedy 'hermes [^']+' is not implemented for copilot-acp: ",
-                    "#121290 copilot-acp auth failure tells the user to run a hermes command that is not implemented"),
-}
 
 
 @dataclass(frozen=True)
@@ -152,11 +146,11 @@ def test_auth_failure_remedy_is_an_actionable_command(outcomes):
     ``hermes ...`` command it names has to be implemented for this provider."""
     out = outcomes["auth_required_not_retried"]
     assert out.run.returncode != 0 and "Authentication required" in out.run.stdout, out.run.describe()
+    assert "`copilot login`" in out.run.stdout
     for command in REMEDY_RE.findall(out.run.stdout):
         argv = [sys.executable, "-m", "hermes_cli.main", *command.split()[1:]]
         proc = subprocess.run(argv, cwd=out.nh.project, env=out.nh.env(), capture_output=True, text=True,
                               timeout=60, stdin=subprocess.DEVNULL, check=False)
         said = (proc.stdout + proc.stderr).lower()
-        with known_gate(KNOWN, "auth_remedy", raises=KnownSymptom):
-            if "not implemented" in said:
-                raise KnownSymptom(f"remedy {command!r} is not implemented for copilot-acp: {said.strip()[:300]}")
+        if "not implemented" in said:
+            raise KnownSymptom(f"remedy {command!r} is not implemented for copilot-acp: {said.strip()[:300]}")

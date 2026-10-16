@@ -19,21 +19,15 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from tests.e2e.core._pending_fixes import known_gate
 from tests.e2e.core.providers._native_helpers import KnownSymptom, messages, tool_calls_of
 from tests.fakes.providers.codex_app_server import CodexRun, run_codex_scenario
 
 pytestmark = [
-    pytest.mark.skipif(sys.platform == "win32", reason="POSIX sh wrapper for the fake codex binary"),
+    pytest.mark.platforms("posix"),
     # CodexRun.cleanup() SIGKILLs any app-server that outlived its CLI (reparented to init by then).
     pytest.mark.live_system_guard_bypass,
 ]
 
-# Red on current main for a tracked, open bug: key -> (the bug's own failure-message pattern, reason).
-KNOWN: dict[str, tuple[str, str]] = {
-    "compaction_row": (r"^compaction boundary persisted as assistant content: \[.*contextCompaction",
-                       "#121301 native contextCompaction item persisted as a raw-JSON assistant message"),
-}
 
 YOLO = ["--yolo"]
 SEED_MARKER = "Prior conversation from this Hermes session"
@@ -204,6 +198,5 @@ def test_native_compaction_is_not_persisted_as_assistant_text(runs):
     rows = _rows(run)
     assert any(r["content"] == "C-TWO" for r in rows), f"post-compaction answer not persisted: {rows}"
     leaked = [r["content"] for r in rows if "contextCompaction" in (r.get("content") or "")]
-    with known_gate(KNOWN, "compaction_row", raises=KnownSymptom):
-        if leaked:
-            raise KnownSymptom(f"compaction boundary persisted as assistant content: {leaked}")
+    if leaked:
+        raise KnownSymptom(f"compaction boundary persisted as assistant content: {leaked}")
