@@ -1083,6 +1083,30 @@ def _clear_incomplete_marker() -> bool:
     return True
 
 
+# Mirrors hermes_cli.update_lock.UPDATE_EXIT_CONCURRENT so the refusal exit
+# code survives a venv where that module cannot be imported.
+_UPDATE_EXIT_CONCURRENT = 2
+
+
+def _acquire_update_lock():
+    """Claim the update marker shared with ``hermes update``, the dashboard
+    and the desktop/Tauri updaters.
+
+    Returns ``(lock, refusal)``: ``refusal`` is the user-facing message when
+    another live update holds the marker. The lock is best-effort — if the
+    module cannot be imported (partially-broken venv, early intercept) the
+    update proceeds unlocked rather than being blocked.
+    """
+    try:
+        from hermes_cli.update_lock import UpdateLock, describe_holder
+    except Exception:
+        return None, None
+    lock = UpdateLock()
+    if not lock.acquire():
+        return None, describe_holder(lock.holder)
+    return lock, None
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -1100,7 +1124,8 @@ def run_janitor_update(args) -> int:
             branch (str|None): target branch (default ``"main"``).
 
     Returns:
-        Process exit code: 0 = updated, 1 = failed, 130 = cancelled.
+        Process exit code: 0 = updated, 1 = failed, 2 = another update holds
+        the shared update lock, 130 = cancelled.
     """
     _ensure_loaded()
 
@@ -1117,9 +1142,15 @@ def run_janitor_update(args) -> int:
     persisted_stash_ref: Optional[str] = None
     project_root: Optional[Path] = None
     git_cmd: Optional[list[str]] = None
+    update_lock = None
     try:
         if getattr(args, "check", False):
             return _check_only(branch)
+
+        update_lock, refusal = _acquire_update_lock()
+        if refusal is not None:
+            print(refusal)
+            return _UPDATE_EXIT_CONCURRENT
 
         print("⚕ Updating Janitor Agent from fork...")
         print()
@@ -1358,6 +1389,8 @@ def run_janitor_update(args) -> int:
             )
         return 1
     finally:
+        if update_lock is not None:
+            update_lock.release()
         _call(
             "_finalize_update_output",
             _update_io_state,

@@ -11,6 +11,8 @@ import json
 import os
 import re
 import subprocess
+import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -2052,3 +2054,105 @@ def test_get_hermes_home_raises_when_hermes_constants_breaks_and_hermes_home_uns
         "get_hermes_home must raise when both hermes_constants is broken "
         "AND HERMES_HOME is unset"
     )
+
+
+# ---------------------------------------------------------------------------
+# Shared update lock (hermes_cli.update_lock)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def foreign_update_holder(tmp_path, monkeypatch):
+    """A live, unrelated process recorded as the owner of the update marker."""
+    from hermes_cli.update_lock import HANDOFF_PID_ENV, update_marker_path
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
+    monkeypatch.delenv(HANDOFF_PID_ENV, raising=False)
+    holder = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(60)"]
+    )
+    marker = update_marker_path()
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(f"{holder.pid}\n{int(time.time())}\n", encoding="utf-8")
+    try:
+        yield marker, holder.pid
+    finally:
+        holder.kill()
+        holder.wait()
+
+
+def test_live_foreign_update_lock_refuses_without_touching_git(
+    monkeypatch, tmp_path, capsys, foreign_update_holder
+):
+    marker, holder_pid = foreign_update_holder
+    _stub_helpers(monkeypatch, tmp_path)
+    finalized: list[dict] = []
+    monkeypatch.setattr(juc, "_finalize_update_output", finalized.append)
+    side_effect, recorded = _make_side_effect()
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    from hermes_cli.update_lock import UPDATE_EXIT_CONCURRENT
+
+    assert rc == UPDATE_EXIT_CONCURRENT
+    assert f"process {holder_pid}" in capsys.readouterr().out
+    assert recorded == []
+    assert len(finalized) == 1
+    assert marker.read_text(encoding="utf-8").splitlines()[0] == str(holder_pid)
+
+
+def test_check_only_mode_ignores_a_held_update_lock(
+    monkeypatch, tmp_path, foreign_update_holder
+):
+    _stub_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="0")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    assert juc.run_janitor_update(SimpleNamespace(check=True)) == 0
+
+
+def test_update_holds_the_lock_while_running_and_releases_it(
+    monkeypatch, tmp_path
+):
+    from hermes_cli.update_lock import update_marker_path
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
+    _stub_helpers(monkeypatch, tmp_path)
+    marker = update_marker_path()
+    owners_seen: list[str] = []
+    side_effect, _ = _make_side_effect()
+
+    def observing_side_effect(cmd, **kwargs):
+        if marker.exists():
+            owners_seen.append(marker.read_text(encoding="utf-8").splitlines()[0])
+        return side_effect(cmd, **kwargs)
+
+    monkeypatch.setattr(juc.subprocess, "run", observing_side_effect)
+
+    assert juc.run_janitor_update(SimpleNamespace()) == 0
+    assert owners_seen and set(owners_seen) == {str(os.getpid())}
+    assert not marker.exists()
+
+
+def test_update_lock_import_failure_degrades_to_unlocked_update(
+    monkeypatch, tmp_path
+):
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "hermes_cli.update_lock":
+            raise ImportError("simulated broken venv")
+        return real_import(name, globals, locals, fromlist, level)
+
+    _stub_helpers(monkeypatch, tmp_path)
+    side_effect, recorded = _make_side_effect()
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    rc = juc.run_janitor_update(SimpleNamespace())
+
+    assert rc == 0
+    assert any("--ff-only" in c for c in recorded)
