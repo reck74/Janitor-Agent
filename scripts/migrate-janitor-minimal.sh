@@ -101,7 +101,7 @@ main() {
     log_info "Next steps:"
     echo "  • Review your ~/.janitor/.env"
     echo "  • Install optional skills as needed:"
-    echo "      bash skills/janitor-firecrawl/scripts/deploy.sh"
+    echo "      janitor services deploy firecrawl"
     echo "  • Restart Janitor: janitor"
     echo ""
 }

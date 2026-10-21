@@ -20,11 +20,14 @@ import os
 import shutil
 import sys
 
-from janitor.home import ASSETS_ROOT, REPO_ROOT, janitor_home
+from janitor.home import ASSETS_ROOT, REPO_ROOT, SKILLS_ROOT, janitor_home
 
 # AISLAMIENTO CRÍTICO: Must be set BEFORE any hermes_ modules are imported.
 # hermes_constants.get_hermes_home() reads this env var at import time.
 os.environ["HERMES_HOME"] = str(janitor_home())
+# Referenced as ${JANITOR_SKILLS_ROOT} in skills.external_dirs so Janitor's
+# skills resolve from whichever install tree is running.
+os.environ["JANITOR_SKILLS_ROOT"] = str(SKILLS_ROOT)
 
 
 def _load_janitor_env() -> None:

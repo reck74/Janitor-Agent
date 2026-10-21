@@ -14,7 +14,7 @@ from pathlib import Path
 # Bumped when the on-disk layout of ~/.janitor changes in a way that needs a
 # migration (see janitor/migrations/). 0 = every pre-1.0 install.
 LAYOUT_VERSION = 1
-LAYOUT_MARKER = ".janitor_layout_version"
+LAYOUT_MARKER = ".layout_version"
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PACKAGE_ROOT = Path(__file__).resolve().parent

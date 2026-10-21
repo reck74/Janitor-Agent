@@ -34,7 +34,7 @@ import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SKILL_DIR = REPO_ROOT / "skills" / "devops" / "janitor-lightrag"
+SKILL_DIR = REPO_ROOT / "janitor" / "skills" / "services" / "janitor-lightrag"
 SCRIPTS_DIR = SKILL_DIR / "scripts"
 COMPOSE_FILE = SCRIPTS_DIR / "lightrag-compose.yml"
 DEPLOY_SH = SCRIPTS_DIR / "deploy.sh"
@@ -207,7 +207,7 @@ def test_skill_md_frontmatter_platforms_linux(skill_text: str) -> None:
 
 
 def test_skill_md_references_new_compose_path(skill_text: str) -> None:
-    expected = "~/.janitor/skills/devops/janitor-lightrag/scripts/lightrag-compose.yml"
+    expected = "${HERMES_SKILL_DIR}/scripts/lightrag-compose.yml"
     assert expected in skill_text, (
         f"SKILL.md missing reference to bundled compose path: {expected}"
     )

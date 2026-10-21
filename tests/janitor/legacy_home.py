@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable
 
+import yaml
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ASSETS = REPO_ROOT / "assets" / "janitor"
 
@@ -92,6 +94,14 @@ def _seed_skills(home: Path) -> None:
     (skills_dir / ".bundled_manifest").write_text("\n".join(manifest_lines) + "\n", encoding="utf-8")
 
 
+def _write_pre_1_0_config(dest: Path) -> None:
+    """The shipped seed config minus what 1.0 added (plugin, external skills)."""
+    config = yaml.safe_load((ASSETS / "config.yaml").read_text(encoding="utf-8"))
+    config.pop("plugins", None)
+    config.setdefault("skills", {})["external_dirs"] = []
+    dest.write_text(yaml.safe_dump(config, sort_keys=False, allow_unicode=True), encoding="utf-8")
+
+
 def _seed_state_db(home: Path) -> None:
     from hermes_state import SessionDB
 
@@ -119,7 +129,7 @@ def build_legacy_home(root: Path) -> LegacyHome:
         "HERMES_SKIN=sentry-janitor\n",
         encoding="utf-8",
     )
-    shutil.copy2(ASSETS / "config.yaml", home / "config.yaml")
+    _write_pre_1_0_config(home / "config.yaml")
     shutil.copy2(ASSETS / "SOUL.md", home / "SOUL.md")
     shutil.copy2(ASSETS / "honcho.json", home / "honcho.json")
     shutil.copy2(ASSETS / "sentry-janitor.yaml", home / "skins" / "sentry-janitor.yaml")

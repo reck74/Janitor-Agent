@@ -479,7 +479,7 @@ jobs:
             > "$ART/new-volumes.txt"
           comm -13 "$ART/docker-networks.before.txt" "$ART/docker-networks.after.txt" \
             > "$ART/new-networks.txt"
-          # Firecrawl deploy-script markers in $JH (per skills/janitor-firecrawl/scripts/deploy.sh)
+          # Firecrawl deploy-script markers in $JH (per janitor/skills/services/janitor-firecrawl/scripts/deploy.sh)
           JH="${{ runner.temp }}/janitor-e2e"
           fail=0
           if [ -s "$ART/new-containers.txt" ] || [ -s "$ART/new-volumes.txt" ] || [ -s "$ART/new-networks.txt" ]; then

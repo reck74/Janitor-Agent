@@ -21,7 +21,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-SKILL_DIR = Path(__file__).resolve().parents[2] / "skills" / "janitor-config-audit"
+SKILL_DIR = Path(__file__).resolve().parents[2] / "janitor" / "skills" / "core" / "janitor-config-audit"
 
 
 @pytest.fixture(scope="module")

@@ -29,7 +29,7 @@ import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SKILL_DIR = REPO_ROOT / "skills" / "janitor-firecrawl"
+SKILL_DIR = REPO_ROOT / "janitor" / "skills" / "services" / "janitor-firecrawl"
 SCRIPTS_DIR = SKILL_DIR / "scripts"
 COMPOSE_FILE = SCRIPTS_DIR / "firecrawl-compose.yml"
 DEPLOY_SH = SCRIPTS_DIR / "deploy.sh"

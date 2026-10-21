@@ -8,9 +8,10 @@ from typing import cast
 
 import yaml
 
+from janitor.home import SKILLS_ROOT
 
 logger = logging.getLogger(__name__)
-SKILLS_DIR = Path(__file__).resolve().parent.parent / "skills"
+SKILLS_DIR = SKILLS_ROOT / "agents"
 _AGENT_DIR_PATTERN = "janitor-*-agent"
 
 
@@ -109,3 +110,24 @@ def get_agent_by_type(task_type: str) -> dict[str, str] | None:
             return agent
 
     return None
+
+
+def setup_parser(parser) -> None:
+    sub = parser.add_subparsers(dest="agents_action")
+    sub.add_parser("list", help="List Janitor specialized agents")
+    show = sub.add_parser("show", help="Print the agent.yaml spec of one agent")
+    show.add_argument("name")
+
+
+def handle(args, out=print) -> int:
+    action = getattr(args, "agents_action", None) or "list"
+    if action == "list":
+        for agent in get_agents():
+            out(f"{agent['name']:<28} {agent['description']}")
+        return 0
+    spec = load_agent_spec(args.name)
+    if spec is None:
+        out(f"error: unknown agent {args.name!r}")
+        return 1
+    out(yaml.safe_dump(spec, sort_keys=False, allow_unicode=True).rstrip())
+    return 0

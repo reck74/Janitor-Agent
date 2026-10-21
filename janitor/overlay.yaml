@@ -41,10 +41,7 @@ fork_paths:
   - janitor_update_bootstrap.py
   - janitor_version.py
   - janitor_ext/**
-  # Janitor skills and their tests (moving under janitor/skills/).
-  - skills/janitor-*/**
-  - skills/devops/janitor-*/**
-  - optional-skills/devops/janitor-*/**
+  # Janitor tests still outside tests/janitor/ (moving there in 1.0).
   - tests/skills/test_janitor_*.py
   - tests/test_janitor_*.py
   - tests/gateway/test_telegram_janitor_branding.py

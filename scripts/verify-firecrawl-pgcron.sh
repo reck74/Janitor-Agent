@@ -12,7 +12,7 @@ set -euo pipefail
 ENV_FILE="${HOME}/.janitor/docker/firecrawl.env"
 if [[ ! -f "$ENV_FILE" ]]; then
     echo "FAIL: Environment file not found: $ENV_FILE"
-    echo "      Ejecuta primero: bash ~/.janitor/skills/janitor-firecrawl/scripts/deploy.sh"
+    echo "      Ejecuta primero: janitor services deploy firecrawl"
     exit 1
 fi
 

@@ -1,0 +1,10 @@
+name: honcho
+description: Long-term memory backend (Honcho API, deriver, Postgres, Redis).
+deploy: scripts/deploy.sh
+compose: scripts/honcho-compose.yml
+url: http://127.0.0.1:1973
+containers:
+  - janitor-honcho-api
+  - janitor-honcho-deriver
+  - janitor-honcho-database
+  - janitor-honcho-redis

@@ -294,7 +294,7 @@ if [[ "$setup_mode" == "2" ]]; then
     echo
 
     if [[ "$firecrawl_choice" == "1" ]]; then
-        FIRECRAWL_DEPLOY="${JANITOR_SOURCE}/skills/janitor-firecrawl/scripts/deploy.sh"
+        FIRECRAWL_DEPLOY="${JANITOR_SOURCE}/janitor/skills/services/janitor-firecrawl/scripts/deploy.sh"
         if [ -f "$FIRECRAWL_DEPLOY" ]; then
             bash "$FIRECRAWL_DEPLOY" || {
                 log_warn "Firecrawl no se pudo levantar."
@@ -306,7 +306,7 @@ if [[ "$setup_mode" == "2" ]]; then
         fi
     else
         log_info "Firecrawl saltado. Instalalo despues con:"
-        log_info "  bash ~/.janitor/skills/janitor-firecrawl/scripts/deploy.sh"
+        log_info "  janitor services deploy firecrawl"
     fi
 fi
 
@@ -339,7 +339,7 @@ echo ""
 if [[ "$setup_mode" == "3" ]]; then
     echo -e "   ${CORAL}⚠ Memoria no configurada.${NC}"
     echo -e "   Instala la skill janitor-honcho cuando estes listo:"
-    echo -e "   ${MUTED}   bash skills/janitor-honcho/scripts/setup-honcho.sh${NC}"
+    echo -e "   ${MUTED}   janitor services deploy honcho${NC}"
     echo ""
 fi
 
