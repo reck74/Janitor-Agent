@@ -216,13 +216,18 @@ class TestOWASPFailSafe:
 
 
 class TestJanitorVersionDisplay:
-    """Behavior: Janitor shows 0.20.1-janitor.1 in banner and --version."""
+    """Behavior: Janitor shows ``<hermes>-janitor.N`` in banner and --version."""
 
     def test_canonical_version_is_pep440_local(self):
         """hermes_cli.__version__ carries the PEP 440 local segment."""
+        import re
+        import tomllib
+
         from hermes_cli import __version__
 
-        assert __version__ == "0.20.1+janitor.1"
+        assert re.fullmatch(r"\d+\.\d+\.\d+\+janitor\.\d+", __version__), __version__
+        pyproject = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        assert pyproject["project"]["version"] == __version__
 
     def test_display_version_replaces_plus_with_hyphen(self):
         """janitor_version.display_version converts + to - in the local segment."""
@@ -242,7 +247,7 @@ class TestJanitorVersionDisplay:
         from hermes_cli import __version__
         from janitor_version import display_version
 
-        assert display_version(__version__) == "0.20.1-janitor.1"
+        assert display_version(__version__) == __version__.replace("+janitor.", "-janitor.")
 
     def test_subprocess_janitor_version_uses_display_form(self, tmp_path):
         """The real module entry point honors --version without entering chat."""
@@ -265,6 +270,9 @@ class TestJanitorVersionDisplay:
                 "HOME": str(tmp_path),
             },
         )
+        from hermes_cli import __version__
+        from janitor_version import display_version
+
         combined = result.stdout + result.stderr
-        assert "THE JANITOR v0.20.1-janitor.1" in combined
-        assert "0.20.1+janitor.1" not in combined
+        assert f"THE JANITOR v{display_version(__version__)}" in combined
+        assert __version__ not in combined

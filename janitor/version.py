@@ -1,9 +1,9 @@
 """Fork-only helper that converts a PEP 440 version to Janitor's display form.
 
 Janitor keeps the canonical ``__version__`` in ``pyproject.toml`` and
-``hermes_cli/__init__.py`` as ``0.20.1+janitor.1`` (PEP 440-valid). The
+``hermes_cli/__init__.py`` as ``<hermes>+janitor.N`` (PEP 440-valid). The
 banner, CLI ``--version``, and git tag use a hyphen instead because humans
-read tags like ``0.20.1-janitor.1`` more naturally than ``0.20.1+janitor.1``.
+read ``0.20.1-janitor.2`` more naturally than ``0.20.1+janitor.2``.
 
 This module is the only place that performs the character conversion. It
 takes the raw string as input (rather than importing the canonical value)
