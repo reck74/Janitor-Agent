@@ -1,7 +1,7 @@
 """
 Ad-hoc verification harness for the janitor-lightrag skill port.
 
-Mirrors the static-check pattern from tests/skills/test_janitor_firecrawl_skill.py
+Mirrors the static-check pattern from tests/janitor/test_janitor_firecrawl_skill.py
 since no janitor-lightrag skill test exists yet. Validates:
 
   * deploy.sh exists and is executable

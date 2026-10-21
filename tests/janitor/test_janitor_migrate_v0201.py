@@ -22,14 +22,14 @@ import pytest
 # The entire module drives scripts/migrate-janitor-v0.20.1.sh — a POSIX
 # install-path script whose documented Windows runtime is WSL2 (README),
 # not native Git Bash. Python-level migration behavior is covered on all
-# platforms by tests/test_janitor_update_core.py.
+# platforms by tests/janitor/test_janitor_update_core.py.
 pytestmark = pytest.mark.skipif(
     sys.platform == "win32",
     reason="drives the POSIX migration script; Windows runtime is WSL2",
 )
 
 
-SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "migrate-janitor-v0.20.1.sh"
+SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "migrate-janitor-v0.20.1.sh"
 
 
 def test_script_is_present_and_bash_n_clean():

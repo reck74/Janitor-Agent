@@ -15,7 +15,7 @@ covering the bugs fixed in `.plans/firecrawl-deploy-fix.md`:
   - .env.example documents both cloud and self-hosted options
 
 These are pure static checks — no Docker, no network, no subprocess.
-Run with: scripts/run_tests.sh tests/skills/test_janitor_firecrawl_skill.py -q
+Run with: scripts/run_tests.sh tests/janitor/test_janitor_firecrawl_skill.py -q
 """
 from __future__ import annotations
 

@@ -42,10 +42,6 @@ fork_paths:
   - janitor_update_bootstrap.py
   - janitor_version.py
   - janitor_ext/**
-  # Janitor tests still outside tests/janitor/ (moving there in 1.0).
-  - tests/skills/test_janitor_*.py
-  - tests/test_janitor_*.py
-  - tests/gateway/test_telegram_janitor_branding.py
   - janitor-tui.png
   # Fork automation.
   - .github/workflows/janitor-ci.yml
@@ -98,8 +94,6 @@ touchpoints:
     files:
       - hermes_cli/mcp_config.py
       - hermes_cli/web_routers/mcp.py
-      - tests/hermes_cli/test_mcp_router_discover.py
-      - tests/hermes_cli/test_mcp_router_logs.py
     why: >-
       `POST /api/mcp/servers/{name}/discover` (tools with inputSchema) and
       `GET /api/mcp/servers/{name}/logs` (per-server stderr slice).

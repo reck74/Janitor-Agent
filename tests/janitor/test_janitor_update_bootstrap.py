@@ -5,7 +5,7 @@ its branding banner, build the default namespace, and delegate to
 ``janitor_update_core.run_janitor_update``. All update flow logic lives in
 ``janitor_update_core``. The git/stash/bytecode helpers previously defined
 here have been removed and now live (and are tested) in
-``tests/test_janitor_update_core.py``.
+``tests/janitor/test_janitor_update_core.py``.
 """
 
 from __future__ import annotations

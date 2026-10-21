@@ -16,7 +16,7 @@ must hold for the bug to stay fixed:
    bash`` install lands on a version the engines field accepts).
 2. ``bootstrap.sh`` no longer hardcodes the old, sub-floor ``nvm install
    20`` (string-level regression guard — the same pattern used by
-   ``tests/test_janitor_no_duplicate_methods.py`` for structural guards).
+   ``tests/janitor/test_janitor_no_duplicate_methods.py`` for structural guards).
 3. ``bootstrap.sh`` delegates Node provisioning to the shared helper
    rather than rolling its own ``nvm install`` call.
 
@@ -30,7 +30,7 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 BOOTSTRAP = REPO_ROOT / "scripts" / "bootstrap.sh"
 NODE_HELPER = REPO_ROOT / "scripts" / "lib" / "node-bootstrap.sh"

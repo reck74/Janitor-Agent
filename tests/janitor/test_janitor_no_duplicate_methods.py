@@ -42,7 +42,7 @@ See AGENTS.md directive #15 (POST-SYNC DUPLICATE METHOD AUDIT).
 import ast
 import pathlib
 
-_REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 # Top-level core modules plus every Python package of the Hermes core.
 # The v2026.8.13 audit found merge duplicates in cron/, tools/, agent/,
