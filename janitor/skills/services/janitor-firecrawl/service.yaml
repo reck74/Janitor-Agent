@@ -1,0 +1,11 @@
+name: firecrawl
+description: Web scraping and crawling API (Firecrawl self-host).
+deploy: scripts/deploy.sh
+compose: scripts/firecrawl-compose.yml
+url: http://127.0.0.1:1974
+containers:
+  - janitor-firecrawl-api
+  - janitor-firecrawl-playwright
+  - janitor-firecrawl-redis
+  - janitor-firecrawl-rabbitmq
+  - janitor-firecrawl-postgres

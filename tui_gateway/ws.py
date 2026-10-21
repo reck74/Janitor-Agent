@@ -283,34 +283,6 @@ def _disable_nagle(ws: Any) -> None:
         _log.debug("ws TCP_NODELAY skip: %s", exc)
 
 
-def _ws_peer_label(ws: Any) -> str:
-    """Return ``host:port`` when available, else a stable placeholder."""
-    client = getattr(ws, "client", None)
-    if client is None:
-        return "unknown"
-    host = getattr(client, "host", None) or "unknown"
-    port = getattr(client, "port", None)
-    return f"{host}:{port}" if port is not None else host
-
-
-def _disable_nagle(ws: Any) -> None:
-    """Disable Nagle so streamed JSON-RPC frames go out individually.
-
-    Without it the kernel coalesces the small per-token frames, so a burst after
-    the model's think-pause lands on the client in one tick and no client-side
-    smoothing can recover the cadence. GUI/WS only; chat platforms don't hit
-    this path. Best-effort — skip silently if the socket isn't reachable.
-    """
-    try:
-        scope = getattr(ws, "scope", None) or {}
-        transport = (scope.get("extensions") or {}).get("transport") or getattr(ws, "transport", None)
-        sock = transport.get_extra_info("socket") if transport is not None else None
-        if sock is not None:
-            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-    except Exception as exc:  # pragma: no cover - best-effort tuning
-        _log.debug("ws TCP_NODELAY skip: %s", exc)
-
-
 async def handle_ws(ws: Any) -> None:
     """Run one WebSocket session. Wire-compatible with ``tui_gateway.entry``."""
     peer = _ws_peer_label(ws)

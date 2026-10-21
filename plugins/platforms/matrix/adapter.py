@@ -2953,15 +2953,6 @@ class MatrixAdapter(BasePlatformAdapter):
                 success=False,
                 error=f"Media file exceeds Matrix limit ({file_size} > {self._max_media_bytes} bytes)",
             )
-        try:
-            file_size = p.stat().st_size
-        except OSError:
-            file_size = 0
-        if file_size > self._max_media_bytes:
-            return SendResult(
-                success=False,
-                error=f"Media file exceeds Matrix limit ({file_size} > {self._max_media_bytes} bytes)",
-            )
 
         fname = file_name or p.name
         ct = mimetypes.guess_type(fname)[0] or "application/octet-stream"

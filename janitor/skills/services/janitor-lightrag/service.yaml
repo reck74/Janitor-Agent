@@ -1,0 +1,8 @@
+name: lightrag
+description: Graph RAG knowledge base (LightRAG + Postgres).
+deploy: scripts/deploy.sh
+compose: scripts/lightrag-compose.yml
+url: http://127.0.0.1:9621
+containers:
+  - janitor-lightrag
+  - janitor-lightrag-db

@@ -58,7 +58,7 @@ generate_honcho_env() {
 
 ensure_compose_file() {
     log_info "Setting up compose file..."
-    local compose_src="${JANITOR_SOURCE_DIR}/skills/janitor-honcho/scripts/honcho-compose.yml"
+    local compose_src="${JANITOR_SOURCE_DIR}/janitor/skills/services/janitor-honcho/scripts/honcho-compose.yml"
     local compose_dst_dir="${JANITOR_HOME}/docker"
     mkdir -p "$compose_dst_dir"
 

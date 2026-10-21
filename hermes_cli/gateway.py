@@ -4635,7 +4635,6 @@ def launchd_start():
     _clear_launchd_unsupported_marker()
 
 
-
 def launchd_stop():
     label = get_launchd_label()
     target = f"{_launchd_domain()}/{label}"
@@ -4791,7 +4790,6 @@ def launchd_restart():
             return
         print("✓ Service restarted")
         _clear_launchd_unsupported_marker()
-
 
 
 def launchd_status(deep: bool = False):

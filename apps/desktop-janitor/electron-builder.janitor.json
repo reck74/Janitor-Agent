@@ -1,0 +1,35 @@
+{
+  "appId": "ai.janitor.desktop",
+  "productName": "Janitor",
+  "executableName": "Janitor",
+  "artifactName": "Janitor-${version}-${os}-${arch}.${ext}",
+  "icon": "assets/janitor-icon.png",
+  "extraMetadata": {
+    "productName": "Hermes",
+    "description": "Native desktop shell for Janitor Agent."
+  },
+  "mac": {
+    "icon": "assets/janitor-icon.png",
+    "extendInfo": {
+      "CFBundleDisplayName": "Janitor",
+      "CFBundleExecutable": "Janitor",
+      "CFBundleName": "Janitor"
+    }
+  },
+  "dmg": {
+    "title": "Install Janitor"
+  },
+  "win": {
+    "icon": "assets/janitor-icon.png",
+    "legalTrademarks": "Janitor"
+  },
+  "linux": {
+    "icon": "assets/janitor-icon.png",
+    "maintainer": "Janitor Agent",
+    "synopsis": "Native desktop shell for Janitor Agent."
+  },
+  "nsis": {
+    "shortcutName": "Janitor",
+    "uninstallDisplayName": "Janitor"
+  }
+}

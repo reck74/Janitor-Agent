@@ -18,27 +18,12 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --python 3.11 --extra all --extra dev
       - name: Run Python tests
-        # Runs the SAME Janitor test list as tests.yml :: test (AGENTS.md
-        # directive #11). Keep both invocations in sync — any new
-        # tests/**/test_*janitor*.py must be added to both in the same PR.
+        # The Janitor suite is the tests/janitor/ directory (AGENTS.md
+        # directive #11); tests.yml :: test runs the same directory plus the
+        # overlay check through scripts/janitor-sync-verify.sh.
         run: |
           source .venv/bin/activate
-          python -m pytest \
-            tests/test_janitor_cli.py \
-            tests/test_janitor_update_bootstrap.py \
-            tests/test_janitor_update_core.py \
-            tests/test_janitor_bootstrap_node_version.py \
-            tests/test_janitor_syntax_guard.py \
-            tests/gateway/test_telegram_janitor_branding.py \
-            tests/skills/test_janitor_config_audit_skill.py \
-            tests/skills/test_janitor_firecrawl_skill.py \
-            tests/skills/test_janitor_lightrag_skill.py \
-            tests/test_janitor_monkeypatch_signatures.py \
-            tests/test_janitor_no_duplicate_methods.py \
-            tests/test_janitor_migrate_v0201.py \
-            tests/hermes_cli/test_mcp_router_discover.py \
-            tests/hermes_cli/test_mcp_router_logs.py \
-            --tb=short -v
+          scripts/run_tests.sh tests/janitor/
 
   react-tests:
     runs-on: ubuntu-latest
@@ -62,6 +47,17 @@ jobs:
       - name: Run Tests
         working-directory: ./ui-tui
         run: npm test
+
+  desktop-overlay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: '22'
+      - name: apps/desktop-janitor overlay tests
+        run: node --test apps/desktop-janitor/scripts/build.test.mjs
 
   web-tests:
     name: web-tests
@@ -479,7 +475,7 @@ jobs:
             > "$ART/new-volumes.txt"
           comm -13 "$ART/docker-networks.before.txt" "$ART/docker-networks.after.txt" \
             > "$ART/new-networks.txt"
-          # Firecrawl deploy-script markers in $JH (per skills/janitor-firecrawl/scripts/deploy.sh)
+          # Firecrawl deploy-script markers in $JH (per janitor/skills/services/janitor-firecrawl/scripts/deploy.sh)
           JH="${{ runner.temp }}/janitor-e2e"
           fail=0
           if [ -s "$ART/new-containers.txt" ] || [ -s "$ART/new-volumes.txt" ] || [ -s "$ART/new-networks.txt" ]; then
@@ -515,8 +511,8 @@ jobs:
           echo "Optional-capability state unchanged: OK"
 
   os-compat:
-    # OS-specific portability smoke for the Janitor test list. Adapted from
-    # upstream tag v2026.8.13's tests-os.yml — preserves the macOS + Windows
+    # OS-specific portability smoke for the Janitor suite (tests/janitor/).
+    # Adapted from upstream tag v2026.8.13's tests-os.yml — preserves the macOS + Windows
     # matrix, the uv / Python 3.11 / extras setup, the retry composite, and
     # the cache-pruning step. The test invocation diverges from upstream on
     # purpose: upstream runs OS-marked tests via the macos_only /
@@ -528,11 +524,9 @@ jobs:
     #     per-file subprocess isolation, TZ=UTC, env blanking, venv probe).
     #   - windows-latest: .venv/Scripts/python.exe -m pytest directly,
     #     because scripts/run_tests.sh uses POSIX-only process-group handling
-    #     that does not work natively on Windows runners. The ordered 13-file
-    #     list is identical between the two runners.
-    # AGENTS.md directive #11 requires both this list and tests.yml :: test
-    # carry the same 13 files; tests.yml :: test enforces that on
-    # ubuntu-latest.
+    #     that does not work natively on Windows runners.
+    # Both legs run the whole tests/janitor/ directory (AGENTS.md directive
+    # #11); tests marked linux_only are skipped by tests/conftest.py.
     name: Janitor tests on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -570,7 +564,7 @@ jobs:
         run: uv cache prune --ci
 
       - name: Run Janitor tests (macOS)
-        # Same 14-file list as the PR gate, dispatched through Janitor's
+        # Same tests/janitor/ suite as the PR gate, dispatched through Janitor's
         # runner so per-file subprocess isolation + venv/TZ/env blanks are
         # honored. Wrapper / skin / HOME assertions live inside these tests;
         # running them on macOS proves the Janitor-specific code paths work
@@ -583,29 +577,14 @@ jobs:
           NOUS_API_KEY: ""
         run: |
           set -euo pipefail
-          scripts/run_tests.sh \
-            tests/test_janitor_cli.py \
-            tests/test_janitor_update_bootstrap.py \
-            tests/test_janitor_update_core.py \
-            tests/test_janitor_bootstrap_node_version.py \
-            tests/test_janitor_syntax_guard.py \
-            tests/gateway/test_telegram_janitor_branding.py \
-            tests/skills/test_janitor_config_audit_skill.py \
-            tests/skills/test_janitor_firecrawl_skill.py \
-            tests/skills/test_janitor_lightrag_skill.py \
-            tests/test_janitor_monkeypatch_signatures.py \
-            tests/test_janitor_no_duplicate_methods.py \
-            tests/test_janitor_migrate_v0201.py \
-            tests/hermes_cli/test_mcp_router_discover.py \
-            tests/hermes_cli/test_mcp_router_logs.py \
-            -v
+          scripts/run_tests.sh tests/janitor/ -v
 
       - name: Run Janitor tests (Windows)
         # Direct .venv/Scripts/python.exe -m pytest invocation (per the human
         # amendment in task-11-brief.md) — scripts/run_tests_parallel.py uses
         # POSIX-only process-group handling and does not work natively on
-        # Windows. The ordered 14-file list and the env blanks / verbosity
-        # options are identical to the macOS leg.
+        # Windows. The suite and the env blanks / verbosity options are
+        # identical to the macOS leg.
         if: matrix.os == 'windows-latest'
         shell: bash
         env:
@@ -622,19 +601,4 @@ jobs:
           # `bash` get Git Bash instead of the WSL launcher (which exits 1
           # with "no installed distributions" on hosted runners).
           export PATH="/c/Program Files/Git/bin:$PATH"
-          .venv/Scripts/python.exe -m pytest \
-            tests/test_janitor_cli.py \
-            tests/test_janitor_update_bootstrap.py \
-            tests/test_janitor_update_core.py \
-            tests/test_janitor_bootstrap_node_version.py \
-            tests/test_janitor_syntax_guard.py \
-            tests/gateway/test_telegram_janitor_branding.py \
-            tests/skills/test_janitor_config_audit_skill.py \
-            tests/skills/test_janitor_firecrawl_skill.py \
-            tests/skills/test_janitor_lightrag_skill.py \
-            tests/test_janitor_monkeypatch_signatures.py \
-            tests/test_janitor_no_duplicate_methods.py \
-            tests/test_janitor_migrate_v0201.py \
-            tests/hermes_cli/test_mcp_router_discover.py \
-            tests/hermes_cli/test_mcp_router_logs.py \
-            --tb=short -v
+          .venv/Scripts/python.exe -m pytest tests/janitor/ --tb=short -v

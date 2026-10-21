@@ -345,7 +345,12 @@ prefill_messages_file: ''
 goals:
   max_turns: 20
 skills:
-  external_dirs: []
+  # Janitor skills are read in place from the install tree (janitor/skills).
+  # ${JANITOR_SKILLS_ROOT} is exported by the janitor launcher; the relative
+  # entry (resolved against ~/.janitor) covers backends started without it.
+  external_dirs:
+    - ${JANITOR_SKILLS_ROOT}
+    - janitor-core/janitor/skills
   template_vars: true
   inline_shell: false
   inline_shell_timeout: 10
@@ -404,6 +409,9 @@ command_allowlist: []
 quick_commands: {}
 hooks: {}
 hooks_auto_accept: false
+plugins:
+  enabled:
+    - janitor
 personalities: {}
 security:
   allow_private_urls: false

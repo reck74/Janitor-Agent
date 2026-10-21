@@ -241,33 +241,6 @@ def _local_browser_runnable() -> bool:
     return _chromium_installed()
 
 
-def _local_browser_runnable() -> bool:
-    """Return True when the *local* browser backend would actually start.
-
-    The ``agent-browser`` CLI being present is necessary but not sufficient for
-    local mode: agent-browser also needs a Chromium build on disk (without one
-    it hangs on first use until the command timeout fires), unless the
-    Lightpanda engine is selected — text-only navigation needs no Chromium.
-
-    This mirrors the local-mode tail of
-    :func:`tools.browser_tool.check_browser_requirements`, so the setup/status
-    surfaces advertise local browser readiness only when the runtime would
-    actually run it. Cloud providers (Browserbase, Browser Use, Firecrawl) host
-    their own Chromium and therefore gate on :func:`_has_agent_browser` alone.
-    """
-    if not _has_agent_browser():
-        return False
-    try:
-        from tools.browser_tool import _chromium_installed, _using_lightpanda_engine
-    except Exception:
-        # If the runtime probe can't be imported, fall back to binary presence
-        # (prior behaviour) rather than crashing the setup/status surface.
-        return True
-    if _using_lightpanda_engine():
-        return True
-    return _chromium_installed()
-
-
 def _browser_label(current_provider: str) -> str:
     mapping = {
         "browserbase": "Browserbase",

@@ -29,6 +29,22 @@ colors:
   session_border: "#362d59"     # Border Purple
   completion_menu_bg: "#150f23" # Darker Purple (Background)
   completion_menu_current_bg: "#362d59" # Hover State
+  ui_tool: "#6a5fc1"            # Sentry Purple: líneas de herramientas
+  ui_thinking: "#79628c"        # Muted Purple: razonamiento
+
+  # ── BARRA DE ESTADO ─────────────────────────────────────────────────────
+  status_bar_bg: "#0A0A0A"      # Near black
+  status_bar_text: "#c2ef4e"    # Lime Green
+  status_bar_good: "#c2ef4e"
+  status_bar_warn: "#FFE135"
+  status_bar_bad: "#fa7faa"
+  status_bar_critical: "#FF073A"
+
+  # ── SINTAXIS ────────────────────────────────────────────────────────────
+  syntax_string: "#6a5fc1"
+  syntax_number: "#e5e7eb"
+  syntax_keyword: "#362d59"
+  syntax_comment: "#79628c"
 
 spinner:
   waiting_faces: ["[-_- ]", "[ ¬_¬]", "[ ಠ_ಠ]", "[ 눈_눈]", "[ >_<]"]
@@ -61,6 +77,8 @@ branding:
   response_label: " 🧹 J4nitor "
   prompt_symbol: "🧹"
   help_header: "(☣) Comandos Tácticos (Lee antes de romper algo)"
+  tagline: "J4nitor Agent · DevSecOps Orchestrator"
+  vendor: "J4nitor Agent"
 
 tool_prefix: "│"
 

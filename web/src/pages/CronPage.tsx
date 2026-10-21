@@ -877,7 +877,7 @@ export default function CronPage() {
                   disabled={creating}
                   prefix={creating ? <Spinner /> : undefined}
                 >
-                  {saving ? t.common.loading : "Save changes"}
+                  {creating ? t.common.creating : t.common.create}
                 </Button>
               </div>
             </div>

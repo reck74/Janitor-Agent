@@ -241,25 +241,6 @@ def _preview(value: Any, limit: int = 160) -> str:
         return text[:limit] + "..."
     return text
 
-# Maps the viking_remember `category` enum to a viking:// subdirectory.
-# Keep in sync with REMEMBER_SCHEMA.parameters.properties.category.enum.
-_CATEGORY_SUBDIR_MAP = {
-    "preference": "preferences",
-    "entity": "entities",
-    "event": "events",
-    "case": "cases",
-    "pattern": "patterns",
-}
-_DEFAULT_MEMORY_SUBDIR = "preferences"
-
-# Maps the built-in memory tool's `target` ("user" vs "memory") to a subdir
-# for on_memory_write mirroring. User profile facts → preferences; agent
-# notes / observations → patterns. Anything unknown falls back to the default.
-_MEMORY_WRITE_TARGET_SUBDIR_MAP = {
-    "user": "preferences",
-    "memory": "patterns",
-}
-
 
 # ---------------------------------------------------------------------------
 # Process-level atexit safety net — ensures pending sessions are committed

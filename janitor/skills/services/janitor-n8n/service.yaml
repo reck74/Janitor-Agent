@@ -1,0 +1,7 @@
+name: n8n
+description: Workflow automation (n8n self-host).
+deploy: scripts/deploy.sh
+compose: scripts/n8n-compose.yml
+url: http://127.0.0.1:5678
+containers:
+  - janitor-n8n

@@ -12,7 +12,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tools.opencode_orchestrator import OpenCodeOrchestrator, detect_opencode_port
+from janitor.opencode.orchestrator import OpenCodeOrchestrator, detect_opencode_port
 
 
 async def test_orchestrator():

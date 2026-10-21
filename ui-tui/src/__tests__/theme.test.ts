@@ -43,16 +43,16 @@ describe('DEFAULT_THEME', () => {
   it('has brand defaults', async () => {
     const { DEFAULT_THEME } = await importThemeWithCleanEnv()
 
-    expect(DEFAULT_THEME.brand.name).toBe('THE JANITOR')
+    expect(DEFAULT_THEME.brand.name).toBe('Hermes Agent')
     expect(DEFAULT_THEME.brand.prompt).toBe('❯')
-    expect(DEFAULT_THEME.brand.tool).toBe('│')
+    expect(DEFAULT_THEME.brand.tool).toBe('┊')
   })
 
   it('has color palette', async () => {
     const { DEFAULT_THEME } = await importThemeWithCleanEnv()
 
-    expect(DEFAULT_THEME.color.primary).toBe('#c2ef4e')
-    expect(DEFAULT_THEME.color.error).toBe('#fa7faa')
+    expect(DEFAULT_THEME.color.primary).toBe('#FFD700')
+    expect(DEFAULT_THEME.color.error).toBe('#ef5350')
   })
 })
 
@@ -430,29 +430,23 @@ describe('derived tone ladder', () => {
     // pre-refactor hand-tuned literals. Contract: every derived tone stays
     // within a-few-RGB-units of the original (imperceptible), so knob edits
     // that drift the classic look fail here instead of shipping as vibes.
-    // The test is a contract on the upstream seed→palette pipeline, not on
-    // the runtime default theme (which the Janitor fork aliases to the
-    // JANITOR_DARK/JANITOR_LIGHT palettes). After Janitor became the default,
-    // DARK_THEME/LIGHT_THEME no longer equal buildPalette(DARK_SEEDS, …).
-    // Calling buildPalette directly exercises the upstream seed algorithm.
-    const seedModule = await importThemeWithCleanEnv()
-    const darkPalette = seedModule.buildPalette(seedModule.DARK_SEEDS, false)
-    const lightPalette = seedModule.buildPalette(seedModule.LIGHT_SEEDS, true)
+    const dark = await importThemeWithCleanEnv()
+    const light = await importThemeWithEnv({ HERMES_TUI_BACKGROUND: '#ffffff' })
 
     const cases: Array<[string, string, string]> = [
-      [darkPalette.muted, '#CC9B1F', 'dark muted'],
-      [darkPalette.label, '#DAA520', 'dark label'],
-      [darkPalette.statusFg, '#C0C0C0', 'dark statusFg'],
-      [darkPalette.completionBg, '#1a1a2e', 'dark surface'],
-      [darkPalette.completionCurrentBg, '#333355', 'dark chip'],
-      [darkPalette.selectionBg, '#3a3a55', 'dark selection'],
+      [dark.DARK_THEME.color.muted, '#CC9B1F', 'dark muted'],
+      [dark.DARK_THEME.color.label, '#DAA520', 'dark label'],
+      [dark.DARK_THEME.color.statusFg, '#C0C0C0', 'dark statusFg'],
+      [dark.DARK_THEME.color.completionBg, '#1a1a2e', 'dark surface'],
+      [dark.DARK_THEME.color.completionCurrentBg, '#333355', 'dark chip'],
+      [dark.DARK_THEME.color.selectionBg, '#3a3a55', 'dark selection'],
       // Light canon = liftForContrast(dark literal, white, 4.5): the exact
       // colors xterm's minimumContrastRatio rendered on light hosts.
-      [lightPalette.muted, '#946C08', 'light muted'],
-      [lightPalette.statusFg, '#6F6F6F', 'light statusFg'],
-      [lightPalette.completionBg, '#F5F5F5', 'light surface'],
-      [lightPalette.completionCurrentBg, '#e0d1bf', 'light chip'],
-      [lightPalette.selectionBg, '#D4E4F7', 'light selection']
+      [light.LIGHT_THEME.color.muted, '#946C08', 'light muted'],
+      [light.LIGHT_THEME.color.statusFg, '#6F6F6F', 'light statusFg'],
+      [light.LIGHT_THEME.color.completionBg, '#F5F5F5', 'light surface'],
+      [light.LIGHT_THEME.color.completionCurrentBg, '#e0d1bf', 'light chip'],
+      [light.LIGHT_THEME.color.selectionBg, '#D4E4F7', 'light selection']
     ]
 
     for (const [got, original, label] of cases) {

@@ -957,20 +957,6 @@ def main() -> int:
             print(f"error: --slice must be I/N (e.g. 1/4), got: {slice_raw!r}", file=sys.stderr)
             sys.exit(2)
 
-    # Parse --slice (or HERMES_TEST_SLICE) early so we can exit on bad input
-    # before doing any expensive discovery.
-    slice_raw = args.slice or os.environ.get("HERMES_TEST_SLICE")
-    slice_index: int | None = None
-    slice_count: int = 1
-    if slice_raw:
-        try:
-            idx_s, count_s = slice_raw.split("/", 1)
-            slice_index = int(idx_s)
-            slice_count = int(count_s)
-        except (ValueError, AttributeError):
-            print(f"error: --slice must be I/N (e.g. 1/4), got: {slice_raw!r}", file=sys.stderr)
-            sys.exit(2)
-
     repo_root = Path(__file__).resolve().parent.parent
 
     # --files: explicit file list from the CI generate job — skip discovery.

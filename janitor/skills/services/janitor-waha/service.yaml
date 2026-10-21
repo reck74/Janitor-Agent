@@ -1,0 +1,7 @@
+name: waha
+description: WhatsApp HTTP API (WAHA self-host).
+deploy: scripts/deploy.sh
+compose: scripts/waha-compose.yml
+url: http://127.0.0.1:3000
+containers:
+  - janitor-waha

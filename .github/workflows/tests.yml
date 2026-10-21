@@ -35,11 +35,10 @@ jobs:
     # Upstream's CI already validates its test suite before any commit
     # reaches the Janitor fork. Re-running the same ~17k tests in the
     # fork on every PR is redundant work that adds wall-clock cost and
-    # noise. The 13 Janitor-specific test files below cover the fork's
-    # actual customizations: Janitor CLI, update flow (bootstrap + core),
-    # Telegram branding, monkey-patch signature invariants, duplicate
-    # definition audit, v0.20.1 migration, the config-audit +
-    # firecrawl + lightrag skills, and the two MCP router tests.
+    # noise. tests/janitor/ covers the fork's actual customizations: the
+    # launcher, update flow, ~/.janitor layout migration, plugin, services,
+    # skills, skin, Telegram branding, MCP dashboard endpoints and the
+    # post-sync invariants (directives #14 and #15).
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -89,41 +88,24 @@ jobs:
         run: uv cache prune --ci
 
       - name: Run Janitor-specific tests
-        # Janitor-specific test files. The monkeypatch-signatures file
-        # enforces AGENTS.md directive #14 (signature invariants) so a
-        # stale wrapper after upstream sync fails CI before merge.
-        # The no-duplicate-methods file enforces directive #15 (post-sync
-        # duplicate method audit) — catches the class of bug where a
-        # ``-X theirs`` merge leaves two definitions of the same method
-        # in a core file and Python's last-definition-wins silently
-        # shadows the correct one (broke Telegram in v2026.7.7.2).
+        # The Janitor gate (AGENTS.md directive #11): every test under
+        # tests/janitor/ plus `python -m janitor.overlay check`, which fails
+        # on any divergence from upstream not declared in janitor/overlay.yaml.
+        # tests/janitor/ includes the monkeypatch-signature (directive #14)
+        # and duplicate-definition (directive #15) guards. TUI and desktop
+        # gates run in janitor-ci.yml.
         run: |
           source .venv/bin/activate
-          python -m pytest \
-            tests/test_janitor_cli.py \
-            tests/test_janitor_update_bootstrap.py \
-            tests/test_janitor_update_core.py \
-            tests/test_janitor_bootstrap_node_version.py \
-            tests/test_janitor_syntax_guard.py \
-            tests/gateway/test_telegram_janitor_branding.py \
-            tests/skills/test_janitor_config_audit_skill.py \
-            tests/skills/test_janitor_firecrawl_skill.py \
-            tests/skills/test_janitor_lightrag_skill.py \
-            tests/test_janitor_monkeypatch_signatures.py \
-            tests/test_janitor_no_duplicate_methods.py \
-            tests/test_janitor_migrate_v0201.py \
-            tests/hermes_cli/test_mcp_router_discover.py \
-            tests/hermes_cli/test_mcp_router_logs.py \
-            --tb=short -v
+          scripts/janitor-sync-verify.sh --skip-tui --skip-desktop
         env:
           OPENROUTER_API_KEY: ""
           OPENAI_API_KEY: ""
           NOUS_API_KEY: ""
 
-  # Stub: kept for forward-compatibility. The Janitor test suite is small
-  # enough (14 files) that per-file duration tracking is unnecessary. When
-  # the suite grows past ~20 files, reintroduce the matrix slicing here
-  # using the same pattern as upstream's prior version of this file.
+  # Stub: kept for forward-compatibility. The Janitor suite (tests/janitor/)
+  # is small enough that per-file duration tracking is unnecessary. When it
+  # grows large, reintroduce the matrix slicing here using the same pattern
+  # as upstream's prior version of this file.
   save-durations:
     needs: test
     if: always() && github.ref == 'refs/heads/main'
