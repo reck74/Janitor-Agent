@@ -1087,6 +1087,50 @@ def _clear_incomplete_marker() -> bool:
 # code survives a venv where that module cannot be imported.
 _UPDATE_EXIT_CONCURRENT = 2
 
+# Read-only `hermes update` modes the Janitor flow does not implement. The
+# monkey-patched cmd_update receives upstream's parsed args, so these must be
+# refused rather than silently turned into a mutating update.
+_UNSUPPORTED_READ_ONLY_FLAGS = {
+    "plan": "--plan",
+    "list_venv_holders": "--list-venv-holders",
+}
+
+
+def parse_update_args(argv: list[str]):
+    """Parse ``janitor update`` arguments for the early intercept.
+
+    Only flags the core implements are accepted; anything else is an argparse
+    error (exit 2) so a read-only request such as ``--plan`` can never fall
+    through to a real update.
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="janitor update",
+        description="Update Janitor from the fork's git remote.",
+    )
+    parser.add_argument(
+        "--check", action="store_true",
+        help="Report whether an update is available without installing anything",
+    )
+    parser.add_argument(
+        "--gateway", action="store_true",
+        help="Gateway mode: file-based IPC for prompts (used internally by /update)",
+    )
+    parser.add_argument(
+        "--backup", action="store_true",
+        help="Force a full pre-update backup for this run",
+    )
+    parser.add_argument(
+        "--no-backup", action="store_true",
+        help="Skip all pre-update backups for this run",
+    )
+    parser.add_argument(
+        "--branch", default=None, metavar="NAME",
+        help="Update against this branch instead of main",
+    )
+    return parser.parse_args(argv)
+
 
 def _acquire_update_lock():
     """Claim the update marker shared with ``hermes update``, the dashboard
@@ -1125,8 +1169,20 @@ def run_janitor_update(args) -> int:
 
     Returns:
         Process exit code: 0 = updated, 1 = failed, 2 = another update holds
-        the shared update lock, 130 = cancelled.
+        the shared update lock or an unsupported read-only mode was requested,
+        130 = cancelled.
     """
+    unsupported = [
+        flag for attr, flag in _UNSUPPORTED_READ_ONLY_FLAGS.items()
+        if getattr(args, attr, False)
+    ]
+    if unsupported:
+        print(
+            f"✗ janitor update does not support {', '.join(unsupported)}. "
+            "Use `janitor update --check` to see whether an update is available."
+        )
+        return 2
+
     _ensure_loaded()
 
     gateway_mode = bool(getattr(args, "gateway", False))

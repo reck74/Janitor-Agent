@@ -2156,3 +2156,20 @@ def test_update_lock_import_failure_degrades_to_unlocked_update(
 
     assert rc == 0
     assert any("--ff-only" in c for c in recorded)
+
+
+@pytest.mark.parametrize("attr", ["plan", "list_venv_holders"])
+def test_read_only_upstream_modes_are_refused_not_run_as_an_update(
+    monkeypatch, tmp_path, capsys, attr
+):
+    """The patched ``cmd_update`` receives upstream's parsed args; a read-only
+    request must not fall through to a mutating update."""
+    _stub_helpers(monkeypatch, tmp_path)
+    side_effect, recorded = _make_side_effect()
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+    rc = juc.run_janitor_update(SimpleNamespace(**{attr: True}))
+
+    assert rc == 2
+    assert recorded == []
+    assert "does not support" in capsys.readouterr().out
