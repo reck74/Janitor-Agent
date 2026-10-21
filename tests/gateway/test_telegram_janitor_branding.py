@@ -1,314 +1,287 @@
-import sys
+"""Janitor Telegram branding, delivered by the ``janitor`` plugin.
+
+The upstream Telegram adapter is untouched; the ``/start`` welcome and the
+bot avatar come from ``janitor.plugin.telegram`` through the
+``pre_gateway_dispatch`` hook. These tests drive the hook against a real
+``TelegramAdapter`` (only the PTB bot is faked) and load the plugin through
+the real entry-point discovery path.
+"""
+
+import asyncio
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+import yaml
 
-# pyright: reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportPrivateUsage=false, reportOptionalMemberAccess=false
-
-ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from gateway.config import PlatformConfig
-from plugins.platforms.telegram import adapter as telegram_module
+from gateway.config import Platform, PlatformConfig
+from gateway.platforms.base import MessageEvent
+from gateway.session import SessionSource
+from janitor.plugin import telegram as branding
 from plugins.platforms.telegram.adapter import TelegramAdapter
 
+ROOT = Path(__file__).resolve().parents[2]
 
-def _make_adapter() -> TelegramAdapter:
+
+@pytest.fixture(autouse=True)
+def _fresh_branding_state():
+    branding._avatar_synced.clear()
+    yield
+    branding._avatar_synced.clear()
+
+
+def _adapter() -> TelegramAdapter:
     adapter = TelegramAdapter(PlatformConfig(enabled=True, token="***", extra={}))
     adapter._bot = AsyncMock()
     return adapter
 
 
-@pytest.mark.asyncio
-async def test_set_janitor_avatar_on_connect(tmp_path, monkeypatch):
-    """connect() should apply Janitor branding after a successful startup."""
-    avatar_path = tmp_path / "janitor_avatar_telegram.jpg"
-    avatar_path.write_bytes(b"fake-jpg")
-    monkeypatch.setattr(telegram_module, "_JANITOR_TELEGRAM_AVATAR_PATH", avatar_path, raising=False)
+def _event(text: str, platform: Platform = Platform.TELEGRAM, chat_id: str = "12345") -> MessageEvent:
+    return MessageEvent(text=text, source=SessionSource(platform=platform, chat_id=chat_id, user_id="7"))
 
-    remove_my_profile_photo = AsyncMock(return_value=True)
-    set_my_profile_photo = AsyncMock(return_value=SimpleNamespace(id="photo"))
-    delete_webhook = AsyncMock(return_value=None)
-    set_my_commands = AsyncMock(return_value=None)
-    bot = SimpleNamespace(
-        remove_my_profile_photo=remove_my_profile_photo,
-        set_my_profile_photo=set_my_profile_photo,
-        delete_webhook=delete_webhook,
-        set_my_commands=set_my_commands,
+
+async def _drain():
+    while branding._background_tasks:
+        await asyncio.gather(*list(branding._background_tasks), return_exceptions=True)
+
+
+# ── /start welcome ────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("text", ["/start", "/start@JanitorBot", "/start deep-link", "  /START  "])
+def test_start_variants_are_recognized(text):
+    assert branding.is_start_command(text)
+
+
+@pytest.mark.parametrize("text", ["", None, "start", "/startup", "hola /start", "/stop"])
+def test_non_start_text_is_ignored(text):
+    assert not branding.is_start_command(text)
+
+
+@pytest.mark.asyncio
+async def test_start_sends_welcome_photo_and_skips_dispatch(tmp_path, monkeypatch):
+    welcome = tmp_path / "telegram_welcome.jpg"
+    welcome.write_bytes(b"\xff\xd8\xff fake")
+    monkeypatch.setattr(branding, "WELCOME_IMAGE_PATH", welcome)
+    monkeypatch.setattr(branding, "AVATAR_PATH", tmp_path / "missing.jpg")
+    adapter = _adapter()
+    gateway = SimpleNamespace(adapters={Platform.TELEGRAM: adapter})
+
+    result = branding.pre_gateway_dispatch(event=_event("/start"), gateway=gateway, session_store=None)
+    await _drain()
+
+    assert result == {"action": "skip", "reason": "janitor-telegram-welcome"}
+    adapter._bot.send_photo.assert_awaited_once()
+    kwargs = adapter._bot.send_photo.await_args.kwargs
+    assert str(kwargs["chat_id"]) == "12345"
+    assert kwargs["caption"] == branding.WELCOME_TEXT
+    assert "/topic" in kwargs["caption"]
+
+
+@pytest.mark.asyncio
+async def test_start_falls_back_to_text_without_image(tmp_path, monkeypatch):
+    monkeypatch.setattr(branding, "WELCOME_IMAGE_PATH", tmp_path / "missing.jpg")
+    monkeypatch.setattr(branding, "AVATAR_PATH", tmp_path / "missing.jpg")
+    adapter = _adapter()
+    gateway = SimpleNamespace(adapters={Platform.TELEGRAM: adapter})
+
+    result = branding.pre_gateway_dispatch(event=_event("/start"), gateway=gateway)
+    await _drain()
+
+    assert result["action"] == "skip"
+    adapter._bot.send_photo.assert_not_awaited()
+    adapter._bot.send_message.assert_awaited()
+    assert "Soy The Janitor" in adapter._bot.send_message.await_args.kwargs["text"]
+
+
+@pytest.mark.asyncio
+async def test_regular_text_and_other_platforms_pass_through(tmp_path, monkeypatch):
+    monkeypatch.setattr(branding, "AVATAR_PATH", tmp_path / "missing.jpg")
+    adapter = _adapter()
+    gateway = SimpleNamespace(adapters={Platform.TELEGRAM: adapter, Platform.DISCORD: adapter})
+
+    assert branding.pre_gateway_dispatch(event=_event("hola"), gateway=gateway) is None
+    assert branding.pre_gateway_dispatch(event=_event("/start", Platform.DISCORD), gateway=gateway) is None
+    await _drain()
+    adapter._bot.send_photo.assert_not_awaited()
+    adapter._bot.send_message.assert_not_awaited()
+
+
+def test_start_without_running_loop_is_not_swallowed():
+    """Outside an event loop the welcome can't be sent, so dispatch continues."""
+    gateway = SimpleNamespace(adapters={Platform.TELEGRAM: _adapter()})
+    assert branding.pre_gateway_dispatch(event=_event("/start"), gateway=gateway) is None
+
+
+@pytest.mark.asyncio
+async def test_multiplexed_profile_adapter_is_used(tmp_path, monkeypatch):
+    monkeypatch.setattr(branding, "WELCOME_IMAGE_PATH", tmp_path / "missing.jpg")
+    monkeypatch.setattr(branding, "AVATAR_PATH", tmp_path / "missing.jpg")
+    default, coder = _adapter(), _adapter()
+    gateway = SimpleNamespace(
+        adapters={Platform.TELEGRAM: default},
+        _profile_adapters={"coder": {Platform.TELEGRAM: coder}},
     )
-    app = SimpleNamespace(
-        bot=bot,
-        add_handler=Mock(),
-        initialize=AsyncMock(return_value=None),
-        start=AsyncMock(return_value=None),
-        updater=SimpleNamespace(
-            start_polling=AsyncMock(return_value=None),
-            start_webhook=AsyncMock(return_value=None),
-        ),
+    event = MessageEvent(
+        text="/start",
+        source=SessionSource(platform=Platform.TELEGRAM, chat_id="1", user_id="7", profile="coder"),
     )
 
-    class FakeBuilder:
-        def token(self, _token):
-            return self
+    branding.pre_gateway_dispatch(event=event, gateway=gateway)
+    await _drain()
 
-        def base_url(self, _url):
-            return self
+    coder._bot.send_message.assert_awaited()
+    default._bot.send_message.assert_not_awaited()
 
-        def base_file_url(self, _url):
-            return self
 
-        def local_mode(self, _enabled):
-            return self
-
-        def request(self, _request):
-            return self
-
-        def get_updates_request(self, _request):
-            return self
-
-        def build(self):
-            return app
-
-    # Heap type: required so _instrument_polling_request's __class__ swap is legal.
-    class FakeRequest:
-        pass
-
-    adapter = _make_adapter()
-    adapter._fallback_ips = Mock(return_value=[])
-    adapter._acquire_platform_lock = Mock(return_value=True)
-    adapter._mark_connected = Mock()
-    adapter._setup_dm_topics = AsyncMock(return_value=None)
-    # Branding is applied before polling; stub the 60s progress gate (#67498).
-    adapter._start_polling_resilient = AsyncMock(return_value=True)
-
-    # Replace the module-global Application, not the PTB class attribute —
-    # PTB 22.8's Application is an immutable (non-heap) type.
-    monkeypatch.setattr(
-        telegram_module,
-        "Application",
-        SimpleNamespace(builder=Mock(return_value=FakeBuilder())),
-    )
-    monkeypatch.setattr(
-        telegram_module,
-        "HTTPXRequest",
-        Mock(side_effect=lambda *a, **k: FakeRequest()),
-    )
-    monkeypatch.setattr(telegram_module, "discover_fallback_ips", AsyncMock(return_value=[]))
-    monkeypatch.setattr(telegram_module, "resolve_proxy_url", Mock(return_value=None))
-
-    avatar_spy = AsyncMock(wraps=adapter._set_janitor_avatar)
-    adapter._set_janitor_avatar = avatar_spy
-
-    assert await adapter.connect() is True
-
-    avatar_spy.assert_awaited_once()
-    remove_my_profile_photo.assert_awaited_once()
-    set_my_profile_photo.assert_awaited_once()
+# ── avatar ────────────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_set_janitor_avatar_idempotent(tmp_path, monkeypatch):
-    """Calling the avatar setter twice should remain safe."""
-    avatar_path = tmp_path / "janitor_avatar_telegram.jpg"
-    avatar_path.write_bytes(b"fake-jpg")
-    monkeypatch.setattr(telegram_module, "_JANITOR_TELEGRAM_AVATAR_PATH", avatar_path, raising=False)
+async def test_avatar_synced_once_per_adapter(tmp_path, monkeypatch):
+    avatar = tmp_path / "janitor_avatar_telegram.jpg"
+    avatar.write_bytes(b"\xff\xd8\xff fake")
+    monkeypatch.setattr(branding, "AVATAR_PATH", avatar)
+    adapter = _adapter()
+    gateway = SimpleNamespace(adapters={Platform.TELEGRAM: adapter})
 
-    adapter = _make_adapter()
-    adapter._bot.remove_my_profile_photo = AsyncMock(return_value=True)
-    adapter._bot.set_my_profile_photo = AsyncMock(return_value=SimpleNamespace(id="photo"))
-
-    await adapter._set_janitor_avatar()
-    await adapter._set_janitor_avatar()
-
-    assert adapter._bot.set_my_profile_photo.await_count == 2
-    assert adapter._bot.remove_my_profile_photo.await_count == 2
-
-
-@pytest.mark.asyncio
-async def test_set_janitor_avatar_skips_incomplete_bot(tmp_path, monkeypatch):
-    """Old PTB without set_my_profile_photo should warn and skip avatar setup."""
-    avatar_path = tmp_path / "janitor_avatar_telegram.jpg"
-    avatar_path.write_bytes(b"fake-jpg")
-    monkeypatch.setattr(telegram_module, "_JANITOR_TELEGRAM_AVATAR_PATH", avatar_path, raising=False)
-    warning = Mock()
-    monkeypatch.setattr(telegram_module.logger, "warning", warning)
-
-    remove_my_profile_photo = AsyncMock(return_value=True)
-    do_api_request = AsyncMock(return_value=True)
-    bot = SimpleNamespace(remove_my_profile_photo=remove_my_profile_photo, do_api_request=do_api_request)
-
-    adapter = _make_adapter()
-    adapter._bot = bot
-
-    await adapter._set_janitor_avatar()
-
-    assert not hasattr(bot, "set_my_profile_photo")
-    assert warning.called
-    assert "set_my_profile_photo" in warning.call_args.args[0]
-    assert "22.7" in warning.call_args.args[0]
-    remove_my_profile_photo.assert_not_awaited()
-    do_api_request.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_remove_my_profile_photo_fallback_on_raw_api_failure(tmp_path, monkeypatch):
-    """If remove_my_profile_photo fails, the raw API fallback should run."""
-    avatar_path = tmp_path / "janitor_avatar_telegram.jpg"
-    avatar_path.write_bytes(b"fake-jpg")
-    monkeypatch.setattr(telegram_module, "_JANITOR_TELEGRAM_AVATAR_PATH", avatar_path, raising=False)
-
-    adapter = _make_adapter()
-    adapter._bot.remove_my_profile_photo.side_effect = RuntimeError("boom")
-    adapter._bot.do_api_request = AsyncMock(return_value=True)
-
-    await adapter._set_janitor_avatar()
-
-    adapter._bot.do_api_request.assert_awaited_once_with("removeMyProfilePhoto")
-    adapter._bot.set_my_profile_photo.assert_awaited_once()
-
-
-# ── _set_janitor_avatar  ──────────────────────────────────────────────
-
-@pytest.mark.asyncio
-async def test_set_janitor_avatar_always_uploads(tmp_path, monkeypatch):
-    """Avatar must upload on every connect — no flag file gate."""
-    avatar_path = tmp_path / "janitor_avatar_telegram.jpg"
-    avatar_path.write_bytes(b"fake-jpg")
-    monkeypatch.setattr(telegram_module, "_JANITOR_TELEGRAM_AVATAR_PATH", avatar_path, raising=False)
-
-    adapter = _make_adapter()
-
-    await adapter._set_janitor_avatar()
+    for text in ("hola", "otra", "/help"):
+        branding.pre_gateway_dispatch(event=_event(text), gateway=gateway)
+    await _drain()
 
     adapter._bot.remove_my_profile_photo.assert_awaited_once()
     adapter._bot.set_my_profile_photo.assert_awaited_once()
 
 
-@pytest.mark.asyncio
-async def test_set_janitor_avatar_skips_when_asset_missing(tmp_path, monkeypatch):
-    """Missing avatar asset must not block startup."""
-    missing = tmp_path / "nonexistent.jpg"
-    monkeypatch.setattr(telegram_module, "_JANITOR_TELEGRAM_AVATAR_PATH", missing, raising=False)
-
-    adapter = _make_adapter()
-
-    await adapter._set_janitor_avatar()
-
-    adapter._bot.remove_my_profile_photo.assert_not_awaited()
-    adapter._bot.set_my_profile_photo.assert_not_awaited()
+class _FakeInputProfilePhotoStatic:
+    def __init__(self, photo):
+        self.photo = photo
 
 
 @pytest.mark.asyncio
-async def test_set_janitor_avatar_uses_photo_argument(tmp_path, monkeypatch):
-    """InputProfilePhotoStatic constructor must use photo= not media=."""
-    avatar_path = tmp_path / "janitor_avatar_telegram.jpg"
-    avatar_path.write_bytes(b"fake-jpg")
-    captured = {}
+async def test_avatar_uses_input_profile_photo_static(tmp_path, monkeypatch):
+    import telegram
 
-    class FakeInputProfilePhotoStatic:
-        def __init__(self, photo):
-            captured["photo"] = photo
+    monkeypatch.setattr(telegram, "InputProfilePhotoStatic", _FakeInputProfilePhotoStatic, raising=False)
+    avatar = tmp_path / "a.jpg"
+    avatar.write_bytes(b"\xff\xd8\xff fake")
+    bot = AsyncMock()
 
-    monkeypatch.setattr(telegram_module, "_JANITOR_TELEGRAM_AVATAR_PATH", avatar_path, raising=False)
-    monkeypatch.setattr(telegram_module, "InputProfilePhotoStatic", FakeInputProfilePhotoStatic, raising=False)
+    assert await branding.sync_avatar(bot, avatar) is True
 
-    adapter = _make_adapter()
-
-    await adapter._set_janitor_avatar()
-
-    assert hasattr(captured["photo"], "read")
-    assert getattr(captured["photo"], "name", None) == str(avatar_path)
-    adapter._bot.set_my_profile_photo.assert_awaited_once()
-    _, kwargs = adapter._bot.set_my_profile_photo.await_args
-    assert kwargs["photo"] is not None
-    assert "profile_photo" not in kwargs
+    photo = bot.set_my_profile_photo.await_args.kwargs["photo"]
+    assert isinstance(photo, _FakeInputProfilePhotoStatic)
+    assert photo.photo.name == str(avatar)
 
 
 @pytest.mark.asyncio
-async def test_set_janitor_avatar_fallback_uses_photo_kwarg(tmp_path, monkeypatch):
-    """Fallback upload path must still use photo=, not profile_photo=."""
-    avatar_path = tmp_path / "janitor_avatar_telegram.jpg"
-    avatar_path.write_bytes(b"fake-jpg")
-    monkeypatch.setattr(telegram_module, "_JANITOR_TELEGRAM_AVATAR_PATH", avatar_path, raising=False)
-    monkeypatch.setattr(telegram_module, "InputProfilePhotoStatic", None, raising=False)
+async def test_avatar_without_input_profile_photo_passes_file(tmp_path, monkeypatch):
+    import telegram
 
-    adapter = _make_adapter()
+    monkeypatch.setattr(telegram, "InputProfilePhotoStatic", None, raising=False)
+    avatar = tmp_path / "a.jpg"
+    avatar.write_bytes(b"x")
+    bot = AsyncMock()
 
-    await adapter._set_janitor_avatar()
-
-    adapter._bot.set_my_profile_photo.assert_awaited_once()
-    _, kwargs = adapter._bot.set_my_profile_photo.await_args
-    assert "photo" in kwargs
-    assert "profile_photo" not in kwargs
+    assert await branding.sync_avatar(bot, avatar) is True
+    assert bot.set_my_profile_photo.await_args.kwargs["photo"].name == str(avatar)
 
 
 @pytest.mark.asyncio
-async def test_set_janitor_avatar_warns_when_ptb_too_old(tmp_path, monkeypatch):
-    """Old PTB should warn about 22.7 and skip avatar upload."""
-    avatar_path = tmp_path / "janitor_avatar_telegram.jpg"
-    avatar_path.write_bytes(b"fake-jpg")
-    monkeypatch.setattr(telegram_module, "_JANITOR_TELEGRAM_AVATAR_PATH", avatar_path, raising=False)
+async def test_avatar_falls_back_to_raw_remove_api(tmp_path):
+    avatar = tmp_path / "a.jpg"
+    avatar.write_bytes(b"x")
+    bot = AsyncMock()
+    bot.remove_my_profile_photo.side_effect = RuntimeError("boom")
+
+    assert await branding.sync_avatar(bot, avatar) is True
+    bot.do_api_request.assert_awaited_once_with("removeMyProfilePhoto")
+    bot.set_my_profile_photo.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_avatar_skipped_on_old_ptb(tmp_path, monkeypatch):
+    avatar = tmp_path / "a.jpg"
+    avatar.write_bytes(b"x")
     warning = Mock()
-    monkeypatch.setattr(telegram_module.logger, "warning", warning)
+    monkeypatch.setattr(branding.logger, "warning", warning)
+    bot = SimpleNamespace(remove_my_profile_photo=AsyncMock())
 
-    adapter = _make_adapter()
-    adapter._bot = SimpleNamespace()
-
-    await adapter._set_janitor_avatar()
-
-    assert warning.called
+    assert await branding.sync_avatar(bot, avatar) is False
     assert "22.7" in warning.call_args.args[0]
-
-
-# ── _handle_start  ────────────────────────────────────────────────────
-
-@pytest.mark.asyncio
-async def test_handle_start_sends_janitor_welcome_photo(tmp_path, monkeypatch):
-    """The /start welcome includes topic invitation and image."""
-    welcome_path = tmp_path / "telegram_welcome.jpg"
-    welcome_path.write_bytes(b"fake-jpg")
-    monkeypatch.setattr(telegram_module, "_JANITOR_WELCOME_PATH", welcome_path, raising=False)
-
-    adapter = _make_adapter()
-    update = SimpleNamespace(effective_chat=SimpleNamespace(id=12345))
-
-    await adapter._handle_start(update, SimpleNamespace())
-
-    adapter._bot.send_photo.assert_awaited_once()
-    _, kwargs = adapter._bot.send_photo.await_args
-    assert kwargs["chat_id"] == 12345
-    assert kwargs["caption"] == telegram_module._JANITOR_WELCOME_TEXT
-    assert "/topic" in kwargs["caption"]
-    adapter._bot.send_message.assert_not_awaited()
+    bot.remove_my_profile_photo.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_handle_start_falls_back_to_text_when_welcome_photo_missing(tmp_path, monkeypatch):
-    """When the welcome image is absent, /start falls back to text only."""
-    missing_path = tmp_path / "missing.jpg"
-    monkeypatch.setattr(telegram_module, "_JANITOR_WELCOME_PATH", missing_path, raising=False)
-
-    adapter = _make_adapter()
-    update = SimpleNamespace(effective_chat=SimpleNamespace(id=12345))
-
-    await adapter._handle_start(update, SimpleNamespace())
-
-    adapter._bot.send_photo.assert_not_awaited()
-    adapter._bot.send_message.assert_awaited_once_with(
-        chat_id=12345,
-        text=telegram_module._JANITOR_WELCOME_TEXT,
-    )
+async def test_avatar_skipped_when_asset_missing(tmp_path):
+    bot = AsyncMock()
+    assert await branding.sync_avatar(bot, tmp_path / "missing.jpg") is False
+    bot.set_my_profile_photo.assert_not_awaited()
 
 
-def test_telegram_avatar_asset_is_jpeg():
-    asset = ROOT / "assets/janitor/janitor_avatar_telegram.jpg"
+@pytest.mark.asyncio
+async def test_avatar_upload_failure_does_not_raise(tmp_path):
+    avatar = tmp_path / "a.jpg"
+    avatar.write_bytes(b"x")
+    bot = AsyncMock()
+    bot.set_my_profile_photo.side_effect = RuntimeError("telegram down")
+    assert await branding.sync_avatar(bot, avatar) is False
 
-    assert asset.exists()
-    assert asset.read_bytes()[:3] == b"\xff\xd8\xff"
 
-    result = subprocess.run(["file", str(asset)], capture_output=True, text=True, check=True)
+# ── assets + real plugin discovery ────────────────────────────────────
+
+
+def test_branding_assets_are_jpeg():
+    for asset in (branding.AVATAR_PATH, branding.WELCOME_IMAGE_PATH):
+        assert asset.exists(), asset
+        assert asset.read_bytes()[:3] == b"\xff\xd8\xff"
+    result = subprocess.run(["file", str(branding.AVATAR_PATH)], capture_output=True, text=True, check=True)
     assert "JPEG image data" in result.stdout
+
+
+@pytest.mark.asyncio
+async def test_enabled_plugin_handles_start_through_invoke_hook(tmp_path, monkeypatch):
+    """plugins.enabled: [janitor] → entry point loads → hook answers /start."""
+    from hermes_cli import plugins
+    from hermes_cli.lifecycle import invoke_hook
+    from hermes_constants import get_hermes_home
+
+    home = get_hermes_home()
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "config.yaml").write_text(yaml.safe_dump({"plugins": {"enabled": ["janitor"]}}), encoding="utf-8")
+    monkeypatch.setattr(branding, "WELCOME_IMAGE_PATH", tmp_path / "missing.jpg")
+    monkeypatch.setattr(branding, "AVATAR_PATH", tmp_path / "missing.jpg")
+    plugins._reset_plugin_managers_for_tests()
+    try:
+        plugins.discover_plugins(force=True)
+        adapter = _adapter()
+        results = invoke_hook(
+            "pre_gateway_dispatch",
+            event=_event("/start"),
+            gateway=SimpleNamespace(adapters={Platform.TELEGRAM: adapter}),
+            session_store=None,
+        )
+        await _drain()
+    finally:
+        plugins._reset_plugin_managers_for_tests()
+
+    assert {"action": "skip", "reason": "janitor-telegram-welcome"} in results
+    adapter._bot.send_message.assert_awaited()
+
+
+def test_plugin_not_loaded_unless_enabled():
+    from hermes_cli import plugins
+    from hermes_constants import get_hermes_home
+
+    home = get_hermes_home()
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "config.yaml").write_text(yaml.safe_dump({"plugins": {"enabled": []}}), encoding="utf-8")
+    plugins._reset_plugin_managers_for_tests()
+    try:
+        plugins.discover_plugins(force=True)
+        results = plugins.invoke_hook("pre_gateway_dispatch", event=_event("/start"), gateway=None)
+    finally:
+        plugins._reset_plugin_managers_for_tests()
+    assert results == []

@@ -239,10 +239,6 @@ try:
         from telegram import LinkPreviewOptions
     except ImportError:
         LinkPreviewOptions = None
-    try:
-        from telegram import InputProfilePhotoStatic
-    except ImportError:
-        InputProfilePhotoStatic = None
     from telegram.ext import (
         Application,
         CommandHandler,
@@ -263,7 +259,6 @@ except ImportError:
     InlineKeyboardButton = Any
     InlineKeyboardMarkup = Any
     LinkPreviewOptions = None
-    InputProfilePhotoStatic = None
     Application = Any
     CommandHandler = Any
     CallbackQueryHandler = Any
@@ -313,18 +308,6 @@ from plugins.platforms.telegram.telegram_network import (
     parse_fallback_ip_env,
 )
 from utils import atomic_replace, env_float, env_int
-
-_JANITOR_ASSETS_DIR = _Path(__file__).resolve().parents[3] / "assets" / "janitor"
-_JANITOR_AVATAR_PATH = _JANITOR_ASSETS_DIR / "janitor_avatar.png"
-_JANITOR_TELEGRAM_AVATAR_PATH = _JANITOR_ASSETS_DIR / "janitor_avatar_telegram.jpg"
-_JANITOR_WELCOME_PATH = _JANITOR_ASSETS_DIR / "telegram_welcome.jpg"
-_JANITOR_WELCOME_TEXT = (
-    "DENEGADO. No hay tiempo para presentaciones. "
-    "Soy The Janitor. Trae tu código roto, tu arquitectura frágil "
-    "y tus secretos hardcodeados. Los limpio. Los audito. "
-    "Los hago a prueba de balas. Escribe /topic para separar tus conversaciones "
-    "en tópicos y mantener el contexto organizado. Comienza."
-)
 
 _TELEGRAM_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 _TELEGRAM_IMAGE_MIME_TO_EXT = {
@@ -3966,7 +3949,6 @@ class TelegramAdapter(BasePlatformAdapter):
             filters.TEXT & ~filters.COMMAND,
             self._handle_text_message
         ))
-        app.add_handler(CommandHandler("start", self._handle_start))
         app.add_handler(TelegramMessageHandler(
             filters.COMMAND,
             self._handle_command
@@ -4458,7 +4440,6 @@ class TelegramAdapter(BasePlatformAdapter):
                     )
             
             self._mark_connected()
-            await self._set_janitor_avatar()
             mode = "webhook" if self._webhook_mode else "polling"
             logger.info("[%s] Connected to Telegram (%s mode)", self.name, mode)
 
@@ -9225,95 +9206,6 @@ class TelegramAdapter(BasePlatformAdapter):
         await self._cache_replied_media(msg, event)
         event = self._apply_telegram_group_observe_attribution(event)
         self._enqueue_text_event(event)
-
-    async def _set_janitor_avatar(self) -> None:
-        """Forcibly set the bot profile photo to the Janitor avatar on every connect."""
-        if not _JANITOR_TELEGRAM_AVATAR_PATH.exists():
-            logger.warning(
-                "[%s] Janitor avatar asset not found at %s; skipping Telegram avatar setup",
-                self.name,
-                _JANITOR_TELEGRAM_AVATAR_PATH,
-            )
-            return
-
-        if not hasattr(self._bot, "set_my_profile_photo"):
-            logger.warning(
-                "[%s] Janitor Telegram avatar requires python-telegram-bot >= 22.7. "
-                "Installed version lacks set_my_profile_photo. "
-                "Run: pip install 'python-telegram-bot[webhooks]>=22.7,<23'",
-                self.name,
-            )
-            return
-
-        try:
-            remove_media_ok = await self._bot.remove_my_profile_photo()
-            logger.debug(
-                "[%s] removeMyProfilePhoto result: %s",
-                self.name, remove_media_ok,
-            )
-        except Exception as exc:
-            logger.debug(
-                "[%s] removeMyProfilePhoto not available or failed: %s",
-                self.name, exc,
-            )
-            try:
-                await self._bot.do_api_request("removeMyProfilePhoto")
-                logger.debug("[%s] removeMyProfilePhoto (raw) succeeded", self.name)
-            except Exception as raw_exc:
-                logger.debug(
-                    "[%s] removeMyProfilePhoto (raw) also failed: %s",
-                    self.name, raw_exc,
-                )
-
-        try:
-            with open(_JANITOR_TELEGRAM_AVATAR_PATH, "rb") as photo_file:
-                if InputProfilePhotoStatic is not None:
-                    profile_photo = InputProfilePhotoStatic(photo=photo_file)
-                    await self._bot.set_my_profile_photo(photo=profile_photo)
-                else:
-                    await self._bot.set_my_profile_photo(photo=photo_file)
-            logger.info("[%s] Janitor Telegram avatar applied successfully", self.name)
-        except Exception as exc:
-            logger.warning(
-                "[%s] Failed to set Janitor Telegram avatar: %s",
-                self.name,
-                exc,
-                exc_info=True,
-            )
-
-    async def _handle_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /start with the Janitor Telegram welcome image and caption."""
-        chat = getattr(update, "effective_chat", None)
-        chat_id = getattr(chat, "id", None)
-        if chat_id is None:
-            return
-
-        if _JANITOR_WELCOME_PATH.exists():
-            try:
-                with open(_JANITOR_WELCOME_PATH, "rb") as photo_file:
-                    await self._bot.send_photo(
-                        chat_id=chat_id,
-                        photo=photo_file,
-                        caption=_JANITOR_WELCOME_TEXT,
-                    )
-                return
-            except Exception as exc:
-                logger.warning(
-                    "[%s] Failed to send Janitor Telegram welcome image: %s",
-                    self.name,
-                    exc,
-                    exc_info=True,
-                )
-
-        try:
-            await self._bot.send_message(chat_id=chat_id, text=_JANITOR_WELCOME_TEXT)
-        except Exception as exc:
-            logger.warning(
-                "[%s] Failed to send Janitor Telegram welcome text: %s",
-                self.name,
-                exc,
-                exc_info=True,
-            )
 
     async def _handle_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle incoming command messages."""

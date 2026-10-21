@@ -1,0 +1,156 @@
+# Janitor overlay inventory.
+#
+# Every way this fork differs from upstream Hermes is declared here. Anything
+# not matched by `fork_paths` or by a touchpoint's `files` is an undeclared
+# divergence: `python -m janitor.overlay check` (run by
+# scripts/janitor-sync-verify.sh after each `chore(sync)`) fails on it, so a
+# merge can no longer silently keep stale upstream code alive.
+#
+# Touchpoint fields:
+#   files   — paths (globs allowed) edited in place on top of upstream.
+#   why     — what the edit does.
+#   verify  — `test:<id>` is a behavioral check in
+#             tests/janitor/test_janitor_overlay_contract.py (the test fails
+#             when an id has no check or a check has no id); `ci:<job>` means
+#             a CI job exercises it.
+#   merge   — how a `chore(sync)` conflict on these files is resolved:
+#             `ours` keep the fork version, `reapply` take upstream then
+#             re-apply the edit described in `why`.
+#   upstream_candidate — true when the edit is a generic fix/hook worth
+#             proposing upstream (see docs/janitor/upstream-candidates.md).
+
+schema: 1
+
+upstream:
+  repo: https://github.com/NousResearch/hermes-agent.git
+  # Hermes v2026.8.13 — upstream parent of the last chore(sync) merge.
+  base: f80f453ae0679347e38abc917c7f94f717bf96c5
+
+fork_paths:
+  - janitor/**
+  - assets/janitor/**
+  - tests/janitor/**
+  - docs/janitor/**
+  - scripts/*janitor*
+  - scripts/setup-honcho.sh
+  - scripts/verify-firecrawl-pgcron.sh
+  - scripts/test_opencode_orchestrator.py
+  # Pre-1.0 import aliases kept for old console scripts.
+  - janitor_cli.py
+  - janitor_update_core.py
+  - janitor_update_bootstrap.py
+  - janitor_version.py
+  - janitor_ext/**
+  # Janitor skills and their tests (moving under janitor/skills/).
+  - skills/janitor-*/**
+  - skills/devops/janitor-*/**
+  - optional-skills/devops/janitor-*/**
+  - tests/skills/test_janitor_*.py
+  - tests/test_janitor_*.py
+  - tests/gateway/test_telegram_janitor_branding.py
+  - janitor-tui.png
+  # Fork automation.
+  - .github/workflows/janitor-ci.yml
+  - .github/workflows/upstream-sync.yml
+  - .claude/**
+  - .opencode/**
+
+touchpoints:
+  - id: version
+    files: [pyproject.toml, hermes_cli/__init__.py, uv.lock]
+    why: Version carries the `+janitor.N` local segment.
+    verify: test:version
+    merge: reapply
+
+  - id: packaging
+    files: [pyproject.toml, uv.lock]
+    why: >-
+      `janitor` console script, `hermes_agent.plugins` entry point for the
+      Janitor plugin, `janitor` package + data, pre-1.0 alias py-modules.
+    verify: test:packaging
+    merge: reapply
+
+  - id: banner
+    files:
+      - cli.py
+      - hermes_cli/banner.py
+      - hermes_cli/_startup_fast.py
+      - tests/hermes_cli/test_banner.py
+      - tests/hermes_cli/test_kanban_db.py
+      - tests/hermes_cli/test_startup_fast_guards.py
+    why: >-
+      Version label reads `THE JANITOR v<display_version>`; upstream tests
+      asserting the label follow AGENTS.md directive #12.
+    verify: test:banner
+    merge: reapply
+    upstream_candidate: true
+
+  - id: gateway-cache-refresh
+    files: [gateway/run.py]
+    why: >-
+      `_refresh_agent_cache_message_count` runs the synchronous
+      `SessionDB.get_session` through `asyncio.to_thread`; upstream awaits it
+      directly and the TypeError is swallowed, so the cache never re-baselines.
+    verify: test:gateway-cache-refresh
+    merge: reapply
+    upstream_candidate: true
+
+  - id: mcp-dashboard-endpoints
+    files:
+      - hermes_cli/mcp_config.py
+      - hermes_cli/web_routers/mcp.py
+      - tests/hermes_cli/test_mcp_router_discover.py
+      - tests/hermes_cli/test_mcp_router_logs.py
+    why: >-
+      `POST /api/mcp/servers/{name}/discover` (tools with inputSchema) and
+      `GET /api/mcp/servers/{name}/logs` (per-server stderr slice).
+    verify: test:mcp-dashboard-endpoints
+    merge: reapply
+    upstream_candidate: true
+
+  - id: web-typecheck
+    files: [web/package.json]
+    why: "`tsc -b --noEmit`; upstream's `tsc -p .` checks no files (tsconfig has `files: []`)."
+    verify: ci:janitor-ci
+    merge: reapply
+    upstream_candidate: true
+
+  - id: tui-skin
+    files:
+      - ui-tui/src/theme.ts
+      - ui-tui/src/components/branding.tsx
+      - ui-tui/src/__tests__/brandingMcpCount.test.ts
+      - ui-tui/src/__tests__/janitorSkin.test.ts
+      - ui-tui/src/__tests__/textInputPassThrough.test.ts
+      - ui-tui/src/__tests__/theme.test.ts
+      - ui-tui/vitest.config.ts
+    why: Janitor TUI look. Being moved onto the skin system (Phase 4).
+    verify: ci:janitor-ci
+    merge: reapply
+
+  - id: desktop-assets
+    files: [apps/desktop/public/**]
+    why: Janitor logo/background in the upstream desktop app. Being moved to apps/desktop-janitor (Phase 4).
+    verify: ci:janitor-ci
+    merge: ours
+
+  - id: installers
+    files: [scripts/bootstrap.sh, scripts/install.ps1]
+    why: Install from the Janitor fork into ~/.janitor and check Docker/Honcho (directive #8).
+    verify: ci:janitor-ci
+    merge: ours
+
+  - id: fork-docs
+    files: [AGENTS.md, README.md, CHANGELOG.md, MERGE_GUIDE.md, .env.example, .gitignore]
+    why: Fork directives, docs and ignore rules.
+    verify: ci:janitor-ci
+    merge: ours
+
+  - id: fork-ci
+    files: [.github/workflows/*.yml]
+    why: >-
+      Two-tier CI (directive #11): the PR gate runs the Janitor suite, the
+      full upstream suite runs on sync. Upstream workflows are adjusted for
+      the fork's runners and secrets.
+    verify: ci:janitor-ci
+    merge: ours

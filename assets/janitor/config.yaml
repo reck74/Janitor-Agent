@@ -404,6 +404,9 @@ command_allowlist: []
 quick_commands: {}
 hooks: {}
 hooks_auto_accept: false
+plugins:
+  enabled:
+    - janitor
 personalities: {}
 security:
   allow_private_urls: false

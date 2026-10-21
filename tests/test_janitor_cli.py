@@ -57,9 +57,9 @@ class TestJanitorCommand:
         """The `janitor` console script must exist in installed metadata.
 
         Given the package is installed, When console_scripts entry points are
-        read, Then `janitor` is present and dispatches to `janitor_cli:main`.
+        read, Then `janitor` is present and dispatches to `janitor.cli:main`.
         scripts/janitor-install.sh relies on this to put `janitor` on PATH;
-        importing janitor_cli.main directly does not prove registration.
+        importing janitor.cli.main directly does not prove registration.
         """
         console_scripts = entry_points(group="console_scripts")
         janitor = {ep.name: ep.value for ep in console_scripts}.get("janitor")
@@ -68,9 +68,18 @@ class TestJanitorCommand:
             "`janitor` console script missing from installed metadata; "
             "[project.scripts] in pyproject.toml must declare it"
         )
-        assert janitor == "janitor_cli:main", (
-            f"`janitor` must dispatch to janitor_cli:main, got {janitor!r}"
+        assert janitor == "janitor.cli:main", (
+            f"`janitor` must dispatch to janitor.cli:main, got {janitor!r}"
         )
+
+    def test_pre_1_0_console_script_target_still_runs(self):
+        """Installs from before 1.0 keep a script that imports janitor_cli:main
+        until their venv is reinstalled; the alias must be the real module."""
+        import janitor.cli
+        import janitor_cli
+
+        assert janitor_cli is janitor.cli
+        assert janitor_cli.main is janitor.cli.main
 
     def test_hermes_home_is_overridden_to_janitor(self):
         """HERMES_HOME must be set to ~/.janitor before any hermes imports.

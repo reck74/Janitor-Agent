@@ -1,4 +1,4 @@
-"""Regression tests for janitor_cli.py monkey-patch signature compatibility.
+"""Regression tests for janitor/cli.py monkey-patch signature compatibility.
 
 CONTEXT
     janitor_cli.py monkey-patches several upstream functions at import time.
@@ -22,60 +22,80 @@ INVARIANT
     1. Structural — inspect.signature(wrapper) >= inspect.signature(original)
     2. Behavioral — call the wrapper with representative upstream args
 
+Since Janitor 1.0 the ``load_soul_md`` patch is gone: upstream already reads
+``$HERMES_HOME/SOUL.md`` and the launcher points HERMES_HOME at ~/.janitor,
+so the wrapper only bypassed upstream's injection scan and truncation. The
+remaining patches (``hermes_cli.main.cmd_update`` and ``hermes_cli.tips``)
+are applied inside ``janitor.cli.main()``, so the upstream originals are
+still intact in the test process and can be compared directly.
+
 See AGENTS.md directive #14 (MONKEY-PATCH SIGNATURE INVARIANTS).
 """
 
 import inspect
 
 
-class TestLoadSoulMdSignature:
-    """prompt_builder.load_soul_md — the patch that broke in v2026.7.7.2."""
+def _missing_params(original, wrapper) -> set:
+    original_params = inspect.signature(original).parameters
+    wrapper_params = inspect.signature(wrapper).parameters
+    if any(p.kind is p.VAR_KEYWORD for p in wrapper_params.values()):
+        return set()
+    return set(original_params) - set(wrapper_params)
 
-    def test_wrapper_is_installed(self):
-        """Importing janitor_cli must replace prompt_builder.load_soul_md
-        with the Janitor wrapper. If this silently fails, every other test
-        in this file is meaningless."""
-        import janitor_cli
+
+class TestSoulMdServedByUpstream:
+    """SOUL.md must come from upstream's loader reading the Janitor home."""
+
+    def test_load_soul_md_is_not_patched(self):
+        import janitor_cli  # noqa: F401
         from agent import prompt_builder
 
-        assert prompt_builder.load_soul_md is janitor_cli._janitor_load_soul_md
+        assert prompt_builder.load_soul_md.__module__ == "agent.prompt_builder"
 
-    def test_accepts_context_length_positionally(self):
-        """agent/system_prompt.py calls ``load_soul_md(_ctx_len)`` where
-        _ctx_len is ``Optional[int]``. The wrapper must accept it."""
+    def test_upstream_reads_soul_from_hermes_home(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        (tmp_path / "SOUL.md").write_text("Soy The Janitor.\n", encoding="utf-8")
         from agent import prompt_builder
 
-        for ctx_len in (None, 200000, 8000):
-            prompt_builder.load_soul_md(ctx_len)
+        for ctx_len in (None, 200000):
+            assert "Soy The Janitor." in prompt_builder.load_soul_md(ctx_len)
 
-    def test_accepts_no_args(self):
-        """Backward compatibility: some callers may invoke with no args."""
-        from agent import prompt_builder
 
-        prompt_builder.load_soul_md()
+class TestCmdUpdateSignature:
+    """hermes_cli.main.cmd_update — replaced by janitor.cli.main()."""
 
     def test_wrapper_signature_covers_original(self):
-        """The wrapper's parameter set must be a superset of the original's.
-
-        ``_original_load_soul_md`` is captured at import time from the
-        CURRENT upstream ``prompt_builder.load_soul_md``, so if upstream
-        adds a parameter and the sync adopts it, this comparison will fail
-        until the wrapper is updated to match."""
+        import hermes_cli.main as hermes_main
         import janitor_cli
 
-        original = janitor_cli._original_load_soul_md
-        original_params = set(inspect.signature(original).parameters.keys())
-
-        wrapper = janitor_cli._janitor_load_soul_md
-        wrapper_params = set(inspect.signature(wrapper).parameters.keys())
-
-        missing = original_params - wrapper_params
+        assert hermes_main.cmd_update is not janitor_cli._janitor_cmd_update
+        missing = _missing_params(hermes_main.cmd_update, janitor_cli._janitor_cmd_update)
         assert not missing, (
-            f"_janitor_load_soul_md accepts {sorted(wrapper_params)} but "
-            f"upstream load_soul_md now accepts {sorted(original_params)}. "
-            f"Missing parameters: {sorted(missing)}. Update the wrapper "
-            f"signature in janitor_cli.py to match upstream."
+            f"upstream cmd_update now accepts {sorted(missing)} which "
+            f"_janitor_cmd_update in janitor/cli.py does not."
         )
+
+
+class TestTipsSignature:
+    """hermes_cli.tips.get_random_tip / TIPS — replaced by janitor.cli.main()."""
+
+    def test_wrapper_signature_covers_original(self):
+        import hermes_cli.tips as hermes_tips
+        from janitor.tips_es import get_janitor_tip
+
+        missing = _missing_params(hermes_tips.get_random_tip, get_janitor_tip)
+        assert not missing, (
+            f"upstream get_random_tip now accepts {sorted(missing)} which "
+            f"janitor.tips_es.get_janitor_tip does not."
+        )
+
+    def test_janitor_tips_match_upstream_shape(self):
+        import hermes_cli.tips as hermes_tips
+        from janitor.tips_es import JANITOR_TIPS, get_janitor_tip
+
+        assert type(JANITOR_TIPS) is type(hermes_tips.TIPS)
+        assert JANITOR_TIPS and all(isinstance(t, str) for t in JANITOR_TIPS)
+        assert get_janitor_tip(exclude_recent=1) in JANITOR_TIPS
 
 
 class TestArgparseInitSignature:
