@@ -7308,9 +7308,6 @@ def auxiliary_max_tokens_param(value: int, *, model: Optional[str] = None) -> di
     # ...and for any caller serving a newer OpenAI-family model by name.
     if model_forces_max_completion_tokens(model):
         return {"max_completion_tokens": value}
-    # ...and for any caller serving a newer OpenAI-family model by name.
-    if model_forces_max_completion_tokens(model):
-        return {"max_completion_tokens": value}
     return {"max_tokens": value}
 
 

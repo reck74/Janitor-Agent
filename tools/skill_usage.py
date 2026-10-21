@@ -482,34 +482,6 @@ def is_curation_eligible(skill_name: str, skill_path: Optional[Path] = None) -> 
     return True
 
 
-def is_hub_installed(skill_name: str) -> bool:
-    """Whether *skill_name* was installed via the Skills Hub."""
-    return skill_name in _read_hub_installed_names()
-
-
-def is_bundled(skill_name: str) -> bool:
-    """Whether *skill_name* was seeded from the bundled repo skills."""
-    return skill_name in _read_bundled_manifest_names()
-
-
-def is_curation_eligible(skill_name: str) -> bool:
-    """Whether the curator may track/archive *skill_name*.
-
-    Agent-created skills are always eligible. Bundled built-ins become eligible
-    only when ``curator.prune_builtins`` is enabled. Hub-installed skills are
-    NEVER eligible — they have an external upstream owner. Protected built-ins
-    (``PROTECTED_BUILTIN_SKILLS``) are NEVER eligible regardless of any flag —
-    they back load-bearing UX and must never be archived or consolidated.
-    """
-    if is_protected_builtin(skill_name):
-        return False
-    if is_hub_installed(skill_name):
-        return False
-    if is_bundled(skill_name):
-        return _prune_builtins_enabled()
-    return True
-
-
 def _is_curator_managed_record(record: Any) -> bool:
     """Return True when a usage record opts a skill into curator management.
 

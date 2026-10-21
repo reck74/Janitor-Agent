@@ -1431,48 +1431,6 @@ def switch_model(
                     ),
                 )
 
-        # Guard against silent aggregator hops. A vendor name like bare
-        # "openai" is an alias that resolves to an aggregator ("openrouter").
-        # If the user explicitly asked for that vendor but the aggregator it
-        # routes to has no credentials, do NOT silently switch them onto an
-        # unauthed endpoint (the classic HTTP 401 "Missing Authentication
-        # header"). Point them at the real direct provider instead.
-        from hermes_cli.models import _AGGREGATOR_PROVIDERS as _AGG_PROVIDERS
-        from hermes_cli.providers import ALIASES as _PROVIDER_ALIAS_TABLE
-        _explicit_norm = explicit_provider.strip().lower()
-        _alias_target = _PROVIDER_ALIAS_TABLE.get(_explicit_norm)
-        if (
-            _alias_target
-            and _alias_target == target_provider
-            and target_provider != _explicit_norm
-            and target_provider in _AGG_PROVIDERS
-        ):
-            _authed = get_authenticated_provider_slugs(
-                current_provider=current_provider,
-                user_providers=user_providers,
-                custom_providers=custom_providers,
-            )
-            if target_provider not in _authed:
-                _suggestions = [
-                    s for s in _authed
-                    if s.startswith(_explicit_norm) and s != _explicit_norm
-                ]
-                _hint = (
-                    f" Did you mean: {', '.join(_suggestions)}?"
-                    if _suggestions else ""
-                )
-                return ModelSwitchResult(
-                    success=False,
-                    target_provider=target_provider,
-                    provider_label=pdef.name,
-                    is_global=is_global,
-                    error_message=(
-                        f"Provider '{_explicit_norm}' is an alias that routes "
-                        f"through {get_label(target_provider)}, which "
-                        f"has no credentials configured.{_hint}"
-                    ),
-                )
-
         # If no model specified, try auto-detect from endpoint
         if not new_model:
             if pdef.base_url:

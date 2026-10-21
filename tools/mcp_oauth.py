@@ -176,16 +176,6 @@ _SKIP_TOKENS = frozenset({"skip", "cancel", "s", "n", "no", "q", "quit"})
 _USER_SKIPPED_SENTINEL = "__hermes_user_skipped__"
 
 
-# Skip tokens accepted at the paste prompt — exit OAuth without auth.
-_SKIP_TOKENS = frozenset({"skip", "cancel", "s", "n", "no", "q", "quit"})
-
-# Sentinel value written to result["error"] when the user skipped via stdin.
-# _wait_for_callback maps this to OAuthNonInteractiveError ("user_skipped")
-# so the MCP setup path treats it as a non-fatal "continue without this
-# server" rather than a hard failure.
-_USER_SKIPPED_SENTINEL = "__hermes_user_skipped__"
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

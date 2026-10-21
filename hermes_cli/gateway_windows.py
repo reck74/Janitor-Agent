@@ -76,20 +76,6 @@ def _schtasks_encoding() -> str:
         return "utf-8"
 
 
-def _schtasks_encoding() -> str:
-    """Best-effort console encoding for decoding ``schtasks.exe`` output.
-
-    On localized Windows (e.g. Chinese), ``schtasks`` emits text in the OEM/ANSI
-    code page rather than UTF-8. Decoding with the wrong codec raised
-    ``UnicodeDecodeError`` inside ``subprocess``' reader threads. Prefer the
-    locale's preferred encoding and fall back to UTF-8.
-    """
-    try:
-        return locale.getpreferredencoding(False) or "utf-8"
-    except Exception:
-        return "utf-8"
-
-
 # ---------------------------------------------------------------------------
 # Platform guard
 # ---------------------------------------------------------------------------

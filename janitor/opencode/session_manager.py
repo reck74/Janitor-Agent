@@ -22,7 +22,9 @@ from typing import Literal, Optional
 
 logger = logging.getLogger(__name__)
 
-STATE_FILE = Path("~/.janitor/opencode_sessions.json").expanduser()
+from janitor.home import janitor_home
+
+STATE_FILE = janitor_home() / "opencode_sessions.json"
 
 
 @dataclass

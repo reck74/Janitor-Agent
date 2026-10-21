@@ -423,24 +423,6 @@ _REQUEST_VALIDATION_PATTERNS = [
     "unsupported_parameter",
 ]
 
-# Request-validation patterns — the request is malformed and will fail
-# identically on every retry. Some OpenAI-compatible gateways (notably
-# codex.nekos.me) return these as 5xx instead of the standard 4xx, which
-# makes the generic "5xx → retryable server_error" rule misfire: the retry
-# loop hammers the same deterministic rejection 3+ times, then the
-# transport-recovery path resets the counter and does it again, producing
-# a request flood. When a 5xx body carries one of these unambiguous
-# request-validation signals, classify as a non-retryable format_error so
-# the loop fails fast and falls back instead of looping.
-_REQUEST_VALIDATION_PATTERNS = [
-    "unknown parameter",
-    "unsupported parameter",
-    "unrecognized request argument",
-    "invalid_request_error",
-    "unknown_parameter",
-    "unsupported_parameter",
-]
-
 # OpenRouter aggregator policy-block patterns.
 #
 # When a user's OpenRouter account privacy setting (or a per-request

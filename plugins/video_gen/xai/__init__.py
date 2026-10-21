@@ -543,7 +543,7 @@ def _run_xai_video_coroutine(
             error=f"xAI video {operation_label} failed: {exc}",
             error_type="api_error",
             provider="xai",
-            model=resolved_model,
+            model=model or DEFAULT_MODEL,
             prompt=prompt,
             aspect_ratio=aspect_ratio,
         )

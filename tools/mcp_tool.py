@@ -4737,19 +4737,6 @@ _orphan_stdio_pid_servers: Dict[int, str] = {}
 # (``os.getpgid`` is POSIX-only).
 _stdio_pgids: Dict[int, int] = {}  # pid -> pgid
 
-# Process-group IDs of stdio MCP subprocesses, captured at spawn time.
-# The MCP SDK spawns stdio children with ``start_new_session=True`` so each
-# direct child becomes its own session/pgroup leader (PGID == its own PID).
-# Grandchildren spawned by that child (e.g. a wrapper MCP server that itself
-# launches helper subprocesses like ``claude mcp serve``) inherit that PGID
-# unless they call ``setsid`` themselves.  When the direct child exits, those
-# grandchildren reparent to init/systemd-user but keep the original PGID, so
-# ``killpg(pgid, sig)`` still reaches them.  Tracked separately from
-# ``_stdio_pids`` so we retain the PGID even after the direct child has
-# exited and been removed from the active map.  Empty on Windows
-# (``os.getpgid`` is POSIX-only).
-_stdio_pgids: Dict[int, int] = {}  # pid -> pgid
-
 
 def _snapshot_child_pids() -> set:
     """Return a set of current child process PIDs.
