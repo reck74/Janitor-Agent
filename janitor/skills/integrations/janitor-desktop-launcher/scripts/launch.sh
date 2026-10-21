@@ -136,6 +136,18 @@ fi
 log_ok "Binary: ${BINARY}"
 log_info "HERMES_HOME: ${HERMES_HOME_DIR}"
 
+# The desktop backend starts Hermes directly, skipping the `janitor` launcher
+# that normally upgrades a pre-1.0 home, so run that migration here first.
+if [[ "${HERMES_HOME_DIR}" == "${JANITOR_HOME:-$HOME/.janitor}" && ! -f "${HERMES_HOME_DIR}/.layout_version" ]]; then
+    for migrate in "${HERMES_HOME_DIR}/janitor-core/scripts/migrate-janitor-v1.sh" \
+                   "${SCRIPT_REPO_ROOT}/scripts/migrate-janitor-v1.sh"; do
+        if [[ -f "${migrate}" ]]; then
+            JANITOR_HOME="${HERMES_HOME_DIR}" bash "${migrate}" || log_warn "Layout migration failed — run: bash ${migrate}"
+            break
+        fi
+    done
+fi
+
 export HERMES_HOME="${HERMES_HOME_DIR}"
 export HERMES_DESKTOP_APP_NAME="${HERMES_DESKTOP_APP_NAME:-Janitor}"
 

@@ -33,6 +33,20 @@ log_ok()    { echo -e "${LIME}✓${NC} $1"; }
 log_warn()  { echo -e "${CORAL}⚠${NC} $1"; }
 log_fail()  { echo -e "${PINK}✗${NC} $1"; }
 
+INSTALL_BACKUP="${JANITOR_HOME}/.backup/install-$(date +%Y%m%d-%H%M%S)"
+
+# Re-running the installer over an existing home must not lose user edits:
+# anything about to be overwritten is copied to $INSTALL_BACKUP first.
+backup_existing() {
+    local rel="$1"
+    local src="${JANITOR_HOME}/${rel}"
+    [ -f "$src" ] || return 0
+    mkdir -p "$(dirname "${INSTALL_BACKUP}/${rel}")"
+    chmod 700 "${JANITOR_HOME}/.backup" "$INSTALL_BACKUP" 2>/dev/null || true
+    cp -p "$src" "${INSTALL_BACKUP}/${rel}"
+    log_info "Backup de ${rel} → ${INSTALL_BACKUP}/"
+}
+
 validate_nonempty() {
     local var_name="$1"
     local value="$2"
@@ -154,6 +168,7 @@ echo -e "${PURPLE}--- Archivo de Variables de Entorno ---${NC}"
 echo ""
 
 ENV_FILE="${JANITOR_HOME}/.env"
+backup_existing ".env"
 log_info "Escribiendo ${WHITE}${ENV_FILE}${NC}..."
 
 {
@@ -201,7 +216,11 @@ echo ""
 echo -e "${PURPLE}--- Skin Visual ---${NC}"
 echo ""
 
-if [ -f "$SKIN_SOURCE" ]; then
+if [ -f "${JANITOR_HOME}/skins/sentry-janitor.yaml" ]; then
+    # janitor refreshes an unedited shipped skin itself on first launch
+    # (janitor/migrations); an edited one is the user's to keep.
+    log_ok "Skin existente conservado: ${JANITOR_HOME}/skins/sentry-janitor.yaml"
+elif [ -f "$SKIN_SOURCE" ]; then
     log_info "Copiando skin sentry-janitor..."
     cp "$SKIN_SOURCE" "${JANITOR_HOME}/skins/sentry-janitor.yaml"
     log_ok "Skin instalado: ${JANITOR_HOME}/skins/sentry-janitor.yaml"
@@ -221,7 +240,11 @@ log_info "Copiando archivos base desde ${WHITE}${JANITOR_SOURCE}/assets/janitor/
 for file in SOUL.md honcho.json config.yaml; do
     src="${JANITOR_SOURCE}/assets/janitor/${file}"
     dst="${JANITOR_HOME}/${file}"
-    if [ -f "$src" ]; then
+    if [ -f "$dst" ]; then
+        # An existing config.yaml is upgraded in place by janitor/migrations
+        # on first launch; SOUL.md and honcho.json are the user's.
+        log_ok "Conservado: $file (ya existe en ${JANITOR_HOME}/)"
+    elif [ -f "$src" ]; then
         cp "$src" "$dst"
         log_ok "Copiado: $file → ${JANITOR_HOME}/"
     else

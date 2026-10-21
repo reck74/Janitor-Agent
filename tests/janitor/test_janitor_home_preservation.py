@@ -16,6 +16,7 @@ import pytest
 from tests.janitor.legacy_home import (
     LEGACY_SKILL_PATHS,
     SESSION_ID,
+    USER_MODIFIED_SKILL,
     USER_OWN_SKILL,
     build_legacy_home,
     launcher_env,
@@ -68,8 +69,29 @@ def test_every_skill_is_listed_exactly_once(legacy):
 
     rows = [line for line in result.stdout.splitlines() if line.startswith("│")]
     names = [row.split("│")[1].strip() for row in rows]
-    for name in [*LEGACY_SKILL_PATHS, USER_OWN_SKILL]:
+    from janitor.migrations.v1 import shipped_skills
+
+    for name in [*shipped_skills(), USER_OWN_SKILL]:
         assert names.count(name) == 1, (
             f"skill {name!r} listed {names.count(name)} times — a stale local copy "
             f"is shadowing (or duplicating) the shipped one.\n{result.stdout}"
         )
+
+
+def test_first_launch_migrates_layout(legacy):
+    from janitor.home import LAYOUT_VERSION, read_layout_version
+
+    result = _janitor(legacy.root, "skills", "list")
+    assert result.returncode == 0, result.stderr
+    assert read_layout_version(legacy.home) == LAYOUT_VERSION
+    assert "layout v1" in result.stderr
+
+    skills = legacy.home / "skills"
+    for name, rel in LEGACY_SKILL_PATHS.items():
+        assert (skills / rel).is_dir() == (name == USER_MODIFIED_SKILL), name
+    assert list((legacy.home / ".backup").glob("v1-*/state.db"))
+
+    again = _janitor(legacy.root, "skills", "list")
+    assert again.returncode == 0, again.stderr
+    assert "layout v1" not in again.stderr
+    assert len(list((legacy.home / ".backup").iterdir())) == 1
