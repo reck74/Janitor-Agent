@@ -8,7 +8,8 @@
 #      base is fork-owned or a declared touchpoint (janitor/overlay.yaml);
 #   3. the Janitor Python suite (tests/janitor/, via scripts/run_tests.sh);
 #   4. the desktop build-overlay unit tests (node --test);
-#   5. the TUI gate: `npm run build` + `npm test` in ui-tui (directive #7).
+#   5. the TUI gate: `npm run build:ink`, `npm run build` + `npm test` in
+#      ui-tui (directive #7).
 #
 # --base defaults to `upstream.base` in janitor/overlay.yaml. After merging a
 # new upstream tag, set that field to the tag's commit in the same PR.
@@ -27,7 +28,7 @@ while [ $# -gt 0 ]; do
         --base) BASE="${2:?--base needs a ref}"; shift 2 ;;
         --skip-tui) RUN_TUI=0; shift ;;
         --skip-desktop) RUN_DESKTOP=0; shift ;;
-        -h|--help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -75,7 +76,9 @@ fi
 
 if [ "$RUN_TUI" -eq 1 ]; then
     step "TUI gate (ui-tui: build + test)"
-    (cd ui-tui && npm run build && npm test)
+    # build.mjs bundles @hermes/ink from source, but vitest resolves the
+    # package entry (packages/hermes-ink/dist), so build it first like CI.
+    (cd ui-tui && npm run build:ink && npm run build && npm test)
 fi
 
 printf '\n✓ janitor-sync-verify passed against %s\n' "$BASE"
