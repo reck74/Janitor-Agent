@@ -19,6 +19,7 @@ from tests.janitor.legacy_home import (
     USER_MODIFIED_SKILL,
     USER_OWN_SKILL,
     build_legacy_home,
+    expected_listing_count,
     launcher_env,
     session_messages,
     snapshot_user_data,
@@ -71,10 +72,13 @@ def test_every_skill_is_listed_exactly_once(legacy):
     names = [row.split("│")[1].strip() for row in rows]
     from janitor.migrations.v1 import shipped_skills
 
-    for name in [*shipped_skills(), USER_OWN_SKILL]:
-        assert names.count(name) == 1, (
-            f"skill {name!r} listed {names.count(name)} times — a stale local copy "
-            f"is shadowing (or duplicating) the shipped one.\n{result.stdout}"
+    expected = {name: expected_listing_count(path) for name, path in shipped_skills().items()}
+    expected[USER_OWN_SKILL] = 1
+    assert any(expected.values())
+    for name, count in expected.items():
+        assert names.count(name) == count, (
+            f"skill {name!r} listed {names.count(name)} times, expected {count} — a stale "
+            f"local copy is shadowing (or duplicating) the shipped one.\n{result.stdout}"
         )
 
 

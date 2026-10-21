@@ -45,7 +45,8 @@ PLUGIN_NAME = "janitor"
 SKIN_FILE = "sentry-janitor.yaml"
 
 # sha256 of every sentry-janitor.yaml the installer / launcher ever copied
-# into ~/.janitor/skins before 1.0. Only these exact bytes are replaced.
+# into ~/.janitor/skins before 1.0, with LF line endings. Only these contents
+# are replaced; a CRLF copy from a Windows checkout counts as the same file.
 SHIPPED_SKIN_SHA256 = frozenset(
     {
         "a856a19c14080fb0504296082582ab9ec5e0306edec947782cd4528a6a1c18f4",
@@ -91,8 +92,8 @@ def dir_hash(directory: Path) -> str:
     return hasher.hexdigest()
 
 
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+def _text_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
 def shipped_skills(root: Path = SKILLS_ROOT) -> Dict[str, Path]:
@@ -204,8 +205,8 @@ def _plan_skin(plan: Plan) -> None:
     current = ASSETS_ROOT / SKIN_FILE
     if not skin.is_file() or not current.is_file():
         return
-    digest = _sha256(skin)
-    plan.refresh_skin = digest in SHIPPED_SKIN_SHA256 and digest != _sha256(current)
+    digest = _text_sha256(skin)
+    plan.refresh_skin = digest in SHIPPED_SKIN_SHA256 and digest != _text_sha256(current)
 
 
 def build_plan(home: Path, shipped_root: Path = SKILLS_ROOT) -> Plan:

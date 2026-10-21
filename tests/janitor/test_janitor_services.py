@@ -15,7 +15,7 @@ import yaml
 
 from janitor import agents, services
 from janitor.home import SKILLS_ROOT
-from tests.janitor.legacy_home import ASSETS, REPO_ROOT, launcher_env
+from tests.janitor.legacy_home import ASSETS, REPO_ROOT, expected_listing_count, launcher_env
 
 ALL_SERVICES = services.discover_services()
 
@@ -45,7 +45,20 @@ def test_manifest_matches_compose_and_scripts(service):
     assert set(service.containers) == _compose_container_names(service)
     script = service.deploy_script
     assert script.is_file()
-    assert script.stat().st_mode & stat.S_IXUSR, f"{script} is not executable"
+    assert _is_executable(script), f"{script} is not executable"
+
+
+def _is_executable(path: Path) -> bool:
+    # Windows checkouts drop the exec bit; the committed mode is what ships.
+    staged = subprocess.run(
+        ["git", "ls-files", "-s", "--", str(path.relative_to(REPO_ROOT))],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+    )
+    if staged.returncode == 0 and staged.stdout:
+        return staged.stdout.startswith("100755")
+    return bool(path.stat().st_mode & stat.S_IXUSR)
 
 
 def test_manifest_rejects_unprefixed_containers(tmp_path):
@@ -214,9 +227,11 @@ def test_skills_resolve_from_the_install_tree(fresh_home):
     assert result.returncode == 0, result.stderr
     rows = [line for line in result.stdout.splitlines() if line.startswith("│")]
     names = [row.split("│")[1].strip() for row in rows]
-    shipped = sorted(p.parent.name for p in SKILLS_ROOT.rglob("SKILL.md"))
-    for name in shipped:
-        assert names.count(name) == 1, f"{name} listed {names.count(name)}x\n{result.stdout}"
+    for skill_md in sorted(SKILLS_ROOT.rglob("SKILL.md")):
+        name, expected = skill_md.parent.name, expected_listing_count(skill_md.parent)
+        assert names.count(name) == expected, (
+            f"{name} listed {names.count(name)}x, expected {expected}\n{result.stdout}"
+        )
     assert not (fresh_home / ".janitor" / "skills" / "janitor-firecrawl").exists()
 
 

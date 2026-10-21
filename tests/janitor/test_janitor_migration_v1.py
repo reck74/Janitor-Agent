@@ -130,14 +130,14 @@ def test_hub_installed_copy_is_left_alone(legacy):
     assert (legacy.home / "skills" / LEGACY_SKILL_PATHS[name]).is_dir()
 
 
-@pytest.mark.parametrize("edited", [False, True], ids=["shipped", "edited"])
-def test_skin_refreshed_only_when_unmodified(legacy, monkeypatch, edited):
+@pytest.mark.parametrize(
+    "edited, newline", [(False, "\n"), (False, "\r\n"), (True, "\n")], ids=["shipped", "shipped-crlf", "edited"]
+)
+def test_skin_refreshed_only_when_unmodified(legacy, monkeypatch, edited, newline):
     skin = legacy.home / "skins" / v1.SKIN_FILE
     old = "name: sentry-janitor\ncolors: {}\n"
-    skin.write_text(old, encoding="utf-8")
     monkeypatch.setattr(v1, "SHIPPED_SKIN_SHA256", frozenset({hashlib.sha256(old.encode()).hexdigest()}))
-    if edited:
-        skin.write_text(old + "# mine\n", encoding="utf-8")
+    skin.write_bytes((old + ("# mine\n" if edited else "")).replace("\n", newline).encode())
     before = skin.read_bytes()
 
     migrations.run(legacy.home, out=_quiet)

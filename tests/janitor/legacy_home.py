@@ -69,6 +69,17 @@ def find_skill_source(name: str) -> Path:
     raise FileNotFoundError(f"Janitor skill source not found: {name}")
 
 
+def expected_listing_count(skill_dir: Path) -> int:
+    """How often ``janitor skills list`` must show a skill on this host.
+
+    Skills gated by ``platforms:`` to another OS are hidden, not shadowed.
+    """
+    from agent.skill_utils import parse_frontmatter, skill_matches_platform
+
+    frontmatter, _ = parse_frontmatter((skill_dir / "SKILL.md").read_text(encoding="utf-8"))
+    return 1 if skill_matches_platform(frontmatter) else 0
+
+
 def _seed_skills(home: Path) -> None:
     from tools.skills_sync import _dir_hash
 

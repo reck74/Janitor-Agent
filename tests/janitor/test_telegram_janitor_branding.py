@@ -9,8 +9,9 @@ the real entry-point discovery path.
 
 import asyncio
 import subprocess
+import sys
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -160,11 +161,16 @@ class _FakeInputProfilePhotoStatic:
         self.photo = photo
 
 
+def _stub_telegram(monkeypatch, **attrs):
+    # python-telegram-bot is an optional extra; CI does not install it.
+    monkeypatch.setitem(sys.modules, "telegram", ModuleType("telegram"))
+    for name, value in attrs.items():
+        setattr(sys.modules["telegram"], name, value)
+
+
 @pytest.mark.asyncio
 async def test_avatar_uses_input_profile_photo_static(tmp_path, monkeypatch):
-    import telegram
-
-    monkeypatch.setattr(telegram, "InputProfilePhotoStatic", _FakeInputProfilePhotoStatic, raising=False)
+    _stub_telegram(monkeypatch, InputProfilePhotoStatic=_FakeInputProfilePhotoStatic)
     avatar = tmp_path / "a.jpg"
     avatar.write_bytes(b"\xff\xd8\xff fake")
     bot = AsyncMock()
@@ -178,9 +184,7 @@ async def test_avatar_uses_input_profile_photo_static(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_avatar_without_input_profile_photo_passes_file(tmp_path, monkeypatch):
-    import telegram
-
-    monkeypatch.setattr(telegram, "InputProfilePhotoStatic", None, raising=False)
+    _stub_telegram(monkeypatch)
     avatar = tmp_path / "a.jpg"
     avatar.write_bytes(b"x")
     bot = AsyncMock()
