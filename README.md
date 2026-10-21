@@ -1,303 +1,129 @@
 <p align="center">
-  <img src="assets/banner.png" alt="Hermes Agent" width="100%">
+  <img src="janitor-tui.png" alt="Janitor Agent" width="100%">
 </p>
 
-# Hermes Agent ☤
-<p align="center">
-  <a href="https://hermes-agent.nousresearch.com/">Hermes Agent</a> | <a href="https://hermes-agent.nousresearch.com/">Hermes Desktop</a>
-</p>
-<p align="center">
-  <a href="https://hermes-agent.nousresearch.com/docs/"><img src="https://img.shields.io/badge/Docs-hermes--agent.nousresearch.com-FFD700?style=for-the-badge" alt="Documentation"></a>
-  <a href="https://discord.gg/NousResearch"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
-  <a href="https://github.com/NousResearch/hermes-agent/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
-  <a href="https://nousresearch.com"><img src="https://img.shields.io/badge/Built%20by-Nous%20Research-blueviolet?style=for-the-badge" alt="Built by Nous Research"></a>
-  <a href="README.zh-CN.md"><img src="https://img.shields.io/badge/Lang-中文-red?style=for-the-badge" alt="中文"></a>
-  <a href="README.ur-pk.md"><img src="https://img.shields.io/badge/Lang-اردو-green?style=for-the-badge" alt="اردو"></a>
-  <a href="README.es.md"><img src="https://img.shields.io/badge/Lang-Español-orange?style=for-the-badge" alt="Español"></a>
-</p>
+# Janitor Agent
 
-**The self-improving AI agent built by [Nous Research](https://nousresearch.com).** It's the only agent with a built-in learning loop — it creates skills from experience, improves them during use, nudges itself to persist knowledge, searches its own past conversations, and builds a deepening model of who you are across sessions. Run it on a $5 VPS, a GPU cluster, or serverless infrastructure that costs nearly nothing when idle. It's not tied to your laptop — talk to it from Telegram while it works on a cloud VM.
+Janitor es un **orquestador DevSecOps** con personalidad cínica, construido como
+**fork delgado** de [Hermes Agent](https://github.com/NousResearch/hermes-agent)
+(Nous Research). Hermes aporta el motor completo — CLI, TUI, gateway de
+mensajería (Telegram, Discord, Slack…), memoria, skills, cron, subagentes y la
+app de escritorio — y Janitor añade encima su identidad, sus skills y sus
+servicios self-hosted, sin reescribir el core.
 
-Use any model you want — [Nous Portal](https://portal.nousresearch.com), OpenRouter, OpenAI, your own endpoint, and [many others](https://hermes-agent.nousresearch.com/docs/integrations/providers). Switch with `hermes model` — no code changes, no lock-in.
+- Audita código buscando OWASP Top 10, CWE Top 25 y deuda técnica.
+- Vive aislado en `~/.janitor` (`HERMES_HOME`), independiente de cualquier `~/.hermes`.
+- Instalación mínima; Firecrawl, n8n, LightRAG, NocoDB, WAHA y Browser son opcionales.
+- Se mantiene al día con cada release de Hermes mediante un sync semanal verificado.
 
-<table>
-<tr><td><b>A real terminal interface</b></td><td>Full TUI with multiline editing, slash-command autocomplete, conversation history, interrupt-and-redirect, and streaming tool output.</td></tr>
-<tr><td><b>Lives where you do</b></td><td>Telegram, Discord, Slack, WhatsApp, Signal, and CLI — all from a single gateway process. Voice memo transcription, cross-platform conversation continuity.</td></tr>
-<tr><td><b>A closed learning loop</b></td><td>Agent-curated memory with periodic nudges. Autonomous skill creation after complex tasks. Skills self-improve during use. FTS5 session search with LLM summarization for cross-session recall. <a href="https://github.com/plastic-labs/honcho">Honcho</a> dialectic user modeling. Compatible with the <a href="https://agentskills.io">agentskills.io</a> open standard.</td></tr>
-<tr><td><b>Scheduled automations</b></td><td>Built-in cron scheduler with delivery to any platform. Daily reports, nightly backups, weekly audits — all in natural language, running unattended.</td></tr>
-<tr><td><b>Delegates and parallelizes</b></td><td>Spawn isolated subagents for parallel workstreams. Write Python scripts that call tools via RPC, collapsing multi-step pipelines into zero-context-cost turns.</td></tr>
-<tr><td><b>Runs anywhere, not just your laptop</b></td><td>Seven terminal backends — local, Docker, SSH, Singularity, Modal, Daytona, and Vercel Sandbox. Daytona and Modal offer serverless persistence — your agent's environment hibernates when idle and wakes on demand, costing nearly nothing between sessions. Run it on a $5 VPS or a GPU cluster.</td></tr>
-<tr><td><b>Research-ready</b></td><td>Batch trajectory generation, trajectory compression for training the next generation of tool-calling models.</td></tr>
-</table>
+> ⚠️ El instalador añade `HERMES_HOME=~/.janitor` a tu `~/.bashrc` / `~/.zshrc`.
+> Si también usas Hermes, el comando `hermes` pasará a usar el home de Janitor
+> en esas shells.
 
 ---
 
-## ¿Qué es Janitor?
-
-Janitor es un **orquestador DevSecOps** con personalidad cínica que:
-
-- **Instala un agente mínimo y funcional**; Honcho, Firecrawl y Docker quedan como skills opcionales
-- **Audit tu código** buscando OWASP Top 10, CWE Top 25 y deuda técnica
-- **Ejecuta en WSL2/Linux** con `HERMES_HOME` aislado en `~/.janitor` — **Hostile Takeover** del entorno
-- **Viene con baterías incluidas**: Zero-Friction Install en una sola línea
-
-> ⚠️ **ATENCIÓN:** Janitor es una evolución agresiva de Hermes. Al instalar, Janitor inyecta `HERMES_HOME=~/.janitor` en tu `~/.bashrc`. Tu instalación Hermes existente puede dejar de funcionar por defecto.
-
----
-
-## Features
-
-| Feature | Descripción |
-|---------|-------------|
-| 🚀 **Zero-Friction Install** | `curl -sL https://raw.githubusercontent.com/reck74/Janitor-Agent/main/scripts/bootstrap.sh \| bash` — una línea, nada más |
-| 🧩 **Skills Opcionales** | Firecrawl y Browser se instalan explícitamente post-arranque |
-| 🔒 **Hostile Takeover** | `HERMES_HOME=~/.janitor` inyectado en `~/.bashrc`/`~/.zshrc` — aislamiento total de Hermes |
-| 🌑 **Sentry Dark Native TUI** | Interfaz oscura estilo Sentry, optimizada para DevOps |
-| 🔍 **Auditoría DevSecOps** | Escanea tu código en busca de vulnerabilidades OWASP/CWE |
-| ⬆️ **Upstream Sync** | Sincronización automática semanal con `NousResearch/hermes-agent` via PRs |
-| 🛠️ **Wrapper Pattern** | Extensiones en archivos separados, core de Hermes inmutable |
-
----
-
-## Quick Start
-
-### Linux, macOS, WSL2, Termux
+## Instalación (Linux, macOS, WSL2)
 
 ```bash
-curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/reck74/Janitor-Agent/main/scripts/bootstrap.sh | bash
 ```
 
-### Windows (native, PowerShell)
+`bootstrap.sh` verifica Docker, clona el código en `~/.janitor/janitor-core`,
+crea el venv, compila el TUI, enlaza `janitor` en `~/.local/bin` y lanza el
+instalador interactivo (`scripts/janitor-install.sh`), que pide:
 
-> **Heads up:** Native Windows runs Hermes without WSL — CLI, gateway, TUI, and tools all work natively. If you'd rather use WSL2, the Linux/macOS one-liner above works there too. Found a bug? Please [file issues](https://github.com/NousResearch/hermes-agent/issues).
-
----
-
-```powershell
-iex (irm https://hermes-agent.nousresearch.com/install.ps1)
-```
-
-The installer handles everything: uv, Python 3.11, Node.js, ripgrep, ffmpeg, **and a portable Git Bash** (MinGit, unpacked to `%LOCALAPPDATA%\hermes\git` — no admin required, completely isolated from any system Git install). Hermes uses this bundled Git Bash to run shell commands.
-
-If you already have Git installed, the installer detects it and uses that instead. Otherwise a ~45MB MinGit download is all you need — it won't touch or interfere with any system Git.
-
-> **Android / Termux:** The tested manual path is documented in the [Termux guide](https://hermes-agent.nousresearch.com/docs/getting-started/termux). On Termux, Hermes installs a curated `.[termux]` extra because the full `.[all]` extra currently pulls Android-incompatible voice dependencies.
->
-> **Windows:** Native Windows is fully supported — the PowerShell one-liner above installs everything. If you'd rather use WSL2, the Linux command works there too. Native Windows install lives under `%LOCALAPPDATA%\hermes`; WSL2 installs under `~/.hermes` as on Linux.
-
-After installation:
+- `OPENAI_API_KEY` (obligatoria)
+- `MINIMAX_API_KEY` (obligatoria; Honcho la usa como `LLM_ANTHROPIC_API_KEY`)
+- Honcho: `HONCHO_API_KEY` (cloud) o Honcho local en Docker
 
 ```bash
-# 1. Instalar (ver Quick Start arriba)
-# 2. Configurar API keys interactivamente:
-~/.janitor-source/scripts/janitor-install.sh
-#    El instalador solicita:
-#    - OPENAI_API_KEY  (obligatoria)
-#    - MINIMAX_API_KEY (obligatoria — usada como LLM_ANTHROPIC_API_KEY para Honcho)
-#    - HONCHO_API_KEY  (opcional — si no se provee, usar modo Docker local)
-#    - FIRECRAWL_API_KEY (opcional)
-
-# 3. Arrancar Janitor:
-janitor
-
-# 4. Opcional: instala Firecrawl/Browser como skills explícitas
+janitor              # CLI interactiva
+janitor --tui        # TUI (skin sentry-janitor)
+janitor gateway      # gateway de mensajería
+janitor update       # actualizar desde este fork
 ```
 
-### Troubleshooting
+Todos los subcomandos de `hermes` funcionan igual con `janitor`; la
+documentación del core está en [hermes-agent.nousresearch.com/docs](https://hermes-agent.nousresearch.com/docs/).
 
-#### Windows Defender or antivirus flags `uv.exe` as malware
+## Servicios y agentes opcionales
 
-If your antivirus (Bitdefender, Windows Defender, etc.) quarantines `uv.exe` from the Hermes `bin` folder (`%LOCALAPPDATA%\hermes\bin\uv.exe`), this is a **false positive**. The file is Astral's `uv` — the Rust Python package manager Hermes bundles to manage its Python environment. ML-based antivirus engines commonly flag unsigned Rust binaries that download and install packages.
-
-**To verify your copy is authentic:**
-
-```powershell
-# Install GitHub CLI if needed
-winget install --id GitHub.cli
-
-# Login to GitHub
-gh auth login
-
-# Run verification
-$uv = "$env:LOCALAPPDATA\hermes\bin\uv.exe"
-$ver = (& $uv --version).Split(' ')[1]
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-$zip = "$env:TEMP\uv.zip"
-Invoke-WebRequest "https://github.com/astral-sh/uv/releases/download/$ver/uv-x86_64-pc-windows-msvc.zip" -OutFile $zip -UseBasicParsing
-gh attestation verify $zip --repo astral-sh/uv
-Expand-Archive $zip "$env:TEMP\uv_x" -Force
-(Get-FileHash "$env:TEMP\uv_x\uv.exe").Hash -eq (Get-FileHash $uv).Hash
+```bash
+janitor services list                 # catálogo y estado de cada servicio
+janitor services deploy firecrawl     # desplegar (contenedores janitor-*)
+janitor services stop firecrawl       # detener (los volúmenes se conservan)
+janitor agents list                   # agentes especializados (code-review, repo-research)
 ```
 
-If attestation says "Verification succeeded" and the last line prints `True`, you're good.
+| Servicio | Para qué |
+|----------|----------|
+| `honcho` | Memoria persistente local |
+| `firecrawl` | Web scraping |
+| `n8n` | Automatización de workflows |
+| `lightrag` | RAG sobre grafos de conocimiento |
+| `nocodb` | Base de datos con UI |
+| `waha` | WhatsApp HTTP API |
 
-**To whitelist Hermes:**
-- **Windows Defender:** Run PowerShell as Admin → `Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\hermes\bin"`
-- **Bitdefender:** Add an exception in the Bitdefender console (Protection > Antivirus > Settings > Manage Exceptions)
-- Whitelist the **folder**, not the file hash — Hermes updates `uv` and the hash changes every version
+Dentro de Janitor, la skill `janitor-onboarding` guía el resto (Browser,
+Open Design, escritorio).
 
-For more context, see the upstream Astral reports: [astral-sh/uv#13553](https://github.com/astral-sh/uv/issues/13553), [astral-sh/uv#15011](https://github.com/astral-sh/uv/issues/15011), [astral-sh/uv#10079](https://github.com/astral-sh/uv/issues/10079).
+## Janitor Desktop
+
+Las releases del fork publican un AppImage `Janitor-<versión>-linux-x86_64.AppImage`
+(app de escritorio de Hermes con la identidad Janitor, apuntando a
+`~/.janitor`). La skill `janitor-desktop-launcher` lo descarga y lo lanza:
+
+```bash
+bash ~/.janitor/janitor-core/janitor/skills/integrations/janitor-desktop-launcher/scripts/launch.sh --download
+```
+
+## Actualizar una instalación existente
+
+```bash
+janitor update
+janitor          # el primer arranque migra ~/.janitor al layout nuevo
+```
+
+La migración hace backup en `~/.janitor/.backup/` (incluida una copia
+consistente de `state.db`), conserva tus sesiones, memorias, `.env`, `SOUL.md`,
+cron y toda skill que hayas editado, y nunca toca contenedores ni volúmenes
+Docker. Para previsualizarla: `bash scripts/migrate-janitor-v1.sh --dry-run`.
 
 ---
 
 ## Arquitectura
 
-```bash
-hermes              # Interactive CLI — start a conversation
-hermes model        # Choose your LLM provider and model
-hermes tools        # Configure which tools are enabled
-hermes config set   # Set individual config values
-hermes config get   # Print individual config values
-hermes gateway      # Start the messaging gateway (Telegram, Discord, etc.)
-hermes setup        # Run the full setup wizard (configures everything at once)
-hermes claw migrate # Migrate from OpenClaw (if coming from OpenClaw)
-hermes update       # Update to the latest version
-hermes doctor       # Diagnose any issues
-```
+| Ruta | Contenido |
+|------|-----------|
+| `janitor/` | Lanzador, flujo de update, migraciones, plugin Hermes, servicios, inventario del fork |
+| `janitor/skills/{core,services,agents,integrations}/` | Skills Janitor (cargadas vía `skills.external_dirs`) |
+| `assets/janitor/` | Config, `SOUL.md` y skin `sentry-janitor` de partida |
+| `apps/desktop-janitor/` | Overlay de build del escritorio |
+| `tests/janitor/` | Suite de tests de Janitor |
 
-### Wrapper Pattern
+El resto del árbol es Hermes. Cada edición en un archivo upstream está
+declarada en [`janitor/overlay.yaml`](janitor/overlay.yaml), y
+`python -m janitor.overlay check` falla ante cualquier divergencia no declarada.
+Así cada release de Hermes se integra con `git merge <tag>` sin perder nada.
 
-Janitor es un **fork wrapper** de [Hermes Agent](https://github.com/NousResearch/hermes-agent):
-
----
-
-## Skip the API-key collection — Nous Portal
-
-Hermes works with whatever provider you want — that's not changing. But if you'd rather not collect five separate API keys for the model, web search, image generation, TTS, and a cloud browser, **[Nous Portal](https://portal.nousresearch.com)** covers all of them under one subscription:
-
-- **300+ models** — pick any of them with `/model <name>`
-- **Tool Gateway** — web search (Firecrawl), image generation (FAL), text-to-speech (OpenAI), cloud browser (Browser Use), all routed through your sub. No extra accounts.
-
-One command from a fresh install:
+## Desarrollo
 
 ```bash
-hermes setup --portal
-```
-
-That logs you in via OAuth, sets Nous as your provider, and turns on the Tool Gateway. Check what's wired up any time with `hermes portal info`. Full details on the [Tool Gateway docs page](https://hermes-agent.nousresearch.com/docs/user-guide/features/tool-gateway).
-
-You can still bring your own keys per-tool whenever you want — the gateway is per-backend, not all-or-nothing.
-
----
-
-## CLI vs Messaging Quick Reference
-
-
-| Action                         | CLI                                           | Messaging platforms                                                              |
-| ------------------------------ | --------------------------------------------- | -------------------------------------------------------------------------------- |
-| Start chatting                 | `hermes`                                      | Run `hermes gateway setup` + `hermes gateway start`, then send the bot a message |
-| Start fresh conversation       | `/new` or `/reset`                            | `/new` or `/reset`                                                               |
-| Change model                   | `/model [provider:model]`                     | `/model [provider:model]`                                                        |
-| Set a personality              | `/personality [name]`                         | `/personality [name]`                                                            |
-| Retry or undo the last turn    | `/retry`, `/undo`                             | `/retry`, `/undo`                                                                |
-| Compress context / check usage | `/compress`, `/usage`, `/insights [--days N]` | `/compress`, `/usage`, `/insights [days]`                                        |
-| Browse skills                  | `/skills` or `/<skill-name>`                  | `/<skill-name>`                                                                  |
-| Interrupt current work         | `Ctrl+C` or send a new message                | `/stop` or send a new message                                                    |
-| Platform-specific status       | `/platforms`                                  | `/status`, `/sethome`                                                            |
-
-Janitor sincroniza cambios upstream via GitHub Actions (cada Lunes 00:00 UTC):
-
-1. Verifica si hay cambios nuevos en `NousResearch/hermes-agent`
-2. Crea rama `upstream-sync-YYYYMMDDHHMMSS`
-3. Merge + poda automática de workflows intrusos de upstream
-4. Si hay diff real → abre PR; si no → `exit 0` limpio
-
----
-
-## Documentation
-
-All documentation lives at **[hermes-agent.nousresearch.com/docs](https://hermes-agent.nousresearch.com/docs/)**:
-
-| Section                                                                                             | What's Covered                                             |
-| --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| [Quickstart](https://hermes-agent.nousresearch.com/docs/getting-started/quickstart)                 | Install → setup → first conversation in 2 minutes          |
-| [CLI Usage](https://hermes-agent.nousresearch.com/docs/user-guide/cli)                              | Commands, keybindings, personalities, sessions             |
-| [Configuration](https://hermes-agent.nousresearch.com/docs/user-guide/configuration)                | Config file, providers, models, all options                |
-| [Messaging Gateway](https://hermes-agent.nousresearch.com/docs/user-guide/messaging)                | Telegram, Discord, Slack, WhatsApp, Signal, Home Assistant |
-| [Security](https://hermes-agent.nousresearch.com/docs/user-guide/security)                          | Command approval, DM pairing, container isolation          |
-| [Tools & Toolsets](https://hermes-agent.nousresearch.com/docs/user-guide/features/tools)            | 40+ tools, toolset system, terminal backends               |
-| [Skills System](https://hermes-agent.nousresearch.com/docs/user-guide/features/skills)              | Procedural memory, Skills Hub, creating skills             |
-| [Memory](https://hermes-agent.nousresearch.com/docs/user-guide/features/memory)                     | Persistent memory, user profiles, best practices           |
-| [MCP Integration](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp)               | Connect any MCP server for extended capabilities           |
-| [Cron Scheduling](https://hermes-agent.nousresearch.com/docs/user-guide/features/cron)              | Scheduled tasks with platform delivery                     |
-| [Context Files](https://hermes-agent.nousresearch.com/docs/user-guide/features/context-files)       | Project context that shapes every conversation             |
-| [Architecture](https://hermes-agent.nousresearch.com/docs/developer-guide/architecture)             | Project structure, agent loop, key classes                 |
-| [Contributing](https://hermes-agent.nousresearch.com/docs/developer-guide/contributing)             | Development setup, PR process, code style                  |
-| [CLI Reference](https://hermes-agent.nousresearch.com/docs/reference/cli-commands)                  | All commands and flags                                     |
-| [Environment Variables](https://hermes-agent.nousresearch.com/docs/reference/environment-variables) | Complete env var reference                                 |
-
----
-
-## Migrating from OpenClaw
-
-If you're coming from OpenClaw, Hermes can automatically import your settings, memories, skills, and API keys.
-
-**During first-time setup:** The setup wizard (`hermes setup`) automatically detects `~/.openclaw` and offers to migrate before configuration begins.
-
-**Anytime after install:** `hermes claw migrate`
-
-What gets imported:
-
-- **SOUL.md** — persona file
-- **Memories** — MEMORY.md and USER.md entries
-- **Skills** — user-created skills → `~/.hermes/skills/openclaw-imports/`
-- **Command allowlist** — approval patterns
-- **Messaging settings** — platform configs, allowed users, working directory
-- **API keys** — allowlisted secrets (Telegram, OpenRouter, OpenAI, Anthropic, ElevenLabs)
-- **TTS assets** — workspace audio files
-- **Workspace instructions** — AGENTS.md (with `--workspace-target`)
-
-See `hermes claw migrate --help` for all options, or use the `openclaw-migration` skill for an interactive agent-guided migration with dry-run previews.
-
----
-
-## Contributing
-
-We welcome contributions! See the [Contributing Guide](https://hermes-agent.nousresearch.com/docs/developer-guide/contributing) for development setup, code style, and PR process.
-
-Quick start for contributors — use the standard installer, then work from the
-full git checkout it creates at `$HERMES_HOME/hermes-agent` (usually
-`~/.hermes/hermes-agent`). This matches the layout used by `hermes update`, the
-managed venv, lazy dependencies, gateway, and docs tooling.
-
-```bash
-curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
-cd "${HERMES_HOME:-$HOME/.hermes}/hermes-agent"
+uv venv .venv --python 3.11 && source .venv/bin/activate
 uv pip install -e ".[all,dev]"
-scripts/run_tests.sh
+scripts/run_tests.sh tests/janitor/     # suite Janitor
+scripts/janitor-sync-verify.sh          # gate completo (overlay + tests + TUI + desktop)
 ```
 
-Manual clone fallback (for throwaway clones/CI where you intentionally do not
-want the managed install layout):
-
-Create the venv outside the cloned source tree — a venv inside the directory
-the agent operates from can be wiped by a relative-path command the agent runs
-against its own checkout, destroying the running runtime mid-session.
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-uv venv ~/.hermes/venvs/hermes-dev --python 3.11
-source ~/.hermes/venvs/hermes-dev/bin/activate
-uv pip install -e ".[all,dev]"
-scripts/run_tests.sh
-```
+- [AGENTS.md](AGENTS.md): directivas del fork y guía de desarrollo de Hermes.
+- [MERGE_GUIDE.md](MERGE_GUIDE.md): cómo integrar una release nueva de Hermes.
 
 ---
 
-## Community
-
-- 💬 [Discord](https://discord.gg/NousResearch)
-- 📚 [Skills Hub](https://agentskills.io)
-- 🐛 [Issues](https://github.com/NousResearch/hermes-agent/issues)
-- 🔌 [computer-use-linux](https://github.com/avifenesh/computer-use-linux) — Linux desktop-control MCP server for Hermes and other MCP hosts, with AT-SPI accessibility trees, Wayland/X11 input, screenshots, and compositor window targeting.
-- 🔌 [HermesClaw](https://github.com/AaronWong1999/hermesclaw) — Community WeChat bridge: Run Hermes Agent and OpenClaw on the same WeChat account.
-
----
-
-## License
+## Licencia
 
 MIT — ver [LICENSE](LICENSE).
 
-**Construido por Reck!** — [@reck74](https://github.com/reck74)
-
-Inspirado en [Hermes Agent](https://github.com/NousResearch/hermes-agent) de Nous Research.
+**Construido por Reck!** — [@reck74](https://github.com/reck74). Basado en
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) de
+[Nous Research](https://nousresearch.com).

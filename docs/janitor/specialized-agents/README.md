@@ -6,7 +6,7 @@ Specialized Agents are focused sub-agents designed to handle specific types of t
 
 The specialized agents system consists of several key components:
 
-- **Agent Skills (`skills/janitor-*-agent/`)**: Each specialized agent is packaged as a Janitor skill. The directory contains an `agent.yaml` file defining the agent's identity and behavior.
+- **Agent Skills (`janitor/skills/agents/janitor-*-agent/`)**: Each specialized agent is packaged as a Janitor skill. The directory contains an `agent.yaml` file defining the agent's identity and behavior.
 - **Agent Registry (`tools/specialized_agents.py`)**: Discovers and loads agent specifications from the skills directory. It provides a central registry for all available specialized agents.
 - **Agent Router (`tools/agent_router.py`)**: An LLM-powered component that analyzes task descriptions to determine if they should be handled by a specialized agent and selects the best match.
 - **Delegation Integration (`tools/delegate_tool.py`)**: The `delegate_task` tool is enhanced to support an `agent_type` parameter. When an agent type is specified, the sub-agent is initialized with the persona, skills, and toolsets defined in the agent's specification.
@@ -16,9 +16,9 @@ The specialized agents system consists of several key components:
 
 To create a new specialized agent, follow these steps:
 
-1. **Create a Skill Directory**: Create a new directory under `skills/` following the naming convention `janitor-<name>-agent/`.
+1. **Create a Skill Directory**: Create a new directory under `janitor/skills/agents/` following the naming convention `janitor-<name>-agent/`; `janitor agents list` discovers it.
    ```bash
-   mkdir -p skills/janitor-security-agent/
+   mkdir -p janitor/skills/agents/janitor-security-agent/
    ```
 
 2. **Define the Agent Spec**: Create an `agent.yaml` file in the new directory.
@@ -81,7 +81,7 @@ delegate_task(
 )
 ```
 
-The agent type references a specialized agent definition (e.g., `code-review` from `skills/janitor-code-review-agent/agent.yaml`).
+The agent type references a specialized agent definition (e.g., `code-review` from `janitor/skills/agents/janitor-code-review-agent/agent.yaml`).
 
 ## Auto-Routing
 
@@ -100,7 +100,7 @@ delegate_task(goal="Please review this pull request for security issues")
 ## Examples
 
 ### Code Review Agent
-Located at `skills/janitor-code-review-agent/`.
+Located at `janitor/skills/agents/janitor-code-review-agent/`.
 
 ```yaml
 name: code-review

@@ -154,3 +154,12 @@ or stale credentials (delete the env file and re-run the deploy).
 If `janitor update` fails with "Fast-forward not possible (history diverged)",
 run `bash scripts/migrate-janitor-update-flow.sh` from the Janitor repo, then
 re-run `janitor update`.
+
+### A Janitor skill still shows an old version after upgrading to 1.0
+
+The first `janitor` start after an upgrade moves `~/.janitor` to the 1.0
+layout: Janitor skills are read from the install tree, and unedited old copies
+in `~/.janitor/skills` are removed (backup in `~/.janitor/.backup/v1-*/`).
+Copies you edited are kept on purpose and shadow the shipped skill; the
+migration lists them. Delete one to use the shipped version, or preview with
+`bash scripts/migrate-janitor-v1.sh --dry-run` from the Janitor repo.

@@ -22,10 +22,10 @@ Archivos afectados (core inmutables):
 - `tools/*.py` (excepto skills/plugins)
 
 ### CLI WRAPPER CHECK
-Toda extensión CLI de Janitor debe vivir en archivos separados (`janitor_cli.py`, `hermes_cli/janitor_extensions/`, etc.). No se acepta modificar `cli.py` directamente.
+Toda extensión CLI de Janitor debe vivir en el paquete `janitor/` (lanzador `janitor/cli.py`, plugin `janitor/plugin/`). No se acepta modificar `cli.py` directamente; toda edición en un archivo upstream debe estar declarada como touchpoint en `janitor/overlay.yaml` (`python -m janitor.overlay check`).
 
 ### SKILLS AISLADOS CHECK
-Skills de Janitor deben residir exclusivamente en `skills/janitor-*/`. Si un skill nuevo aparece en `skills/` que no sea `skills/janitor-*`, verificar que no reescriba funcionalidad existente del core Hermes.
+Skills de Janitor deben residir exclusivamente en `janitor/skills/<grupo>/janitor-*/` (grupos `core`, `services`, `agents`, `integrations`). Los árboles `skills/` y `optional-skills/` son de upstream: un skill Janitor ahí es una violación.
 
 ### TUI ISOLATION CHECK
 Los cambios visuales del TUI deben operar vía `skin_engine.py` (el sistema de skins data-driven) o vía variables de theme inyectadas. No se acepta hardcodear strings como "Janitor", "Janitor Agent", o branding custom directamente en componentes de `ui-tui/src/components/`.
@@ -42,5 +42,6 @@ opencode run-agent .opencode/agents/merge-auditor.md
 
 - 0 violaciones de ZERO-RENAMING en archivos core
 - 0 modificaciones directas a `cli.py`, `run_agent.py`, `gateway/run.py`
-- Skills nuevos en `skills/janitor-*/` únicamente
+- Skills nuevos en `janitor/skills/<grupo>/janitor-*/` únicamente
+- `scripts/janitor-sync-verify.sh` en verde
 - Cambios TUI mediante skin system únicamente
