@@ -89,8 +89,8 @@
           "description": ""
         },
         {
-          "id": "openrouter/pareto-code",
-          "description": "auto-routes to cheapest coder meeting openrouter.min_coding_score"
+          "id": "deepseek/deepseek-v4-pro",
+          "description": ""
         },
         {
           "id": "deepseek/deepseek-v4-flash",

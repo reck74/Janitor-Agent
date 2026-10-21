@@ -74,8 +74,6 @@ hermes auth add xai-oauth --no-browser
 
 The same device-code flow applies when you sign in from the web dashboard or the desktop app: Hermes shows the verification URL and user code, then polls in the background until you approve access.
 
-If the consent page renders the authorization code directly on the page (xAI's current behavior on browser-based consoles) instead of redirecting to your `127.0.0.1:56121/callback`, paste **just the bare code value** at the `Callback URL:` prompt — Hermes accepts the full URL, a bare `?code=...&state=...` query fragment, or a bare code interchangeably.
-
 ## How the Login Works
 
 1. Hermes requests a device code from `auth.x.ai`.
