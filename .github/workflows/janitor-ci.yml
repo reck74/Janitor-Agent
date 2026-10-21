@@ -63,6 +63,17 @@ jobs:
         working-directory: ./ui-tui
         run: npm test
 
+  desktop-overlay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: '22'
+      - name: apps/desktop-janitor overlay tests
+        run: node --test apps/desktop-janitor/scripts/build.test.mjs
+
   web-tests:
     name: web-tests
     runs-on: ubuntu-latest

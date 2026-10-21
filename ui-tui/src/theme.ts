@@ -57,7 +57,10 @@ export interface ThemeBrand {
   goodbye: string
   tool: string
   helpHeader: string
-  version?: string
+  /** Banner tagline; unset keeps the stock Nous Research tagline tiers. */
+  tagline?: string
+  /** Label after the model name in the session panel. */
+  vendor?: string
 }
 
 export interface Theme {
@@ -223,119 +226,6 @@ function normalizeAnsiForeground(color: string): string {
   return `ansi256(${ansi})`
 }
 
-// ── Janitor Brand & Theme (Option B: Janitor is DEFAULT) ─────────────────
-
-export const JANITOR_BRAND: ThemeBrand = {
-  name: 'THE JANITOR',
-  icon: '🛠',
-  prompt: '❯',
-  welcome: 'System online. Code breaks. I incinerate it. Terminal active.',
-  goodbye: 'Garbage collected. Shutting down.',
-  tool: '│',
-  helpHeader: '(!) Tactical Commands',
-  version: '0.1.0'
-}
-
-// Janitor dark palette — Sentry Dark IDE + Cyberpunk Flamethrower
-export const JANITOR_DARK_THEME: Theme = {
-  color: {
-    primary: '#c2ef4e',      // Lime Green: títulos y CTA
-    accent: '#6a5fc1',       // Sentry Purple: enlaces y focus
-    border: '#362d59',      // Border Purple: líneas estructurales
-    text: '#e5e7eb',         // Light Gray: texto secundario
-    muted: '#79628c',        // Muted Purple: secundario
-    completionBg: '#150f23', // Darker Purple (Background)
-    completionCurrentBg: mix('#150f23', '#c2ef4e', 0.25),
-    completionMetaBg: '#150f23',
-    completionMetaCurrentBg: mix('#150f23', '#c2ef4e', 0.25),
-
-    label: '#dcdcaa',         // Code Yellow: etiquetas técnicas
-    ok: '#c2ef4e',           // Lime Green: éxito
-    error: '#fa7faa',        // Pink: errores críticos
-    warn: '#ffb287',         // Coral: advertencias
-
-    tool: '#6a5fc1',
-    thinking: '#79628c',
-    syntaxString: '#6a5fc1',
-    syntaxNumber: '#e5e7eb',
-    syntaxKeyword: '#362d59',
-    syntaxComment: '#79628c',
-
-    prompt: '#c2ef4e',       // Lime Green: input activo
-    sessionLabel: '#6a5fc1', // Sentry Purple
-    sessionBorder: '#362d59', // Border Purple
-
-    statusBg: '#0A0A0A',    // Near black
-    statusFg: '#c2ef4e',     // Lime Green
-    statusGood: '#c2ef4e',
-    statusWarn: '#FFE135',
-    statusBad: '#fa7faa',
-    statusCritical: '#FF073A',
-    selectionBg: '#422082',   // Deep Violet
-
-    diffAdded: 'rgb(220,255,220)',
-    diffRemoved: 'rgb(255,220,220)',
-    diffAddedWord: 'rgb(36,138,61)',
-    diffRemovedWord: 'rgb(207,34,46)',
-    shellDollar: '#fa7faa'  // Pink: $ en bloques de código
-  },
-
-  brand: JANITOR_BRAND,
-
-  bannerLogo: '',
-  bannerHero: ''
-}
-
-// Janitor light palette: darker variants for white backgrounds
-export const JANITOR_LIGHT_THEME: Theme = {
-  color: {
-    primary: '#5a8a1e',      // Darker lime
-    accent: '#4a44a1',       // Darker purple
-    border: '#2a2244',       // Darker purple border
-    text: '#1a1a2e',         // Near-black
-    muted: '#5a4478',        // Darker muted purple
-    completionBg: '#F0EFF5',
-    completionCurrentBg: mix('#F0EFF5', '#5a8a1e', 0.25),
-    completionMetaBg: '#F0EFF5',
-    completionMetaCurrentBg: mix('#F0EFF5', '#5a8a1e', 0.25),
-
-    label: '#6a5a1e',
-    ok: '#2d6b0f',
-    error: '#b83a5c',
-    warn: '#c06030',
-
-    tool: '#4a44a1',
-    thinking: '#5a4478',
-    syntaxString: '#4a44a1',
-    syntaxNumber: '#1a1a2e',
-    syntaxKeyword: '#2a2244',
-    syntaxComment: '#5a4478',
-
-    prompt: '#1a1a2e',
-    sessionLabel: '#4a44a1',
-    sessionBorder: '#2a2244',
-
-    statusBg: '#F5F5F8',
-    statusFg: '#1a1a2e',
-    statusGood: '#2d6b0f',
-    statusWarn: '#8B6914',
-    statusBad: '#b83a5c',
-    statusCritical: '#8B2030',
-    selectionBg: '#D4E4F7',
-
-    diffAdded: 'rgb(200,240,200)',
-    diffRemoved: 'rgb(240,200,200)',
-    diffAddedWord: 'rgb(27,94,32)',
-    diffRemovedWord: 'rgb(183,28,28)',
-    shellDollar: '#8B2030'
-  },
-
-  brand: JANITOR_BRAND,
-
-  bannerLogo: '',
-  bannerHero: ''
-}
-
 const ANSI256_RE = /^ansi256\((\d{1,3})\)$/
 
 /**
@@ -363,7 +253,7 @@ export function themeToneHex(tone: string): string {
 
 // ── Defaults ─────────────────────────────────────────────────────────
 
-export const BRAND: ThemeBrand = {
+const BRAND: ThemeBrand = {
   name: 'Hermes Agent',
   icon: '⚕',
   prompt: '❯',
@@ -380,13 +270,6 @@ const cleanPromptSymbol = (s: string | undefined, fallback: string) => {
 
   return cleaned || fallback
 }
-
-export const DARK_THEME: Theme = JANITOR_DARK_THEME
-
-// Light-terminal palette: darker golds/ambers that stay legible on white
-// backgrounds. Same shape as DARK_THEME so `fromSkin` still layers on top
-// cleanly (#11300).
-export const LIGHT_THEME: Theme = JANITOR_LIGHT_THEME
 
 // ── Seeds → palette ──────────────────────────────────────────────────
 //
@@ -490,6 +373,9 @@ export function buildPalette(seeds: ThemeSeeds, isLight: boolean): ThemeColors {
 
 export const DARK_SEEDS: ThemeSeeds = {
   accent: '#FFBF00',
+  // The classic Hermes navy surfaces are IDENTITY, not derivation drift —
+  // keep them as explicit fill seeds (the ladder derives them for skins
+  // that don't care).
   activeRow: '#333355',
   bg: '#101014',
   border: '#CD7F32',
@@ -508,6 +394,14 @@ export const DARK_SEEDS: ThemeSeeds = {
   warn: '#ffa726'
 }
 
+// Light-terminal seeds: darker golds/ambers that stay legible on white.
+// The classic light-mode Hermes look was never hand-authored: for years the
+// TUI emitted the DARK golds and hosts with xterm's minimumContrastRatio
+// (Cursor defaults to 4.5) lifted them against white — hue and saturation
+// kept, luminance clamped. These seeds are those exact lifts
+// (liftForContrast(dark, '#ffffff', 4.5)), so hosts WITHOUT a contrast pass
+// render the same thing Cursor always showed. Text/prompt stay ink — body
+// copy historically rendered in the terminal's default near-black fg.
 export const LIGHT_SEEDS: ThemeSeeds = {
   accent: '#956E00',
   bg: '#ffffff',
@@ -525,46 +419,18 @@ export const LIGHT_SEEDS: ThemeSeeds = {
   warn: '#956115'
 }
 
-const JANITOR_DARK_SEEDS: ThemeSeeds = {
-  accent: JANITOR_DARK_THEME.color.accent,
-  activeRow: JANITOR_DARK_THEME.color.completionCurrentBg,
-  bg: JANITOR_DARK_THEME.color.statusBg,
-  border: JANITOR_DARK_THEME.color.border,
-  error: JANITOR_DARK_THEME.color.error,
-  muted: JANITOR_DARK_THEME.color.muted,
-  ok: JANITOR_DARK_THEME.color.ok,
-  primary: JANITOR_DARK_THEME.color.primary,
-  prompt: JANITOR_DARK_THEME.color.prompt,
-  selection: JANITOR_DARK_THEME.color.selectionBg,
-  shellDollar: JANITOR_DARK_THEME.color.shellDollar,
-  statusBad: JANITOR_DARK_THEME.color.statusBad,
-  statusCritical: JANITOR_DARK_THEME.color.statusCritical,
-  statusGood: JANITOR_DARK_THEME.color.statusGood,
-  statusWarn: JANITOR_DARK_THEME.color.statusWarn,
-  surface: JANITOR_DARK_THEME.color.completionBg,
-  text: JANITOR_DARK_THEME.color.text,
-  warn: JANITOR_DARK_THEME.color.warn
+export const DARK_THEME: Theme = {
+  color: buildPalette(DARK_SEEDS, false),
+  brand: BRAND,
+  bannerLogo: '',
+  bannerHero: ''
 }
 
-const JANITOR_LIGHT_SEEDS: ThemeSeeds = {
-  accent: JANITOR_LIGHT_THEME.color.accent,
-  activeRow: JANITOR_LIGHT_THEME.color.completionCurrentBg,
-  bg: JANITOR_LIGHT_THEME.color.statusBg,
-  border: JANITOR_LIGHT_THEME.color.border,
-  error: JANITOR_LIGHT_THEME.color.error,
-  muted: JANITOR_LIGHT_THEME.color.muted,
-  ok: JANITOR_LIGHT_THEME.color.ok,
-  primary: JANITOR_LIGHT_THEME.color.primary,
-  prompt: JANITOR_LIGHT_THEME.color.prompt,
-  selection: JANITOR_LIGHT_THEME.color.selectionBg,
-  shellDollar: JANITOR_LIGHT_THEME.color.shellDollar,
-  statusBad: JANITOR_LIGHT_THEME.color.statusBad,
-  statusCritical: JANITOR_LIGHT_THEME.color.statusCritical,
-  statusGood: JANITOR_LIGHT_THEME.color.statusGood,
-  statusWarn: JANITOR_LIGHT_THEME.color.statusWarn,
-  surface: JANITOR_LIGHT_THEME.color.completionBg,
-  text: JANITOR_LIGHT_THEME.color.text,
-  warn: JANITOR_LIGHT_THEME.color.warn
+export const LIGHT_THEME: Theme = {
+  color: buildPalette(LIGHT_SEEDS, true),
+  brand: BRAND,
+  bannerLogo: '',
+  bannerHero: ''
 }
 
 // ── Background-aware readability adaptation ─────────────────────────
@@ -931,7 +797,7 @@ export function normalizeThemeForAnsiLightTerminal(
 const DEFAULT_LIGHT_MODE = detectLightMode()
 
 export const DEFAULT_THEME: Theme = normalizeThemeForAnsiLightTerminal(
-  DEFAULT_LIGHT_MODE ? JANITOR_LIGHT_THEME : JANITOR_DARK_THEME,
+  DEFAULT_LIGHT_MODE ? LIGHT_THEME : DARK_THEME,
   process.env,
   DEFAULT_LIGHT_MODE
 )
@@ -988,16 +854,16 @@ export function fromSkin(
   const skinBg = authoredBackground(colors['background'])
   const isLight = skinIsLight(colors)
   const bg = skinBg ?? referenceBackground(isLight)
-  const base = isLight ? JANITOR_LIGHT_SEEDS : JANITOR_DARK_SEEDS
+  const base = isLight ? LIGHT_SEEDS : DARK_SEEDS
   const d = isLight ? LIGHT_THEME : DARK_THEME
   const c = (k: string) => colors[k]
 
   const hasSkinColors = Object.keys(colors).length > 0
 
   // 1. Seeds: the skin's identity. Anything it doesn't define comes from the
-  //    base seeds for this polarity. The base's identity fills only carry over
-  //    for the skinless default — a skin with its own identity derives its
-  //    fills from its own seeds.
+  //    base seeds for this polarity. The base's IDENTITY FILLS (Hermes navy
+  //    surfaces, gold muted) only carry over for the skinless default — a
+  //    skin with its own identity derives its fills from its own seeds.
   const identityFills: Partial<ThemeSeeds> = hasSkinColors
     ? {}
     : { activeRow: base.activeRow, muted: base.muted, selection: base.selection, surface: base.surface }
@@ -1033,7 +899,7 @@ export function fromSkin(
   const surface = c('completion_menu_bg') ?? c('background') ?? derived.completionBg
 
   // Re-mix the chip only when the skin authored its own surface; otherwise
-  // the derived value already carries the identity seeds.
+  // the derived value already carries the identity seeds (e.g. Hermes navy).
   const activeRow =
     c('completion_menu_current_bg') ??
     (c('completion_menu_bg') ? mix(surface, seeds.accent, 0.22) : derived.completionCurrentBg)
@@ -1086,9 +952,7 @@ export function fromSkin(
       // already honors them AND applies #20379's contrast/polarity machinery.
       // Emitting a hand-mapped color block here would bypass that adaptation
       // and regress theme quality.
-      // An empty skin is the compatibility path: preserve Janitor's concrete
-      // base palette, then let the shared ANSI-light normalizer run below.
-      color: hasSkinColors ? adapted : d.color,
+      color: adapted,
 
       brand: {
         name: branding.agent_name ?? d.brand.name,
@@ -1097,7 +961,9 @@ export function fromSkin(
         welcome: branding.welcome ?? d.brand.welcome,
         goodbye: branding.goodbye ?? d.brand.goodbye,
         tool: toolPrefix || d.brand.tool,
-        helpHeader: branding.help_header ?? (helpHeader || d.brand.helpHeader)
+        helpHeader: branding.help_header ?? (helpHeader || d.brand.helpHeader),
+        tagline: branding.tagline ?? d.brand.tagline,
+        vendor: branding.vendor ?? d.brand.vendor
       },
 
       bannerLogo,

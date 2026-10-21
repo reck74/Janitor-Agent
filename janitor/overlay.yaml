@@ -30,6 +30,7 @@ fork_paths:
   - janitor/**
   - assets/janitor/**
   - tests/janitor/**
+  - apps/desktop-janitor/**
   - docs/janitor/**
   - scripts/*janitor*
   - scripts/setup-honcho.sh
@@ -48,6 +49,7 @@ fork_paths:
   - janitor-tui.png
   # Fork automation.
   - .github/workflows/janitor-ci.yml
+  - .github/workflows/janitor-desktop-release.yml
   - .github/workflows/upstream-sync.yml
   - .claude/**
   - .opencode/**
@@ -112,24 +114,25 @@ touchpoints:
     merge: reapply
     upstream_candidate: true
 
-  - id: tui-skin
+  - id: tui-branding-hook
     files:
       - ui-tui/src/theme.ts
       - ui-tui/src/components/branding.tsx
-      - ui-tui/src/__tests__/brandingMcpCount.test.ts
-      - ui-tui/src/__tests__/janitorSkin.test.ts
-      - ui-tui/src/__tests__/textInputPassThrough.test.ts
-      - ui-tui/src/__tests__/theme.test.ts
-      - ui-tui/vitest.config.ts
-    why: Janitor TUI look. Being moved onto the skin system (Phase 4).
+      - ui-tui/src/__tests__/brandingSkinTagline.test.ts
+    why: >-
+      Skin keys `branding.tagline` / `branding.vendor` replace the hardcoded
+      Nous Research tagline and vendor label. The Janitor look itself is the
+      `sentry-janitor` skin (assets/janitor/sentry-janitor.yaml).
     verify: ci:janitor-ci
     merge: reapply
+    upstream_candidate: true
 
-  - id: desktop-assets
-    files: [apps/desktop/public/**]
-    why: Janitor logo/background in the upstream desktop app. Being moved to apps/desktop-janitor (Phase 4).
+  - id: tui-test-timeout
+    files: [ui-tui/vitest.config.ts]
+    why: 15s vitest timeout; cursorDriftRegression.test.ts flakes at the 5s default on CI runners.
     verify: ci:janitor-ci
-    merge: ours
+    merge: reapply
+    upstream_candidate: true
 
   - id: installers
     files: [scripts/bootstrap.sh, scripts/install.ps1]
