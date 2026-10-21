@@ -260,10 +260,16 @@ async def discover_mcp_server(name: str, profile: Optional[str] = None):
         _get_mcp_servers,
         _probe_single_server,
         _unwrap_exception_group,
+        redact_mcp_probe_text,
     )
 
-    with _profile_scope(profile):
-        servers = _get_mcp_servers()
+    def _read():
+        config_servers = _get_mcp_servers()
+        from tui_gateway.mcp_rpc_helpers import server_configs_with_sources
+
+        return server_configs_with_sources(config_servers)[0]
+
+    servers = await asyncio.to_thread(_secret_scoped(profile, _read))
     if name not in servers:
         raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
     cfg = servers[name]
@@ -272,20 +278,15 @@ async def discover_mcp_server(name: str, profile: Optional[str] = None):
 
     details: Dict[str, Any] = {"rich_tools": []}
 
-    def _probe_scoped():
-        # Home-only scope (contextvar), NOT _profile_scope — see the 14-line
-        # comment in test_mcp_server for why the skills lock must not be held
-        # across a probe.
-        with _config_profile_scope(profile):
-            tools = _probe_single_server(name, cfg, details=details)
-            return tools, details.get("rich_tools", [])
+    def _probe():
+        _probe_single_server(name, cfg, details=details)
+        return details.get("rich_tools", [])
 
-    try:
-        _, rich_tools = await asyncio.to_thread(_probe_scoped)
+    try:  # probe blocks on a dedicated MCP event loop — keep it off the FastAPI loop
+        rich_tools = await asyncio.to_thread(_secret_scoped(profile, _probe))
     except BaseException as exc:
         root = _unwrap_exception_group(exc)
-        import asyncio as _aio
-        if isinstance(root, _aio.TimeoutError):
+        if isinstance(root, (asyncio.TimeoutError, TimeoutError)):
             raise HTTPException(
                 status_code=504,
                 detail=f"MCP server '{name}' timed out on tools/list",
@@ -293,12 +294,12 @@ async def discover_mcp_server(name: str, profile: Optional[str] = None):
         if isinstance(root, (ConnectionError, OSError)):
             raise HTTPException(
                 status_code=502,
-                detail=f"MCP server '{name}' unreachable: {root}",
+                detail=f"MCP server '{name}' unreachable: {redact_mcp_probe_text(root)}",
             ) from root
         _log.exception("discover_mcp_server failed for %s", name)
         raise HTTPException(
             status_code=500,
-            detail=f"discover failed: {root}",
+            detail=f"discover failed: {redact_mcp_probe_text(root)}",
         ) from root
 
     return {
@@ -329,7 +330,7 @@ async def get_mcp_server_logs(
     """Return the tail of the most-recent run's stderr for one MCP server.
 
     Reads from the shared ``~/.hermes/logs/mcp-stderr.log`` (single file for
-    all servers — see ``tools/mcp_tool._write_stderr_log_header``), slices
+    all servers — see ``tools/mcp_tool_config._write_stderr_log_header``), slices
     by per-server header, returns the most recent matching block.
 
     Never returns 404: a server that was configured but never started has

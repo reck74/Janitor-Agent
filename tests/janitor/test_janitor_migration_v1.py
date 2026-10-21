@@ -120,6 +120,18 @@ def test_user_disabled_plugin_stays_disabled(legacy):
     assert "janitor" not in (plugins.get("enabled") or [])
 
 
+def test_bytecode_cache_does_not_mark_a_copy_as_edited(legacy):
+    name = PRISTINE[0]
+    copy = legacy.home / "skills" / LEGACY_SKILL_PATHS[name]
+    cache = copy / "scripts" / "__pycache__"
+    cache.mkdir(parents=True, exist_ok=True)
+    (cache / "helper.cpython-311.pyc").write_bytes(b"\x00bytecode")
+
+    migrations.run(legacy.home, out=_quiet)
+
+    assert not copy.exists()
+
+
 def test_hub_installed_copy_is_left_alone(legacy):
     hub = legacy.home / "skills" / ".hub"
     hub.mkdir()
@@ -145,11 +157,21 @@ def test_skin_refreshed_only_when_unmodified(legacy, monkeypatch, edited, newlin
     assert skin.read_bytes() == expected
 
 
-def test_manifest_hash_matches_bundled_sync():
+def test_manifest_hash_matches_bundled_sync(tmp_path):
     from tools.skills_sync import _dir_hash
 
-    for skill_dir in v1.shipped_skills().values():
-        assert v1.dir_hash(skill_dir) == _dir_hash(skill_dir)
+    cached = tmp_path / "cached-skill"
+    (cached / "scripts" / "__pycache__").mkdir(parents=True)
+    (cached / "SKILL.md").write_text("---\nname: cached-skill\n---\n")
+    (cached / "scripts" / "run.py").write_text("print('hi')\n")
+    (cached / "scripts" / "__pycache__" / "run.cpython-311.pyc").write_bytes(b"\x00bytecode")
+
+    for skill_dir in [*v1.shipped_skills().values(), cached]:
+        for legacy in (False, True):
+            assert v1.dir_hash(skill_dir, include_runtime_cache=legacy) == _dir_hash(
+                skill_dir, include_runtime_cache=legacy
+            ), (skill_dir, legacy)
+    assert v1.dir_hash(cached) != v1.dir_hash(cached, include_runtime_cache=True)
 
 
 def test_auto_migrate_never_blocks_startup(legacy, monkeypatch, capsys):

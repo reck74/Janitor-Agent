@@ -12,17 +12,25 @@ from __future__ import annotations
 
 import subprocess
 import sys
-import tomllib
-from pathlib import Path
 from unittest.mock import patch
 
 
-def test_bootstrap_module_is_packaged_for_janitor_entrypoint():
-    """The bootstrap module is listed in pyproject's py-modules."""
-    pyproject = tomllib.loads(Path("pyproject.toml").read_text())
-    py_modules = pyproject["tool"]["setuptools"]["py-modules"]
+def test_bootstrap_module_is_packaged_for_janitor_entrypoint(tmp_path):
+    """The installed distribution exposes the root alias module.
 
-    assert "janitor_update_bootstrap" in py_modules
+    Root single-file modules are derived by upstream's ``setup.py`` since
+    v2026.9.24, so this imports it from outside the checkout instead of
+    reading pyproject's (removed) ``py-modules`` list.
+    """
+    result = subprocess.run(
+        [sys.executable, "-c", "import janitor_update_bootstrap as m; print(callable(m.run_update))"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "True"
 
 
 def test_update_intercept_runs_before_hermes_imports():
