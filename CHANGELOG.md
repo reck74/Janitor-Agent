@@ -23,6 +23,14 @@ change, so no new migration runs on first start.
   `~/.janitor/backups/config/`, where upstream's backup sweep keeps them.
 - `janitor/overlay.yaml` tracks upstream v2026.9.24.
 
+### Fixed
+- `janitor update` ignored its flags: the early intercept passed a hardcoded
+  namespace, so `janitor update --check` ran a full update (including the
+  switch to `main`). Flags are now parsed strictly (`--check`, `--gateway`,
+  `--backup`, `--no-backup`, `--branch`), unknown ones are an error, and
+  upstream's read-only `--plan` / `--list-venv-holders` are refused instead
+  of running an update.
+
 ### Removed
 - The `gateway-cache-refresh` touchpoint. The gateway holds an
   `AsyncSessionDB`, so upstream's direct `await` was already correct and the
