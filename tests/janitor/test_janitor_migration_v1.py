@@ -120,6 +120,27 @@ def test_user_disabled_plugin_stays_disabled(legacy):
     assert "janitor" not in (plugins.get("enabled") or [])
 
 
+@pytest.mark.parametrize(
+    "content", ["model: [unclosed\n", "- just\n- a list\n"], ids=["unparseable", "not-a-mapping"]
+)
+def test_broken_config_is_never_rewritten(legacy, capsys, content):
+    path = legacy.home / "config.yaml"
+    path.write_text(content, encoding="utf-8")
+
+    def _outside_config_backups() -> dict:
+        # Hermes snapshots an unreadable config.yaml under backups/config/.
+        return {k: v for k, v in _tree(legacy.home).items() if not k.startswith("backups/config/")}
+
+    before = _outside_config_backups()
+
+    migrations.auto_migrate(legacy.home)
+
+    assert path.read_text(encoding="utf-8") == content
+    assert _outside_config_backups() == before
+    assert read_layout_version(legacy.home) == 0
+    assert "Janitor layout migration failed" in capsys.readouterr().err
+
+
 def test_bytecode_cache_does_not_mark_a_copy_as_edited(legacy):
     name = PRISTINE[0]
     copy = legacy.home / "skills" / LEGACY_SKILL_PATHS[name]

@@ -158,12 +158,14 @@ def _local_copies(skills_dir: Path, names: set) -> Dict[str, List[Path]]:
 
 
 def _plan_config(plan: Plan) -> None:
+    from hermes_cli.config import require_readable_config_before_write
+
     path = plan.home / "config.yaml"
     if not path.exists():
         return
-    config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    if not isinstance(config, dict):
-        return
+    # Raises on an unreadable, unparseable or non-mapping file, so the
+    # migration stops (and retries next launch) instead of rewriting it.
+    config = require_readable_config_before_write(path)
 
     skills = config.get("skills")
     if not isinstance(skills, dict):
