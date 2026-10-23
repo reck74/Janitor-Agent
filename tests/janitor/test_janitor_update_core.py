@@ -135,7 +135,7 @@ def _stub_helpers(monkeypatch, tmp_path, *, syntax_break_in: str | None = None):
     monkeypatch.setattr(juc, "_capture_head_sha", lambda git_cmd, cwd: "abc123def456")
 
     # uv detection — pretend uv is available
-    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/uv" if name == "uv" else None)
+    monkeypatch.setattr(juc, "_resolve_uv_bin", lambda pip_cmd: "/usr/bin/uv")
     monkeypatch.setattr(
         juc,
         "_install_python_dependencies_with_optional_fallback",
@@ -2173,3 +2173,38 @@ def test_read_only_upstream_modes_are_refused_not_run_as_an_update(
     assert rc == 2
     assert recorded == []
     assert "does not support" in capsys.readouterr().out
+
+
+def _fake_uv(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("#!/bin/sh\necho 'uv 0.12.13'\n", encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
+@pytest.mark.linux_only
+def test_managed_uv_wins_over_a_path_uv(monkeypatch, tmp_path):
+    """``janitor update`` must use Hermes' managed uv in $HERMES_HOME/bin,
+    like ``hermes update``, even when another uv is on PATH."""
+    import hermes_cli.managed_uv as managed_uv
+    from hermes_constants import get_hermes_home
+
+    managed = _fake_uv(get_hermes_home() / "bin" / "uv")
+    system_dir = tmp_path / "system-bin"
+    _fake_uv(system_dir / "uv")
+    monkeypatch.setenv("PATH", f"{system_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    monkeypatch.setattr(managed_uv, "update_managed_uv", lambda **kw: None)
+
+    assert juc._resolve_uv_bin([sys.executable, "-m", "pip"]) == str(managed)
+
+
+def test_without_a_managed_uv_the_termux_rung_decides(monkeypatch):
+    import hermes_cli.managed_uv as managed_uv
+
+    monkeypatch.setattr(managed_uv, "update_managed_uv", lambda **kw: None)
+    monkeypatch.setattr(managed_uv, "ensure_uv", lambda **kw: managed_uv._UvResult(None))
+    monkeypatch.setattr(juc, "_ensure_uv_for_termux", lambda pip_cmd: "/data/termux/uv", raising=False)
+    assert juc._resolve_uv_bin(["pip"]) == "/data/termux/uv"
+
+    monkeypatch.setattr(juc, "_ensure_uv_for_termux", lambda pip_cmd: None, raising=False)
+    assert juc._resolve_uv_bin(["pip"]) is None

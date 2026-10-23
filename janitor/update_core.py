@@ -51,7 +51,6 @@ from __future__ import annotations
 import importlib
 import json
 import os
-import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -588,15 +587,29 @@ def _pull_with_fallback(git_cmd: list[str], cwd: Path, branch: str) -> bool:
     return True
 
 
-def _install_python_dependencies(project_root: Path) -> None:
-    """Install Python deps via uv (preferred) or pip fallback."""
-    print("→ Updating Python dependencies...")
-    pip_cmd = [sys.executable, "-m", "pip"]
-    uv_bin = shutil.which("uv") or _call(
+def _resolve_uv_bin(pip_cmd: list[str]) -> Optional[str]:
+    """Same uv rungs as ``hermes update``: Hermes' managed uv in
+    ``$HERMES_HOME/bin`` (self-updated, installed if missing), then the
+    Termux fallback. ``None`` means the pip path."""
+    try:
+        from hermes_cli.managed_uv import ensure_uv, update_managed_uv
+    except Exception:
+        uv_bin = None
+    else:
+        update_managed_uv()
+        uv_bin = str(ensure_uv()) or None
+    return uv_bin or _call(
         "_ensure_uv_for_termux",
         pip_cmd,
         fallback=lambda *a, **kw: None,
     )
+
+
+def _install_python_dependencies(project_root: Path) -> None:
+    """Install Python deps via uv (preferred) or pip fallback."""
+    print("→ Updating Python dependencies...")
+    pip_cmd = [sys.executable, "-m", "pip"]
+    uv_bin = _resolve_uv_bin(pip_cmd)
     install_group = "all"
 
     if uv_bin:
