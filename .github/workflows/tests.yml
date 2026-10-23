@@ -155,35 +155,72 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
         with:
+          # Same pin as upstream's test job: it fixes which CPython
+          # `uv python install 3.11` resolves to.
+          version: "0.12.13"
           enable-cache: true
           cache-dependency-glob: |
             pyproject.toml
             uv.lock
 
       - name: Set up Python 3.11
-        run: uv python install 3.11
+        uses: ./.github/actions/retry
+        with:
+          command: uv python install 3.11
 
       - name: Install dependencies
-        run: uv sync --locked --python 3.11 --extra all --extra dev
+        # Same extras as upstream's test job: tests/conftest.py forbids
+        # mid-run lazy installs, so every SDK the suite exercises must be
+        # in the venv up front.
+        uses: ./.github/actions/retry
+        with:
+          command: uv sync --locked --python 3.11 --extra all --extra dev --extra anthropic --extra mistral --extra fal --extra modal --extra daytona --extra parallel-web --extra bedrock
 
       - name: Minimize uv cache
         run: uv cache prune --ci
 
       - name: Run upstream test suite (slice ${{ matrix.slice }}/6)
+        # scripts/run_tests.sh gives the same hermetic env as upstream CI.
+        # tests/ci/ is left out: it asserts on upstream workflows that the
+        # fork prunes on every sync (MERGE_GUIDE.md). Explicit roots bypass
+        # the runner's e2e/integration/docker skip, so those are excluded
+        # here too (e2e has its own job below).
         env:
           OPENROUTER_API_KEY: ""
           OPENAI_API_KEY: ""
           NOUS_API_KEY: ""
         run: |
           source .venv/bin/activate
-          python scripts/run_tests_parallel.py --slice ${{ matrix.slice }}/6
+          mapfile -t roots < <(find tests -mindepth 1 -maxdepth 1 \( -type d -o -name 'test_*.py' \) \
+            -not -name ci -not -name e2e -not -name integration -not -name docker \
+            -not -name __pycache__ | sort)
+          scripts/run_tests.sh --slice ${{ matrix.slice }}/6 "${roots[@]}"
 
   e2e:
+    # Mirrors upstream's e2e job (one subprocess per file, in parallel, with
+    # the Ink TUI built) on a standard runner instead of upstream's 32-core
+    # one: the suite takes ~5 min on 4 vCPUs. tests/e2e/core/upgrade is not
+    # run here — it exercises upstream's `hermes update` from upstream's N-1
+    # tag, which upstream runs in its own e2e-upgrade job.
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Set up Node
+        # The boot-contract suite feeds serve's stdout through Desktop's own
+        # backend-ready.ts (native TS stripping needs Node >= 22.18).
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: '26'
+
+      - name: Install Node deps and build the Ink TUI
+        # tests/e2e/core/terminal drives the real `hermes --tui` over a PTY;
+        # HERMES_E2E_REQUIRE_TUI=1 below turns a missing build into a failure.
+        uses: ./.github/actions/retry
+        with:
+          command: npm ci --workspace ui-tui --ignore-scripts --no-audit --no-fund && npm run build --workspace ui-tui
 
       - name: Install ripgrep (prebuilt binary)
         run: |
@@ -207,31 +244,61 @@ jobs:
           # pyproject.toml or uv.lock changes. `uv sync` still runs every
           # time, but resolves from the warm cache instead of re-downloading
           # and re-building wheels.
+          #
+          # 0.12.13 is the first pin that knows CPython 3.11.15; 3.11.14's
+          # bundled SQLite has the WAL-reset bug, so Hermes would run state.db
+          # in DELETE mode and the WAL torture chamber would skip.
+          version: "0.12.13"
           enable-cache: true
+          # Own cache entry, as upstream: the unit jobs' uv must not share it.
+          cache-suffix: e2e
           cache-dependency-glob: |
             pyproject.toml
             uv.lock
 
       - name: Set up Python 3.11
-        run: uv python install 3.11
+        run: uv python install 3.11.15
 
       - name: Install dependencies
         # `uv sync --locked` installs the exact pinned set from uv.lock (and
         # fails if the lock is out of sync with pyproject.toml), giving a
         # reproducible env. It also creates .venv itself, so no separate
-        # `uv venv` step is needed.
-        run: uv sync --locked --python 3.11 --extra all --extra dev
+        # `uv venv` step is needed. Same extras as upstream's e2e job: the
+        # hermetic test env forbids mid-run lazy installs.
+        uses: ./.github/actions/retry
+        with:
+          command: uv sync --locked --python 3.11.15 --extra all --extra dev --extra anthropic --extra mistral --extra fal --extra modal --extra daytona --extra parallel-web --extra bedrock
 
       - name: Minimize uv cache
         # Optimized for CI: prunes pre-built wheels that are cheap to
         # re-download, keeping the persisted cache small and fast to restore.
         run: uv cache prune --ci
 
+      - name: Require a WAL-capable SQLite
+        # The state.db suites skip on a WAL-reset-vulnerable SQLite; fail
+        # instead of reporting green over zero coverage.
+        run: |
+          source .venv/bin/activate
+          python -c "import sqlite3, hermes_state_wal as w; print('sqlite', sqlite3.sqlite_version); assert not w.is_sqlite_wal_reset_vulnerable()"
+
       - name: Run e2e tests
         run: |
           source .venv/bin/activate
-          python -m pytest tests/e2e/ -v --tb=short
+          mapfile -t files < <(find tests/e2e -name 'test_*.py' -not -path 'tests/e2e/core/upgrade/*' | sort)
+          scripts/run_tests.sh --include-integration "${files[@]}"
         env:
+          # Multi-process episodes (torture chamber, compaction kill -9,
+          # gateway liveness, cron soak) legitimately run past the 300 s
+          # default.
+          HERMES_TEST_FILE_TIMEOUT: "900"
+          # Upstream runs with 0 retries on 32 cores, where its race detectors
+          # are tuned. On 4 vCPUs test_resize_scrollback and
+          # test_tui_gateway_model_switch_routing fail ~1 run in 3 on upstream
+          # itself, so the fork allows one fresh-subprocess retry per file:
+          # a fork regression still fails twice, and every pass-on-retry is
+          # listed in the runner's FLAKY summary.
+          HERMES_TEST_FILE_RETRIES: "1"
+          HERMES_E2E_REQUIRE_TUI: "1"
           OPENROUTER_API_KEY: ""
           OPENAI_API_KEY: ""
           NOUS_API_KEY: ""

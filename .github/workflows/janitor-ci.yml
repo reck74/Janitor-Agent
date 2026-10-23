@@ -125,7 +125,7 @@ jobs:
         # code paths exercised here matches the one Janitor users run.
         uses: ./.github/actions/retry
         with:
-          command: uv sync --locked --python 3.11 --extra all --extra dev --extra anthropic --extra mistral --extra fal --extra modal --extra daytona --extra hindsight --extra parallel-web
+          command: uv sync --locked --python 3.11 --extra all --extra dev --extra anthropic --extra mistral --extra fal --extra modal --extra daytona --extra parallel-web
 
       - name: Minimize uv cache
         run: uv cache prune --ci
@@ -512,7 +512,7 @@ jobs:
 
   os-compat:
     # OS-specific portability smoke for the Janitor suite (tests/janitor/).
-    # Adapted from upstream tag v2026.8.13's tests-os.yml — preserves the macOS + Windows
+    # Adapted from upstream tag v2026.9.24's tests-os.yml — preserves the macOS + Windows
     # matrix, the uv / Python 3.11 / extras setup, the retry composite, and
     # the cache-pruning step. The test invocation diverges from upstream on
     # purpose: upstream runs OS-marked tests via the macos_only /
@@ -558,7 +558,7 @@ jobs:
       - name: Install dependencies
         uses: ./.github/actions/retry
         with:
-          command: uv sync --locked --python 3.11 --extra all --extra dev --extra anthropic --extra mistral --extra fal --extra modal --extra daytona --extra hindsight --extra parallel-web
+          command: uv sync --locked --python 3.11 --extra all --extra dev --extra anthropic --extra mistral --extra fal --extra modal --extra daytona --extra parallel-web
 
       - name: Minimize uv cache
         run: uv cache prune --ci

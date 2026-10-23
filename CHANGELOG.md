@@ -3,6 +3,54 @@
 Notable changes specific to the Janitor fork of hermes-agent. Upstream
 changes are documented in the upstream release notes.
 
+## `0.21.5+janitor.1` (Hermes v2026.9.24)
+
+Upstream sync from Hermes v2026.8.13 to v2026.9.24. No `~/.janitor` layout
+change, so no new migration runs on first start.
+
+### Changed
+- **Touchpoints moved by upstream refactors:** the compact banner is now
+  rebranded in `hermes_cli/cli_render.py` (upstream split `cli.py`), and the
+  MCP `discover` endpoint uses upstream's profile/secret scoping
+  (`_secret_scoped`) and redacts probe errors.
+- **`janitor update`** honours the cross-process update lock shared with
+  `hermes update`, the dashboard and the desktop updaters. It exits with code 2
+  while another update is running; `janitor update --check` is unaffected.
+- **Skill copy detection** in the v1 migration ignores `__pycache__` and other
+  runtime caches, matching upstream's bundled-skill hash, so a copy whose only
+  difference is bytecode is no longer reported as user-edited.
+- `scripts/migrate-janitor-v0.20.1.sh` writes its `config.yaml` backup to
+  `~/.janitor/backups/config/`, where upstream's backup sweep keeps them.
+- `janitor/overlay.yaml` tracks upstream v2026.9.24.
+
+### Fixed
+- `janitor update` ignored its flags: the early intercept passed a hardcoded
+  namespace, so `janitor update --check` ran a full update (including the
+  switch to `main`). Flags are now parsed strictly (`--check`, `--gateway`,
+  `--backup`, `--no-backup`, `--branch`), unknown ones are an error, and
+  upstream's read-only `--plan` / `--list-venv-holders` are refused instead
+  of running an update.
+- `janitor update` looked `uv` up on `PATH` only. It now uses Hermes' managed
+  `uv` in `~/.janitor/bin` (installing it if missing), like `hermes update`,
+  and falls back to pip as before.
+- The v1 migration read `config.yaml` with a raw YAML load. It now uses
+  Hermes' fail-closed reader: an unreadable or malformed `config.yaml` stops
+  the migration, which is retried on the next start, and the file is never
+  rewritten. Before, a file whose top level was not a mapping was skipped
+  and the home was marked as migrated anyway.
+- CI: `janitor-ci.yml` no longer requests the `hindsight` extra that upstream
+  removed, and the `e2e` and `upstream-sync-verify` jobs in `tests.yml`
+  install what upstream's own jobs install.
+
+### Removed
+- The `gateway-cache-refresh` touchpoint. The gateway holds an
+  `AsyncSessionDB`, so upstream's direct `await` was already correct and the
+  Janitor `asyncio.to_thread` wrapper broke the cached message count. A
+  regression test with a real `SessionDB` covers the behavior.
+- Upstream CI workflows the fork does not run. Only `tests.yml`,
+  `janitor-ci.yml`, `upstream-sync.yml` and `janitor-desktop-release.yml`
+  remain.
+
 ## 1.0.0 — `0.20.1+janitor.2` (Hermes v2026.8.13)
 
 Janitor vNext: a thin fork of Hermes plus a Janitor layer. Existing installs

@@ -79,12 +79,29 @@ class Plan:
         return not (self.config_changes or self.remove or self.drop_manifest or self.refresh_skin)
 
 
-def dir_hash(directory: Path) -> str:
-    """Same digest as ``tools.skills_sync._dir_hash`` (what the manifest stores)."""
+_RUNTIME_CACHE_DIRS = frozenset({"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"})
+
+
+def _is_runtime_cache(path: Path, skill_dir: Path) -> bool:
+    """Same rule as ``tools.skills_sync_optional._is_runtime_cache``."""
+    relative = path.relative_to(skill_dir)
+    if any(part in _RUNTIME_CACHE_DIRS for part in relative.parts[:-1]):
+        return True
+    if path.name in _RUNTIME_CACHE_DIRS and path.is_dir():
+        return True
+    return path.suffix in {".pyc", ".pyo"} and path.with_suffix(".py").is_file()
+
+
+def dir_hash(directory: Path, *, include_runtime_cache: bool = False) -> str:
+    """Same digest as ``tools.skills_sync._dir_hash`` (what the manifest stores).
+
+    Manifests written before Hermes v2026.9.24 hashed runtime caches too;
+    ``include_runtime_cache=True`` reproduces that legacy digest.
+    """
     hasher = hashlib.md5()
     try:
         for fpath in sorted(directory.rglob("*")):
-            if fpath.is_file():
+            if (include_runtime_cache or not _is_runtime_cache(fpath, directory)) and fpath.is_file():
                 hasher.update(str(fpath.relative_to(directory)).encode("utf-8"))
                 hasher.update(fpath.read_bytes())
     except OSError:
@@ -141,12 +158,14 @@ def _local_copies(skills_dir: Path, names: set) -> Dict[str, List[Path]]:
 
 
 def _plan_config(plan: Plan) -> None:
+    from hermes_cli.config import require_readable_config_before_write
+
     path = plan.home / "config.yaml"
     if not path.exists():
         return
-    config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    if not isinstance(config, dict):
-        return
+    # Raises on an unreadable, unparseable or non-mapping file, so the
+    # migration stops (and retries next launch) instead of rewriting it.
+    config = require_readable_config_before_write(path)
 
     skills = config.get("skills")
     if not isinstance(skills, dict):
@@ -190,8 +209,8 @@ def _plan_skills(plan: Plan, shipped: Dict[str, Path]) -> None:
         shipped_hash = dir_hash(shipped[name])
         recorded = manifest.get(name)
         for copy in copies:
-            digest = dir_hash(copy)
-            if digest == recorded or digest == shipped_hash:
+            digests = {dir_hash(copy), dir_hash(copy, include_runtime_cache=True)}
+            if recorded in digests or shipped_hash in digests:
                 plan.remove.append(LocalSkill(name, copy))
             else:
                 reason = "edited locally" if recorded else "not tracked by the bundled manifest"

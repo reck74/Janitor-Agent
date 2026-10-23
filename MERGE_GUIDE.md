@@ -49,7 +49,16 @@ declarada, así que un merge ya no puede dejar código zombie en silencio.
    resultado. El TUI gate corre en el CI del propio PR.
 
 Al mergear el PR (mensaje `chore(sync):` o rama `upstream-sync-*`), el job
-`upstream-sync-verify` de `tests.yml` corre la suite completa de upstream.
+`upstream-sync-verify` de `tests.yml` corre la suite completa de upstream,
+salvo `tests/ci/` (asserta sobre los workflows que se podan en el paso 3).
+
+`tests.yml` es del fork, pero sus jobs `upstream-sync-verify` y `e2e` copian
+la instalación de los jobs `test` y `e2e` del `tests.yml` de upstream. En cada
+sync, comparar los extras de `uv sync`, el pin de `uv`, la versión de Python y
+los pasos de Node/TUI con los de upstream y portar los cambios: un extra que
+falta hace fallar tests que no pueden instalar SDKs a mitad de corrida
+(`HERMES_DISABLE_LAZY_INSTALLS`), y uno que upstream eliminó rompe `uv sync`.
+Lo mismo para los extras de `janitor-ci.yml` frente a `tests-os.yml`.
 
 ---
 

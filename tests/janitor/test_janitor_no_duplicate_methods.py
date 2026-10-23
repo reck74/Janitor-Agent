@@ -75,6 +75,11 @@ _SCANNED_PACKAGES = [
 _UPSTREAM_KNOWN_DUPLICATES = {
     ("tools/url_safety.py", "_Transport.__init__"),
     ("tui_gateway/server.py", "_content_display_text"),
+    # v2026.9.24 PLUGIN-COMPAT blocks: the second module ``__getattr__`` saves
+    # the first as ``_plugin_compat_prev_getattr`` and chains to it.
+    ("hermes_cli/main.py", "__getattr__"),
+    ("tools/mcp_tool.py", "__getattr__"),
+    ("tools/skills_hub.py", "__getattr__"),
 }
 
 # ``_`` is the conventional name for decorator-registered RPC handlers
@@ -274,6 +279,25 @@ class TestNoDuplicateModuleLevelFunctions:
         )
 
 
+def _gateway_sources():
+    """``(rel_path, source)`` for every gateway module. Since v2026.9.24 the
+    method lives in the ``gateway/run_agent_cache.py`` mixin and its callers
+    are spread across ``GatewayRunner``'s other mixins, so the lock covers the
+    whole package: a second definition in ANY mixin shadows the first via MRO.
+    """
+    for path in sorted((_REPO_ROOT / "gateway").rglob("*.py")):
+        yield _rel(path), path.read_text(encoding="utf-8")
+
+
+def _refresh_defs(kind):
+    return [
+        (rel, n.lineno)
+        for rel, source in _gateway_sources()
+        for n in ast.walk(ast.parse(source))
+        if type(n) is kind and n.name == "_refresh_agent_cache_message_count"
+    ]
+
+
 class TestRefreshAgentCacheMessageCountRegression:
     """Targeted regression: the exact method that broke Telegram in
     v2026.7.7.2. Locks the post-fix state so the same bug class cannot
@@ -282,54 +306,48 @@ class TestRefreshAgentCacheMessageCountRegression:
     def test_exactly_one_definition(self):
         """If a future merge re-introduces a duplicate, this fails before
         the duplicate can shadow the async version."""
-        source = (_REPO_ROOT / "gateway/run.py").read_text(encoding="utf-8")
-        count = source.count("def _refresh_agent_cache_message_count(")
-        assert count == 1, (
-            f"Expected exactly 1 definition of _refresh_agent_cache_message_count, "
-            f"found {count}. A duplicate means one silently shadows the other."
+        defs = _refresh_defs(ast.AsyncFunctionDef) + _refresh_defs(ast.FunctionDef)
+        assert len(defs) == 1, (
+            f"Expected exactly 1 definition of _refresh_agent_cache_message_count "
+            f"in gateway/, found {defs}. A duplicate means one silently shadows the other."
         )
 
     def test_definition_is_async(self):
-        """Callers ``await`` this method (gateway/run.py:~12091, ~19951).
-        If a sync version shadows the async one, ``await`` returns
-        ``TypeError: object NoneType can't be used in 'await' expression``."""
-        tree = ast.parse((_REPO_ROOT / "gateway/run.py").read_text(encoding="utf-8"))
-        defs = [
-            n
-            for n in ast.walk(tree)
-            if isinstance(n, ast.AsyncFunctionDef)
-            and n.name == "_refresh_agent_cache_message_count"
-        ]
+        """Callers ``await`` this method. If a sync version shadows the async
+        one, ``await`` returns ``TypeError: object NoneType can't be used in
+        'await' expression``."""
+        defs = _refresh_defs(ast.AsyncFunctionDef)
         assert len(defs) == 1, (
-            f"Expected 1 async def, found {len(defs)}. "
+            f"Expected 1 async def in gateway/, found {defs}. "
             "Callers use `await` — the method must be a coroutine."
         )
 
     def test_no_sync_shadow(self):
         """No plain ``def _refresh_agent_cache_message_count`` may exist.
-        If present, Python's last-definition-wins rule would let it shadow
-        the async version even if the async def comes first."""
-        tree = ast.parse((_REPO_ROOT / "gateway/run.py").read_text(encoding="utf-8"))
-        sync_defs = [
-            n
-            for n in ast.walk(tree)
-            if isinstance(n, ast.FunctionDef)
-            and not isinstance(n, ast.AsyncFunctionDef)
-            and n.name == "_refresh_agent_cache_message_count"
-        ]
-        assert not sync_defs, (
-            f"Found {len(sync_defs)} sync `def` at line(s) "
-            f"{[d.lineno for d in sync_defs]} — would shadow the async version."
-        )
+        If present, Python's last-definition-wins rule (or the mixin MRO)
+        would let it shadow the async version."""
+        sync_defs = _refresh_defs(ast.FunctionDef)
+        assert not sync_defs, f"Sync `def` found at {sync_defs} — would shadow the async version."
+
+    def test_resolved_method_is_a_coroutine(self):
+        """What ``GatewayRunner`` actually resolves through its mixins."""
+        import inspect
+
+        from gateway.run import GatewayRunner
+
+        assert inspect.iscoroutinefunction(GatewayRunner._refresh_agent_cache_message_count)
 
     def test_callers_use_await(self):
         """Every call site of this method must use ``await``. If a caller
         drops ``await`` because it assumes a sync return, it breaks when
         the (correct) async version is active."""
-        source = (_REPO_ROOT / "gateway/run.py").read_text(encoding="utf-8")
-        for lineno, line in enumerate(source.splitlines(), start=1):
-            if "_refresh_agent_cache_message_count(" in line and "def " not in line:
-                assert "await" in line, (
-                    f"Line {lineno}: call without `await` — method is async: "
-                    f"{line.strip()}"
-                )
+        calls = 0
+        for rel, source in _gateway_sources():
+            for lineno, line in enumerate(source.splitlines(), start=1):
+                if "_refresh_agent_cache_message_count(" in line and "def " not in line:
+                    calls += 1
+                    assert "await" in line, (
+                        f"{rel}:{lineno}: call without `await` — method is async: "
+                        f"{line.strip()}"
+                    )
+        assert calls, "No call sites found — the cache refresh is no longer wired in."

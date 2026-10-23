@@ -51,7 +51,6 @@ from __future__ import annotations
 import importlib
 import json
 import os
-import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -588,15 +587,29 @@ def _pull_with_fallback(git_cmd: list[str], cwd: Path, branch: str) -> bool:
     return True
 
 
-def _install_python_dependencies(project_root: Path) -> None:
-    """Install Python deps via uv (preferred) or pip fallback."""
-    print("→ Updating Python dependencies...")
-    pip_cmd = [sys.executable, "-m", "pip"]
-    uv_bin = shutil.which("uv") or _call(
+def _resolve_uv_bin(pip_cmd: list[str]) -> Optional[str]:
+    """Same uv rungs as ``hermes update``: Hermes' managed uv in
+    ``$HERMES_HOME/bin`` (self-updated, installed if missing), then the
+    Termux fallback. ``None`` means the pip path."""
+    try:
+        from hermes_cli.managed_uv import ensure_uv, update_managed_uv
+    except Exception:
+        uv_bin = None
+    else:
+        update_managed_uv()
+        uv_bin = str(ensure_uv()) or None
+    return uv_bin or _call(
         "_ensure_uv_for_termux",
         pip_cmd,
         fallback=lambda *a, **kw: None,
     )
+
+
+def _install_python_dependencies(project_root: Path) -> None:
+    """Install Python deps via uv (preferred) or pip fallback."""
+    print("→ Updating Python dependencies...")
+    pip_cmd = [sys.executable, "-m", "pip"]
+    uv_bin = _resolve_uv_bin(pip_cmd)
     install_group = "all"
 
     if uv_bin:
@@ -1083,6 +1096,74 @@ def _clear_incomplete_marker() -> bool:
     return True
 
 
+# Mirrors hermes_cli.update_lock.UPDATE_EXIT_CONCURRENT so the refusal exit
+# code survives a venv where that module cannot be imported.
+_UPDATE_EXIT_CONCURRENT = 2
+
+# Read-only `hermes update` modes the Janitor flow does not implement. The
+# monkey-patched cmd_update receives upstream's parsed args, so these must be
+# refused rather than silently turned into a mutating update.
+_UNSUPPORTED_READ_ONLY_FLAGS = {
+    "plan": "--plan",
+    "list_venv_holders": "--list-venv-holders",
+}
+
+
+def parse_update_args(argv: list[str]):
+    """Parse ``janitor update`` arguments for the early intercept.
+
+    Only flags the core implements are accepted; anything else is an argparse
+    error (exit 2) so a read-only request such as ``--plan`` can never fall
+    through to a real update.
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="janitor update",
+        description="Update Janitor from the fork's git remote.",
+    )
+    parser.add_argument(
+        "--check", action="store_true",
+        help="Report whether an update is available without installing anything",
+    )
+    parser.add_argument(
+        "--gateway", action="store_true",
+        help="Gateway mode: file-based IPC for prompts (used internally by /update)",
+    )
+    parser.add_argument(
+        "--backup", action="store_true",
+        help="Force a full pre-update backup for this run",
+    )
+    parser.add_argument(
+        "--no-backup", action="store_true",
+        help="Skip all pre-update backups for this run",
+    )
+    parser.add_argument(
+        "--branch", default=None, metavar="NAME",
+        help="Update against this branch instead of main",
+    )
+    return parser.parse_args(argv)
+
+
+def _acquire_update_lock():
+    """Claim the update marker shared with ``hermes update``, the dashboard
+    and the desktop/Tauri updaters.
+
+    Returns ``(lock, refusal)``: ``refusal`` is the user-facing message when
+    another live update holds the marker. The lock is best-effort — if the
+    module cannot be imported (partially-broken venv, early intercept) the
+    update proceeds unlocked rather than being blocked.
+    """
+    try:
+        from hermes_cli.update_lock import UpdateLock, describe_holder
+    except Exception:
+        return None, None
+    lock = UpdateLock()
+    if not lock.acquire():
+        return None, describe_holder(lock.holder)
+    return lock, None
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -1100,8 +1181,21 @@ def run_janitor_update(args) -> int:
             branch (str|None): target branch (default ``"main"``).
 
     Returns:
-        Process exit code: 0 = updated, 1 = failed, 130 = cancelled.
+        Process exit code: 0 = updated, 1 = failed, 2 = another update holds
+        the shared update lock or an unsupported read-only mode was requested,
+        130 = cancelled.
     """
+    unsupported = [
+        flag for attr, flag in _UNSUPPORTED_READ_ONLY_FLAGS.items()
+        if getattr(args, attr, False)
+    ]
+    if unsupported:
+        print(
+            f"✗ janitor update does not support {', '.join(unsupported)}. "
+            "Use `janitor update --check` to see whether an update is available."
+        )
+        return 2
+
     _ensure_loaded()
 
     gateway_mode = bool(getattr(args, "gateway", False))
@@ -1117,9 +1211,15 @@ def run_janitor_update(args) -> int:
     persisted_stash_ref: Optional[str] = None
     project_root: Optional[Path] = None
     git_cmd: Optional[list[str]] = None
+    update_lock = None
     try:
         if getattr(args, "check", False):
             return _check_only(branch)
+
+        update_lock, refusal = _acquire_update_lock()
+        if refusal is not None:
+            print(refusal)
+            return _UPDATE_EXIT_CONCURRENT
 
         print("⚕ Updating Janitor Agent from fork...")
         print()
@@ -1358,6 +1458,8 @@ def run_janitor_update(args) -> int:
             )
         return 1
     finally:
+        if update_lock is not None:
+            update_lock.release()
         _call(
             "_finalize_update_output",
             _update_io_state,

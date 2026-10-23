@@ -23,8 +23,8 @@ schema: 1
 
 upstream:
   repo: https://github.com/NousResearch/hermes-agent.git
-  # Hermes v2026.8.13 — upstream parent of the last chore(sync) merge.
-  base: f80f453ae0679347e38abc917c7f94f717bf96c5
+  # Hermes v2026.9.24 — upstream parent of the last chore(sync) merge.
+  base: f97608f178d1ffeca59860195ab7da295f7c8e5f
 
 fork_paths:
   - janitor/**
@@ -67,26 +67,14 @@ touchpoints:
 
   - id: banner
     files:
-      - cli.py
       - hermes_cli/banner.py
+      - hermes_cli/cli_render.py
       - hermes_cli/_startup_fast.py
-      - tests/hermes_cli/test_banner.py
-      - tests/hermes_cli/test_kanban_db.py
       - tests/hermes_cli/test_startup_fast_guards.py
     why: >-
       Version label reads `THE JANITOR v<display_version>`; upstream tests
       asserting the label follow AGENTS.md directive #12.
     verify: test:banner
-    merge: reapply
-    upstream_candidate: true
-
-  - id: gateway-cache-refresh
-    files: [gateway/run.py]
-    why: >-
-      `_refresh_agent_cache_message_count` runs the synchronous
-      `SessionDB.get_session` through `asyncio.to_thread`; upstream awaits it
-      directly and the TypeError is swallowed, so the cache never re-baselines.
-    verify: test:gateway-cache-refresh
     merge: reapply
     upstream_candidate: true
 
@@ -141,7 +129,7 @@ touchpoints:
     merge: ours
 
   - id: fork-ci
-    files: [.github/workflows/*.yml]
+    files: [.github/workflows/*.y*ml]
     why: >-
       Two-tier CI (directive #11): the PR gate runs the Janitor suite, the
       full upstream suite runs on sync. Upstream workflows are adjusted for

@@ -32,6 +32,15 @@ pytestmark = pytest.mark.skipif(
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "migrate-janitor-v0.20.1.sh"
 
 
+def _backups(home: Path) -> list:
+    """Migration backups, wherever they landed: the script writes them to
+    ``backups/config/`` (where hermes_cli.config_backups keeps config copies);
+    the home root is included so a regression back to a sibling file shows."""
+    return sorted(
+        [*home.glob("config.yaml.bak.*"), *(home / "backups" / "config").glob("config.yaml.bak.*")]
+    )
+
+
 def test_script_is_present_and_bash_n_clean():
     """The migration script exists and passes bash -n syntax check."""
     assert SCRIPT.exists()
@@ -66,7 +75,7 @@ def test_creates_timestamped_backup(tmp_path):
     )
     assert r.returncode == 0, r.stderr
     backups = [
-        p for p in home.glob("config.yaml.bak.*")
+        p for p in _backups(home)
         if len(p.name.split(".", 3)) == 4
         and p.name.split(".", 3)[3].startswith("20")
     ]
@@ -82,10 +91,10 @@ def test_is_idempotent(tmp_path):
     (home / "config.yaml").write_text("memory:\n  provider: honcho\n")
     env = {**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""}
     subprocess.run(["bash", str(SCRIPT)], env=env, check=True, capture_output=True, text=True)
-    first_count = len(list(home.glob("config.yaml.bak.*")))
+    first_count = len(_backups(home))
     r = subprocess.run(["bash", str(SCRIPT)], env=env, capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
-    second_count = len(list(home.glob("config.yaml.bak.*")))
+    second_count = len(_backups(home))
     assert second_count == first_count
 
 
@@ -99,7 +108,7 @@ def test_missing_config_exits_1(tmp_path):
         capture_output=True, text=True,
     )
     assert r.returncode == 1
-    assert list(home.glob("config.yaml.bak.*")) == []
+    assert _backups(home) == []
 
 
 def test_v33_content_triggers_migration(tmp_path):
@@ -120,8 +129,9 @@ def test_v33_content_triggers_migration(tmp_path):
     )
     assert r.returncode == 0, r.stderr
     import yaml
+    from hermes_cli.config import DEFAULT_CONFIG
     after = yaml.safe_load((home / "config.yaml").read_text())
-    assert after["_config_version"] == 34
+    assert after["_config_version"] == DEFAULT_CONFIG["_config_version"]
     assert after["display"]["personality"] == ""
 
 
@@ -159,7 +169,7 @@ def test_manual_prompts_preserved(tmp_path):
     assert "Custom prompt the user wrote." in text
     assert "Keep this verbatim across migrations." in text
 
-    backups_after_first = sorted(home.glob("config.yaml.bak.*"))
+    backups_after_first = _backups(home)
     assert len(backups_after_first) == 1, (
         f"first run must create exactly one backup, found {len(backups_after_first)}"
     )
@@ -173,7 +183,7 @@ def test_manual_prompts_preserved(tmp_path):
         ["bash", str(SCRIPT)], env=env, capture_output=True, text=True,
     )
     assert r2.returncode == 0, r2.stderr
-    backups_after_second = sorted(home.glob("config.yaml.bak.*"))
+    backups_after_second = _backups(home)
     assert len(backups_after_second) == len(backups_after_first), (
         f"second run must not create a new backup; "
         f"before={backups_after_first!r} after={backups_after_second!r}"
@@ -196,7 +206,7 @@ def test_unknown_arg_exits_2_no_backup_no_mutation(tmp_path):
         capture_output=True, text=True,
     )
     assert r.returncode == 2, (r.returncode, r.stdout, r.stderr)
-    assert list(home.glob("config.yaml.bak.*")) == []
+    assert _backups(home) == []
     assert (home / "config.yaml").read_bytes() == before
     assert "Usage" in r.stderr or "usage" in r.stderr or "unknown" in r.stderr.lower()
 
@@ -213,7 +223,7 @@ def test_extra_args_after_dry_run_exits_2_no_backup_no_mutation(tmp_path):
         capture_output=True, text=True,
     )
     assert r.returncode == 2, (r.returncode, r.stdout, r.stderr)
-    assert list(home.glob("config.yaml.bak.*")) == []
+    assert _backups(home) == []
     assert (home / "config.yaml").read_bytes() == before
 
 
@@ -274,8 +284,8 @@ def test_janitor_home_precedence_over_hermes_home(tmp_path):
         capture_output=True, text=True,
     )
     assert r.returncode == 0, r.stderr
-    assert list(janitor_home.glob("config.yaml.bak.*")) != []
-    assert list(hermes_home.glob("config.yaml.bak.*")) == []
+    assert _backups(janitor_home) != []
+    assert _backups(hermes_home) == []
 
 
 def test_hermes_home_precedence_over_default_home(tmp_path):
@@ -297,8 +307,8 @@ def test_hermes_home_precedence_over_default_home(tmp_path):
         capture_output=True, text=True,
     )
     assert r.returncode == 0, r.stderr
-    assert list(explicit_home.glob("config.yaml.bak.*")) != []
-    assert list((default_home / ".janitor").glob("config.yaml.bak.*")) == []
+    assert _backups(explicit_home) != []
+    assert _backups((default_home / ".janitor")) == []
 
 
 def test_prints_rollback_instructions(tmp_path):
@@ -313,8 +323,9 @@ def test_prints_rollback_instructions(tmp_path):
     )
     assert r.returncode == 0, r.stderr
     assert "To rollback:" in r.stdout
-    backups = list(home.glob("config.yaml.bak.*"))
-    assert str(backups[0].name) in r.stdout
+    backups = _backups(home)
+    assert backups[0].parent == home / "backups" / "config"
+    assert f"To rollback: cp {backups[0]} {home / 'config.yaml'}" in r.stdout
 
 
 def test_migration_failure_after_backup_exits_3_and_preserves_original(tmp_path):
@@ -330,7 +341,7 @@ def test_migration_failure_after_backup_exits_3_and_preserves_original(tmp_path)
         capture_output=True, text=True,
     )
     assert r.returncode == 3, (r.returncode, r.stdout, r.stderr)
-    backups = list(home.glob("config.yaml.bak.*"))
+    backups = _backups(home)
     assert len(backups) == 1
     assert backups[0].read_bytes() == before_bytes
     assert (home / "config.yaml").read_bytes() == before_bytes
@@ -357,7 +368,7 @@ def test_backup_filename_strict_portable_shape_no_nanoseconds(tmp_path):
         capture_output=True, text=True,
     )
     assert r.returncode == 0, r.stderr
-    backups = list(home.glob("config.yaml.bak.*"))
+    backups = _backups(home)
     assert len(backups) == 1
     name = backups[0].name
     # Exact portable shape: ``config.yaml.bak.<YYYYMMDDTHHMMSSZ>``
@@ -496,7 +507,7 @@ def test_real_pre_floor_config_is_allowed_to_remain_behind(tmp_path):
     assert f"v{pre_floor_version}" in result.stdout
     assert f"v{latest_version}" in result.stdout
     assert config.read_bytes() == before
-    backups = list(home.glob("config.yaml.bak.*"))
+    backups = _backups(home)
     assert len(backups) == 1
     assert backups[0].read_bytes() == before
 
