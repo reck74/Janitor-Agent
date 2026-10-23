@@ -30,6 +30,17 @@ change, so no new migration runs on first start.
   `--backup`, `--no-backup`, `--branch`), unknown ones are an error, and
   upstream's read-only `--plan` / `--list-venv-holders` are refused instead
   of running an update.
+- `janitor update` looked `uv` up on `PATH` only. It now uses Hermes' managed
+  `uv` in `~/.janitor/bin` (installing it if missing), like `hermes update`,
+  and falls back to pip as before.
+- The v1 migration read `config.yaml` with a raw YAML load. It now uses
+  Hermes' fail-closed reader: an unreadable or malformed `config.yaml` stops
+  the migration, which is retried on the next start, and the file is never
+  rewritten. Before, a file whose top level was not a mapping was skipped
+  and the home was marked as migrated anyway.
+- CI: `janitor-ci.yml` no longer requests the `hindsight` extra that upstream
+  removed, and the `e2e` and `upstream-sync-verify` jobs in `tests.yml`
+  install what upstream's own jobs install.
 
 ### Removed
 - The `gateway-cache-refresh` touchpoint. The gateway holds an
