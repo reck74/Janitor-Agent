@@ -79,7 +79,11 @@ fi
 # single second (the migrate wrapper exits non-zero on error before any
 # second backup could be made).
 TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
-BACKUP="$CONFIG.bak.$TIMESTAMP"
+# hermes_cli.config_backups sweeps `config.yaml.bak.<digits>` siblings into
+# backups/config/ on the first config load, so a backup written next to
+# config.yaml would move before the rollback hint below is read.
+BACKUP_DIR="$HOME_DIR/backups/config"
+BACKUP="$BACKUP_DIR/config.yaml.bak.$TIMESTAMP"
 
 # Source raw version from the canonical ``hermes_cli.__version__`` literal
 # and derive the display form via ``janitor_version.display_version``. This
@@ -205,6 +209,7 @@ if [ "$NEEDS_MIGRATION" = "0" ]; then
 fi
 
 # Migration is needed — back up before any mutation.
+mkdir -p "$BACKUP_DIR"
 cp "$CONFIG" "$BACKUP"
 echo "Backed up: $BACKUP"
 

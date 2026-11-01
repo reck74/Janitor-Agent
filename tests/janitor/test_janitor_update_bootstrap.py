@@ -1,7 +1,7 @@
 """Tests for the thin Janitor update bootstrap shell.
 
 Per JANITOR FORK DIRECTIVE #13, ``janitor_update_bootstrap`` may ONLY print
-its branding banner, build the default namespace, and delegate to
+its branding banner, parse its flags through the core, and delegate to
 ``janitor_update_core.run_janitor_update``. All update flow logic lives in
 ``janitor_update_core``. The git/stash/bytecode helpers previously defined
 here have been removed and now live (and are tested) in
@@ -12,17 +12,25 @@ from __future__ import annotations
 
 import subprocess
 import sys
-import tomllib
-from pathlib import Path
 from unittest.mock import patch
 
 
-def test_bootstrap_module_is_packaged_for_janitor_entrypoint():
-    """The bootstrap module is listed in pyproject's py-modules."""
-    pyproject = tomllib.loads(Path("pyproject.toml").read_text())
-    py_modules = pyproject["tool"]["setuptools"]["py-modules"]
+def test_bootstrap_module_is_packaged_for_janitor_entrypoint(tmp_path):
+    """The installed distribution exposes the root alias module.
 
-    assert "janitor_update_bootstrap" in py_modules
+    Root single-file modules are derived by upstream's ``setup.py`` since
+    v2026.9.24, so this imports it from outside the checkout instead of
+    reading pyproject's (removed) ``py-modules`` list.
+    """
+    result = subprocess.run(
+        [sys.executable, "-c", "import janitor_update_bootstrap as m; print(callable(m.run_update))"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "True"
 
 
 def test_update_intercept_runs_before_hermes_imports():
@@ -86,7 +94,7 @@ def test_bootstrap_run_update_prints_branding(capsys):
 
     with patch.object(jub.janitor_update_core, "run_janitor_update",
                       return_value=0) as mock_delegate:
-        rc = jub.run_update()
+        rc = jub.run_update([])
 
     out = capsys.readouterr().out
     assert "THE JANITOR" in out
@@ -95,8 +103,8 @@ def test_bootstrap_run_update_prints_branding(capsys):
 
 
 def test_bootstrap_run_update_builds_default_namespace():
-    """The bootstrap builds a default argparse.Namespace with the contract keys
-    ``janitor_update_core`` recognises and passes it to ``run_janitor_update``.
+    """Without flags the bootstrap passes the core's contract keys with their
+    defaults to ``run_janitor_update``.
     """
     import janitor_update_bootstrap as jub
 
@@ -108,7 +116,7 @@ def test_bootstrap_run_update_builds_default_namespace():
 
     with patch.object(jub.janitor_update_core, "run_janitor_update",
                       side_effect=fake_run):
-        jub.run_update()
+        jub.run_update([])
 
     args = captured["args"]
     # Recognised attributes per the core's contract (all default False / None).
@@ -125,7 +133,7 @@ def test_bootstrap_run_update_delegates_to_janitor_update_core():
 
     with patch.object(jub.janitor_update_core, "run_janitor_update",
                       return_value=0) as mock_delegate:
-        rc = jub.run_update()
+        rc = jub.run_update([])
 
     assert rc == 0
     assert mock_delegate.call_count == 1
@@ -148,3 +156,57 @@ def test_bootstrap_does_not_define_obsolete_helpers():
             f"janitor_update_bootstrap must not define {name!r}; "
             f"that helper belongs in janitor_update_core"
         )
+
+
+def _run_launcher_update(tmp_path, *update_args):
+    """Run the real ``janitor update`` intercept with the core stubbed to
+    report the namespace it received instead of updating anything."""
+    probe = (
+        "import json, sys\n"
+        f"sys.argv = ['janitor', 'update', *{list(update_args)!r}]\n"
+        "import janitor.update_core as core\n"
+        "def fake_run(args):\n"
+        "    print('ARGS=' + json.dumps(vars(args), sort_keys=True))\n"
+        "    return 0\n"
+        "core.run_janitor_update = fake_run\n"
+        "import janitor.cli\n"
+    )
+    return subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True, text=True,
+        env={**__import__("os").environ, "HOME": str(tmp_path)},
+    )
+
+
+def _received_args(result) -> dict:
+    import json
+
+    lines = [line for line in result.stdout.splitlines() if line.startswith("ARGS=")]
+    assert len(lines) == 1, (result.stdout, result.stderr)
+    return json.loads(lines[0][len("ARGS="):])
+
+
+def test_launcher_update_forwards_check_flag_to_the_core(tmp_path):
+    result = _run_launcher_update(tmp_path, "--check")
+
+    assert result.returncode == 0, result.stderr
+    assert _received_args(result)["check"] is True
+
+
+def test_launcher_update_forwards_branch_and_backup_flags(tmp_path):
+    result = _run_launcher_update(tmp_path, "--branch", "next", "--no-backup", "--gateway")
+
+    assert result.returncode == 0, result.stderr
+    args = _received_args(result)
+    assert args["branch"] == "next"
+    assert args["no_backup"] is True
+    assert args["gateway"] is True
+    assert args["check"] is False
+
+
+def test_launcher_update_rejects_flags_the_core_does_not_implement(tmp_path):
+    result = _run_launcher_update(tmp_path, "--plan")
+
+    assert result.returncode == 2
+    assert "ARGS=" not in result.stdout
+    assert "--plan" in result.stderr

@@ -10,6 +10,6 @@ if _REPO_ROOT not in sys.path:
 from janitor import update_bootstrap as _impl  # noqa: E402
 
 if __name__ == "__main__":
-    sys.exit(_impl.run_update())
+    sys.exit(_impl.run_update(sys.argv[1:]))
 else:
     sys.modules[__name__] = _impl

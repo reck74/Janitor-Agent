@@ -7,10 +7,8 @@ edit upstream overwrote, instead of a grep checklist in MERGE_GUIDE.md.
 
 from __future__ import annotations
 
-import asyncio
 import importlib.metadata
 import re
-import threading
 
 import pytest
 
@@ -54,24 +52,6 @@ def check_banner(capsys=None):
         assert capsys.readouterr().out.startswith(expected)
 
 
-def check_gateway_cache_refresh():
-    from gateway.run import GatewayRunner
-
-    class SyncSessionDB:
-        def get_session(self, session_id):
-            return {"message_count": 7}
-
-    runner = object.__new__(GatewayRunner)
-    runner._session_db = SyncSessionDB()
-    runner._agent_cache_lock = threading.Lock()
-    agent = object()
-    runner._agent_cache = {"key": (agent, "sig", 3, "sid-1")}
-
-    asyncio.run(runner._refresh_agent_cache_message_count("key", "sid-1"))
-
-    assert runner._agent_cache["key"] == (agent, "sig", 7, "sid-1")
-
-
 def check_mcp_dashboard_endpoints():
     from hermes_cli.web_routers.mcp import router
 
@@ -84,7 +64,6 @@ CHECKS = {
     "version": check_version,
     "packaging": check_packaging,
     "banner": check_banner,
-    "gateway-cache-refresh": check_gateway_cache_refresh,
     "mcp-dashboard-endpoints": check_mcp_dashboard_endpoints,
 }
 

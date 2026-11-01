@@ -30,21 +30,23 @@ Reglas para proponer:
 Son fixes independientes de Janitor; upstream los quiere por el rubric
 ("fix real bugs, well").
 
-### 1.1 `gateway-cache-refresh` — `await` sobre una función síncrona
+### 1.1 `gateway-cache-refresh` — retirado (premisa incorrecta)
 
-- **Síntoma upstream:** `GatewayRunner._refresh_agent_cache_message_count`
-  hace `await self._session_db.get_session(session_id)`, pero
-  `SessionDB.get_session` es síncrona. El `TypeError` lo traga el
-  `except Exception: return`, así que el conteo de mensajes del agente
-  cacheado nunca se re-sincroniza.
-- **Edición Janitor:** `await asyncio.to_thread(self._session_db.get_session, session_id)`.
-- **PR propuesto:** `fix(gateway): run SessionDB.get_session off-loop in cache refresh`,
-  con un test que use un `SessionDB` real en un `HERMES_HOME` temporal y
-  verifique que el conteo se actualiza (el test actual de Janitor,
-  `test:gateway-cache-refresh` en `tests/janitor/test_janitor_overlay_contract.py`,
-  sirve de base).
-- **Al aceptarse:** se elimina el touchpoint; la invariante `async` de la
-  directiva #15 se mantiene en `test_janitor_no_duplicate_methods.py`.
+- **Premisa original:** `GatewayRunner._refresh_agent_cache_message_count`
+  hacía `await self._session_db.get_session(session_id)` sobre un
+  `SessionDB` síncrono, y Janitor lo envolvía en `asyncio.to_thread`.
+- **Por qué se retira:** desde v2026.8.13 el gateway guarda un
+  `AsyncSessionDB` (`hermes_state`), cuyos métodos ya son corrutinas que
+  delegan en `asyncio.to_thread`. El `await` directo de upstream es correcto;
+  la edición Janitor llamaba a `to_thread` sobre el forwarder asíncrono, que
+  devolvía una corrutina sin esperar (`AttributeError: 'coroutine' object has
+  no attribute 'get'`, tragado por el `except`), así que era la edición la que
+  rompía el conteo.
+- **Estado (v2026.9.24):** touchpoint eliminado; se conserva el código de
+  upstream (`gateway/run_agent_cache.py`). El comportamiento lo cubre
+  `tests/janitor/test_janitor_gateway_cache_refresh.py` con un `SessionDB`
+  real, y la invariante `async` de la directiva #15 sigue en
+  `test_janitor_no_duplicate_methods.py`. No hay nada que proponer.
 
 ### 1.2 `web-typecheck` — `tsc -p .` no chequea nada
 
@@ -87,16 +89,21 @@ skin.
 
 ### 2.2 `banner` — nombre de producto en la etiqueta de versión (CLI)
 
-- **Hoy:** `"Hermes Agent v{version} ({date})"` aparece literal en tres
-  sitios: `format_banner_version_label()` (`hermes_cli/banner.py`),
-  `_build_compact_banner()` (`cli.py`) y `print_fast_version_info()`
-  (`hermes_cli/_startup_fast.py`).
-- **Edición Janitor:** los tres imprimen `THE JANITOR v{display_version(...)}`,
-  y tres tests upstream ajustan la aserción (directiva #12).
+- **Hoy (v2026.9.24):** upstream ya centraliza casi todo en
+  `format_banner_version_label()` (`hermes_cli/banner.py`):
+  `print_fast_version_info()` (`hermes_cli/_startup_fast.py`) y
+  `_build_compact_banner()` (movido a `hermes_cli/cli_render.py`) la usan.
+  Quedan dos literales `"Hermes Agent v…"`: el fallback `except` de
+  `_startup_fast.py` y la rama rápida de `_build_compact_banner()`.
+- **Edición Janitor:** el helper y los dos literales imprimen
+  `THE JANITOR v{display_version(...)}`, y los tests upstream que aserten el
+  banner ajustan la aserción (directiva #12; hoy
+  `tests/hermes_cli/test_startup_fast_guards.py`).
 - **PR propuesto, en dos pasos:**
-  1. `refactor(cli): single version-label helper` — que los tres sitios usen
-     una sola función (hoy son tres literales que ya pueden divergir). Sin
-     cambio de comportamiento; fácil de mergear.
+  1. `refactor(cli): single version-label helper` — **parcialmente hecho
+     upstream.** Falta que los dos literales restantes llamen al helper (o a
+     una variante sin imports pesados para la rama rápida). Sin cambio de
+     comportamiento.
   2. `feat(skins): branding.product_name for the version label` — el helper
      lee `branding.product_name` del skin (default `Hermes Agent`).
      `_startup_fast.py` no carga el skin engine por diseño (arranque rápido),
@@ -135,16 +142,19 @@ skin.
 
 ### 2.5 Flujo de `update` con remoto y hooks configurables
 
-- **Hoy:** el patch más grande. `janitor/update_core.py` (~1.3k líneas)
-  reimplementa `_cmd_update_impl` de `hermes_cli/update_cmd.py` para usar el
-  remoto del fork, el fallback `reset --hard origin/<branch>`, la validación
-  post-pull y la migración de `~/.janitor` (directiva #13). Cada sync obliga a
-  comparar a mano contra upstream.
+- **Hoy:** el patch más grande. `janitor/update_core.py` (~1.4k líneas)
+  reimplementa `_cmd_update_impl` de `hermes_cli/update_cmd*.py` para usar el
+  remoto del fork, el fallback `reset --hard origin/<branch>` y la validación
+  post-pull (directiva #13). Desde v2026.9.24 también respeta el lock de
+  update compartido (`hermes_cli/update_lock.py`) que usan `hermes update`, el
+  dashboard y los updaters de desktop/Tauri. Cada sync obliga a comparar a
+  mano contra upstream.
 - **PR propuesto (orden):**
-  1. `fix(update): recover from non-fast-forward pulls` — el fallback de
-     `reset --hard` tras `pull --ff-only` fallido, con rollback al SHA previo
-     si la validación de sintaxis falla. Es la parte que es un bug también
-     para Hermes (la instalación queda atascada sin camino de recuperación).
+  1. `fix(update): recover from non-fast-forward pulls` — **hecho upstream**
+     en v2026.9.24: `hermes_cli/update_cmd.py` hace merge (rama propia) o
+     `reset --hard origin/<branch>` cuando el fast-forward falla, y
+     `_rollback_if_pulled_syntax_error` vuelve al SHA previo si la validación
+     de sintaxis falla. Ya no hay nada que proponer aquí.
   2. `feat(update): post-update hook` — punto de extensión por plugin
      (`ctx.register_hook("post_update", ...)` o similar) para que una distro
      ejecute sus migraciones tras el pull. Consumidor concreto:
@@ -182,14 +192,14 @@ skin.
 
 | Candidato | Tipo | PR upstream | Estado |
 |-----------|------|-------------|--------|
-| 1.1 gateway-cache-refresh | fix | — | por proponer |
+| 1.1 gateway-cache-refresh | fix | — | retirado (premisa incorrecta, v2026.9.24) |
 | 1.2 web-typecheck | fix | — | por proponer |
 | 1.3 tui-test-timeout | fix | — | por proponer |
 | 2.1 tui-branding-hook | hook | — | por proponer |
-| 2.2 banner (refactor + product_name) | hook | — | por proponer |
+| 2.2 banner (refactor + product_name) | hook | — | paso 1 parcial upstream; quedan 2 literales y `product_name` |
 | 2.3 argparse `prog` | hook | — | por proponer |
 | 2.4 tips por idioma | feature | — | por proponer |
-| 2.5 update (fallback + post_update) | fix + hook | — | por proponer |
+| 2.5 update (fallback + post_update) | fix + hook | — | paso 1 hecho upstream; falta `post_update` |
 | 2.6 MCP discover/logs | feature | — | por proponer |
 
 Actualizar esta tabla con el link al PR y el resultado (aceptado / rechazado /
@@ -204,7 +214,7 @@ de sync lo sigue verificando.
    release upstream entra por `upstream-sync.yml` y se valida con
    `scripts/janitor-sync-verify.sh`.
 2. **Distro como paquete.** Repo propio `janitor` que depende de
-   `hermes-agent` fijado a un tag (`hermes-agent==2026.8.13`, o git URL con
+   `hermes-agent` fijado a un tag (`hermes-agent==2026.9.24`, o git URL con
    SHA según la política de pinning) y contiene solo lo que hoy es
    `fork_paths`: `janitor/` (CLI, plugin, migraciones, skills, skin),
    `apps/desktop-janitor/` (overlay que construye el desktop desde el
@@ -251,7 +261,7 @@ instalación de paquete sin tocar `config.yaml`, `SOUL.md`, `skills/`,
 
 ### Conclusión actual
 
-Quedarse en el fork delgado. Con 11 touchpoints (6 candidatos a upstream) y
+Quedarse en el fork delgado. Con 10 touchpoints (5 candidatos a upstream) y
 tres monkey-patches, separar hoy significaría vendorizar esas ediciones en
 otro sitio sin reducir trabajo. Revisar esta evaluación cada vez que se
 acepte un candidato; el disparador concreto es que la tabla de la sección 4

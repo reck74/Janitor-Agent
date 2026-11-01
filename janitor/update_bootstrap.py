@@ -3,7 +3,7 @@
 Per JANITOR FORK DIRECTIVE #13, this module:
 
 - Prints the Janitor update branding banner.
-- Builds the default argparse Namespace.
+- Parses ``janitor update`` flags with ``janitor.update_core.parse_update_args``.
 - Delegates to ``janitor.update_core.run_janitor_update``.
 
 All update-flow logic (fetch / pull / fallback / post-pull validation /
@@ -18,26 +18,25 @@ The git/stash/bytecode helpers previously defined here were moved to
 
 from __future__ import annotations
 
-from types import SimpleNamespace
+import sys
+from typing import Optional
 
 from janitor import update_core as janitor_update_core
 
 
-def run_update() -> int:
-    """Print Janitor branding and delegate to ``janitor.update_core``."""
-    print("\n🔥 THE JANITOR: Initiating tactical update...\n")
+def run_update(argv: Optional[list[str]] = None) -> int:
+    """Print Janitor branding and delegate to ``janitor.update_core``.
 
-    args = SimpleNamespace(
-        check=False,
-        gateway=False,
-        backup=False,
-        no_backup=False,
-        branch=None,
+    ``argv`` are the arguments after ``update``; defaults to ``sys.argv[2:]``.
+    """
+    args = janitor_update_core.parse_update_args(
+        sys.argv[2:] if argv is None else argv
     )
+    print("\n🔥 THE JANITOR: Initiating tactical update...\n")
     return janitor_update_core.run_janitor_update(args)
 
 
 if __name__ == "__main__":
     import sys
 
-    sys.exit(run_update())
+    sys.exit(run_update(sys.argv[1:]))
