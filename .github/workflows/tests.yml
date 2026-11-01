@@ -185,6 +185,13 @@ jobs:
         # fork prunes on every sync (MERGE_GUIDE.md). Explicit roots bypass
         # the runner's e2e/integration/docker skip, so those are excluded
         # here too (e2e has its own job below).
+        #
+        # Deselected: upstream plugin-discovery tests that expect no
+        # entry-point plugin in the venv. The fork's pyproject.toml installs
+        # the `janitor` entry point, so they always see one extra plugin.
+        # Upstream runs them in its own CI. A renamed test is no longer
+        # matched and fails again here, which is the signal to update this
+        # list.
         env:
           OPENROUTER_API_KEY: ""
           OPENAI_API_KEY: ""
@@ -194,7 +201,13 @@ jobs:
           mapfile -t roots < <(find tests -mindepth 1 -maxdepth 1 \( -type d -o -name 'test_*.py' \) \
             -not -name ci -not -name e2e -not -name integration -not -name docker \
             -not -name __pycache__ | sort)
-          scripts/run_tests.sh --slice ${{ matrix.slice }}/6 "${roots[@]}"
+          deselect=(
+            --deselect=tests/hermes_cli/test_plugin_scanner_recursion.py::TestCategoryNamespaceRecursion::test_depth_cap_two
+            --deselect=tests/hermes_cli/test_plugins_cmd_category_discovery.py::TestCmdListJson::test_json_status_uses_key
+            --deselect=tests/hermes_cli/test_plugins_cmd_category_discovery.py::TestDiscoverAllPlugins::test_mixed_flat_and_category
+            --deselect=tests/hermes_cli/test_plugins.py::TestPluginDiscovery::test_failed_discovery_is_not_cached
+          )
+          scripts/run_tests.sh --slice ${{ matrix.slice }}/6 "${roots[@]}" "${deselect[@]}"
 
   e2e:
     # Mirrors upstream's e2e job (one subprocess per file, in parallel, with

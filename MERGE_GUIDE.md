@@ -50,7 +50,13 @@ declarada, así que un merge ya no puede dejar código zombie en silencio.
 
 Al mergear el PR (mensaje `chore(sync):` o rama `upstream-sync-*`), el job
 `upstream-sync-verify` de `tests.yml` corre la suite completa de upstream,
-salvo `tests/ci/` (asserta sobre los workflows que se podan en el paso 3).
+salvo `tests/ci/` (asserta sobre los workflows que se podan en el paso 3) y
+los tests listados en `deselect=(...)` dentro del job. Esa lista es solo para
+tests que fallan por diseño del fork, no por un bug: hoy, los de
+descubrimiento de plugins que esperan un venv sin entry points y ven el plugin
+`janitor` de `pyproject.toml`. Upstream ya los corre en su CI. Un fallo que
+también ocurre en upstream puro, o uno causado por código Janitor, se arregla
+en vez de deseleccionarse.
 
 `tests.yml` es del fork, pero sus jobs `upstream-sync-verify` y `e2e` copian
 la instalación de los jobs `test` y `e2e` del `tests.yml` de upstream. En cada

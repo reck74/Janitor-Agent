@@ -40,7 +40,9 @@ change, so no new migration runs on first start.
   and the home was marked as migrated anyway.
 - CI: `janitor-ci.yml` no longer requests the `hindsight` extra that upstream
   removed, and the `e2e` and `upstream-sync-verify` jobs in `tests.yml`
-  install what upstream's own jobs install.
+  install what upstream's own jobs install. `upstream-sync-verify` skips
+  `tests/ci/` and four upstream plugin-discovery tests that count the
+  `janitor` entry-point plugin; upstream runs them in its own CI.
 
 ### Removed
 - The `gateway-cache-refresh` touchpoint. The gateway holds an
