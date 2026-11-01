@@ -3,21 +3,28 @@
 Notable changes specific to the Janitor fork of hermes-agent. Upstream
 changes are documented in the upstream release notes.
 
-## Unreleased
-
-### Fixed
-- `janitor update` failed at "Restoring local changes" with `package-lock.json`
-  would be overwritten. The TUI step ran a plain `npm install` in `ui-tui/`,
-  which rewrote the root `package-lock.json` on every update, and the next
-  update stashed that change and could not restore it. The update now discards
-  npm lockfile and CRLF-only churn before stashing, like `hermes update`, and
-  the TUI step only repairs a stale `node_modules` with Hermes' deterministic
-  install, which never writes the lockfile.
-
-## `0.21.5+janitor.1` (Hermes v2026.9.24)
+## 1.0.1 — `0.21.5+janitor.1` (Hermes v2026.9.24)
 
 Upstream sync from Hermes v2026.8.13 to v2026.9.24. No `~/.janitor` layout
 change, so no new migration runs on first start.
+
+### Upgrading
+The first `janitor update` from an older release runs the old update code,
+which may still end with:
+
+```
+✗ Update pulled new code, but restoring local changes hit conflicts.
+error: Your local changes to the following files would be overwritten by merge:
+	package-lock.json
+...
+Working tree reset to clean state.
+```
+
+The update itself is complete and the working tree is reset clean; the
+leftover stash only holds npm's rewrite of `package-lock.json`. Run
+`janitor update` again (it reports "Already up to date") and start `janitor`.
+Dropping the stash is optional: in `~/.janitor/janitor-core`, if
+`git stash show <ref>` lists only `package-lock.json`, `git stash drop` it.
 
 ### Changed
 - **Touchpoints moved by upstream refactors:** the compact banner is now
@@ -49,6 +56,13 @@ change, so no new migration runs on first start.
   the migration, which is retried on the next start, and the file is never
   rewritten. Before, a file whose top level was not a mapping was skipped
   and the home was marked as migrated anyway.
+- `janitor update` failed at "Restoring local changes" with `package-lock.json`
+  would be overwritten. The TUI step ran a plain `npm install` in `ui-tui/`,
+  which rewrote the root `package-lock.json` on every update, and the next
+  update stashed that change and could not restore it. The update now discards
+  npm lockfile and CRLF-only churn before stashing, like `hermes update`, and
+  the TUI step only repairs a stale `node_modules` with Hermes' deterministic
+  install, which never writes the lockfile.
 - CI: `janitor-ci.yml` no longer requests the `hindsight` extra that upstream
   removed, and the `e2e` and `upstream-sync-verify` jobs in `tests.yml`
   install what upstream's own jobs install. `upstream-sync-verify` skips
