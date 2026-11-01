@@ -3,6 +3,17 @@
 Notable changes specific to the Janitor fork of hermes-agent. Upstream
 changes are documented in the upstream release notes.
 
+## Unreleased
+
+### Fixed
+- `janitor update` failed at "Restoring local changes" with `package-lock.json`
+  would be overwritten. The TUI step ran a plain `npm install` in `ui-tui/`,
+  which rewrote the root `package-lock.json` on every update, and the next
+  update stashed that change and could not restore it. The update now discards
+  npm lockfile and CRLF-only churn before stashing, like `hermes update`, and
+  the TUI step only repairs a stale `node_modules` with Hermes' deterministic
+  install, which never writes the lockfile.
+
 ## `0.21.5+janitor.1` (Hermes v2026.9.24)
 
 Upstream sync from Hermes v2026.8.13 to v2026.9.24. No `~/.janitor` layout
