@@ -89,6 +89,13 @@ consistente de `state.db`), conserva tus sesiones, memorias, `.env`, `SOUL.md`,
 cron y toda skill que hayas editado, y nunca toca contenedores ni volúmenes
 Docker. Para previsualizarla: `bash scripts/migrate-janitor-v1.sh --dry-run`.
 
+**Desde una versión anterior a 1.0.1:** el primer `janitor update` lo ejecuta
+el código viejo y puede terminar con `restoring local changes hit conflicts`
+sobre `package-lock.json`. La actualización ya quedó completa; vuelve a correr
+`janitor update` y arranca `janitor`. El stash que queda solo guarda la
+reescritura de npm y se puede borrar con `git stash drop` dentro de
+`~/.janitor/janitor-core` (ver `CHANGELOG.md`, sección 1.0.1).
+
 ---
 
 ## Arquitectura
