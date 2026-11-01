@@ -48,8 +48,11 @@ declarada, así que un merge ya no puede dejar código zombie en silencio.
 5. Corre `scripts/janitor-sync-verify.sh --skip-tui` y abre el PR con el
    resultado. El TUI gate corre en el CI del propio PR.
 
-Al mergear el PR (mensaje `chore(sync):` o rama `upstream-sync-*`), el job
-`upstream-sync-verify` de `tests.yml` corre la suite completa de upstream,
+Al mergear el PR (mensaje `chore(sync):` o rama `upstream-sync-*`), los jobs
+`e2e` (la suite `tests/e2e/` de upstream) y `upstream-sync-verify` de
+`tests.yml` corren; ninguno corre en los PRs. Para verlos antes del merge,
+lanzar el workflow **Tests** a mano sobre la rama del sync. `upstream-sync-verify`
+corre la suite completa de upstream,
 salvo `tests/ci/` (asserta sobre los workflows que se podan en el paso 3) y
 los tests listados en `deselect=(...)` dentro del job. Esa lista es solo para
 tests que fallan por diseño del fork, no por un bug: hoy, los de
