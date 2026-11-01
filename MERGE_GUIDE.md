@@ -54,9 +54,10 @@ salvo `tests/ci/` (asserta sobre los workflows que se podan en el paso 3) y
 los tests listados en `deselect=(...)` dentro del job. Esa lista es solo para
 tests que fallan por diseño del fork, no por un bug: hoy, los de
 descubrimiento de plugins que esperan un venv sin entry points y ven el plugin
-`janitor` de `pyproject.toml`. Upstream ya los corre en su CI. Un fallo que
-también ocurre en upstream puro, o uno causado por código Janitor, se arregla
-en vez de deseleccionarse.
+`janitor` de `pyproject.toml`. Upstream ya los corre en su CI. Un fallo
+causado por código Janitor se arregla en el fork. Un fallo que también ocurre
+en upstream puro no se deselecciona ni se parchea: es de upstream y queda
+visible hasta que un sync posterior lo traiga resuelto.
 
 `tests.yml` es del fork, pero sus jobs `upstream-sync-verify` y `e2e` copian
 la instalación de los jobs `test` y `e2e` del `tests.yml` de upstream. En cada
