@@ -111,6 +111,8 @@ def _stub_helpers(monkeypatch, tmp_path, *, syntax_break_in: str | None = None):
         juc, "_install_hangup_protection", lambda gateway_mode=False: {}
     )
     monkeypatch.setattr(juc, "_finalize_update_output", lambda state: None)
+    monkeypatch.setattr(juc, "_discard_lockfile_churn", lambda git_cmd, cwd: None)
+    monkeypatch.setattr(juc, "_normalize_managed_eol", lambda git_cmd, cwd: None)
     monkeypatch.setattr(
         juc, "_stash_local_changes_if_needed", lambda git_cmd, cwd: None
     )
@@ -2208,3 +2210,121 @@ def test_without_a_managed_uv_the_termux_rung_decides(monkeypatch):
 
     monkeypatch.setattr(juc, "_ensure_uv_for_termux", lambda pip_cmd: None, raising=False)
     assert juc._resolve_uv_bin(["pip"]) is None
+
+
+def test_lockfile_churn_is_discarded_before_anything_is_stashed(monkeypatch, tmp_path):
+    _stub_pipeline_helpers(monkeypatch, tmp_path)
+    side_effect, _ = _make_side_effect(commit_count="0")
+    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+    order: list[str] = []
+    monkeypatch.setattr(juc, "_discard_lockfile_churn", lambda g, c: order.append("discard"))
+    monkeypatch.setattr(juc, "_normalize_managed_eol", lambda g, c: order.append("eol"))
+    monkeypatch.setattr(
+        juc, "_stash_local_changes_if_needed", lambda g, c: order.append("stash")
+    )
+
+    assert juc.run_janitor_update(SimpleNamespace()) == 0
+    assert order == ["discard", "eol", "stash"]
+
+
+def _git(repo: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *args],
+        cwd=repo, check=True, capture_output=True, text=True,
+    ).stdout
+
+
+def test_npm_lockfile_churn_never_reaches_the_autostash(monkeypatch, tmp_path):
+    """A rewritten package-lock.json alone must not be autostashed: the
+    next run's restore would collide with the lockfile npm rewrote again."""
+    from hermes_cli import update_cmd
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / "package.json").write_text('{"name": "x", "workspaces": ["ui-tui"]}\n')
+    lock = '{"name": "x", "lockfileVersion": 3, "packages": {}}\n'
+    (repo / "package-lock.json").write_text(lock)
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "init")
+    _git(tmp_path, "clone", "-q", "--bare", str(repo), "origin.git")
+    _git(repo, "remote", "add", "origin", str(tmp_path / "origin.git"))
+    _git(repo, "fetch", "-q", "origin")
+    _git(repo, "branch", "-q", "--set-upstream-to=origin/main")
+
+    (repo / "package-lock.json").write_text(lock.replace("{}", '{"": {"name": "x"}}'))
+
+    _stub_pipeline_helpers(monkeypatch, repo)
+    monkeypatch.setattr(juc, "get_hermes_home", lambda: tmp_path)
+    for name in (
+        "_discard_lockfile_churn",
+        "_normalize_managed_eol",
+        "_stash_local_changes_if_needed",
+        "_restore_stashed_changes",
+    ):
+        monkeypatch.setattr(juc, name, getattr(update_cmd, name))
+
+    assert juc.run_janitor_update(SimpleNamespace()) == 0
+    assert _git(repo, "stash", "list") == ""
+    assert _git(repo, "status", "--porcelain") == ""
+    assert (repo / "package-lock.json").read_text() == lock
+
+
+def _tui_tree(tmp_path: Path) -> Path:
+    ui_tui = tmp_path / "ui-tui"
+    ui_tui.mkdir()
+    (ui_tui / "package.json").write_text("{}\n")
+    (tmp_path / "package.json").write_text('{"workspaces": ["ui-tui"]}\n')
+    (tmp_path / "package-lock.json").write_text("{}\n")
+    return ui_tui
+
+
+@pytest.mark.parametrize("stale", [False, True])
+def test_tui_build_never_runs_a_lockfile_writing_npm_install(monkeypatch, tmp_path, stale):
+    import hermes_cli.main_tui_launch as tui_launch
+
+    ui_tui = _tui_tree(tmp_path)
+    monkeypatch.setattr(juc, "_update_node_dependencies", lambda: [])
+    monkeypatch.setattr(juc, "_resolve_node_runtime_npm", lambda: "/opt/node/bin/npm")
+    monkeypatch.setattr(tui_launch, "_tui_need_npm_install", lambda root: stale)
+    installs: list[tuple] = []
+
+    def fake_deterministic(npm, cwd, *, extra_args=(), capture_output=True, env=None):
+        installs.append((npm, cwd, extra_args))
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(juc, "_run_npm_install_deterministic", fake_deterministic)
+    commands: list[tuple[list[str], Path]] = []
+    monkeypatch.setattr(
+        juc.subprocess, "run",
+        lambda cmd, **kw: commands.append((list(cmd), kw.get("cwd")))
+        or SimpleNamespace(returncode=0),
+    )
+
+    assert juc._install_node_dependencies(tmp_path) == []
+    assert commands == [(["/opt/node/bin/npm", "run", "build"], ui_tui)]
+    if stale:
+        assert installs == [("/opt/node/bin/npm", tmp_path, ("--workspace", "ui-tui"))]
+    else:
+        assert installs == []
+
+
+def test_tui_dependency_repair_failure_is_reported_and_skips_the_build(monkeypatch, tmp_path):
+    import hermes_cli.main_tui_launch as tui_launch
+
+    _tui_tree(tmp_path)
+    monkeypatch.setattr(juc, "_update_node_dependencies", lambda: [])
+    monkeypatch.setattr(juc, "_resolve_node_runtime_npm", lambda: "npm")
+    monkeypatch.setattr(tui_launch, "_tui_need_npm_install", lambda root: True)
+    monkeypatch.setattr(
+        juc, "_run_npm_install_deterministic",
+        lambda *a, **kw: SimpleNamespace(returncode=1),
+    )
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        juc.subprocess, "run",
+        lambda cmd, **kw: commands.append(list(cmd)) or SimpleNamespace(returncode=0),
+    )
+
+    assert juc._install_node_dependencies(tmp_path) == ["ui-tui npm (install)"]
+    assert commands == []

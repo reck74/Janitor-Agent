@@ -11,7 +11,8 @@ The 11-step pipeline:
 
   1. Hangup protection (captures IO state for restore on exit)
   2. Pre-update backup (optional via ``_run_pre_update_backup``)
-  3. Fetch + branch detection + auto-stash + branch switch
+  3. Discard npm lockfile / CRLF churn, then fetch + branch detection +
+     auto-stash + branch switch
   4. Behind-count: if HEAD == origin/branch, skip pull/deps/lazy refresh
      and continue to step 8 (Node repair) for the "already up to date" path.
   5. Pull with ``--ff-only`` fallback to ``reset --hard origin/<branch>``;
@@ -51,6 +52,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -89,10 +91,14 @@ PROJECT_ROOT: Optional[Path] = None
 _run_pre_update_backup: Optional[Callable] = None
 _install_hangup_protection: Optional[Callable] = None
 _finalize_update_output: Optional[Callable] = None
+_discard_lockfile_churn: Optional[Callable] = None
+_normalize_managed_eol: Optional[Callable] = None
 _stash_local_changes_if_needed: Optional[Callable] = None
 _restore_stashed_changes: Optional[Callable] = None
 _refresh_active_lazy_features: Optional[Callable] = None
 _update_node_dependencies: Optional[Callable] = None
+_resolve_node_runtime_npm: Optional[Callable] = None
+_run_npm_install_deterministic: Optional[Callable] = None
 _invalidate_update_cache: Optional[Callable] = None
 _clear_bytecode_cache: Optional[Callable] = None
 _validate_critical_files_syntax: Optional[Callable] = None
@@ -210,10 +216,14 @@ def _ensure_loaded() -> None:
         "_run_pre_update_backup",
         "_install_hangup_protection",
         "_finalize_update_output",
+        "_discard_lockfile_churn",
+        "_normalize_managed_eol",
         "_stash_local_changes_if_needed",
         "_restore_stashed_changes",
         "_refresh_active_lazy_features",
         "_update_node_dependencies",
+        "_resolve_node_runtime_npm",
+        "_run_npm_install_deterministic",
         "_invalidate_update_cache",
         "_clear_bytecode_cache",
         "_validate_critical_files_syntax",
@@ -709,18 +719,48 @@ def _install_node_dependencies(project_root: Path) -> list[str]:
     ui_tui_dir = project_root / "ui-tui"
     if (ui_tui_dir / "package.json").exists():
         print("→ Compiling TUI components...")
-        try:
-            subprocess.run(
-                ["npm", "install"], cwd=ui_tui_dir, check=True,
-            )
-            subprocess.run(
-                ["npm", "run", "build"], cwd=ui_tui_dir, check=True,
-            )
-        except subprocess.CalledProcessError as exc:
-            cmd = exc.cmd
-            failures.append(f"ui-tui npm ({cmd})")
+        failures.extend(_build_tui(ui_tui_dir))
 
     return failures
+
+
+def _tui_install_context(ui_tui_dir: Path) -> Optional[tuple[Path, tuple[str, ...]]]:
+    """``(cwd, extra npm args)`` when the TUI's ``node_modules`` is missing or
+    behind the lockfile, else ``None``."""
+    try:
+        from hermes_cli.main_tui_launch import _tui_need_npm_install, _workspace_root
+    except Exception:
+        return None
+    if not _tui_need_npm_install(ui_tui_dir):
+        return None
+    ws_root = _workspace_root(ui_tui_dir)
+    return ws_root, (() if ws_root == ui_tui_dir else ("--workspace", "ui-tui"))
+
+
+def _build_tui(ui_tui_dir: Path) -> list[str]:
+    # A plain ``npm install`` here re-resolves the whole workspace and rewrites
+    # the root package-lock.json on every update; that churn then blocks the
+    # stash restore. Upstream's Node step already installs the ui-tui
+    # workspace, so only repair a stale node_modules, and never via ``install``.
+    npm = _call("_resolve_node_runtime_npm", fallback=lambda: shutil.which("npm"))
+    if not npm:
+        return ["ui-tui npm (npm not found)"]
+
+    install = _tui_install_context(ui_tui_dir)
+    if install is not None:
+        cwd, extra_args = install
+        result = _call(
+            "_run_npm_install_deterministic",
+            npm, cwd, extra_args=extra_args, capture_output=False,
+        )
+        if result is None or result.returncode != 0:
+            return ["ui-tui npm (install)"]
+
+    try:
+        subprocess.run([npm, "run", "build"], cwd=ui_tui_dir, check=True)
+    except subprocess.CalledProcessError as exc:
+        return [f"ui-tui npm ({exc.cmd})"]
+    return []
 
 
 # Substrings that the real upstream ``hermes_cli.config_migrations.support_floor_message()``
@@ -1238,6 +1278,13 @@ def run_janitor_update(args) -> int:
             return 1
 
         git_cmd = _git_cmd()
+
+        # Before any stash: npm rewrites package-lock.json on every Node
+        # repair and CRLF checkouts read as modified. Stashing that churn
+        # makes the next run's restore collide with the lockfile npm just
+        # rewrote again.
+        _call("_discard_lockfile_churn", git_cmd, project_root, fallback=lambda *a: None)
+        _call("_normalize_managed_eol", git_cmd, project_root, fallback=lambda *a: None)
 
         if not _fetch(git_cmd, project_root):
             return 1
