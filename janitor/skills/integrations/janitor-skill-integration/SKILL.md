@@ -281,7 +281,7 @@ grep -rE '/home/<operator>|airp\.ws|Jan1t0r|573012553871|12036342|<operator-name
 
 # Frontmatter validation
 "$JANITOR_REPO"/.venv/bin/python3 -c "
-import yaml, re, pathlib
+import re, pathlib
 c = pathlib.Path('$JANITOR_REPO/janitor/skills/<group>/<name>/SKILL.md').read_text()
 m = re.search(r'^description:\s*\"?(.*?)\"?\s*\$', c, re.MULTILINE)
 assert len(m.group(1)) <= 60, f'{len(m.group(1))} chars > 60'

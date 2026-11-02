@@ -43,7 +43,7 @@ step() { printf '\n▶ %s\n' "$1"; }
 if [ -z "$BASE" ]; then
     BASE="$("$PYTHON" -c 'from janitor.overlay import load_overlay; print(load_overlay().upstream_base)')"
 fi
-UPSTREAM_URL="$("$PYTHON" -c 'import yaml; print(yaml.safe_load(open("janitor/overlay.yaml"))["upstream"]["repo"])')"
+UPSTREAM_URL="$("$PYTHON" -c 'from janitor.overlay import load_overlay; print(load_overlay().upstream_repo)')"
 
 step "Upstream base ${BASE}"
 if ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then

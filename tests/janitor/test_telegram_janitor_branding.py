@@ -15,7 +15,7 @@ from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-import yaml
+import hermes_yaml as yaml
 
 from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import MessageEvent

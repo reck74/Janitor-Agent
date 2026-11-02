@@ -10,7 +10,7 @@ from __future__ import annotations
 import shutil
 
 import pytest
-import yaml
+import hermes_yaml as yaml
 
 from tests.janitor.legacy_home import ASSETS
 
