@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable
 
-import yaml
+import hermes_yaml as yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ASSETS = REPO_ROOT / "assets" / "janitor"
@@ -81,14 +81,14 @@ def expected_listing_count(skill_dir: Path) -> int:
 
 
 def _seed_skills(home: Path) -> None:
-    from tools.skills_sync import _dir_hash
+    from tools.skills_sync import dir_hash as upstream_dir_hash
 
     skills_dir = home / "skills"
     manifest_lines = []
     for name, rel in LEGACY_SKILL_PATHS.items():
         dest = skills_dir / rel
         shutil.copytree(find_skill_source(name), dest)
-        manifest_lines.append(f"{name}:{_dir_hash(dest)}")
+        manifest_lines.append(f"{name}:{upstream_dir_hash(dest)}")
 
     modified = skills_dir / LEGACY_SKILL_PATHS[USER_MODIFIED_SKILL] / "SKILL.md"
     modified.write_text(

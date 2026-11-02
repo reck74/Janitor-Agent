@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
-import yaml
+import hermes_yaml as yaml
 
 from janitor.home import ASSETS_ROOT, SKILLS_ROOT
 
@@ -93,7 +93,7 @@ def _is_runtime_cache(path: Path, skill_dir: Path) -> bool:
 
 
 def dir_hash(directory: Path, *, include_runtime_cache: bool = False) -> str:
-    """Same digest as ``tools.skills_sync._dir_hash`` (what the manifest stores).
+    """Same digest as ``tools.skills_sync.dir_hash`` (what the manifest stores).
 
     Manifests written before Hermes v2026.9.24 hashed runtime caches too;
     ``include_runtime_cache=True`` reproduces that legacy digest.

@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 import pytest
-import yaml
+import hermes_yaml as yaml
 
 from janitor import migrations
 from janitor.home import LAYOUT_VERSION, read_layout_version
@@ -179,7 +179,7 @@ def test_skin_refreshed_only_when_unmodified(legacy, monkeypatch, edited, newlin
 
 
 def test_manifest_hash_matches_bundled_sync(tmp_path):
-    from tools.skills_sync import _dir_hash
+    from tools.skills_sync import dir_hash as upstream_dir_hash
 
     cached = tmp_path / "cached-skill"
     (cached / "scripts" / "__pycache__").mkdir(parents=True)
@@ -189,7 +189,7 @@ def test_manifest_hash_matches_bundled_sync(tmp_path):
 
     for skill_dir in [*v1.shipped_skills().values(), cached]:
         for legacy in (False, True):
-            assert v1.dir_hash(skill_dir, include_runtime_cache=legacy) == _dir_hash(
+            assert v1.dir_hash(skill_dir, include_runtime_cache=legacy) == upstream_dir_hash(
                 skill_dir, include_runtime_cache=legacy
             ), (skill_dir, legacy)
     assert v1.dir_hash(cached) != v1.dir_hash(cached, include_runtime_cache=True)
@@ -221,7 +221,7 @@ def test_module_cli_dry_run(legacy):
     assert _tree(legacy.home) == before
 
 
-@pytest.mark.linux_only
+@pytest.mark.platforms("linux")
 def test_shell_entry_point_migrates(legacy):
     script = REPO_ROOT / "scripts" / "migrate-janitor-v1.sh"
     env = {**os.environ, "JANITOR_HOME": str(legacy.home)}
@@ -238,7 +238,7 @@ def test_shell_entry_point_migrates(legacy):
     assert bad.returncode == 2
 
 
-@pytest.mark.linux_only
+@pytest.mark.platforms("linux")
 def test_rerunning_installer_keeps_existing_home(legacy):
     keep = ("config.yaml", "SOUL.md", "honcho.json", "skins/sentry-janitor.yaml")
     for rel in keep:
