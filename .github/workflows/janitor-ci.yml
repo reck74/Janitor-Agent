@@ -28,8 +28,9 @@ jobs:
         with:
           node-version: '22'
       - name: Install dependencies
-        working-directory: ./ui-tui
-        run: npm install
+        # ui-tui is a workspace of the root package.json; its lock is the
+        # root package-lock.json (same install as upstream's e2e job).
+        run: npm ci --workspace ui-tui --ignore-scripts --no-audit --no-fund
       - name: Build local packages (hermes-ink)
         working-directory: ./ui-tui
         run: npm run build --prefix packages/hermes-ink
