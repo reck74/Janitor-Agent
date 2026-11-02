@@ -110,10 +110,12 @@ fi
 # ============================================================
 echo "Configurando entorno Python..."
 cd "${JANITOR_SOURCE_DIR}"
-uv venv .venv --python 3.11
+# uv.lock de Hermes solo cubre el Python que fija pm (3.14); 3.11 ya no es un
+# runtime soportado. `uv sync --locked` instala exactamente ese conjunto (y el
+# paquete en modo editable, con el comando `janitor`).
+uv sync --locked --python 3.14 --extra all
 # shellcheck disable=SC1091
 source .venv/bin/activate
-uv pip install -e ".[all]"
 
 # ============================================================
 # 4b. Playwright Browser

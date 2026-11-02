@@ -1953,16 +1953,39 @@ def test_uv_comes_from_pm_not_from_path(monkeypatch, tmp_path):
     assert _child_steps(calls) == ["uv"]
 
 
-def test_classic_checkout_installs_into_the_running_interpreter(monkeypatch, tmp_path):
+def _record_uv(monkeypatch, *, sync_rc):
+    """subprocess.run fake for the classic path: uv from PM, `uv sync` answers *sync_rc*."""
     monkeypatch.setattr(juc, "_is_termux_env", lambda env=None: False)
-    calls = _record_children(monkeypatch, stdout="/janitor/tools/uv/bin/uv\n")
+    monkeypatch.setattr(juc, "_resolve_uv_bin", lambda root: "/janitor/tools/uv/bin/uv")
+    calls: list[tuple[list[str], dict]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(([str(c) for c in cmd], kwargs.get("env") or {}))
+        return SimpleNamespace(returncode=sync_rc if "sync" in cmd else 0, stdout="", stderr="")
+
+    monkeypatch.setattr(juc.subprocess, "run", fake_run)
+    return calls
+
+
+def test_classic_checkout_syncs_the_lock_into_the_running_venv(monkeypatch, tmp_path):
+    calls = _record_uv(monkeypatch, sync_rc=0)
 
     juc._install_python_dependencies(tmp_path)
 
-    installs = [cmd for cmd, _ in calls if "install" in cmd]
-    assert installs == [[
-        "/janitor/tools/uv/bin/uv", "pip", "install", "--python", sys.executable, "-e", ".[all]",
-    ]]
+    assert [cmd for cmd, _ in calls] == [
+        ["/janitor/tools/uv/bin/uv", "sync", "--locked", "--inexact", "--extra", "all"],
+    ]
+    assert calls[0][1]["UV_PROJECT_ENVIRONMENT"] == sys.prefix
+
+
+def test_a_venv_the_lock_cannot_serve_gets_the_unlocked_install(monkeypatch, tmp_path):
+    calls = _record_uv(monkeypatch, sync_rc=2)
+
+    juc._install_python_dependencies(tmp_path)
+
+    assert [cmd for cmd, _ in calls][1:] == [
+        ["/janitor/tools/uv/bin/uv", "pip", "install", "--python", sys.executable, "-e", ".[all]"],
+    ]
 
 
 def test_without_uv_the_install_falls_back_to_pip_of_the_running_interpreter(monkeypatch, tmp_path):

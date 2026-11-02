@@ -623,6 +623,18 @@ def _install_python_dependencies(project_root: Path) -> None:
     extra = "termux-all" if _call("_is_termux_env", fallback=lambda: False) else "all"
     uv_bin = _resolve_uv_bin(project_root)
     if uv_bin:
+        # uv.lock covers only PM's Python (3.14). --inexact keeps what the user
+        # added to the venv (bootstrap.sh's Playwright); a venv on another
+        # Python cannot take the lock and gets the unlocked install below.
+        synced = subprocess.run(
+            [uv_bin, "sync", "--locked", "--inexact", "--extra", extra],
+            cwd=project_root,
+            env={**os.environ, "UV_PROJECT_ENVIRONMENT": sys.prefix},
+        )
+        if synced.returncode == 0:
+            print("✓ Python dependencies updated")
+            return
+        print("  ⚠ Locked sync failed; installing without the lock...")
         install = [uv_bin, "pip", "install", "--python", sys.executable]
     else:
         install = [sys.executable, "-m", "pip", "install"]

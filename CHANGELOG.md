@@ -41,12 +41,16 @@ start.
   the pulled code (`python -m janitor.update_child`): dependency install,
   Node dependencies plus the TUI and web UI build (`hermes_cli.source_build`,
   as `hermes update` does), and the config check and migration. A pm-managed
-  checkout syncs its pm environment; a classic `.venv` checkout still
-  installs `-e .[all]`, with uv provided by pm or with pip.
+  checkout syncs its pm environment. A classic `.venv` syncs `uv.lock` into
+  itself (`uv sync --locked --inexact`, with uv provided by pm), and falls
+  back to an unlocked `-e .[all]` install when the lock does not fit it.
 - The `janitor` launcher imports `hermes_bootstrap` first, like every Hermes
   entry point, so a pm-managed checkout starts on its pm runtime.
-- `scripts/bootstrap.sh` builds the TUI and web UI with
-  `hermes_cli.source_build`; pm provides Node and npm in `~/.janitor/tools`.
+- `scripts/bootstrap.sh` creates the `.venv` on Python 3.14 from `uv.lock`
+  (`uv sync --locked --extra all`): upstream's lock covers only the Python pm
+  pins, and 3.11 is no longer a supported runtime. It builds the TUI and web
+  UI with `hermes_cli.source_build`, with pm's Node and npm in
+  `~/.janitor/tools`.
 - Upstream's `pyproject.toml` says `0.0.0` and reads the version from the
   install stamp or git tags. Janitor still declares `0.22.5+janitor.1`, and
   `hermes_cli/version_info.py` (touchpoint `version`) reports it for a

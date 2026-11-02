@@ -109,7 +109,7 @@ Así cada release de Hermes se integra con `git merge <tag>` sin perder nada.
 ## Desarrollo
 
 ```bash
-uv sync --python 3.11 --extra all --group dev && source .venv/bin/activate
+uv sync --locked --python 3.14 --extra all --group dev && source .venv/bin/activate
 scripts/run_tests.sh tests/janitor/     # suite Janitor (entorno de test aislado vía pm)
 scripts/janitor-sync-verify.sh          # gate completo (overlay + tests + TUI + desktop)
 ```

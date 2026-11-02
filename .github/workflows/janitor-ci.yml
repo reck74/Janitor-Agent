@@ -111,18 +111,19 @@ jobs:
             pyproject.toml
             uv.lock
 
-      - name: Set up Python 3.11
-        # The interpreter scripts/bootstrap.sh creates the .venv with.
+      - name: Set up Python 3.14
+        # uv.lock covers only PM's Python (3.14), the interpreter
+        # scripts/bootstrap.sh creates the .venv with.
         uses: ./.github/actions/retry
         with:
-          command: uv python install 3.11
+          command: uv python install 3.14
 
       - name: Install dependencies
         # A classic uv .venv, as scripts/bootstrap.sh builds it. `dev` is a
         # dependency group since upstream v0.22.5, not an extra.
         uses: ./.github/actions/retry
         with:
-          command: uv sync --locked --python 3.11 --extra all --group dev --extra anthropic --extra mistral --extra fal --extra modal --extra daytona --extra parallel-web
+          command: uv sync --locked --python 3.14 --extra all --group dev --extra anthropic --extra mistral --extra fal --extra modal --extra daytona --extra parallel-web
 
       - name: Minimize uv cache
         run: uv cache prune --ci
