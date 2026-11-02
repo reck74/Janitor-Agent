@@ -2184,7 +2184,7 @@ def _fake_uv(path: Path) -> Path:
     return path
 
 
-@pytest.mark.linux_only
+@pytest.mark.platforms("linux")
 def test_managed_uv_wins_over_a_path_uv(monkeypatch, tmp_path):
     """``janitor update`` must use Hermes' managed uv in $HERMES_HOME/bin,
     like ``hermes update``, even when another uv is on PATH."""
