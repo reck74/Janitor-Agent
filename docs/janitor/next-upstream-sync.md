@@ -11,6 +11,41 @@ procedimiento general está en [`MERGE_GUIDE.md`](../../MERGE_GUIDE.md).
 No se mergeó nada en esta verificación. Un `git merge v0.22.5 --no-commit`
 se abortó después de listar los conflictos.
 
+## Estado (2 nov 2026, America/Bogota)
+
+El merge está hecho en la rama `cursor/upstream-sync-v0.22.5-e6df`:
+conflictos resueltos, capa Janitor re-aplicada y
+`scripts/janitor-sync-verify.sh` completo en verde. Eso incluye el overlay
+check, los 306 tests de `tests/janitor/`, el overlay de desktop y el TUI
+(build más 1.884 tests de vitest). La entrada `0.22.5+janitor.1` de
+`CHANGELOG.md` resume los cambios.
+
+Se probó el paso real de un usuario: un checkout de `main` (0.21.5) con su
+`.venv` corrió `janitor update` contra esta rama, con un home aislado y el
+`config.yaml` de semilla. El updater viejo entrega la instalación a pm, que
+termina el update (rc 0). Después `janitor` arranca, y un segundo
+`janitor update` por el core nuevo también termina con rc 0, sin stash
+pendiente.
+
+Bloqueantes antes de mergear:
+
+1. **Honcho.** El catálogo vivo fija Honcho en `2108daf`, que no instala
+   (upstream #146435, fix en revisión en #147311). Todo home Janitor tiene
+   `memory.provider: honcho`, así que el update deja la memoria Honcho
+   apagada. Esperar el fix upstream (v0.22.6 o el catálogo corregido) y
+   repetir la prueba de paso.
+2. **Efectos del takeover de pm.** Una sola vez instala las herramientas por
+   defecto de Hermes (`agent-browser` + Chromium, `cua-driver`) en
+   `~/.janitor/tools`, y publica `hermes*` en `~/.local/bin`. Decidir si se
+   acepta (está documentado en el CHANGELOG) o si se necesita una
+   mitigación. El código que corre es el del release anterior, así que una
+   mitigación no puede ir dentro del update.
+3. **Sin verificar:** `scripts/install.ps1` (touchpoint `merge: ours`, sigue
+   siendo el instalador Windows viejo, sin pm) y un build real del AppImage
+   de `janitor-desktop-release.yml`.
+
+El resto de este documento es el análisis previo al merge.
+
 ## Datos
 
 | | Valor |

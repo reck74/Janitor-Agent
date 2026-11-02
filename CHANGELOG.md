@@ -3,16 +3,75 @@
 Notable changes specific to the Janitor fork of hermes-agent. Upstream
 changes are documented in the upstream release notes.
 
-## Unreleased
+## `0.22.5+janitor.1` (Hermes v0.22.5) — unreleased
+
+Upstream sync from Hermes v2026.9.24 to v0.22.5. Upstream moved stable
+releases from calver tags to `v0.x.y`, and replaced its in-process updater
+with a package manager (pm) that owns the Python runtime, the dependencies
+and Node. No `~/.janitor` layout change, so no new migration runs on first
+start.
+
+### Upgrade notes
+- **The first `janitor update` from 0.21.x is finished by Hermes' new
+  updater.** The 0.21.x update code is what pulls this release, and it hands
+  the checkout over to pm ("Handing off to the new updater"). pm installs the
+  locked Python 3.14, the dependencies and Node into `~/.janitor/tools` and
+  `~/.janitor/installs`, rebuilds the TUI and web UI, and stamps the checkout
+  (`install-stamp.json`, `updateMechanism: "self"`). After that, `janitor`
+  runs on that runtime and `janitor update` keeps it in sync. Checked end to
+  end from 0.21.5 with the real update in a sandbox home.
+- That handoff also runs the end of `hermes update` once: it installs Hermes'
+  default tools (`agent-browser` with Chromium, `cua-driver`) into
+  `~/.janitor/tools`, and publishes `hermes`, `hermes-acp` and
+  `hermes-agent` in `~/.local/bin`, pointing at the Janitor checkout. Those
+  commands use `~/.hermes`, not `~/.janitor`. A command that belongs to
+  another install is left alone. Janitor's own update and `bootstrap.sh` do
+  neither.
+- **Honcho left Hermes core.** It is now a catalog plugin, which the update
+  installs for every home with `memory.provider: honcho` (the Janitor
+  default). The catalog's current Honcho pin does not install (upstream
+  [#146435](https://github.com/NousResearch/hermes-agent/issues/146435), fix
+  in review in [#147311](https://github.com/NousResearch/hermes-agent/pull/147311)):
+  the update reports "Memory provider 'honcho' … could not be installed
+  automatically" and Honcho memory stays off until it installs. This
+  release should not ship before upstream fixes that.
+
+### Changed
+- `janitor update` runs every step after the pull in a fresh interpreter of
+  the pulled code (`python -m janitor.update_child`): dependency install,
+  Node dependencies plus the TUI and web UI build (`hermes_cli.source_build`,
+  as `hermes update` does), and the config check and migration. A pm-managed
+  checkout syncs its pm environment; a classic `.venv` checkout still
+  installs `-e .[all]`, with uv provided by pm or with pip.
+- The `janitor` launcher imports `hermes_bootstrap` first, like every Hermes
+  entry point, so a pm-managed checkout starts on its pm runtime.
+- `scripts/bootstrap.sh` builds the TUI and web UI with
+  `hermes_cli.source_build`; pm provides Node and npm in `~/.janitor/tools`.
+- Upstream's `pyproject.toml` says `0.0.0` and reads the version from the
+  install stamp or git tags. Janitor still declares `0.22.5+janitor.1`, and
+  `hermes_cli/version_info.py` (touchpoint `version`) reports it for a
+  checkout.
+- The Janitor layer reads YAML through `hermes_yaml` (ruamel.yaml), since
+  upstream dropped PyYAML.
+- Tips: only `hermes_cli.tips.get_random_tip` is patched. Upstream removed
+  `TIPS`; its tips are now i18n catalog keys.
+- The desktop overlay merges Janitor's builder config on top of upstream's
+  `electron-builder.config.cjs` and brands the `nous-girl` hero images.
+- `scripts/migrate-janitor-v0.20.1.sh` calls `hermes_cli.config` directly.
+- CI: the test jobs install through upstream's `setup-pm` action (locked
+  Python, isolated test environment); `dev` is a dependency group; Janitor
+  tests use `@pytest.mark.platforms(...)`.
+- `janitor/overlay.yaml` tracks upstream v0.22.5. The weekly sync selects
+  `v0.x.y` release tags.
 
 ### Fixed
 - `janitor update` failed at "Restoring local changes" with `package-lock.json`
-  would be overwritten. The TUI step ran a plain `npm install` in `ui-tui/`,
-  which rewrote the root `package-lock.json` on every update, and the next
-  update stashed that change and could not restore it. The update now discards
-  npm lockfile and CRLF-only churn before stashing, like `hermes update`, and
-  the TUI step only repairs a stale `node_modules` with Hermes' deterministic
-  install, which never writes the lockfile.
+  would be overwritten. The update now discards npm lockfile and CRLF-only
+  churn before stashing, like `hermes update`, and the frontends are built by
+  `hermes_cli.source_build`, which never writes the lockfile.
+
+### Removed
+- The `web-typecheck` touchpoint: upstream already runs `tsc -b . --noEmit`.
 
 ## `0.21.5+janitor.1` (Hermes v2026.9.24)
 
