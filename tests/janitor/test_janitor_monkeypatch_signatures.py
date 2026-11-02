@@ -25,7 +25,7 @@ INVARIANT
 Since Janitor 1.0 the ``load_soul_md`` patch is gone: upstream already reads
 ``$HERMES_HOME/SOUL.md`` and the launcher points HERMES_HOME at ~/.janitor,
 so the wrapper only bypassed upstream's injection scan and truncation. The
-remaining patches (``hermes_cli.main.cmd_update`` and ``hermes_cli.tips``)
+remaining patches (``hermes_cli.main.cmd_update`` and ``hermes_cli.tips.get_random_tip``)
 are applied inside ``janitor.cli.main()``, so the upstream originals are
 still intact in the test process and can be compared directly.
 
@@ -77,7 +77,7 @@ class TestCmdUpdateSignature:
 
 
 class TestTipsSignature:
-    """hermes_cli.tips.get_random_tip / TIPS — replaced by janitor.cli.main()."""
+    """hermes_cli.tips.get_random_tip — replaced by janitor.cli.main()."""
 
     def test_wrapper_signature_covers_original(self):
         import hermes_cli.tips as hermes_tips
@@ -93,9 +93,19 @@ class TestTipsSignature:
         import hermes_cli.tips as hermes_tips
         from janitor.tips_es import JANITOR_TIPS, get_janitor_tip
 
-        assert type(JANITOR_TIPS) is type(hermes_tips.TIPS)
+        assert isinstance(hermes_tips.get_random_tip(), str)
         assert JANITOR_TIPS and all(isinstance(t, str) for t in JANITOR_TIPS)
         assert get_janitor_tip(exclude_recent=1) in JANITOR_TIPS
+
+    def test_call_time_import_sees_the_janitor_tip(self, monkeypatch):
+        """CLI and gateway import ``get_random_tip`` from the module when they show a tip."""
+        import hermes_cli.tips as hermes_tips
+        from janitor.tips_es import JANITOR_TIPS, get_janitor_tip
+
+        monkeypatch.setattr(hermes_tips, "get_random_tip", get_janitor_tip)
+        from hermes_cli.tips import get_random_tip
+
+        assert get_random_tip() in JANITOR_TIPS
 
 
 class TestArgparseInitSignature:
