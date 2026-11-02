@@ -1727,7 +1727,16 @@ def test_live_foreign_update_lock_refuses_without_touching_git(
     finalized: list[dict] = []
     monkeypatch.setattr(juc, "_finalize_update_output", finalized.append)
     side_effect, recorded = _make_side_effect()
-    monkeypatch.setattr(juc.subprocess, "run", side_effect)
+    real_run = subprocess.run
+
+    # On macOS the lock probes the holder with `ps` through this same
+    # subprocess.run; it must see the real process.
+    def git_stubbed(cmd, **kwargs):
+        if str(cmd[0]) == "git":
+            return side_effect(cmd, **kwargs)
+        return real_run(cmd, **kwargs)
+
+    monkeypatch.setattr(juc.subprocess, "run", git_stubbed)
 
     rc = juc.run_janitor_update(SimpleNamespace())
 
