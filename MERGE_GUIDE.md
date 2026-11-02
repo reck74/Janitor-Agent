@@ -39,7 +39,12 @@ declarada, así que un merge ya no puede dejar código zombie en silencio.
 
 `.github/workflows/upstream-sync.yml` (semanal o manual):
 
-1. Toma el tag de release upstream más reciente (`v20*`), nunca `upstream/main`.
+1. Toma el tag de release estable más reciente de upstream, nunca
+   `upstream/main` ni un canary. El patrón es el de upstream
+   (`vMAJOR.MINOR.PATCH`, major ≤ 999): `v0.22.5` cuenta, `v2026.9.24` ya
+   no (calver retirado), y tampoco `v0.22.5+canary…` ni `rc.N-v*`. Se
+   ordena por fecha del tag, no por versión: `v2026.9.24` ordena por
+   encima de `v0.22.5` con `--sort=-v:refname`.
 2. `git merge <tag>` en una rama `upstream-sync-<tag>`. Si hay conflictos, abre
    un issue con la lista y se detiene.
 3. Poda los workflows de upstream (conserva `tests.yml`, `janitor-ci.yml`,

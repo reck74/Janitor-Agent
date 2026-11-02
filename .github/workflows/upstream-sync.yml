@@ -33,18 +33,57 @@ jobs:
           git remote add upstream https://github.com/NousResearch/hermes-agent.git || true
           git fetch --quiet upstream --tags
           git fetch --quiet origin main
-          TAG=$(git tag -l 'v20*' --sort=-v:refname | head -1)
-          SHA=$(git rev-parse "${TAG}^{commit}")
-          BRANCH="upstream-sync-${TAG}"
-          if git merge-base --is-ancestor "$SHA" origin/main; then
-            echo "✅ origin/main already contains ${TAG}."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          elif git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
-            echo "ℹ️ ${BRANCH} already exists — its PR is pending review."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+
+          # Stable releases only, same shape as upstream's STABLE_TAG_RE
+          # (hermes_cli/update_channel.py): vMAJOR.MINOR.PATCH, major <= 999.
+          # That drops retired calver tags (v2026.9.24), canaries
+          # (v0.22.5+canary.…), rc attempts and abandoned-rc.*.
+          # Sort by tag date, not version: v2026.9.24 sorts above v0.22.5
+          # under --sort=-v:refname even though 0.22.5 is the newer release.
+          # Only tags that exist on the upstream remote count — this repo's
+          # own tags (v1.0.0) match the same pattern.
+          git ls-remote --tags upstream 'refs/tags/v*' \
+            | awk '{print $2}' \
+            | sed -e 's#refs/tags/##' -e 's/\^{}//' \
+            | sort -u > /tmp/upstream-tag-names.txt
+
+          LATEST=""
+          TAG=""
+          SHA=""
+          while read -r name; do
+            printf '%s\n' "$name" | grep -Eq '^v(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' || continue
+            grep -Fxq "$name" /tmp/upstream-tag-names.txt || continue
+            sha=$(git rev-parse "${name}^{commit}")
+            if [ -z "$LATEST" ]; then
+              LATEST=$name
+            fi
+            if git merge-base --is-ancestor "$sha" origin/main; then
+              continue
+            fi
+            TAG=$name
+            SHA=$sha
+            break
+          done < <(git for-each-ref --sort=-creatordate --format='%(refname:short)' refs/tags)
+
+          if [ -z "$LATEST" ]; then
+            echo "No upstream stable release tag found."
+            exit 1
           fi
+          if [ -z "$TAG" ]; then
+            echo "✅ origin/main already contains ${LATEST}."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            TAG=$LATEST
+            SHA=$(git rev-parse "${TAG}^{commit}")
+          else
+            BRANCH="upstream-sync-${TAG}"
+            if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
+              echo "ℹ️ ${BRANCH} already exists — its PR is pending review."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+          BRANCH="upstream-sync-${TAG}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
           echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
