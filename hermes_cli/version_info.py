@@ -116,6 +116,20 @@ def _calver_release_version(repo_dir: Path) -> tuple[str, int] | None:
     return version, distance
 
 
+def _declared_fork_version(repo_dir: Path) -> str | None:
+    """A fork's ``<hermes>+<fork>.N`` from pyproject; upstream keeps the ``0.0.0`` placeholder there.
+
+    Fork checkouts are shallow clones whose reachable ``vX.Y.Z`` tags, if any, are the
+    fork's own releases, not Hermes releases.
+    """
+    try:
+        project = tomllib.loads((repo_dir / "pyproject.toml").read_text(encoding="utf-8-sig")).get("project", {})
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+    version = project.get("version")
+    return version if isinstance(version, str) and "+" in version else None
+
+
 # --- Install stamp reader ---------------------------------------------------
 
 def _resolve_stamp_file() -> Path | None:
@@ -237,7 +251,8 @@ def _git_version_info(repo_dir: Path, *, include_untracked: bool = False) -> Ver
     except (OSError, subprocess.SubprocessError):
         dirty = False
 
-    tags = _run_git(repo_dir, "tag", "--merged", "HEAD", "--list", "v[0-9]*")
+    fork_version = _declared_fork_version(repo_dir)
+    tags = None if fork_version else _run_git(repo_dir, "tag", "--merged", "HEAD", "--list", "v[0-9]*")
     releases = [
         tag[1:]
         for tag in (tags or "").splitlines()
@@ -250,7 +265,9 @@ def _git_version_info(repo_dir: Path, *, include_untracked: bool = False) -> Ver
     distance = _parse_nonnegative(
         _run_git(repo_dir, "rev-list", "--count", f"v{base_version}..HEAD")
     ) if releases else None
-    if not releases:
+    if fork_version:
+        base_version, distance = fork_version, 0
+    elif not releases:
         base_version, distance = _calver_release_version(repo_dir) or ("unknown", None)
     short_commit = _run_git(repo_dir, "rev-parse", "--short=7", "HEAD")
     if base_version == "unknown" and short_commit:

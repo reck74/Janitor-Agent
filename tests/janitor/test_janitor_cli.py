@@ -219,15 +219,46 @@ class TestJanitorVersionDisplay:
     """Behavior: Janitor shows ``<hermes>-janitor.N`` in banner and --version."""
 
     def test_canonical_version_is_pep440_local(self):
-        """hermes_cli.__version__ carries the PEP 440 local segment."""
+        """The running identity is pyproject's ``<hermes>+janitor.N``."""
         import re
         import tomllib
 
-        from hermes_cli import __version__
+        from hermes_cli.version_info import _reset_version_info_cache, get_version_info
 
-        assert re.fullmatch(r"\d+\.\d+\.\d+\+janitor\.\d+", __version__), __version__
-        pyproject = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-        assert pyproject["project"]["version"] == __version__
+        _reset_version_info_cache()
+        declared = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+        assert re.fullmatch(r"\d+\.\d+\.\d+\+janitor\.\d+", declared), declared
+        assert get_version_info().base_version == declared
+
+    def test_fork_release_tags_do_not_become_the_hermes_version(self, tmp_path, monkeypatch):
+        """A reachable ``v1.0.0`` Janitor release tag must not read as Hermes 1.0.0."""
+        import subprocess
+
+        from hermes_cli.version_info import _reset_version_info_cache, get_version_info
+
+        def git(*args):
+            subprocess.run(
+                ["git", "-c", "user.email=t@example.invalid", "-c", "user.name=t", *args],
+                cwd=tmp_path, check=True, capture_output=True,
+            )
+
+        git("init", "-q")
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "hermes-agent"\nversion = "0.22.5+janitor.3"\n', encoding="utf-8"
+        )
+        git("add", "pyproject.toml")
+        git("commit", "-qm", "release")
+        git("tag", "v1.0.0")
+        git("tag", "v0.22.5")
+        monkeypatch.setattr("hermes_cli.version_info._resolve_stamp_file", lambda: None)
+        monkeypatch.setattr("hermes_cli.version_info._resolve_repo_dir", lambda: tmp_path)
+        _reset_version_info_cache()
+        try:
+            info = get_version_info()
+        finally:
+            _reset_version_info_cache()
+
+        assert info.base_version == info.derived_version == "0.22.5+janitor.3"
 
     def test_display_version_replaces_plus_with_hyphen(self):
         """janitor_version.display_version converts + to - in the local segment."""
@@ -243,11 +274,12 @@ class TestJanitorVersionDisplay:
         assert display_version("1.2.3") == "1.2.3"
 
     def test_module_canonical_matches_helper_output(self):
-        """The canonical __version__ round-trips through display_version to the display form."""
-        from hermes_cli import __version__
+        """The running version round-trips through display_version to the display form."""
+        from hermes_cli.version_info import get_version_info
         from janitor_version import display_version
 
-        assert display_version(__version__) == __version__.replace("+janitor.", "-janitor.")
+        version = get_version_info().derived_version
+        assert display_version(version) == version.replace("+janitor.", "-janitor.")
 
     def test_subprocess_janitor_version_uses_display_form(self, tmp_path):
         """The real module entry point honors --version without entering chat."""
@@ -270,9 +302,10 @@ class TestJanitorVersionDisplay:
                 "HOME": str(tmp_path),
             },
         )
-        from hermes_cli import __version__
+        from hermes_cli.version_info import get_version_info
         from janitor_version import display_version
 
+        version = get_version_info().derived_version
         combined = result.stdout + result.stderr
-        assert f"THE JANITOR v{display_version(__version__)}" in combined
-        assert __version__ not in combined
+        assert f"THE JANITOR v{display_version(version)}" in combined
+        assert version not in combined

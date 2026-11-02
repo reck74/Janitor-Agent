@@ -17,10 +17,16 @@ from janitor.overlay import glob_match, load_overlay, parse_overlay
 
 
 def check_version():
-    import hermes_cli
+    import tomllib
 
-    assert re.search(r"\+janitor\.\d+$", hermes_cli.__version__), hermes_cli.__version__
-    assert importlib.metadata.version("hermes-agent") == hermes_cli.__version__
+    from hermes_cli.version_info import _reset_version_info_cache, get_version_info
+
+    _reset_version_info_cache()
+    info = get_version_info()
+    declared = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+    assert re.fullmatch(r"\d+\.\d+\.\d+\+janitor\.\d+", declared), declared
+    assert info.base_version == info.derived_version == declared
+    assert importlib.metadata.version("hermes-agent") == declared
 
 
 def check_packaging():
@@ -40,12 +46,12 @@ def check_packaging():
 
 
 def check_banner(capsys=None):
-    from hermes_cli import __version__
     from hermes_cli import _startup_fast
     from hermes_cli.banner import format_banner_version_label
+    from hermes_cli.version_info import get_version_info
     from janitor.version import display_version
 
-    expected = f"THE JANITOR v{display_version(__version__)}"
+    expected = f"THE JANITOR v{display_version(get_version_info().derived_version)}"
     assert format_banner_version_label().startswith(expected)
     if capsys is not None:
         _startup_fast.print_fast_version_info()

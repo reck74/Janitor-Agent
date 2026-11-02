@@ -52,10 +52,15 @@ fork_paths:
 
 touchpoints:
   - id: version
-    files: [pyproject.toml, hermes_cli/__init__.py, uv.lock]
-    why: Version carries the `+janitor.N` local segment.
+    files: [pyproject.toml, uv.lock, hermes_cli/version_info.py]
+    why: >-
+      pyproject declares `<hermes>+janitor.N` (upstream keeps the `0.0.0`
+      placeholder there); `version_info._git_version_info` reports a declared
+      local-segment version instead of reachable `vX.Y.Z` tags, which in a
+      Janitor checkout are the fork's own releases or absent (shallow clone).
     verify: test:version
     merge: reapply
+    upstream_candidate: true
 
   - id: packaging
     files: [pyproject.toml, uv.lock]
@@ -86,13 +91,6 @@ touchpoints:
       `POST /api/mcp/servers/{name}/discover` (tools with inputSchema) and
       `GET /api/mcp/servers/{name}/logs` (per-server stderr slice).
     verify: test:mcp-dashboard-endpoints
-    merge: reapply
-    upstream_candidate: true
-
-  - id: web-typecheck
-    files: [web/package.json]
-    why: "`tsc -b --noEmit`; upstream's `tsc -p .` checks no files (tsconfig has `files: []`)."
-    verify: ci:janitor-ci
     merge: reapply
     upstream_candidate: true
 

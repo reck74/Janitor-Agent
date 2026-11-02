@@ -227,7 +227,8 @@ def test_fast_version_parity(tmp_path):
     result = _run_version({"HERMES_HOME": str(home)})
     assert result.returncode == 0, result.stderr
     out = result.stdout
-    for field in ("Hermes Agent v", "Install directory:", "Python:", "OpenAI SDK:"):
+    # AGENTS.md directive #12: CLI banner/version assertions must use THE JANITOR v.
+    for field in ("THE JANITOR v", "Install directory:", "Python:", "OpenAI SDK:"):
         assert field in out, f"fast --version output missing {field!r}:\n{out}"
     assert "Traceback" not in result.stderr
 
