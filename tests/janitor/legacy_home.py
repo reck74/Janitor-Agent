@@ -27,6 +27,8 @@ from typing import Dict, Iterable
 
 import hermes_yaml as yaml
 
+from tests.janitor.checkout_metadata import install_checkout_metadata
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ASSETS = REPO_ROOT / "assets" / "janitor"
 
@@ -204,14 +206,17 @@ def session_messages(home: Path) -> list[tuple[str, str]]:
 
 
 def launcher_env(root: Path) -> Dict[str, str]:
-    """Environment for running the real ``janitor`` launcher against ``root``."""
+    """Environment for running the real ``janitor`` launcher against ``root``,
+    with the checkout's entry points installed as a real install has them."""
+    site = root / ".checkout-site"
+    install_checkout_metadata(site)
     env = {k: v for k, v in os.environ.items() if not k.startswith("HERMES_")}
     env.update(
         {
             "HOME": str(root),
             "USERPROFILE": str(root),
             "HERMES_QUIET": "1",
-            "PYTHONPATH": str(REPO_ROOT),
+            "PYTHONPATH": os.pathsep.join([str(REPO_ROOT), str(site)]),
         }
     )
     return env

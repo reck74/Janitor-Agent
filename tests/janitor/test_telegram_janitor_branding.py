@@ -22,6 +22,7 @@ from gateway.platforms.base import MessageEvent
 from gateway.session import SessionSource
 from janitor.plugin import telegram as branding
 from plugins.platforms.telegram.adapter import TelegramAdapter
+from tests.janitor.checkout_metadata import install_checkout_metadata
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -257,6 +258,8 @@ async def test_enabled_plugin_handles_start_through_invoke_hook(tmp_path, monkey
     (home / "config.yaml").write_text(yaml.safe_dump({"plugins": {"enabled": ["janitor"]}}), encoding="utf-8")
     monkeypatch.setattr(branding, "WELCOME_IMAGE_PATH", tmp_path / "missing.jpg")
     monkeypatch.setattr(branding, "AVATAR_PATH", tmp_path / "missing.jpg")
+    install_checkout_metadata(tmp_path / "site")
+    monkeypatch.syspath_prepend(str(tmp_path / "site"))
     plugins._reset_plugin_managers_for_tests()
     try:
         plugins.discover_plugins(force=True)

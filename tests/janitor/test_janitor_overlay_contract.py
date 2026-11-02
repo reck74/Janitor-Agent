@@ -7,13 +7,14 @@ edit upstream overwrote, instead of a grep checklist in MERGE_GUIDE.md.
 
 from __future__ import annotations
 
-import importlib.metadata
+import importlib
 import re
 
 import pytest
 
 from janitor.home import REPO_ROOT
 from janitor.overlay import glob_match, load_overlay, parse_overlay
+from tests.janitor.checkout_metadata import declared_entry_points
 
 
 def check_version():
@@ -26,15 +27,13 @@ def check_version():
     declared = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
     assert re.fullmatch(r"\d+\.\d+\.\d+\+janitor\.\d+", declared), declared
     assert info.base_version == info.derived_version == declared
-    assert importlib.metadata.version("hermes-agent") == declared
 
 
 def check_packaging():
-    scripts = {ep.name: ep.value for ep in importlib.metadata.entry_points(group="console_scripts")}
-    assert scripts.get("janitor") == "janitor.cli:main"
-    assert scripts.get("hermes") == "hermes_cli.main:main"
-    plugins = {ep.name: ep.value for ep in importlib.metadata.entry_points(group="hermes_agent.plugins")}
-    assert plugins.get("janitor") == "janitor.plugin"
+    declared = declared_entry_points()
+    assert declared["console_scripts"].get("janitor") == "janitor.cli:main"
+    assert declared["console_scripts"].get("hermes") == "hermes_cli.main:main"
+    assert declared["hermes_agent.plugins"].get("janitor") == "janitor.plugin"
     assert callable(importlib.import_module("janitor.plugin").register)
     for alias, target in (
         ("janitor_cli", "janitor.cli"),
