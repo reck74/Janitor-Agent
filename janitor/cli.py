@@ -53,6 +53,17 @@ def _load_janitor_env() -> None:
 
 _load_janitor_env()
 
+# Like every Hermes entry point, before anything below imports a dependency:
+# a checkout upstream's updater takeover made PM-managed re-execs into its
+# store interpreter and activates its dependency generation here; a classic
+# ``.venv`` keeps its own packages. HERMES_HOME is already Janitor's, so PM's
+# tool store and install state land in ~/.janitor.
+try:
+    import hermes_bootstrap  # noqa: F401
+except ModuleNotFoundError as exc:
+    if exc.name != "hermes_bootstrap":
+        raise
+
 # COMMAND HIJACKING: Intercept `janitor update` before Hermes CLI parses arguments.
 # We delegate to a minimal bootstrap helper so this path stays importable
 # even when the venv is partially broken (e.g. new Hermes imports after a pull).

@@ -10,27 +10,42 @@ here have been removed and now live (and are tested) in
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
+from pathlib import Path
 from unittest.mock import patch
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
-def test_bootstrap_module_is_packaged_for_janitor_entrypoint(tmp_path):
-    """The installed distribution exposes the root alias module.
 
-    Root single-file modules are derived by upstream's ``setup.py`` since
-    v2026.9.24, so this imports it from outside the checkout instead of
-    reading pyproject's (removed) ``py-modules`` list.
-    """
-    result = subprocess.run(
-        [sys.executable, "-c", "import janitor_update_bootstrap as m; print(callable(m.run_update))"],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-    )
+def _setup_py_root_modules() -> set[str]:
+    spec = importlib.util.spec_from_file_location("_janitor_setup_py", REPO_ROOT / "setup.py")
+    mod = importlib.util.module_from_spec(spec)
+    saved = sys.argv
+    sys.argv = ["setup.py", "--name"]
+    try:
+        try:
+            spec.loader.exec_module(mod)
+        except SystemExit:
+            pass
+    finally:
+        sys.argv = saved
+    return set(mod._root_py_modules())
 
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "True"
+
+def test_compat_aliases_are_packaged_for_pre_1_0_entrypoints():
+    """Pre-1.0 console scripts import the root alias modules, so the
+    distribution must ship them. Root single-file modules reach the editable
+    install and the wheel through upstream's ``setup.py::_root_py_modules()``;
+    the test interpreter is PM's test environment, which does not install the
+    checkout, so the contract is read from that single source."""
+    import janitor_update_bootstrap
+
+    assert callable(janitor_update_bootstrap.run_update)
+    assert {
+        "janitor_cli", "janitor_update_core", "janitor_update_bootstrap", "janitor_version",
+    } <= _setup_py_root_modules()
 
 
 def test_update_intercept_runs_before_hermes_imports():

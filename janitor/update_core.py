@@ -7,40 +7,43 @@ Aligned with the official Hermes ``_cmd_update_impl`` in
 ``janitor/cli.py``) and the monkey-patched ``cmd_update`` (also in
 ``janitor/cli.py``) delegate here.
 
-The 11-step pipeline:
+The 10-step pipeline:
 
   1. Hangup protection (captures IO state for restore on exit)
   2. Pre-update backup (optional via ``_run_pre_update_backup``)
   3. Discard npm lockfile / CRLF churn, then fetch + branch detection +
      auto-stash + branch switch
-  4. Behind-count: if HEAD == origin/branch, skip pull/deps/lazy refresh
-     and continue to step 8 (Node repair) for the "already up to date" path.
+  4. Behind-count: if HEAD == origin/branch, skip the pull and continue
+     with step 6 for the "already up to date" path, which repairs an
+     update that pulled but did not finish.
   5. Pull with ``--ff-only`` fallback to ``reset --hard origin/<branch>``;
      post-pull syntax/import validation; auto-rollback to captured pre-pull SHA
      on syntax failure.
-  6. Reload seam: invalidate import caches, clear helper cache and the
-     three fresh-wrapper sentinels, rebind the fresh wrappers from the
-     freshly-pulled modules. Runs on both the post-pull and the
-     already-current paths so a no-pull update also reloads.
-  7. Python dependency install via uv/pip + lazy-feature/bootstrap refresh.
-  8. Node repair (``_update_node_dependencies`` + TUI build). Failures
-     write ``update-incomplete.json`` with ``failed_step="node_deps"`` and
-     exit 1 — no success banner, no stash restore.
-  9. Fresh-wrapper config migration phase (``_run_config_check_fresh`` +
-     conditional ``_run_migrate_config_fresh(interactive=False, quiet=True)``).
+  6. Python dependencies: a PM-managed checkout (install stamp
+     ``updateMechanism: self``) syncs its dependency generation; a classic
+     ``.venv`` installs ``.[all]`` with PM's uv (pip fallback).
+  7. Products (``hermes_cli.source_build.build_update_products``: Node
+     dependencies, TUI and web builds, upstream's left-core plugin
+     migrations). Failures write ``update-incomplete.json`` with
+     ``failed_step="node_deps"`` and exit 1 — no success banner, no stash
+     restore.
+  8. Config migration phase (``_run_config_check_fresh`` + conditional
+     ``_run_migrate_config_fresh(interactive=False, quiet=True)``).
      Any failure (missing helpers, exception from check / migrate / post-check,
      or still-behind without an explicit support-floor warning) writes the
      marker with ``failed_step="config_migration"`` and exits 1.
- 10. Desktop receipt via ``_print_update_completion("✓ Update complete!")``.
- 11. Marker cleanup, stash restore LAST (using persisted marker stash_ref
+  9. Desktop receipt via ``_print_update_completion("✓ Update complete!")``.
+ 10. Marker cleanup, stash restore LAST (using persisted marker stash_ref
      as fallback when the current run did not produce a new stash), success
      banner. Cleanup / restore failures return 1 and skip the banner.
 
-Helpers from ``hermes_cli.update_cmd`` (``_run_config_check_fresh``,
-``_run_migrate_config_fresh``, ``_print_update_completion``) and from
-``hermes_cli.main`` (the legacy helpers) are imported lazily so a
-partially-broken venv can still recover. The marker file lives at
-``hermes_constants.get_hermes_home() / "update-incomplete.json"`` —
+Steps 6-8 run in fresh interpreters (``python -m janitor.update_child``)
+started from the pulled checkout, so they execute the new code against the
+right dependencies; the updater process itself never re-imports application
+modules after the pull. The git / stash / backup helpers from
+``hermes_cli.update_cmd`` and ``hermes_cli.main`` are imported lazily (before
+the pull) so a partially-broken venv can still recover. The marker file lives
+at ``hermes_constants.get_hermes_home() / "update-incomplete.json"`` —
 profile-safe, never at a hardcoded path.
 
 Per JANITOR FORK DIRECTIVE #13: any change to the update flow lives here,
@@ -49,12 +52,11 @@ not inline in ``janitor/cli.py`` or ``janitor/update_bootstrap.py``.
 
 from __future__ import annotations
 
-import importlib
 import json
 import os
-import shutil
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -73,6 +75,7 @@ _JANITOR_CRITICAL_FILES = (
     "janitor/cli.py",
     "janitor/update_core.py",
     "janitor/update_bootstrap.py",
+    "janitor/update_child.py",
     "janitor/version.py",
     "janitor/tips_es.py",
     # Pre-1.0 import paths kept as aliases for old console scripts.
@@ -95,22 +98,10 @@ _discard_lockfile_churn: Optional[Callable] = None
 _normalize_managed_eol: Optional[Callable] = None
 _stash_local_changes_if_needed: Optional[Callable] = None
 _restore_stashed_changes: Optional[Callable] = None
-_refresh_active_lazy_features: Optional[Callable] = None
-_update_node_dependencies: Optional[Callable] = None
-_resolve_node_runtime_npm: Optional[Callable] = None
-_run_npm_install_deterministic: Optional[Callable] = None
-_invalidate_update_cache: Optional[Callable] = None
 _clear_bytecode_cache: Optional[Callable] = None
 _validate_critical_files_syntax: Optional[Callable] = None
 _capture_head_sha: Optional[Callable] = None
-_install_python_dependencies_with_optional_fallback: Optional[Callable] = None
 _is_termux_env: Optional[Callable] = None
-_is_android_python: Optional[Callable] = None
-_install_psutil_android_compat: Optional[Callable] = None
-_ensure_uv_for_termux: Optional[Callable] = None
-# Fresh-wrapper helpers from hermes_cli.update_cmd.
-_run_config_check_fresh: Optional[Callable] = None
-_run_migrate_config_fresh: Optional[Callable] = None
 _print_update_completion: Optional[Callable] = None
 
 
@@ -201,11 +192,7 @@ def _ensure_loaded() -> None:
 
     Tests can override any of these via ``monkeypatch.setattr()`` before
     the first call. If a helper is None (e.g. venv partially broken),
-    the core falls back to a local minimal implementation. The
-    three fresh-wrapper sentinels (``_run_config_check_fresh``,
-    ``_run_migrate_config_fresh``, ``_print_update_completion``) honour
-    an explicit ``None`` so a venv that genuinely lacks them surfaces
-    as ``missing helpers`` to the config_migration non-success path.
+    the core falls back to a local minimal implementation.
     """
     global PROJECT_ROOT
     if PROJECT_ROOT is None:
@@ -220,19 +207,11 @@ def _ensure_loaded() -> None:
         "_normalize_managed_eol",
         "_stash_local_changes_if_needed",
         "_restore_stashed_changes",
-        "_refresh_active_lazy_features",
-        "_update_node_dependencies",
-        "_resolve_node_runtime_npm",
-        "_run_npm_install_deterministic",
-        "_invalidate_update_cache",
         "_clear_bytecode_cache",
         "_validate_critical_files_syntax",
         "_capture_head_sha",
-        "_install_python_dependencies_with_optional_fallback",
         "_is_termux_env",
-        "_is_android_python",
-        "_install_psutil_android_compat",
-        "_ensure_uv_for_termux",
+        "_print_update_completion",
     )
     for name in lazy_helpers:
         if globals().get(name) is None:
@@ -250,20 +229,6 @@ def _ensure_loaded() -> None:
         globals()["_validate_critical_files_syntax"] = _make_fork_syntax_validator(
             syntax_helper
         )
-
-    fresh_wrappers = (
-        "_run_config_check_fresh",
-        "_run_migrate_config_fresh",
-        "_print_update_completion",
-    )
-    # The three fresh wrappers are NOT auto-resolved here — they are
-    # resolved by the explicit post-pull reload seam (see
-    # ``_reload_helper_modules_after_pull``) which clears them and lets the
-    # next call re-bind. An explicit ``None`` from a test or a broken
-    # venv is preserved as the non-success signal.
-    for name in fresh_wrappers:
-        if name not in globals():
-            globals()[name] = None
 
 
 def _call(
@@ -597,67 +562,73 @@ def _pull_with_fallback(git_cmd: list[str], cwd: Path, branch: str) -> bool:
     return True
 
 
-def _resolve_uv_bin(pip_cmd: list[str]) -> Optional[str]:
-    """Same uv rungs as ``hermes update``: Hermes' managed uv in
-    ``$HERMES_HOME/bin`` (self-updated, installed if missing), then the
-    Termux fallback. ``None`` means the pip path."""
-    try:
-        from hermes_cli.managed_uv import ensure_uv, update_managed_uv
-    except Exception:
-        uv_bin = None
-    else:
-        update_managed_uv()
-        uv_bin = str(ensure_uv()) or None
-    return uv_bin or _call(
-        "_ensure_uv_for_termux",
-        pip_cmd,
-        fallback=lambda *a, **kw: None,
+def _run_child(project_root: Path, step: str, *args: str, **kwargs) -> subprocess.CompletedProcess:
+    """Run one post-pull step in a fresh interpreter from the pulled checkout."""
+    return subprocess.run(
+        [sys.executable, "-m", "janitor.update_child", step, *args],
+        cwd=project_root,
+        **kwargs,
     )
 
 
+def _child_json(project_root: Path, step: str, *args: str) -> Any:
+    """Run a step that reports through a JSON result file; raise on failure."""
+    with tempfile.TemporaryDirectory(prefix="janitor-update-") as tmpdir:
+        result_path = Path(tmpdir) / "result.json"
+        result = _run_child(project_root, step, str(result_path), *args)
+        if result.returncode != 0:
+            raise RuntimeError(f"`janitor.update_child {step}` exited {result.returncode}")
+        try:
+            return json.loads(result_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise RuntimeError(f"`janitor.update_child {step}` reported no result: {exc}") from exc
+
+
+def _pm_managed_checkout(project_root: Path) -> bool:
+    """True when PM owns this checkout's dependencies (``updateMechanism: self``).
+
+    A Janitor install stays a classic ``.venv`` checkout unless upstream's
+    historical-updater takeover converted it.
+    """
+    try:
+        from pm.paths import install_stamp_path
+
+        stamp = json.loads(install_stamp_path(project_root).read_text(encoding="utf-8-sig"))
+    except Exception:
+        return False
+    return isinstance(stamp, dict) and stamp.get("updateMechanism") == "self"
+
+
+def _resolve_uv_bin(project_root: Path) -> Optional[str]:
+    """PM's uv, installed into the active home's tool store when missing.
+
+    Never the user's PATH copy. ``None`` means the pip path.
+    """
+    result = _run_child(project_root, "uv", capture_output=True, text=True)
+    lines = (result.stdout or "").strip().splitlines()
+    if result.returncode != 0 or not lines:
+        print("  ⚠ Could not provision uv; falling back to pip.")
+        return None
+    return lines[-1].strip() or None
+
+
 def _install_python_dependencies(project_root: Path) -> None:
-    """Install Python deps via uv (preferred) or pip fallback."""
+    """Bring the checkout's Python dependencies up to the pulled inputs."""
     print("→ Updating Python dependencies...")
-    pip_cmd = [sys.executable, "-m", "pip"]
-    uv_bin = _resolve_uv_bin(pip_cmd)
-    install_group = "all"
+    if _pm_managed_checkout(project_root):
+        _run_child(project_root, "pm-sync", check=True)
+        print("✓ Python dependencies updated")
+        return
 
+    extra = "termux-all" if _call("_is_termux_env", fallback=lambda: False) else "all"
+    uv_bin = _resolve_uv_bin(project_root)
     if uv_bin:
-        uv_env = {**os.environ, "VIRTUAL_ENV": str(project_root / "venv")}
-        is_termux = _call("_is_termux_env", uv_env, fallback=lambda env: False)
-        is_android = _call("_is_android_python", fallback=lambda: False)
-        if is_termux:
-            uv_env.pop("PYTHONPATH", None)
-            uv_env.pop("PYTHONHOME", None)
-            install_group = "termux-all"
-            print("  → Termux detected: using uv + curated termux-all optional profile...")
-        if is_termux and is_android:
-            print("  → Termux/Android detected: prebuilding psutil...")
-            _call(
-                "_install_psutil_android_compat",
-                [uv_bin, "pip"],
-                env=uv_env,
-                fallback=lambda *a, **kw: None,
-            )
-
-        def _uv_install(*_a, **_kw):
-            subprocess.run(
-                [uv_bin, "pip", "install", "--python", sys.prefix, "-e", ".[all]"],
-                cwd=project_root,
-                check=True,
-            )
-
-        _call(
-            "_install_python_dependencies_with_optional_fallback",
-            [uv_bin, "pip"],
-            env=uv_env,
-            group=install_group,
-            fallback=_uv_install,
-        )
+        install = [uv_bin, "pip", "install", "--python", sys.executable]
     else:
+        install = [sys.executable, "-m", "pip", "install"]
         try:
             subprocess.run(
-                pip_cmd + ["--version"],
+                [sys.executable, "-m", "pip", "--version"],
                 cwd=project_root,
                 check=True,
                 capture_output=True,
@@ -668,99 +639,48 @@ def _install_python_dependencies(project_root: Path) -> None:
                 cwd=project_root,
                 check=True,
             )
-        if _call("_is_termux_env", fallback=lambda: False):
-            install_group = "termux-all"
-            print("  → Termux detected: using curated termux-all optional profile...")
-        if _call("_is_termux_env", fallback=lambda: False) and _call(
-            "_is_android_python", fallback=lambda: False
-        ):
-            print("  → Termux/Android detected: prebuilding psutil...")
-            _call(
-                "_install_psutil_android_compat",
-                pip_cmd,
-                fallback=lambda *a, **kw: None,
-            )
 
-        def _pip_install(*_a, **_kw):
-            subprocess.run(
-                pip_cmd + ["install", "-e", ".[all]"],
-                cwd=project_root,
-                check=True,
-            )
-
-        _call(
-            "_install_python_dependencies_with_optional_fallback",
-            pip_cmd,
-            env=None,
-            group=install_group,
-            fallback=_pip_install,
-        )
-
+    try:
+        subprocess.run(install + ["-e", f".[{extra}]"], cwd=project_root, check=True)
+    except subprocess.CalledProcessError:
+        print(f"  ⚠ Installing the [{extra}] extras failed; installing the core package only...")
+        subprocess.run(install + ["-e", "."], cwd=project_root, check=True)
     print("✓ Python dependencies updated")
 
 
-def _install_node_dependencies(project_root: Path) -> list[str]:
-    """Build the TUI (Janitor-specific) + run upstream node update helper.
+def _build_update_products(project_root: Path) -> list[str]:
+    """Node dependencies + TUI / web builds; returns the failed products.
 
-    Returns the list of labels whose refresh failed (empty on success).
-    Matches the upstream ``_update_node_dependencies() -> list[str]``
-    contract — non-empty means the Node repair partially failed and the
-    caller must treat the update as incomplete (write the node_deps
-    marker, return 1, no receipt, no banner, no stash restore).
+    Upstream's ``build_update_products`` installs Node dependencies with PM's
+    npm without rewriting ``package-lock.json`` and reuses a receipted build
+    when its inputs did not change. The desktop app is built separately from
+    the ``apps/desktop-janitor`` overlay.
     """
-    failures: list[str] = []
-    upstream_result = _call(
-        "_update_node_dependencies",
-        fallback=lambda: [],
+    with tempfile.TemporaryDirectory(prefix="janitor-update-") as tmpdir:
+        result_path = Path(tmpdir) / "result.json"
+        result = _run_child(project_root, "products", str(result_path))
+        try:
+            failures = json.loads(result_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            failures = None
+    if isinstance(failures, list) and (failures or result.returncode == 0):
+        return [str(name) for name in failures]
+    return [f"product build (exit {result.returncode})"]
+
+
+def _run_config_check_fresh() -> tuple:
+    """``(current, latest)`` config schema versions, read by the pulled code."""
+    return tuple(_child_json(PROJECT_ROOT, "config-check"))
+
+
+def _run_migrate_config_fresh(*, interactive: bool = False, quiet: bool = False) -> dict:
+    """``hermes_cli.config.migrate_config`` run by the pulled code."""
+    return _child_json(
+        PROJECT_ROOT,
+        "config-migrate",
+        "1" if interactive else "0",
+        "1" if quiet else "0",
     )
-    if isinstance(upstream_result, list):
-        failures.extend(x for x in upstream_result if x)
-
-    ui_tui_dir = project_root / "ui-tui"
-    if (ui_tui_dir / "package.json").exists():
-        print("→ Compiling TUI components...")
-        failures.extend(_build_tui(ui_tui_dir))
-
-    return failures
-
-
-def _tui_install_context(ui_tui_dir: Path) -> Optional[tuple[Path, tuple[str, ...]]]:
-    """``(cwd, extra npm args)`` when the TUI's ``node_modules`` is missing or
-    behind the lockfile, else ``None``."""
-    try:
-        from hermes_cli.main_tui_launch import _tui_need_npm_install, _workspace_root
-    except Exception:
-        return None
-    if not _tui_need_npm_install(ui_tui_dir):
-        return None
-    ws_root = _workspace_root(ui_tui_dir)
-    return ws_root, (() if ws_root == ui_tui_dir else ("--workspace", "ui-tui"))
-
-
-def _build_tui(ui_tui_dir: Path) -> list[str]:
-    # A plain ``npm install`` here re-resolves the whole workspace and rewrites
-    # the root package-lock.json on every update; that churn then blocks the
-    # stash restore. Upstream's Node step already installs the ui-tui
-    # workspace, so only repair a stale node_modules, and never via ``install``.
-    npm = _call("_resolve_node_runtime_npm", fallback=lambda: shutil.which("npm"))
-    if not npm:
-        return ["ui-tui npm (npm not found)"]
-
-    install = _tui_install_context(ui_tui_dir)
-    if install is not None:
-        cwd, extra_args = install
-        result = _call(
-            "_run_npm_install_deterministic",
-            npm, cwd, extra_args=extra_args, capture_output=False,
-        )
-        if result is None or result.returncode != 0:
-            return ["ui-tui npm (install)"]
-
-    try:
-        subprocess.run([npm, "run", "build"], cwd=ui_tui_dir, check=True)
-    except subprocess.CalledProcessError as exc:
-        return [f"ui-tui npm ({exc.cmd})"]
-    return []
 
 
 # Substrings that the real upstream ``hermes_cli.config_migrations.support_floor_message()``
@@ -863,11 +783,11 @@ def _read_config_version_initial(check_check: Callable[[], tuple]):
 
 
 def _run_fresh_config_migration_phase() -> dict:
-    """Run the fresh-wrapper config migration phase after a successful pull.
+    """Run the config migration phase after a successful pull.
 
-    Uses ``hermes_cli.update_cmd._run_config_check_fresh`` and
-    ``_run_migrate_config_fresh`` so the freshly-pulled config modules are
-    read — not the stale cached ones from before the pull.
+    ``_run_config_check_fresh`` and ``_run_migrate_config_fresh`` run
+    ``hermes_cli.config`` in a fresh interpreter, so the pulled config
+    modules are read — not the ones this process loaded before the pull.
 
     Behavior contract:
 
@@ -970,55 +890,6 @@ def _run_fresh_config_migration_phase() -> dict:
             )
 
     return results
-
-
-def _reload_helper_modules_after_pull() -> None:
-    """Post-pull helper / module reload seam.
-
-    After a successful ``git pull`` (or the equivalent already-current
-    path), evict the helper modules from ``sys.modules`` (so a stale
-    cached copy cannot be served), invalidate ``importlib``'s caches,
-    clear the in-process helper cache and the three fresh-wrapper
-    sentinels, and rebind the fresh wrappers from the freshly-loaded
-    modules so the next phase reads the updated code.
-    """
-    importlib.invalidate_caches()
-    _HELPER_CACHE.clear()
-    for name in (
-        "_run_config_check_fresh",
-        "_run_migrate_config_fresh",
-        "_print_update_completion",
-    ):
-        globals()[name] = None
-    globals().pop("_run_config_check_fresh", None)
-    globals().pop("_run_migrate_config_fresh", None)
-    globals().pop("_print_update_completion", None)
-
-    # EVICT the helper modules from ``sys.modules``. ``importlib.invalidate_caches``
-    # alone is NOT enough: ``importlib.import_module`` returns the cached
-    # entry from ``sys.modules`` if present, so a stale copy would survive
-    # invalidation. The seam MUST also del the module entry to force a
-    # genuine re-import from disk.
-    for mod_name in (
-        "hermes_cli.update_cmd",
-        "hermes_cli.config_migrations",
-        "hermes_cli.config",
-        "hermes_cli.config_defaults",
-        "hermes_cli.main",
-        "hermes_cli",
-    ):
-        sys.modules.pop(mod_name, None)
-
-    # Re-resolve via the existing lazy-import path so the new code is loaded.
-    for name in (
-        "_run_config_check_fresh",
-        "_run_migrate_config_fresh",
-        "_print_update_completion",
-    ):
-        try:
-            globals()[name] = _try_import(name)
-        except Exception:
-            globals()[name] = None
 
 
 def _read_persisted_marker() -> Optional[str]:
@@ -1346,11 +1217,9 @@ def run_janitor_update(args) -> int:
         already_current = (commit_count == 0)
 
         if already_current:
-            _call("_invalidate_update_cache", fallback=lambda: None)
             print("✓ Already up to date.")
-            # Still run the reload seam so wrappers stay current, plus
-            # Node repair, fresh-wrapper config migration, Desktop receipt,
-            # marker cleanup, and stash restore per the spec.
+            # The completion steps still run: they repair an earlier update
+            # that pulled but did not finish.
         else:
             update_succeeded = _pull_with_fallback(git_cmd, project_root, branch)
             if not update_succeeded:
@@ -1360,8 +1229,6 @@ def run_janitor_update(args) -> int:
                     )
                     print("  Restore manually with: git stash apply")
                 return 1
-
-            _call("_invalidate_update_cache", fallback=lambda: None)
 
             removed = _call(
                 "_clear_bytecode_cache",
@@ -1373,28 +1240,16 @@ def run_janitor_update(args) -> int:
                     f"  ✓ Cleared {removed} stale __pycache__ director{'y' if removed == 1 else 'ies'}"
                 )
 
-        # Post-pull / already-current reload seam: invalidate importlib
-        # caches, clear the helper cache and the three fresh-wrapper
-        # sentinels, rebind the fresh wrappers from the freshly-pulled
-        # modules. Runs BEFORE the Node / config phase.
-        _reload_helper_modules_after_pull()
+        _install_python_dependencies(project_root)
 
-        if not already_current:
-            _install_python_dependencies(project_root)
-
-            _call(
-                "_refresh_active_lazy_features",
-                fallback=lambda: None,
-            )
-
-        # Node repair — fail-loud. Non-empty failure list writes the
+        # Products — fail-loud. A non-empty failure list writes the
         # incomplete marker, prints NO receipt, NO success banner, and does
         # NOT restore the stash.
-        print("→ Repairing Node.js dependencies...")
-        node_failures = _install_node_dependencies(project_root)
+        print("→ Updating Node.js dependencies and building the TUI / web UI...")
+        node_failures = _build_update_products(project_root)
         if node_failures:
             print(
-                f"  ⚠ Node.js dependency refresh failed: "
+                f"  ⚠ Product update failed: "
                 f"{', '.join(node_failures)}"
             )
             print(
@@ -1404,13 +1259,13 @@ def run_janitor_update(args) -> int:
             _write_incomplete_marker("node_deps", auto_stash_ref)
             return 1
 
-        # Fresh-wrapper config migration phase. Any failure (missing
+        # Config migration phase. Any failure (missing
         # helpers, initial check exception, migration exception, post-check
         # exception, still-behind without an explicit support-floor
         # warning) writes the incomplete marker with
         # failed_step="config_migration" and exits 1 (no success banner,
         # no stash restore).
-        print("→ Running fresh config migration check...")
+        print("→ Checking configuration for new options...")
         try:
             _run_fresh_config_migration_phase()
         except Exception as mig_exc:
