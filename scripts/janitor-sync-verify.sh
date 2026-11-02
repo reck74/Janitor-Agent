@@ -33,10 +33,15 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-PYTHON=python3
-for candidate in .venv/bin/python venv/bin/python .venv/Scripts/python.exe; do
-    if [ -x "$candidate" ]; then PYTHON="$candidate"; break; fi
-done
+# CI's setup-pm exports the test environment as HERMES_PYTHON; a local
+# checkout has its .venv.
+PYTHON="${HERMES_PYTHON:-}"
+if [ -z "$PYTHON" ]; then
+    PYTHON=python3
+    for candidate in .venv/bin/python venv/bin/python .venv/Scripts/python.exe; do
+        if [ -x "$candidate" ]; then PYTHON="$candidate"; break; fi
+    done
+fi
 
 step() { printf '\n▶ %s\n' "$1"; }
 
