@@ -16,7 +16,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, List, Optional
 
-import yaml
+import hermes_yaml as yaml
 
 from janitor.home import PACKAGE_ROOT, REPO_ROOT
 

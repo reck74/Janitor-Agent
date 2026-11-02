@@ -19,9 +19,9 @@
 # already-migrated install (no v33 inputs and a v34 _config_version stamp)
 # exits 0 without creating a new backup — a second run is a true no-op.
 #
-# Schema diff is delegated to the merged
-# ``hermes_cli.update_cmd._run_migrate_config_fresh`` wrapper, which uses
-# freshly-reloaded config modules. This script does NOT shell out to
+# Schema diff is delegated to ``hermes_cli.config.migrate_config`` in a
+# fresh Python subprocess running the checkout's code. This script does NOT
+# shell out to
 # ``python -m hermes_cli.config migrate`` (that command does not exist).
 #
 # The script NEVER touches Docker volumes or ``$JANITOR_HOME/secrets/``.
@@ -85,12 +85,11 @@ TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
 BACKUP_DIR="$HOME_DIR/backups/config"
 BACKUP="$BACKUP_DIR/config.yaml.bak.$TIMESTAMP"
 
-# Source raw version from the canonical ``hermes_cli.__version__`` literal
-# and derive the display form via ``janitor_version.display_version``. This
-# keeps the script in lockstep with the version the Python source declares
-# (single source of truth) instead of duplicating a hardcoded string. The
-# canonical path uses a direct ``import hermes_cli`` (no source-reading)
-# so a future ``hermes_cli.__version__`` refactor still works. The repo
+# Source raw version from the canonical runtime identity
+# (``hermes_cli.version_info.get_version_info().base_version``) and derive the
+# display form via ``janitor_version.display_version``. This keeps the script
+# in lockstep with the version the checkout declares instead of duplicating a
+# hardcoded string, and imports the API rather than reading source. The repo
 # root is also passed to each repository-importing Python subprocess and
 # inserted at ``sys.path[0]``. ``PYTHONPATH`` ordering alone is insufficient:
 # ``python -c`` puts the caller's current directory before ``PYTHONPATH``.
@@ -111,15 +110,15 @@ RAW_VERSION="$(
     PYTHONPATH="$_VERSION_PYTHONPATH" "$_VERSION_PYTHON" -c "
 import sys
 sys.path.insert(0, sys.argv[1])
-import hermes_cli
-print(hermes_cli.__version__)
+from hermes_cli.version_info import get_version_info
+print(get_version_info().base_version)
 " "$REPO_ROOT" 2>/dev/null
 )" || {
-    echo "Failed to import hermes_cli.__version__" >&2
+    echo "Failed to read hermes_cli.version_info.get_version_info()" >&2
     exit 2
 }
 if [ -z "$RAW_VERSION" ]; then
-    echo "Empty raw version returned by hermes_cli.__version__" >&2
+    echo "Empty raw version returned by get_version_info()" >&2
     exit 2
 fi
 
@@ -127,9 +126,9 @@ DISPLAY_VERSION="$(
     PYTHONPATH="$_VERSION_PYTHONPATH" "$_VERSION_PYTHON" -c "
 import sys
 sys.path.insert(0, sys.argv[1])
-import hermes_cli as _hc
+from hermes_cli.version_info import get_version_info
 import janitor_version
-print(janitor_version.display_version(_hc.__version__))
+print(janitor_version.display_version(get_version_info().base_version))
 " "$REPO_ROOT" 2>/dev/null
 )" || {
     echo "Failed to derive display version via janitor_version.display_version" >&2
@@ -213,8 +212,8 @@ mkdir -p "$BACKUP_DIR"
 cp "$CONFIG" "$BACKUP"
 echo "Backed up: $BACKUP"
 
-# Locate a Python interpreter that has both PyYAML and the merged
-# hermes_cli.update_cmd wrappers. Prefer the project-local .venv.
+# Locate a Python interpreter that can import the checkout (hermes_yaml needs
+# ruamel.yaml). Prefer the project-local .venv.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 if [ -x "$REPO_ROOT/.venv/bin/python3" ]; then
@@ -234,9 +233,9 @@ set +e
 "$PYTHON_BIN" -c "
 import sys
 try:
-    import yaml
+    import hermes_yaml as yaml
 except ImportError:
-    print('PyYAML is required for migration; install with: pip install pyyaml', file=sys.stderr)
+    print('hermes_yaml (ruamel.yaml) is required for migration; run it from the Janitor checkout venv', file=sys.stderr)
     sys.exit(2)
 try:
     with open(sys.argv[1]) as f:
@@ -262,10 +261,11 @@ if [ "$PARSE_RC" != "0" ]; then
     exit "$PARSE_RC"
 fi
 
-# Invoke the fresh wrappers in an isolated Python subprocess so a partially-
-# broken venv doesn't bleed into the running session. Warnings emitted by
-# the migrate call are also captured into a tempfile so the post-check
-# can decide whether a still-behind result is a support-floor refusal.
+# Run the config API in an isolated Python subprocess so the checkout's
+# current code (not whatever the caller had loaded) performs the migration.
+# Warnings emitted by the migrate call are also captured into a tempfile so
+# the post-check can decide whether a still-behind result is a support-floor
+# refusal.
 MIGRATE_WARNINGS_FILE="$(mktemp -t janitor-migrate-warnings.XXXXXX)"
 trap 'rm -f "$MIGRATE_WARNINGS_FILE"' EXIT
 set +e
@@ -275,16 +275,13 @@ import sys
 sys.path.insert(0, sys.argv[1])
 
 try:
-    from hermes_cli.update_cmd import (
-        _run_config_check_fresh,
-        _run_migrate_config_fresh,
-    )
+    from hermes_cli.config import check_config_version, migrate_config
 except Exception as exc:
-    print(f"Failed to import fresh config wrappers: {exc}", file=sys.stderr)
+    print(f"Failed to import hermes_cli.config: {exc}", file=sys.stderr)
     sys.exit(2)
 
 try:
-    current, latest = _run_config_check_fresh()
+    current, latest = check_config_version(raise_on_parse_error=True)
 except Exception as exc:
     print(f"Config version check failed: {exc}", file=sys.stderr)
     sys.exit(2)
@@ -309,7 +306,7 @@ if current > latest:
     sys.exit(0)
 
 try:
-    results = _run_migrate_config_fresh(interactive=False, quiet=True)
+    results = migrate_config(interactive=False, quiet=True)
 except Exception as exc:
     print(f"Config migration raised: {exc}", file=sys.stderr)
     sys.exit(3)
@@ -359,13 +356,13 @@ except OSError:
     pass
 
 try:
-    from hermes_cli.update_cmd import _run_config_check_fresh
+    from hermes_cli.config import check_config_version
 except Exception as exc:
     print(f"Post-check import failed: {exc}", file=sys.stderr)
     sys.exit(3)
 
 try:
-    cur, lat = _run_config_check_fresh()
+    cur, lat = check_config_version(raise_on_parse_error=True)
 except Exception as exc:
     print(f"Post-check raised: {exc}", file=sys.stderr)
     sys.exit(3)

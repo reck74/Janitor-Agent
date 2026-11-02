@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence
 
-import yaml
+import hermes_yaml as yaml
 
 from janitor.home import REPO_ROOT, SKILLS_ROOT, janitor_home
 

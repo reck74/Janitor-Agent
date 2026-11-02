@@ -33,17 +33,22 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-PYTHON=python3
-for candidate in .venv/bin/python venv/bin/python .venv/Scripts/python.exe; do
-    if [ -x "$candidate" ]; then PYTHON="$candidate"; break; fi
-done
+# CI's setup-pm exports the test environment as HERMES_PYTHON; a local
+# checkout has its .venv.
+PYTHON="${HERMES_PYTHON:-}"
+if [ -z "$PYTHON" ]; then
+    PYTHON=python3
+    for candidate in .venv/bin/python venv/bin/python .venv/Scripts/python.exe; do
+        if [ -x "$candidate" ]; then PYTHON="$candidate"; break; fi
+    done
+fi
 
 step() { printf '\n▶ %s\n' "$1"; }
 
 if [ -z "$BASE" ]; then
     BASE="$("$PYTHON" -c 'from janitor.overlay import load_overlay; print(load_overlay().upstream_base)')"
 fi
-UPSTREAM_URL="$("$PYTHON" -c 'import yaml; print(yaml.safe_load(open("janitor/overlay.yaml"))["upstream"]["repo"])')"
+UPSTREAM_URL="$("$PYTHON" -c 'from janitor.overlay import load_overlay; print(load_overlay().upstream_repo)')"
 
 step "Upstream base ${BASE}"
 if ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then

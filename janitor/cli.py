@@ -53,6 +53,17 @@ def _load_janitor_env() -> None:
 
 _load_janitor_env()
 
+# Like every Hermes entry point, before anything below imports a dependency:
+# a checkout upstream's updater takeover made PM-managed re-execs into its
+# store interpreter and activates its dependency generation here; a classic
+# ``.venv`` keeps its own packages. HERMES_HOME is already Janitor's, so PM's
+# tool store and install state land in ~/.janitor.
+try:
+    import hermes_bootstrap  # noqa: F401
+except ModuleNotFoundError as exc:
+    if exc.name != "hermes_bootstrap":
+        raise
+
 # COMMAND HIJACKING: Intercept `janitor update` before Hermes CLI parses arguments.
 # We delegate to a minimal bootstrap helper so this path stays importable
 # even when the venv is partially broken (e.g. new Hermes imports after a pull).
@@ -200,7 +211,7 @@ def _owasp_honcho_fail_safe_for_test(hermes_home: str):
     if not config_path.exists():
         return True, ""
 
-    import yaml
+    import hermes_yaml as yaml
 
     with open(config_path, encoding="utf-8") as f:
         cfg = yaml.safe_load(f) or {}
@@ -263,9 +274,8 @@ def main():
     # Monkey-patch tips to the Janitor Spanish corpus without touching core Hermes.
     import hermes_cli.tips as _hermes_tips_mod
 
-    from janitor.tips_es import JANITOR_TIPS, get_janitor_tip
+    from janitor.tips_es import get_janitor_tip
 
-    _hermes_tips_mod.TIPS = JANITOR_TIPS
     _hermes_tips_mod.get_random_tip = get_janitor_tip
 
     # Monkey-patch ``hermes update`` so it pulls from the Janitor fork only.

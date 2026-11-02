@@ -48,15 +48,13 @@ Son fixes independientes de Janitor; upstream los quiere por el rubric
   real, y la invariante `async` de la directiva #15 sigue en
   `test_janitor_no_duplicate_methods.py`. No hay nada que proponer.
 
-### 1.2 `web-typecheck` — `tsc -p .` no chequea nada
+### 1.2 `web-typecheck` — resuelto upstream
 
-- **Síntoma upstream:** `web/tsconfig.json` tiene `files: []` y referencias de
-  proyecto, así que `tsc -p . --noEmit` termina en verde sin compilar ningún
-  archivo.
-- **Edición Janitor:** `"typecheck": "tsc -b --noEmit"` en `web/package.json`.
-- **PR propuesto:** `fix(web): typecheck the referenced projects`. Ojo: al
-  activarlo upstream puede aflorar errores de tipos acumulados; el PR debe
-  incluir esos arreglos o no lo van a mergear.
+- **Síntoma original:** `web/tsconfig.json` tiene `files: []` y referencias de
+  proyecto, así que `tsc -p . --noEmit` terminaba en verde sin compilar nada.
+- **Estado (v0.22.5):** upstream ya corre `tsc -b . --noEmit` en
+  `web/package.json`. El touchpoint se retiró en el sync y se toma el script
+  de upstream.
 
 ### 1.3 `tui-test-timeout` — flake de `cursorDriftRegression.test.ts`
 
@@ -131,14 +129,16 @@ skin.
 
 ### 2.4 Tips por idioma (monkey-patch)
 
-- **Hoy:** `janitor/cli.py` reemplaza `hermes_cli.tips.TIPS` y
-  `get_random_tip` por el corpus en español de `janitor/tips_es.py`.
-- **PR propuesto:** `feat(tips): locale-aware tip corpus` — `hermes_cli/tips.py`
-  elige el corpus según el locale (o una clave nueva de `config.yaml`, p. ej.
-  `display.language`, que hoy no existe en `DEFAULT_CONFIG`) y busca
-  `tips_<lang>.py`/YAML; Janitor aporta la traducción al español como primer
-  corpus no inglés. Beneficia a cualquier usuario hispanohablante de Hermes.
-- **Al aceptarse:** se borran el patch y `janitor/tips_es.py`.
+- **Hoy:** `janitor/cli.py` reemplaza `hermes_cli.tips.get_random_tip` por el
+  corpus en español de `janitor/tips_es.py`. `hermes_cli.tips.TIPS` ya no
+  existe.
+- **Estado (v0.22.5):** upstream ya hizo la parte genérica: los tips son
+  claves del catálogo i18n (`locales/<lang>.yaml`, `tips.tNNN`), resueltas
+  con `t()` en el idioma activo, y `locales/es.yaml` existe. No hay nada que
+  proponer.
+- **Pendiente propio:** decidir si el patch se retira (el idioma de la
+  instalación pasa a `es` y se pierden los tips específicos de Janitor) o si
+  los tips Janitor se mueven a un catálogo propio. Fuera del sync.
 
 ### 2.5 Flujo de `update` con remoto y hooks configurables
 
@@ -165,7 +165,21 @@ skin.
   imprime el banner y llama a `cmd_update` upstream; `update_core.py` y el
   patch de `cmd_update` se eliminan.
 
-### 2.6 `mcp-dashboard-endpoints`
+### 2.6 `version` — versión declarada con segmento local
+
+- **Hoy (v0.22.5):** `pyproject.toml` de upstream dice `0.0.0` y la versión
+  real sale de `install-stamp.json` o, en un checkout, de los tags `vX.Y.Z`
+  alcanzables (`hermes_cli/version_info.py`). En un checkout de una distro
+  esos tags son los de la distro, o no hay ninguno (clon superficial).
+- **Edición Janitor:** `version_info._git_version_info` usa la versión
+  declarada en `pyproject.toml` cuando lleva segmento local PEP 440
+  (`<hermes>+janitor.N`), antes de mirar los tags.
+- **PR propuesto:** `fix(version): honour a declared local-version segment in
+  checkouts` — sin segmento local nada cambia para Hermes. Consumidor
+  concreto: cualquier redistribución que construya desde un checkout.
+- **Al aceptarse:** el touchpoint `version` queda solo en `pyproject.toml`.
+
+### 2.7 `mcp-dashboard-endpoints`
 
 - **Hoy:** `POST /api/mcp/servers/{name}/discover` y
   `GET /api/mcp/servers/{name}/logs` en `hermes_cli/web_routers/mcp.py` +
@@ -184,7 +198,7 @@ skin.
 
 | Touchpoint | Motivo |
 |------------|--------|
-| `version`, `packaging` | Identidad de la distro (`+janitor.N`, script `janitor`, entry point del plugin). Siempre serán propios; en una distro separada viven en su propio `pyproject.toml`. |
+| `packaging` y la declaración `+janitor.N` de `version` | Identidad de la distro (`+janitor.N` en `pyproject.toml`, script `janitor`, entry point del plugin). Siempre serán propios; en una distro separada viven en su propio `pyproject.toml`. |
 | `installers` | Instalan desde el fork en `~/.janitor` y exigen Docker/Honcho (directiva #8). |
 | `fork-docs`, `fork-ci` | Documentación y CI de la distro. |
 
@@ -193,14 +207,15 @@ skin.
 | Candidato | Tipo | PR upstream | Estado |
 |-----------|------|-------------|--------|
 | 1.1 gateway-cache-refresh | fix | — | retirado (premisa incorrecta, v2026.9.24) |
-| 1.2 web-typecheck | fix | — | por proponer |
+| 1.2 web-typecheck | fix | — | resuelto upstream (v0.22.5); touchpoint retirado |
 | 1.3 tui-test-timeout | fix | — | por proponer |
 | 2.1 tui-branding-hook | hook | — | por proponer |
 | 2.2 banner (refactor + product_name) | hook | — | paso 1 parcial upstream; quedan 2 literales y `product_name` |
 | 2.3 argparse `prog` | hook | — | por proponer |
-| 2.4 tips por idioma | feature | — | por proponer |
+| 2.4 tips por idioma | feature | — | hecho upstream (catálogo i18n, v0.22.5); queda decidir el patch |
 | 2.5 update (fallback + post_update) | fix + hook | — | paso 1 hecho upstream; falta `post_update` |
-| 2.6 MCP discover/logs | feature | — | por proponer |
+| 2.6 version_info + `+janitor.N` | fix | — | por proponer |
+| 2.7 MCP discover/logs | feature | — | por proponer |
 
 Actualizar esta tabla con el link al PR y el resultado (aceptado / rechazado /
 plan B). Un rechazo no es un fracaso: el touchpoint queda declarado y el gate
@@ -261,7 +276,7 @@ instalación de paquete sin tocar `config.yaml`, `SOUL.md`, `skills/`,
 
 ### Conclusión actual
 
-Quedarse en el fork delgado. Con 10 touchpoints (5 candidatos a upstream) y
+Quedarse en el fork delgado. Con 9 touchpoints (5 candidatos a upstream) y
 tres monkey-patches, separar hoy significaría vendorizar esas ediciones en
 otro sitio sin reducir trabajo. Revisar esta evaluación cada vez que se
 acepte un candidato; el disparador concreto es que la tabla de la sección 4

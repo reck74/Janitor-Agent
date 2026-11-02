@@ -1,119 +1,158 @@
-# Próximo sync upstream: Hermes v2026.8.13 → v2026.9.24
+# Próximo sync upstream: Hermes v2026.9.24 → v0.22.5
 
-Traspaso para una sesión nueva. Janitor 1.0 (`0.20.1+janitor.2`) está en
-`main` sobre Hermes **v2026.8.13**; upstream publicó 11 releases desde
-entonces. Este documento junta lo que ya se sabe del salto para que el sync se
-haga sin redescubrirlo. El procedimiento general está en
-[`MERGE_GUIDE.md`](../../MERGE_GUIDE.md); aquí solo va lo específico de este
-salto. Al terminar el sync, borrar este archivo o reescribirlo para el
-siguiente.
+Verificación del 2 de noviembre de 2026 (America/Bogota). Janitor
+(`0.21.5+janitor.1`) está en `main` sobre Hermes **v2026.9.24**. Esa sigue
+siendo la última release con tag calver, y el workflow de sync solo miraba
+`v20*`, así que reportaba "ya estamos al día". Upstream cambió el esquema:
+las releases estables publicadas ahora son `v0.x.y`. La última publicada es
+**v0.22.5**. Este archivo es el punto de partida para ese sync. El
+procedimiento general está en [`MERGE_GUIDE.md`](../../MERGE_GUIDE.md).
+
+No se mergeó nada en esta verificación. Un `git merge v0.22.5 --no-commit`
+se abortó después de listar los conflictos.
+
+## Estado (2 nov 2026, America/Bogota)
+
+El merge está hecho en la rama `cursor/upstream-sync-v0.22.5-e6df`:
+conflictos resueltos, capa Janitor re-aplicada y
+`scripts/janitor-sync-verify.sh` completo en verde. Eso incluye el overlay
+check, los 306 tests de `tests/janitor/`, el overlay de desktop y el TUI
+(build más 1.884 tests de vitest). La entrada `0.22.5+janitor.1` de
+`CHANGELOG.md` resume los cambios.
+
+Se probó el paso real de un usuario: un checkout de `main` (0.21.5) con su
+`.venv` corrió `janitor update` contra esta rama, con un home aislado y el
+`config.yaml` de semilla. El updater viejo entrega la instalación a pm, que
+termina el update (rc 0). Después `janitor` arranca, y un segundo
+`janitor update` por el core nuevo también termina con rc 0, sin stash
+pendiente.
+
+Bloqueantes antes de mergear:
+
+1. **Honcho.** El catálogo vivo fija Honcho en `2108daf`, que no instala
+   (upstream #146435, fix en revisión en #147311). Todo home Janitor tiene
+   `memory.provider: honcho`, así que el update deja la memoria Honcho
+   apagada. Esperar el fix upstream (v0.22.6 o el catálogo corregido) y
+   repetir la prueba de paso.
+2. **Efectos del takeover de pm.** Una sola vez instala las herramientas por
+   defecto de Hermes (`agent-browser` + Chromium, `cua-driver`) en
+   `~/.janitor/tools`, y publica `hermes*` en `~/.local/bin`. Decidir si se
+   acepta (está documentado en el CHANGELOG) o si se necesita una
+   mitigación. El código que corre es el del release anterior, así que una
+   mitigación no puede ir dentro del update.
+3. **Sin verificar:** `scripts/install.ps1` (touchpoint `merge: ours`, sigue
+   siendo el instalador Windows viejo, sin pm) y un build real del AppImage
+   de `janitor-desktop-release.yml`.
+
+El resto de este documento es el análisis previo al merge.
 
 ## Datos
 
 | | Valor |
 |--|-------|
-| Base actual (`upstream.base` en `janitor/overlay.yaml`) | `f80f453ae0679347e38abc917c7f94f717bf96c5` (v2026.8.13) |
-| Objetivo | `v2026.9.24` → commit `f97608f178d1ffeca59860195ab7da295f7c8e5f` |
-| Releases intermedias | v2026.8.16, .8.16.2, .8.18, .8.19, .8.27, .8.31, .9.7, .9.11, .9.14, .9.21 |
-| Versión upstream en el objetivo | `0.21.5` (`__release_date__ = "2026.9.24"`) |
-| Versión Janitor resultante | `0.21.5+janitor.1`; entrada de CHANGELOG `1.0.1 — 0.21.5+janitor.1 (Hermes v2026.9.24)` |
-| Tamaño del salto | ~12.400 archivos distintos entre base y objetivo |
+| Base actual (`upstream.base`) | `f97608f178d1ffeca59860195ab7da295f7c8e5f` (v2026.9.24, 24 sep 2026, 5:08 America/Bogota) |
+| Objetivo | **v0.22.5** → `bf0203a794a07aac3ff764972ab9087baa4e4f4e` (commit 22 oct 2026, 9:24 p.m. America/Bogota; release de GitHub 23 oct 2026, 12:28 a.m.) |
+| Releases intermedias publicadas | v0.21.6, v0.21.7, v0.22.0 ("The Threshold Release"), v0.22.1, v0.22.2, v0.22.3, v0.22.4 |
+| Commits base → objetivo | 16.231 |
+| Diff | 13.049 archivos, +1.278.488 / −338.380 |
+| `upstream/main` por delante de v0.22.5 | 3.397 commits (punta del 2 nov 2026, 8:35 a.m. America/Bogota). No es release: no se mergea |
+| Canary más nuevo | `v0.22.5+canary.20261102T065013Z`, 3.359 commits después de v0.22.5. Tampoco se mergea |
+| Versión en el objetivo | `pyproject.toml` y el desktop dicen `0.0.0`. La identidad real sale de `install-stamp.json` / `hermes_cli.version_info.get_version_info()` (`baseVersion` del stamp, o git). `__release_date__` sigue en `"2026.9.24"` |
+| Conflicto de un merge 3-way | **45 archivos**. 33 son workflows que el fork ya borró (modify/delete). 12 son contenido |
 
-Si para cuando se haga el sync hay un tag más nuevo, usar ese: el análisis de
-abajo sigue siendo el punto de partida, pero hay que repetir la sección
-"Touchpoints" contra el tag nuevo.
+No hay un escalón más chico. v0.21.6, la primera release después de la base,
+ya trae `version = "0.0.0"`, `__version__` perezoso y la desaparición de
+`hermes_cli.tips.TIPS` (8.342 archivos). El corte es v0.22.5 o nada.
 
-## Cómo arrancar
+## Por qué el bot no lo veía
 
-Dos caminos; el manual es el recomendado para este salto.
+`upstream-sync.yml` hacía `git tag -l 'v20*' --sort=-v:refname`. El tag más
+nuevo con ese glob sigue siendo v2026.9.24, que ya es ancestro de
+`origin/main`, y el job salía en verde sin abrir PR. El selector ahora usa
+el mismo patrón que `STABLE_TAG_RE` de upstream (major ≤ 999), ordenado por
+fecha del tag, y solo tags que existen en `NousResearch/hermes-agent`. El
+tag `v1.0.0` de este fork entra en el patrón pero no está en upstream.
 
-1. **Automático:** Actions → "🔄 Upstream Sync" → *Run workflow*
-   (`workflow_dispatch`). Con este tamaño de salto lo esperable es que
-   encuentre conflictos en los touchpoints de abajo y abra un issue en vez de
-   un PR. Sirve para confirmar la lista de conflictos, no para resolverlos.
-2. **Manual (MERGE_GUIDE §3):** rama `upstream-sync-v2026.9.24` desde
-   `origin/main`, `git merge v2026.9.24 --no-edit` (3-way, nunca `-X theirs`
-   / `-X ours` global), resolver por archivo con la tabla de abajo, podar los
-   workflows de upstream, actualizar `upstream.base` y correr
-   `scripts/janitor-sync-verify.sh` (completo, con TUI y desktop).
+## Merge de prueba
 
-El merge debe quedar como merge commit con mensaje `chore(sync): merge
-upstream v2026.9.24` y los arreglos posteriores en commits `fix(sync): …`,
-para que `tests.yml :: upstream-sync-verify` corra la suite completa de
-upstream al llegar a `main`.
+```text
+45 conflicts
+  33  modify/delete  .github/workflows/*   (el fork los podó; upstream los siguió editando)
+  12  content        ver tabla
+```
 
-## Touchpoints: qué cambió upstream y qué hacer
+Auto-merge limpio, revisar igual: `AGENTS.md` (el bloque Janitor quedó
+primero), `hermes_cli/mcp_config.py`, `hermes_cli/web_routers/mcp.py` (los
+endpoints `discover` y `logs` sobrevivieron), `.env.example`,
+`tests/hermes_cli/test_startup_fast_guards.py`. Ese test de banner conservó
+`THE JANITOR v` en las aserciones viejas y **añadió** un `"Hermes Agent v"`
+nuevo (~línea 230 del merge). Directiva #12: hay que cambiarlo en el mismo
+commit y dejar el comentario.
 
-Comparación de cada archivo declarado en `janitor/overlay.yaml` entre la base y
-el objetivo.
+## Conflictos de contenido
 
-| Touchpoint | Archivo | Upstream | Acción |
-|------------|---------|----------|--------|
-| version | `pyproject.toml`, `hermes_cli/__init__.py` | cambiados (0.21.5) | tomar upstream, poner `0.21.5+janitor.1` |
-| version / packaging | `uv.lock` | cambiado | tomar el de upstream y editar **solo** la línea de versión de `hermes-agent`; `uv lock --check` debe pasar. No regenerar con otra versión de `uv` (sube `revision` y reformatea todo) |
-| packaging | `pyproject.toml` | +287/−53 | re-aplicar: script `janitor = "janitor.cli:main"`, entry point `[project.entry-points."hermes_agent.plugins"] janitor = "janitor.plugin"`, `janitor`/`janitor.*` en `packages.find.include`, package data `janitor = ["overlay.yaml", "skills/**/*"]`, py-modules alias pre-1.0 (`janitor_cli`, `janitor_update_bootstrap`, `janitor_update_core`, `janitor_version`). Ver `test:packaging` |
-| banner | `hermes_cli/banner.py` | reescrito en parte | `format_banner_version_label()` sigue existiendo; re-aplicar `THE JANITOR v{display_version(VERSION)}` |
-| banner | `hermes_cli/_startup_fast.py` | cambiado | `print_fast_version_info` ahora recibe `*, check_updates`; re-aplicar el literal |
-| banner | `cli.py` | **−18k líneas** | `_build_compact_banner` se movió a **`hermes_cli/cli_render.py`**. Tomar `cli.py` de upstream completo y re-aplicar el literal en `cli_render.py`. En `overlay.yaml`, reemplazar `cli.py` por `hermes_cli/cli_render.py` en `files` |
-| banner | `tests/hermes_cli/test_startup_fast_guards.py` | cambiado | las aserciones `"Hermes Agent v"` (hoy en las líneas ~69 y ~119) pasan a `THE JANITOR v` (directiva #12) |
-| banner | `tests/hermes_cli/test_banner.py`, `test_kanban_db.py` | cambiados | tomar upstream y re-aplicar solo las aserciones de banner |
-| gateway-cache-refresh | `gateway/run.py` | **−27k líneas** | el método se movió a **`gateway/run_agent_cache.py`** (`_refresh_agent_cache_message_count`, ~línea 567) y **upstream todavía tiene el bug** (`await self._session_db.get_session(...)` sobre una función síncrona). Tomar `run.py` de upstream y re-aplicar `asyncio.to_thread` en `run_agent_cache.py`; actualizar `files` en `overlay.yaml` |
-| mcp-dashboard-endpoints | `hermes_cli/mcp_config.py`, `hermes_cli/web_routers/mcp.py` | ~600 líneas cambiadas en cada uno | upstream **no** agregó `discover`/`logs`. Tomar upstream y re-aplicar los dos endpoints y sus helpers; los tests son `tests/janitor/test_mcp_router_{discover,logs}.py` |
-| web-typecheck | `web/package.json` | +4 líneas, sigue con `tsc -p . --noEmit` | re-aplicar `tsc -b --noEmit`; si aparecen errores de tipos nuevos de upstream, arreglarlos o documentarlos antes de cerrar |
-| tui-branding-hook | `ui-tui/src/theme.ts`, `ui-tui/src/components/branding.tsx` | cambiados; siguen los literales `TAG_FULL` / `Nous Research` | re-aplicar `branding.tagline` / `branding.vendor` |
-| tui-test-timeout | `ui-tui/vitest.config.ts` | sin cambios | nada |
-| installers | `scripts/install.ps1` | +925/−230 | `merge: ours`, pero revisar qué arregló upstream y portar lo que aplique a Janitor |
-| installers | `scripts/bootstrap.sh` | solo existe en el fork | nada |
-| fork-docs | `AGENTS.md`, `.env.example`, `.gitignore` | cambiados | `merge: ours` para el bloque Janitor; incorporar las secciones nuevas de upstream debajo del bloque Janitor de `AGENTS.md` |
-| fork-docs | `README.md`, `CHANGELOG.md` | sin cambios / solo fork | nada (más la entrada nueva de CHANGELOG) |
-| fork-ci | `.github/workflows/*.yml` | — | podar todo lo de upstream salvo `tests.yml`, `upstream-sync.yml`, `janitor-ci.yml`, `janitor-desktop-release.yml` (mismo `find` que `upstream-sync.yml`). Esto borra también los workflows upstream que hoy siguen en `main` (lint, tests-os, …): es lo previsto |
+| Archivo | Resolución |
+|---------|------------|
+| `.github/workflows/tests.yml` | `merge: ours` para el job `test` (suite `tests/janitor/`, ubuntu-latest). Portar al job de sync/e2e lo que upstream cambió en la instalación: **Python 3.14**, `uv sync --locked --python 3.14 --extra all --group dev` (`dev` dejó de ser extra y pasó a `[dependency-groups]`), extras `anthropic mistral fal modal daytona parallel-web` (ya no está `bedrock` en el job e2e), Node 26, pin de `uv` 0.12.13. No copiar los runners `blacksmith-*` ni `useblacksmith/checkout`: este fork no los tiene. Lo mismo en `janitor-ci.yml`, que hoy sigue en Python 3.11 y `--extra dev` |
+| `pyproject.toml` | Tomar upstream. Re-aplicar script `janitor`, entry point del plugin, `packages.find`, package data y py-modules pre-1.0. **No** volver a poner `0.21.5+janitor.N` en `project.version`: upstream lo fijó en `0.0.0` a propósito |
+| `uv.lock` | Tomar el de upstream. El paquete `hermes-agent` ya dice `version = "0.0.0"`. No regenerar el lock con otro `uv` |
+| `hermes_cli/__init__.py` | Tomar upstream (`__getattr__` lee el stamp). El segmento `+janitor.N` tiene que vivir en esa lectura, no en una asignación de módulo: los tests de `tests/janitor/` exigen `re.fullmatch(r"\d+\.\d+\.\d+\+janitor\.\d+", hermes_cli.__version__)` y que coincida con lo que el banner muestra. Diseñarlo antes de cerrar el sync; un literal al lado del `__getattr__` no gana |
+| `hermes_cli/banner.py`, `_startup_fast.py`, `cli_render.py` | Tomar upstream y re-aplicar `THE JANITOR v…`. `format_banner_version_label()` sigue, pero ahora usa `get_version_info().derived_version` |
+| `ui-tui/src/components/branding.tsx` | Tres hunks. Re-aplicar `branding.tagline` / `branding.vendor`. Siguen los literales `Nous Research` |
+| `web/package.json` | Un hunk: upstream ya tiene `tsc -b . --noEmit`. El touchpoint `web-typecheck` (`tsc -b --noEmit`) quedó redundante; tomar upstream y retirar el touchpoint si el check sigue cubierto |
+| `scripts/install.ps1` | `merge: ours` (+1390/−4908 en upstream). Revisar qué arregló upstream y portar lo que aplique; no reemplazar el instalador de Janitor |
+| `.gitignore` | Unir los dos bloques: la higiene Janitor (`.sisyphus/`, `.omo/`, `apps/desktop/release/`) y lo nuevo de upstream (`.build/`, `.cache/`, `/pm/.lock.json.lock`, `apps/desktop/.dist-build*`) |
+| `README.md` | Conservar el README del fork e incorporar solo lo que upstream cambió y siga siendo cierto |
 
-## Dependencias de la capa Janitor (comprobadas en v2026.9.24)
+Los 33 workflows en modify/delete se borran otra vez con el mismo `find`
+del workflow de sync. `tests.yml` no entra en ese `find`.
 
-Todas siguen existiendo; aun así, el verify las cubre:
+## Lo que el merge no marca y el verify sí va a fallar
 
-- `hermes_cli/_parser.py` sigue con `prog="hermes"` (patch de argparse).
-  Hay un segundo parser nuevo en `hermes_cli/console_engine.py` con
-  `prog="hermes"`; revisar si el patch de `janitor/cli.py` lo cubre o si hay
-  que ampliarlo.
-- `hermes_cli.main.cmd_update` y `hermes_cli.tips.TIPS` / `get_random_tip`
-  existen; la firma de `get_random_tip(exclude_recent: int = 0)` no cambió.
-  `test_janitor_monkeypatch_signatures.py` (directiva #14) lo confirma tras
-  el merge.
-- `tools/skills_sync._dir_hash` ahora acepta
-  `*, include_runtime_cache: bool = False`. `janitor/migrations/v1.dir_hash`
-  debe seguir dando el mismo hash que el default; lo verifica
-  `test_manifest_hash_matches_bundled_sync`.
-- `skills.external_dirs`, el grupo de entry points `hermes_agent.plugins` y
-  el hook `pre_gateway_dispatch` existen.
-- Desktop: `apps/desktop/package.json` mantiene `productName: "Hermes"`
-  (el `userData` de los usuarios no cambia). Los destinos del overlay
-  (`public/apple-touch-icon.png`, `public/nous-girl.jpg`,
-  `public/ds-assets/filler-bg0.jpg`) existen; `assets/janitor-icon.png` lo
-  crea el overlay. `build.icon` upstream es `assets/icon` y
-  `artifactName` `Hermes-…`; los overrides de
-  `electron-builder.janitor.json` los siguen reemplazando.
+- **Tips.** `hermes_cli.tips.TIPS` ya no existe; el catálogo son claves i18n
+  (`tip_keys()`, `get_random_tip(exclude_recent: int = 0)`). La firma de
+  `get_janitor_tip` sigue siendo compatible. `janitor/cli.py` asigna
+  `TIPS = JANITOR_TIPS`, y `tests/janitor/test_janitor_monkeypatch_signatures.py`
+  hace `type(hermes_tips.TIPS)`. Hay que apuntar el parche al catálogo nuevo
+  y actualizar el test al contrato nuevo, sin quitar la comprobación.
+- **Hash de skills.** `tools.skills_sync._dir_hash` pasó a `dir_hash` público,
+  misma firma (`directory, *, include_runtime_cache: bool = False`).
+  `janitor/migrations/v1.py` tiene su propia copia; el test que compara
+  contra el hash de upstream hay que apuntarlo a `dir_hash`.
+- **Desktop overlay.** `apps/desktop/public/nous-girl.jpg` ya no existe.
+  Upstream tiene `nous-girl.png` y `nous-girl-dark.png`. Siguen
+  `public/apple-touch-icon.png` y `public/ds-assets/filler-bg0.jpg`.
+  `productName` del `package.json` sigue siendo `"Hermes"` (el `userData` no
+  cambia). `apps/desktop-janitor/scripts/build.mjs` copia el mark encima de
+  `nous-girl.jpg`; el check del overlay falla si el destino no existe.
+  Los iconos de build se movieron a `apps/desktop/assets/icon.png`.
+- **Gateway cache.** El touchpoint ya está retirado. En v0.22.5
+  `_refresh_agent_cache_message_count` sigue en `gateway/run_agent_cache.py`
+  y hace `await self._session_db.get_session(...)`. No reintroducir
+  `asyncio.to_thread`.
+- **`cmd_update(args)`** sigue con un solo parámetro. El parche de Janitor
+  no necesita firma nueva. El cuerpo de upstream creció (handoff, lock,
+  stamp): `janitor/update_core.py` no se reemplaza por eso, pero hay que
+  leer qué preflight nuevo debe respetar el core de Janitor.
+- **Parser.** `hermes_cli/_parser.py` y `hermes_cli/console_engine.py` siguen
+  con `prog="hermes"`.
+- **`skills.external_dirs`** y **`pre_gateway_dispatch`** siguen.
 
-## Antes de dar el sync por terminado
+## Cómo arrancar el sync
 
-1. `scripts/janitor-sync-verify.sh` (sin `--skip-*`) en verde.
-2. `uv lock --check` en verde.
-3. Prueba real del launcher contra una copia de un `~/.janitor` existente:
-   `JANITOR_HOME=/tmp/janitor-copy janitor skills list` y `janitor sessions list`.
-   Si upstream cambió el esquema de config, su migración corre sola; si el
-   layout de `~/.janitor` que define Janitor cambia, hace falta
-   `janitor/migrations/v2.py` + `scripts/migrate-janitor-v2.sh` (directiva #10).
-4. Actualizar `docs/janitor/upstream-candidates.md` (el fix del gateway ahora
-   apunta a `gateway/run_agent_cache.py`) y borrar este archivo.
-5. PR → merge en `main` → tag `v1.0.1` sobre `main` (dispara el release del
-   AppImage).
+Manual, en una rama `upstream-sync-v0.22.5`:
 
-## Prompt para la sesión nueva
+```bash
+git fetch upstream --tags
+git checkout -b upstream-sync-v0.22.5 origin/main
+git merge v0.22.5 --no-edit -m "chore(sync): merge upstream v0.22.5"
+```
 
-> Sincroniza Janitor con Hermes upstream v2026.9.24 (o el último tag `v20*`
-> si hay uno más nuevo). Sigue `docs/janitor/next-upstream-sync.md` y
-> `MERGE_GUIDE.md`: merge 3-way en una rama `upstream-sync-<tag>`, resolver
-> cada touchpoint según la tabla, actualizar `janitor/overlay.yaml`, versión
-> `0.21.5+janitor.1` con su entrada de CHANGELOG, y dejar
-> `scripts/janitor-sync-verify.sh` completo en verde. Abre un PR con el
-> resultado; no mergees ni etiquetes sin preguntarme.
+3-way, nunca `-X theirs` / `-X ours` global. Después: podar workflows,
+resolver la tabla de arriba, decidir el segmento `+janitor.N` sobre el
+stamp, actualizar `upstream.base` a `bf0203a794a07aac3ff764972ab9087baa4e4f4e`
+y correr `scripts/janitor-sync-verify.sh` completo.
+
+El merge commit lleva mensaje `chore(sync): merge upstream v0.22.5` y los
+arreglos van en commits `fix(sync): …`, para que `upstream-sync-verify`
+corra la suite de upstream al llegar a `main`.

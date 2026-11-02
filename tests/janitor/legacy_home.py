@@ -25,7 +25,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable
 
-import yaml
+import hermes_yaml as yaml
+
+from tests.janitor.checkout_metadata import install_checkout_metadata
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ASSETS = REPO_ROOT / "assets" / "janitor"
@@ -81,14 +83,14 @@ def expected_listing_count(skill_dir: Path) -> int:
 
 
 def _seed_skills(home: Path) -> None:
-    from tools.skills_sync import _dir_hash
+    from tools.skills_sync import dir_hash as upstream_dir_hash
 
     skills_dir = home / "skills"
     manifest_lines = []
     for name, rel in LEGACY_SKILL_PATHS.items():
         dest = skills_dir / rel
         shutil.copytree(find_skill_source(name), dest)
-        manifest_lines.append(f"{name}:{_dir_hash(dest)}")
+        manifest_lines.append(f"{name}:{upstream_dir_hash(dest)}")
 
     modified = skills_dir / LEGACY_SKILL_PATHS[USER_MODIFIED_SKILL] / "SKILL.md"
     modified.write_text(
@@ -204,14 +206,17 @@ def session_messages(home: Path) -> list[tuple[str, str]]:
 
 
 def launcher_env(root: Path) -> Dict[str, str]:
-    """Environment for running the real ``janitor`` launcher against ``root``."""
+    """Environment for running the real ``janitor`` launcher against ``root``,
+    with the checkout's entry points installed as a real install has them."""
+    site = root / ".checkout-site"
+    install_checkout_metadata(site)
     env = {k: v for k, v in os.environ.items() if not k.startswith("HERMES_")}
     env.update(
         {
             "HOME": str(root),
             "USERPROFILE": str(root),
             "HERMES_QUIET": "1",
-            "PYTHONPATH": str(REPO_ROOT),
+            "PYTHONPATH": os.pathsep.join([str(REPO_ROOT), str(site)]),
         }
     )
     return env

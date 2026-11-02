@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import cast
 
-import yaml
+import hermes_yaml as yaml
 
 from janitor.home import SKILLS_ROOT
 

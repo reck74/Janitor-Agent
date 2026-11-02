@@ -5,10 +5,11 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-import yaml
+import hermes_yaml as yaml
 
 from hermes_cli import plugins
 from hermes_constants import get_hermes_home
+from tests.janitor.checkout_metadata import install_checkout_metadata
 
 INSTRUCTION = "Responde solo en español o inglés."
 
@@ -20,7 +21,10 @@ def _write_config(cfg: dict) -> None:
 
 
 @pytest.fixture
-def discover():
+def discover(tmp_path, monkeypatch):
+    install_checkout_metadata(tmp_path / "site")
+    monkeypatch.syspath_prepend(str(tmp_path / "site"))
+
     def _discover():
         plugins._reset_plugin_managers_for_tests()
         plugins.discover_plugins(force=True)

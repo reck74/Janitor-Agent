@@ -80,6 +80,8 @@ _UPSTREAM_KNOWN_DUPLICATES = {
     ("hermes_cli/main.py", "__getattr__"),
     ("tools/mcp_tool.py", "__getattr__"),
     ("tools/skills_hub.py", "__getattr__"),
+    # v0.22.5 ships two byte-identical copies.
+    ("hermes_cli/update_cmd_fleet.py", "_unit_main_pid"),
 }
 
 # ``_`` is the conventional name for decorator-registered RPC handlers

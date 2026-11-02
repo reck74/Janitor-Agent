@@ -11,7 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-import yaml
+import hermes_yaml as yaml
 
 from janitor import agents, services
 from janitor.home import SKILLS_ROOT
@@ -235,7 +235,7 @@ def test_skills_resolve_from_the_install_tree(fresh_home):
     assert not (fresh_home / ".janitor" / "skills" / "janitor-firecrawl").exists()
 
 
-@pytest.mark.linux_only
+@pytest.mark.platforms("linux")
 def test_services_status_end_to_end_with_fake_docker(fresh_home):
     bin_dir = fresh_home / "bin"
     bin_dir.mkdir()

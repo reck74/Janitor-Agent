@@ -10,8 +10,11 @@ import argparse
 import difflib
 import os
 import sys
-import yaml
 from pathlib import Path
+
+# Skills load in place from the checkout (<repo>/janitor/skills/core/<skill>/scripts/).
+sys.path.insert(0, str(Path(__file__).resolve().parents[5]))
+import hermes_yaml as yaml  # noqa: E402
 
 JANITOR_HOME = Path(os.environ.get("JANITOR_HOME", Path.home() / ".janitor"))
 ASSETS_JANITOR = JANITOR_HOME / "janitor-core" / "assets" / "janitor"

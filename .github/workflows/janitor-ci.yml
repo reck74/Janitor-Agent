@@ -6,24 +6,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - name: Install uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
+      - name: Set up locked Python and test dependencies
+        # Upstream's setup-pm: locked Python/uv from pm/lock.json and the
+        # isolated test environment (dev + test groups) as HERMES_PYTHON.
+        uses: ./.github/actions/setup-pm
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            pyproject.toml
-            uv.lock
-      - name: Set up Python 3.11
-        run: uv python install 3.11
-      - name: Install dependencies
-        run: uv sync --locked --python 3.11 --extra all --extra dev
+          extras: '["all"]'
+          test-environment: 'true'
       - name: Run Python tests
         # The Janitor suite is the tests/janitor/ directory (AGENTS.md
         # directive #11); tests.yml :: test runs the same directory plus the
         # overlay check through scripts/janitor-sync-verify.sh.
-        run: |
-          source .venv/bin/activate
-          scripts/run_tests.sh tests/janitor/
+        run: scripts/run_tests.sh tests/janitor/
 
   react-tests:
     runs-on: ubuntu-latest
@@ -34,8 +28,9 @@ jobs:
         with:
           node-version: '22'
       - name: Install dependencies
-        working-directory: ./ui-tui
-        run: npm install
+        # ui-tui is a workspace of the root package.json; its lock is the
+        # root package-lock.json (same install as upstream's e2e job).
+        run: npm ci --workspace ui-tui --ignore-scripts --no-audit --no-fund
       - name: Build local packages (hermes-ink)
         working-directory: ./ui-tui
         run: npm run build --prefix packages/hermes-ink
@@ -108,24 +103,27 @@ jobs:
         with:
           # Pinned for the same reason as upstream tests-os.yml: unpinned,
           # setup-uv resolves "latest" by fetching a manifest on every job
-          # and a transient fetch failure fails the whole job.
-          version: "0.9.28"
+          # and a transient fetch failure fails the whole job. Same pin as
+          # upstream's tests.yml.
+          version: "0.12.13"
           enable-cache: true
           cache-dependency-glob: |
             pyproject.toml
             uv.lock
 
-      - name: Set up Python 3.11
+      - name: Set up Python 3.14
+        # uv.lock covers only PM's Python (3.14), the interpreter
+        # scripts/bootstrap.sh creates the .venv with.
         uses: ./.github/actions/retry
         with:
-          command: uv python install 3.11
+          command: uv python install 3.14
 
       - name: Install dependencies
-        # Same extras as upstream tests-os.yml so the version of the agent
-        # code paths exercised here matches the one Janitor users run.
+        # A classic uv .venv, as scripts/bootstrap.sh builds it. `dev` is a
+        # dependency group since upstream v0.22.5, not an extra.
         uses: ./.github/actions/retry
         with:
-          command: uv sync --locked --python 3.11 --extra all --extra dev --extra anthropic --extra mistral --extra fal --extra modal --extra daytona --extra parallel-web
+          command: uv sync --locked --python 3.14 --extra all --group dev --extra anthropic --extra mistral --extra fal --extra modal --extra daytona --extra parallel-web
 
       - name: Minimize uv cache
         run: uv cache prune --ci
@@ -512,21 +510,17 @@ jobs:
 
   os-compat:
     # OS-specific portability smoke for the Janitor suite (tests/janitor/).
-    # Adapted from upstream tag v2026.9.24's tests-os.yml — preserves the macOS + Windows
-    # matrix, the uv / Python 3.11 / extras setup, the retry composite, and
-    # the cache-pruning step. The test invocation diverges from upstream on
-    # purpose: upstream runs OS-marked tests via the macos_only /
-    # windows_only pytest markers; Janitor's tests are platform-agnostic
-    # Python, so we want to exercise them on every host. Per the human
-    # amendment (recorded in task-11-brief.md), the two runners dispatch
-    # differently:
-    #   - macos-latest: scripts/run_tests.sh (Janitor's canonical runner —
-    #     per-file subprocess isolation, TZ=UTC, env blanking, venv probe).
-    #   - windows-latest: .venv/Scripts/python.exe -m pytest directly,
-    #     because scripts/run_tests.sh uses POSIX-only process-group handling
-    #     that does not work natively on Windows runners.
-    # Both legs run the whole tests/janitor/ directory (AGENTS.md directive
-    # #11); tests marked linux_only are skipped by tests/conftest.py.
+    # Same setup as upstream's tests-os.yml (setup-pm with the locked Python
+    # and an isolated test environment, exported as HERMES_PYTHON). The test
+    # selection diverges from upstream on purpose: upstream runs only the
+    # tests marked for each OS; Janitor's tests are platform-agnostic Python,
+    # so the whole tests/janitor/ directory runs on every host (AGENTS.md
+    # directive #11). Tests marked @pytest.mark.platforms("linux") are
+    # skipped off Linux by tests/conftest.py.
+    #   - macos-latest: scripts/run_tests.sh (per-file subprocess isolation,
+    #     TZ=UTC, env blanking).
+    #   - windows-latest: the test interpreter's pytest directly, as before
+    #     the pm move.
     name: Janitor tests on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -540,35 +534,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # 8.2.0
+      - name: Set up locked Python and test dependencies
+        uses: ./.github/actions/setup-pm
         with:
-          # Pinned for the same reason as upstream tests-os.yml.
-          version: "0.9.28"
-          enable-cache: true
-          cache-dependency-glob: |
-            pyproject.toml
-            uv.lock
-
-      - name: Set up Python 3.11
-        uses: ./.github/actions/retry
-        with:
-          command: uv python install 3.11
-
-      - name: Install dependencies
-        uses: ./.github/actions/retry
-        with:
-          command: uv sync --locked --python 3.11 --extra all --extra dev --extra anthropic --extra mistral --extra fal --extra modal --extra daytona --extra parallel-web
-
-      - name: Minimize uv cache
-        run: uv cache prune --ci
+          extras: '["all", "anthropic", "mistral", "fal", "modal", "daytona", "parallel-web"]'
+          test-environment: 'true'
 
       - name: Run Janitor tests (macOS)
-        # Same tests/janitor/ suite as the PR gate, dispatched through Janitor's
-        # runner so per-file subprocess isolation + venv/TZ/env blanks are
-        # honored. Wrapper / skin / HOME assertions live inside these tests;
-        # running them on macOS proves the Janitor-specific code paths work
-        # outside ubuntu-latest.
+        # Wrapper / skin / HOME assertions live inside these tests; running
+        # them on macOS proves the Janitor-specific code paths work outside
+        # ubuntu-latest.
         if: matrix.os == 'macos-latest'
         shell: bash
         env:
@@ -580,11 +555,6 @@ jobs:
           scripts/run_tests.sh tests/janitor/ -v
 
       - name: Run Janitor tests (Windows)
-        # Direct .venv/Scripts/python.exe -m pytest invocation (per the human
-        # amendment in task-11-brief.md) — scripts/run_tests_parallel.py uses
-        # POSIX-only process-group handling and does not work natively on
-        # Windows. The suite and the env blanks / verbosity options are
-        # identical to the macOS leg.
         if: matrix.os == 'windows-latest'
         shell: bash
         env:
@@ -593,12 +563,8 @@ jobs:
           NOUS_API_KEY: ""
         run: |
           set -euo pipefail
-          # Windows Python defaults to cp1252 for Path.read_text() without an
-          # explicit encoding; the fork's scripts/tests carry UTF-8 (arrows,
-          # emoji). UTF-8 mode makes every read_text() site decode as UTF-8.
-          export PYTHONUTF8=1
           # Put Git Bash ahead of System32 so pytest subprocesses spawning
           # `bash` get Git Bash instead of the WSL launcher (which exits 1
           # with "no installed distributions" on hosted runners).
           export PATH="/c/Program Files/Git/bin:$PATH"
-          .venv/Scripts/python.exe -m pytest tests/janitor/ --tb=short -v
+          "$HERMES_PYTHON" -m pytest tests/janitor/ --tb=short -v

@@ -32,6 +32,14 @@ pytestmark = pytest.mark.skipif(
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "migrate-janitor-v0.20.1.sh"
 
 
+def _checkout_base_version() -> str:
+    """The checkout's real version; tests/conftest.py seeds the cache with a placeholder."""
+    from hermes_cli import version_info
+
+    version_info._reset_version_info_cache()
+    return version_info.get_version_info().base_version
+
+
 def _backups(home: Path) -> list:
     """Migration backups, wherever they landed: the script writes them to
     ``backups/config/`` (where hermes_cli.config_backups keeps config copies);
@@ -128,7 +136,7 @@ def test_v33_content_triggers_migration(tmp_path):
         capture_output=True, text=True,
     )
     assert r.returncode == 0, r.stderr
-    import yaml
+    import hermes_yaml as yaml
     from hermes_cli.config import DEFAULT_CONFIG
     after = yaml.safe_load((home / "config.yaml").read_text())
     assert after["_config_version"] == DEFAULT_CONFIG["_config_version"]
@@ -244,13 +252,12 @@ def test_prints_raw_and_display_version(tmp_path):
     """Stdout includes both raw and display versions on success.
 
     Round 2/5 strengthening: expected values are derived DIRECTLY from
-    the canonical APIs (``hermes_cli.__version__`` import, NOT
-    source-reading of ``hermes_cli/__init__.py``).
+    the canonical APIs (``get_version_info()`` import, NOT
+    source-reading of ``pyproject.toml``).
     """
-    import hermes_cli
     import janitor_version
 
-    raw = hermes_cli.__version__
+    raw = _checkout_base_version()
     display = janitor_version.display_version(raw)
 
     home = tmp_path / "janitor"
@@ -384,21 +391,20 @@ def test_backup_filename_strict_portable_shape_no_nanoseconds(tmp_path):
     assert not re.search(r"\.\d+Z$", name), name
 
 
-def test_script_uses_canonical_hermes_cli_version_import(tmp_path):
+def test_script_uses_canonical_version_info_import(tmp_path):
     """Round 2/5 Oracle finding C8: the script MUST source its raw
-    version from a direct ``import hermes_cli`` + ``print(hermes_cli.__version__)``
-    call AND derive display via ``janitor_version.display_version``.
+    version from a direct ``get_version_info().base_version`` import
+    AND derive display via ``janitor_version.display_version``.
     The script is observable here: we read its stdout and assert the
-    emitted values MATCH the canonical ``hermes_cli.__version__`` /
-    ``display_version(__version__)`` pair from the SAME Python
+    emitted values MATCH the canonical ``base_version`` /
+    ``display_version(base_version)`` pair from the SAME Python
     interpreter the script uses. If the script ever falls back to
     source-reading (the prior ``Path(spec.origin).read_text() + re.search``
     pattern), it would only happen to match the canonical value if the
-    source string is byte-identical to ``hermes_cli.__version__`` at that
+    source string is byte-identical to ``base_version`` at that
     moment — any drift between the two paths would surface as a
     contract violation.
     """
-    import hermes_cli
     import janitor_version
 
     home = tmp_path / "janitor"
@@ -419,11 +425,11 @@ def test_script_uses_canonical_hermes_cli_version_import(tmp_path):
     )
 
     # Canonical values, derived exactly the way the script must derive them.
-    expected_raw = hermes_cli.__version__
+    expected_raw = _checkout_base_version()
     expected_display = janitor_version.display_version(expected_raw)
 
     assert f"Raw version: {expected_raw}" in r.stdout, (
-        f"script's raw version must come from hermes_cli.__version__; "
+        f"script's raw version must come from get_version_info().base_version; "
         f"expected {expected_raw!r}, stdout={r.stdout!r}"
     )
     assert f"Display version: {expected_display}" in r.stdout, (
@@ -494,7 +500,7 @@ def test_real_pre_floor_config_is_allowed_to_remain_behind(tmp_path):
     )
     before = config.read_bytes()
 
-    # When the actual script invokes the repository's real fresh wrappers.
+    # When the actual script invokes the repository's real config migration API.
     result = subprocess.run(
         ["bash", str(SCRIPT)],
         env={**os.environ, "HERMES_HOME": str(home), "JANITOR_HOME": ""},
@@ -514,10 +520,9 @@ def test_real_pre_floor_config_is_allowed_to_remain_behind(tmp_path):
 
 def test_script_imports_repository_modules_from_hostile_outside_cwd(tmp_path):
     """Caller cwd and ambient PYTHONPATH cannot shadow repository imports."""
-    import hermes_cli
     import janitor_version
 
-    repo_raw = hermes_cli.__version__
+    repo_raw = _checkout_base_version()
     repo_display = janitor_version.display_version(repo_raw)
 
     # Given conflicting modules in both the outside cwd and ambient path.
