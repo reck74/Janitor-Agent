@@ -12,8 +12,8 @@ JANITOR_VENV_DIR="${JANITOR_SOURCE_DIR}/.venv"
 JANITOR_INSTALL_SCRIPT="${JANITOR_SOURCE_DIR}/scripts/janitor-install.sh"
 
 # Janitor aísla su estado bajo ~/.janitor (no ~/.hermes). Lo exportamos antes
-# de invocar la librería compartida node-bootstrap.sh para que Node se
-# instale en ~/.janitor/node, consistente con el resto del fork.
+# de construir el TUI para que el gestor de paquetes de Hermes (pm) instale
+# Node y npm en ~/.janitor/tools, consistente con el resto del fork.
 export HERMES_HOME="${HOME}/.janitor"
 
 # ============================================================
@@ -106,36 +106,6 @@ else
 fi
 
 # ============================================================
-# 3b. Node.js — delegar al helper compartido de Hermes
-# ============================================================
-# El root package.json exige node >=22.22.0 y npm "<11.10.0 || >=11.17.0".
-# Una versión previa de este bootstrap hardcodeaba `nvm install 20`, que
-# NUNCA puede cumplir engines.node y mataba el `npm install` del TUI con
-# EBADENGINE. Peor, el PATH exportado solo vivía dentro del sub-bash del
-# curl, así que la shell de login del usuario veía `npm: command not found`
-# apenas terminara el instalador.
-#
-# node-bootstrap.sh resuelve los tres problemas:
-#   1. instala Node major 22 (HERMES_NODE_TARGET_MAJOR=22),
-#   2. crea symlinks en /usr/local/bin (root) o ~/.local/bin (user),
-#      que SÍ sobreviven al sub-bash porque están en PATH estándar,
-#   3. respeta un Node existente en PATH si cumple la versión mínima,
-#      y como fallback descarga un tarball pinneado de nodejs.org.
-NODE_HELPER="${JANITOR_SOURCE_DIR}/scripts/lib/node-bootstrap.sh"
-if [ ! -s "$NODE_HELPER" ]; then
-    echo "FATAL: $NODE_HELPER no encontrado tras el clone."
-    echo "       El repo está corrupto o el clone se cortó. Reintenta el install."
-    exit 1
-fi
-# shellcheck source=scripts/lib/node-bootstrap.sh
-source "$NODE_HELPER"
-if ! ensure_node; then
-    echo "FATAL: no se pudo provisionar Node >= 22.22.0."
-    echo "       Instálalo manualmente (https://nodejs.org/) y reejecuta este script."
-    exit 1
-fi
-
-# ============================================================
 # 4. Compilación Python
 # ============================================================
 echo "Configurando entorno Python..."
@@ -162,12 +132,16 @@ else
 fi
 
 # ============================================================
-# 6. Compilación React/TUI
+# 6. Node.js + compilación del TUI y la web UI
 # ============================================================
+# El root package.json exige node >=22.22.0. El paso de productos de Hermes
+# (hermes_cli.source_build) provisiona el Node y el npm fijados por pm en
+# ~/.janitor/tools — nunca el del PATH del usuario, que sería otra versión —,
+# instala las dependencias de los workspaces sin reescribir package-lock.json
+# y compila el TUI y la web UI. Es el mismo paso que ejecuta `janitor update`.
 echo "Compilando interfaz TUI..."
-cd "${JANITOR_SOURCE_DIR}/ui-tui"
-npm install
-npm run build
+cd "${JANITOR_SOURCE_DIR}"
+"${JANITOR_VENV_DIR}/bin/python" -m hermes_cli.source_build --source "${JANITOR_SOURCE_DIR}"
 
 # ============================================================
 # 7. Enlace global
