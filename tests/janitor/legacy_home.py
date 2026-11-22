@@ -3,7 +3,8 @@
 The layout mirrors what ``scripts/bootstrap.sh`` + ``scripts/janitor-install.sh``
 + the first ``janitor`` launch leave on disk for a v0.20.1 user:
 
-* seed files copied from ``assets/janitor/`` (config, SOUL, honcho, skin);
+* seed files copied from ``assets/janitor/`` (SOUL, honcho, skin) and the
+  pre-1.0 550-line seed config (``fixtures/pre-1.0-config.yaml``);
 * Janitor skills synced into ``skills/`` by the bundled-skills sync, at their
   legacy paths (flat ``skills/janitor-*`` and nested ``skills/devops/janitor-*``)
   with a v2 ``.bundled_manifest`` (``name:hash``);
@@ -29,6 +30,9 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ASSETS = REPO_ROOT / "assets" / "janitor"
+# The seed config pre-1.0 installs copied in (assets/janitor/config.yaml has
+# since been reduced to Janitor's differences from the upstream defaults).
+PRE_1_0_CONFIG = Path(__file__).resolve().parent / "fixtures" / "pre-1.0-config.yaml"
 
 # Legacy (pre-1.0) on-disk location of each Janitor skill inside
 # ``$HERMES_HOME/skills`` — this is where skills_sync placed them while they
@@ -106,8 +110,8 @@ def _seed_skills(home: Path) -> None:
 
 
 def _write_pre_1_0_config(dest: Path) -> None:
-    """The shipped seed config minus what 1.0 added (plugin, external skills)."""
-    config = yaml.safe_load((ASSETS / "config.yaml").read_text(encoding="utf-8"))
+    """The pre-1.0 seed config minus what 1.0 added (plugin, external skills)."""
+    config = yaml.safe_load(PRE_1_0_CONFIG.read_text(encoding="utf-8"))
     config.pop("plugins", None)
     config.setdefault("skills", {})["external_dirs"] = []
     dest.write_text(yaml.safe_dump(config, sort_keys=False, allow_unicode=True), encoding="utf-8")

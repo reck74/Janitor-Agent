@@ -4,13 +4,27 @@ Verifies that the `janitor` command and JanitorCLI class exist and satisfy
 the JANITOR FORK DIRECTIVES requirements.
 """
 
+import os
 import subprocess
 import sys
 from importlib.metadata import entry_points
 from pathlib import Path
 
+import pytest
+
+from tests.janitor.legacy_home import launcher_env
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _launcher_import_uses_a_temp_home(tmp_path_factory):
+    """Importing janitor.cli seeds and initializes ``~/.janitor``: keep the
+    in-process import off the real home."""
+    patch = pytest.MonkeyPatch()
+    patch.setenv("HOME", str(tmp_path_factory.mktemp("home")))
+    yield
+    patch.undo()
 
 
 class TestJanitorCLIExists:
@@ -81,7 +95,7 @@ class TestJanitorCommand:
         assert janitor_cli is janitor.cli
         assert janitor_cli.main is janitor.cli.main
 
-    def test_hermes_home_is_overridden_to_janitor(self):
+    def test_hermes_home_is_overridden_to_janitor(self, tmp_path):
         """HERMES_HOME must be set to ~/.janitor before any hermes imports.
 
         Uses subprocess to isolate from pytest fixture interference (monkeypatch,
@@ -95,6 +109,7 @@ class TestJanitorCommand:
              "f\"HERMES_HOME was not set to ~/.janitor: {os.environ['HERMES_HOME']}\""],
             capture_output=True,
             text=True,
+            env={**os.environ, "HOME": str(tmp_path), "HERMES_HOME": str(tmp_path / ".hermes")},
         )
         assert result.returncode == 0, (
             f"HERMES_HOME not set to ~/.janitor in subprocess. "
@@ -276,3 +291,74 @@ class TestJanitorVersionDisplay:
         combined = result.stdout + result.stderr
         assert f"THE JANITOR v{display_version(__version__)}" in combined
         assert __version__ not in combined
+
+
+class TestLauncherProfiles:
+    """The desktop runs ``python -m janitor.cli [--profile P] serve`` with
+    HERMES_HOME set to the root home; gateway services pin HERMES_HOME to a
+    profile dir. Both must land on the profile, with only its own secrets."""
+
+    @staticmethod
+    def _homes(tmp_path):
+        from janitor.seed import ensure_home
+
+        root = tmp_path / ".janitor"
+        ensure_home(root)
+        (root / ".env").write_text("JANITOR_TEST_ROOT_SECRET=root\n", encoding="utf-8")
+        profile = root / "profiles" / "coder"
+        profile.mkdir(parents=True)
+        (profile / "config.yaml").write_text("display:\n  language: en\n", encoding="utf-8")
+        (profile / ".env").write_text("JANITOR_TEST_PROFILE_SECRET=coder\n", encoding="utf-8")
+        return root, profile
+
+    @staticmethod
+    def _resolved(tmp_path, hermes_home, *argv):
+        code = (
+            "import os, sys; sys.argv = ['janitor', *sys.argv[1:]]; import janitor.cli; "
+            "print(os.environ['HERMES_HOME']); "
+            "print(os.environ.get('JANITOR_TEST_ROOT_SECRET', '-')); "
+            "print(os.environ.get('JANITOR_TEST_PROFILE_SECRET', '-'))"
+        )
+        env = launcher_env(tmp_path)
+        env["HERMES_HOME"] = str(hermes_home)
+        result = subprocess.run(
+            [sys.executable, "-c", code, *argv],
+            capture_output=True, text=True, env=env, cwd=str(tmp_path), timeout=180,
+        )
+        assert result.returncode == 0, result.stderr
+        return result.stdout.strip().splitlines()[-3:]
+
+    def test_desktop_profile_flag_gets_the_profile_home_and_no_root_secrets(self, tmp_path):
+        root, profile = self._homes(tmp_path)
+        assert self._resolved(tmp_path, root, "--profile", "coder", "serve") == [str(profile), "-", "coder"]
+
+    def test_profile_pinned_hermes_home_is_kept(self, tmp_path):
+        root, profile = self._homes(tmp_path)
+        assert self._resolved(tmp_path, profile, "serve") == [str(profile), "-", "coder"]
+
+    def test_root_home_without_profile_stays_on_the_root(self, tmp_path):
+        root, _ = self._homes(tmp_path)
+        assert self._resolved(tmp_path, root, "serve") == [str(root), "root", "-"]
+
+    def test_foreign_hermes_home_is_replaced_by_the_janitor_home(self, tmp_path):
+        root, _ = self._homes(tmp_path)
+        assert self._resolved(tmp_path, tmp_path / ".hermes", "serve")[0] == str(root)
+
+
+@pytest.mark.parametrize(
+    ("current", "expected"),
+    [
+        (None, ".janitor"),
+        ("", ".janitor"),
+        ("~/.hermes", ".janitor"),
+        ("~/.hermes/profiles/coder", ".janitor"),
+        ("~/.janitor", ".janitor"),
+        ("~/.janitor/profiles/coder", ".janitor/profiles/coder"),
+        ("~/elsewhere/profiles/coder", ".janitor"),
+    ],
+)
+def test_resolve_hermes_home(tmp_path, monkeypatch, current, expected):
+    from janitor.home import resolve_hermes_home
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert resolve_hermes_home(current) == tmp_path / expected

@@ -36,11 +36,15 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import yaml
 
-from janitor.home import ASSETS_ROOT, SKILLS_ROOT
+from janitor.home import ASSETS_ROOT, SKILLS_EXTERNAL_DIRS, SKILLS_ROOT
 
 VERSION = 1
 
-EXTERNAL_DIRS: Tuple[str, ...] = ("${JANITOR_SKILLS_ROOT}", "janitor-core/janitor/skills")
+# Same entries janitor.seed writes into a new home, so a freshly seeded home
+# needs no migration. (Before the desktop layout this was the relative
+# ``janitor-core/janitor/skills``; for a janitor-core install the absolute
+# SKILLS_ROOT is that same directory.)
+EXTERNAL_DIRS: Tuple[str, ...] = SKILLS_EXTERNAL_DIRS
 PLUGIN_NAME = "janitor"
 SKIN_FILE = "sentry-janitor.yaml"
 

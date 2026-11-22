@@ -60,12 +60,31 @@ def check_mcp_dashboard_endpoints():
     assert ("GET", "/api/mcp/servers/{name}/logs") in routes
 
 
+def check_install_sh(tmp_path):
+    """The config stage the desktop runs leaves a seeded Janitor home and a clean JSON frame."""
+    import yaml
+
+    from tests.janitor.install_sh_harness import fake_install_dir, run_stage, stage_frame
+
+    home = tmp_path / ".janitor"
+    result = run_stage(tmp_path, "config", fake_install_dir(tmp_path), home)
+    assert stage_frame(result.stdout) == {"ok": True, "stage": "config", "skipped": False}, (
+        result.stdout + result.stderr
+    )
+    assert "janitor" in yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))["plugins"]["enabled"]
+    assert (home / ".no-bundled-skills").is_file()
+
+
 CHECKS = {
     "version": check_version,
     "packaging": check_packaging,
     "banner": check_banner,
     "mcp-dashboard-endpoints": check_mcp_dashboard_endpoints,
+    "install-sh": check_install_sh,
 }
+
+# Checks that drive a POSIX shell script run on Linux only (directive #11 lanes).
+_LINUX_ONLY_CHECKS = {"install-sh"}
 
 
 @pytest.fixture(scope="module")
@@ -77,11 +96,19 @@ def test_every_test_touchpoint_has_a_check_and_vice_versa(overlay):
     assert overlay.test_check_ids() == set(CHECKS)
 
 
-@pytest.mark.parametrize("check_id", sorted(CHECKS))
-def test_touchpoint_contract(check_id, capsys):
+@pytest.mark.parametrize(
+    "check_id",
+    [
+        pytest.param(cid, marks=pytest.mark.linux_only) if cid in _LINUX_ONLY_CHECKS else cid
+        for cid in sorted(CHECKS)
+    ],
+)
+def test_touchpoint_contract(check_id, capsys, tmp_path):
     check = CHECKS[check_id]
     if check is check_banner:
         check(capsys)
+    elif check is check_install_sh:
+        check(tmp_path)
     else:
         check()
 

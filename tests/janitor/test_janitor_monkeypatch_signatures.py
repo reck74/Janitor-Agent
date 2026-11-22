@@ -34,6 +34,18 @@ See AGENTS.md directive #14 (MONKEY-PATCH SIGNATURE INVARIANTS).
 
 import inspect
 
+import pytest
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _launcher_import_uses_a_temp_home(tmp_path_factory):
+    """Importing janitor.cli seeds and initializes ``~/.janitor``: keep the
+    in-process import off the real home."""
+    patch = pytest.MonkeyPatch()
+    patch.setenv("HOME", str(tmp_path_factory.mktemp("home")))
+    yield
+    patch.undo()
+
 
 def _missing_params(original, wrapper) -> set:
     original_params = inspect.signature(original).parameters

@@ -99,10 +99,12 @@ def test_second_run_is_a_noop(legacy):
 
 
 def test_seeded_1_0_home_needs_no_backup(tmp_path):
+    """A home janitor.seed wrote already has every v1 change, even unstamped."""
+    from janitor.seed import ensure_home
+
     home = tmp_path / ".janitor"
-    (home / "skins").mkdir(parents=True)
-    shutil.copy2(ASSETS / "config.yaml", home / "config.yaml")
-    shutil.copy2(ASSETS / "sentry-janitor.yaml", home / "skins" / "sentry-janitor.yaml")
+    ensure_home(home)
+    (home / ".layout_version").unlink()
 
     assert migrations.run(home, out=_quiet) is None
     assert not (home / ".backup").exists()

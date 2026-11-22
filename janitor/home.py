@@ -22,9 +22,38 @@ SKILLS_ROOT = PACKAGE_ROOT / "skills"
 ASSETS_ROOT = REPO_ROOT / "assets" / "janitor"
 
 
+# ``skills.external_dirs`` entries that resolve Janitor's skills in place.
+# ``${JANITOR_SKILLS_ROOT}`` is exported by the launcher; the absolute path of
+# this install's tree covers backends started without the launcher (e.g. a
+# gateway service running ``hermes_cli.main`` directly). Both resolve to the
+# same directory and Hermes deduplicates them.
+SKILLS_EXTERNAL_DIRS = ("${JANITOR_SKILLS_ROOT}", str(SKILLS_ROOT))
+
+
 def janitor_home() -> Path:
     """Return the Janitor state directory (``~/.janitor``)."""
     return Path(os.path.expanduser("~/.janitor"))
+
+
+def resolve_hermes_home(current: str | None = None) -> Path:
+    """The ``HERMES_HOME`` the launcher runs with.
+
+    Always the Janitor home, so an exported ``HERMES_HOME=~/.hermes`` never
+    leaks a real Hermes install into Janitor, except when ``current`` already
+    names one of the Janitor home's own profiles (``~/.janitor/profiles/<n>``):
+    a profile-pinned process (gateway service, ``served_profile_child_env``
+    spawn) must keep its profile instead of falling back to the root.
+    """
+    root = janitor_home()
+    raw = (current or "").strip()
+    if raw:
+        candidate = Path(os.path.expanduser(raw))
+        try:
+            if candidate.parent.name == "profiles" and candidate.parent.parent.resolve() == root.resolve():
+                return candidate
+        except OSError:
+            pass
+    return root
 
 
 def read_layout_version(home: Path | None = None) -> int:

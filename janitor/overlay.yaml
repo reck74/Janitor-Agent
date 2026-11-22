@@ -122,6 +122,18 @@ touchpoints:
     verify: ci:janitor-ci
     merge: ours
 
+  - id: install-sh
+    files: [scripts/install.sh]
+    why: >-
+      The desktop app's installer installs the fork: clones reck74/Janitor-Agent
+      into ~/.janitor by default, links `janitor` (never the hermes /
+      hermes-agent / hermes-acp launchers) via `python -m janitor.seed
+      --link-command`, defaults to --no-skills, and runs `python -m
+      janitor.seed --home` in the config stage before any skills sync. Every
+      changed hunk carries a `# JANITOR:` comment.
+    verify: test:install-sh
+    merge: reapply
+
   - id: fork-docs
     files: [AGENTS.md, README.md, CHANGELOG.md, MERGE_GUIDE.md, .env.example, .gitignore]
     why: Fork directives, docs and ignore rules.

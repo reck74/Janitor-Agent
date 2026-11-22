@@ -20,18 +20,23 @@ import os
 import shutil
 import sys
 
-from janitor.home import ASSETS_ROOT, REPO_ROOT, SKILLS_ROOT, janitor_home
+from pathlib import Path
+
+from janitor.home import ASSETS_ROOT, REPO_ROOT, SKILLS_ROOT, janitor_home, resolve_hermes_home
 
 # AISLAMIENTO CRÍTICO: Must be set BEFORE any hermes_ modules are imported.
 # hermes_constants.get_hermes_home() reads this env var at import time.
-os.environ["HERMES_HOME"] = str(janitor_home())
+# A HERMES_HOME that already names a ~/.janitor profile is kept; anything else
+# (unset, ~/.hermes, ...) becomes ~/.janitor. ``--profile`` / ``active_profile``
+# are resolved by upstream when hermes_cli.main is imported below.
+os.environ["HERMES_HOME"] = str(resolve_hermes_home(os.environ.get("HERMES_HOME")))
 # Referenced as ${JANITOR_SKILLS_ROOT} in skills.external_dirs so Janitor's
 # skills resolve from whichever install tree is running.
 os.environ["JANITOR_SKILLS_ROOT"] = str(SKILLS_ROOT)
 
 
 def _load_janitor_env() -> None:
-    env_path = janitor_home() / ".env"
+    env_path = Path(os.environ["HERMES_HOME"]) / ".env"
     try:
         with open(env_path, "r", encoding="utf-8") as f:
             for line in f:
@@ -51,12 +56,14 @@ def _load_janitor_env() -> None:
         pass
 
 
-_load_janitor_env()
-
 # COMMAND HIJACKING: Intercept `janitor update` before Hermes CLI parses arguments.
 # We delegate to a minimal bootstrap helper so this path stays importable
 # even when the venv is partially broken (e.g. new Hermes imports after a pull).
+# Only this path loads .env by hand: everywhere else Hermes loads the .env of
+# the home it resolved, and an early load of the root .env would leak its
+# secrets into a ``--profile`` process (the desktop's per-profile backends).
 if len(sys.argv) > 1 and sys.argv[1] == "update":
+    _load_janitor_env()
     try:
         from janitor.update_bootstrap import run_update
         sys.exit(run_update())
@@ -79,7 +86,21 @@ argparse.ArgumentParser.__init__ = _janitor_argparser_init
 
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
-import cli
+
+# Seed a fresh ~/.janitor before Hermes loads its config: that first load
+# writes upstream's default SOUL.md. Never blocks startup.
+try:
+    from janitor.seed import ensure_home
+
+    ensure_home(janitor_home())
+except Exception as _seed_exc:  # noqa: BLE001
+    print(f"⚠ Janitor home seeding failed: {_seed_exc}", file=sys.stderr)
+
+# Upstream resolves ``--profile`` / ``active_profile`` (and loads that home's
+# .env) when hermes_cli.main is imported; ``cli`` reads the home at import, so
+# it must come second or a profile process starts on the root profile's state.
+import hermes_cli.main  # noqa: E402,F401
+import cli  # noqa: E402
 
 
 def _ensure_janitor_skin_file():

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 import stat
 import subprocess
 import sys
@@ -15,7 +14,7 @@ import yaml
 
 from janitor import agents, services
 from janitor.home import SKILLS_ROOT
-from tests.janitor.legacy_home import ASSETS, REPO_ROOT, expected_listing_count, launcher_env
+from tests.janitor.legacy_home import REPO_ROOT, expected_listing_count, launcher_env
 
 ALL_SERVICES = services.discover_services()
 
@@ -191,12 +190,12 @@ def test_agents_are_discovered_from_janitor_skills():
 
 @pytest.fixture
 def fresh_home(tmp_path):
-    """A brand-new 1.0 install: seed files copied verbatim from assets/."""
+    """A brand-new install: the home ``janitor.seed`` leaves (what install.sh's
+    config stage and the launcher's first start produce)."""
+    from janitor.seed import ensure_home
+
     home = tmp_path / ".janitor"
-    (home / "skins").mkdir(parents=True)
-    for name in ("config.yaml", "SOUL.md", "honcho.json"):
-        shutil.copy2(ASSETS / name, home / name)
-    shutil.copy2(ASSETS / "sentry-janitor.yaml", home / "skins" / "sentry-janitor.yaml")
+    ensure_home(home)
     (home / ".env").write_text(
         "MINIMAX_API_KEY=sk-test\nHONCHO_BASE_URL=http://127.0.0.1:1973\n", encoding="utf-8"
     )

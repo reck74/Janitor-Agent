@@ -45,6 +45,19 @@ def test_tui_receives_the_janitor_skin(skin_home):
     assert payload["help_header"] == shipped["branding"]["help_header"]
 
 
-def test_seed_config_selects_the_janitor_skin():
-    config = yaml.safe_load((ASSETS / "config.yaml").read_text(encoding="utf-8"))
-    assert config["display"]["skin"] == "sentry-janitor"
+def test_seeded_home_selects_the_shipped_janitor_skin(tmp_path, monkeypatch):
+    """A home janitor.seed wrote resolves to the shipped skin, end to end."""
+    from janitor.seed import ensure_home
+    from tui_gateway.server import resolve_skin
+
+    import hermes_cli.skin_engine as skin_engine
+
+    home = tmp_path / ".janitor"
+    ensure_home(home)
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.setattr(skin_engine, "_active_skin", None, raising=False)
+
+    shipped = yaml.safe_load(SKIN.read_text(encoding="utf-8"))
+    payload = resolve_skin()
+    assert payload["name"] == "sentry-janitor"
+    assert payload["colors"] == {**payload["colors"], **shipped["colors"]}

@@ -43,9 +43,10 @@ NC='\033[0m' # No Color
 BOLD='\033[1m'
 
 # Configuration
-REPO_URL_SSH="git@github.com:NousResearch/hermes-agent.git"
-REPO_URL_HTTPS="https://github.com/NousResearch/hermes-agent.git"
-HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+# JANITOR: the fork's installer installs the fork, into ~/.janitor by default.
+REPO_URL_SSH="git@github.com:reck74/Janitor-Agent.git"
+REPO_URL_HTTPS="https://github.com/reck74/Janitor-Agent.git"
+HERMES_HOME="${HERMES_HOME:-$HOME/.janitor}"
 # INSTALL_DIR is resolved AFTER arg parsing and OS detection so we can pick an
 # FHS-style layout for root installs.  Track whether the user gave us an
 # explicit directory — if so we never override it.
@@ -72,7 +73,7 @@ USE_VENV=true
 RUN_SETUP=true
 SKIP_BROWSER=false
 SKIP_COMPUTER_USE=false
-NO_SKILLS=false
+NO_SKILLS=true  # JANITOR: homes start without upstream's bundled skills (.no-bundled-skills)
 BRANCH="main"
 INSTALL_COMMIT=""
 FORCE_COMMIT=false
@@ -526,6 +527,8 @@ configure_managed_node_npm_prefix() {
 get_hermes_command_path() {
     local link_dir
     link_dir="$(get_command_link_dir)"
+    # JANITOR: drive this install through `janitor`, never a foreign `hermes`.
+    if [ -x "$link_dir/janitor" ]; then echo "$link_dir/janitor"; return 0; fi
     if [ -x "$link_dir/hermes" ]; then
         echo "$link_dir/hermes"
     else
@@ -2150,6 +2153,10 @@ setup_path() {
     # We intentionally clear PYTHONPATH/PYTHONHOME here so inherited env vars
     # can't make this launcher import modules from another checkout.
     mkdir -p "$command_link_dir"
+    # JANITOR: install `janitor` (-> venv/bin/janitor) and skip the hermes /
+    # hermes-agent / hermes-acp launchers, which belong to a real Hermes install.
+    "$HERMES_BIN" -m janitor.seed --link-command "$command_link_dir" || log_warn "Could not install the janitor command"
+    if false; then
     # Older installs created this path as a symlink to $HERMES_BIN. Without
     # the rm, `cat >` follows the symlink and overwrites the venv pip entry
     # point with this shim — making `exec "$HERMES_BIN"` self-recurse. (#21454)
@@ -2223,6 +2230,7 @@ EOF
     fi
     chmod +x "$command_link_dir/hermes-acp"
     log_success "Installed hermes-acp launcher → $command_link_display_dir/hermes-acp"
+    fi  # JANITOR: end of the skipped hermes launchers
 
     if [ "$DISTRO" = "termux" ]; then
         export PATH="$command_link_dir:$PATH"
@@ -2385,6 +2393,10 @@ SOUL_EOF
     fi
 
     log_success "Configuration directory ready: ~/.hermes/"
+
+    # JANITOR: seed the Janitor home (minimal config.yaml, SOUL.md, skin,
+    # .no-bundled-skills) before any skills sync. Never touches .env.
+    "$INSTALL_DIR/venv/bin/python" -m janitor.seed --home "$HERMES_HOME" || log_warn "janitor.seed failed; the janitor launcher retries on first start"
 
     # Seed bundled skills into ~/.hermes/skills/ (manifest-based, one-time per skill)
     if [ "$NO_SKILLS" = true ]; then
