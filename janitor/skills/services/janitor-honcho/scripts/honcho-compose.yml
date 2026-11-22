@@ -1,19 +1,27 @@
+# Janitor local Honcho (janitor-honcho skill). Deployed by `honcho_setup.py deploy`
+# into <janitor home>/docker/ next to honcho-llm.env (0600, only the LLM credentials
+# Honcho needs) and built from <janitor home>/src/honcho (pinned commit).
+# The API binds to loopback only. Volumes are never removed by Janitor.
+# The database credentials are internal to janitor-honcho-network (no published
+# port) and must stay as they are: existing janitor-honcho-pgdata volumes were
+# initialised with them.
 services:
   honcho-api:
     build:
       context: ../src/honcho
       dockerfile: Dockerfile
+    image: janitor-honcho:local
     container_name: janitor-honcho-api
     entrypoint: ["sh", "docker/entrypoint.sh"]
     ports:
-      - "127.0.0.1:1973:8000"
+      - "127.0.0.1:${JANITOR_HONCHO_PORT:-1973}:8000"
     environment:
       - DB_CONNECTION_URI=postgresql+psycopg://janitor_bea9db7d:vPwptI+4UO+v+B+xnNdzoFltM3cKTLlp@honcho-database:5432/honcho
       - CACHE_URL=redis://honcho-redis:6379/0?suppress=true
       - CACHE_ENABLED=true
     env_file:
-      - path: ~/.janitor/.env
-        required: false
+      - path: ./honcho-llm.env
+        required: true
     volumes:
       - honcho-api-data:/data
     restart: unless-stopped
@@ -35,6 +43,7 @@ services:
     build:
       context: ../src/honcho
       dockerfile: Dockerfile
+    image: janitor-honcho:local
     container_name: janitor-honcho-deriver
     entrypoint: ["python", "-m", "src.deriver"]
     environment:
@@ -42,12 +51,14 @@ services:
       - CACHE_URL=redis://honcho-redis:6379/0?suppress=true
       - CACHE_ENABLED=true
     env_file:
-      - path: ~/.janitor/.env
-        required: false
+      - path: ./honcho-llm.env
+        required: true
     restart: unless-stopped
     networks:
       - honcho-network
     depends_on:
+      honcho-api:
+        condition: service_started
       honcho-database:
         condition: service_healthy
       honcho-redis:
@@ -67,7 +78,7 @@ services:
     networks:
       - honcho-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${HONCHO_POSTGRES_USER:-janitor}"]
+      test: ["CMD-SHELL", "pg_isready -U janitor_bea9db7d -d honcho"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -76,6 +87,8 @@ services:
   honcho-redis:
     image: redis:8.2
     container_name: janitor-honcho-redis
+    volumes:
+      - honcho-redis-data:/data
     restart: unless-stopped
     networks:
       - honcho-network
