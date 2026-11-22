@@ -12,7 +12,6 @@ import { ALLOWLIST, RULES } from '../brand/catalog-rules.mjs'
 import { LITERALS } from '../brand/literals.mjs'
 import { STRUCTURAL_PATCHES } from '../brand/patches.mjs'
 
-import { untranslatedReport } from './brand-report.mjs'
 import { allPatches, literalPatches } from './brand-patches.mjs'
 import { APP_DIR } from './build.mjs'
 import {
@@ -167,12 +166,8 @@ test('without node_modules (CI), .ts files are checked with Node type stripping'
   }
 })
 
-test('untranslated es.ts strings are visible (report only)', t => {
-  const rows = untranslatedReport()
-
-  t.diagnostic(`${rows.length} es.ts value(s) identical to en.ts — run: node apps/desktop-janitor/scripts/brand-report.mjs untranslated`)
-  assert.ok(Array.isArray(rows))
-  // The report really compares values: a value only es.ts has never counts.
+test('identicalToEnglish really compares values (the enforced check lives in spanish.test.mjs)', () => {
+  // A value only es.ts has never counts.
   assert.deepEqual(identicalToEnglish("export const es = { a: 'Hola', b: 'Same text' }", "export const en = { a: 'Hello', b: 'Same text' }"), [
     { path: 'b', value: 'Same text' }
   ])

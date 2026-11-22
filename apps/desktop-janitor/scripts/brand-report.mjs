@@ -1,8 +1,10 @@
 // Brand/i18n reports for the desktop overlay (read-only on apps/desktop).
 //
 //   node apps/desktop-janitor/scripts/brand-report.mjs untranslated
-//       es.ts leaves whose value is identical to en.ts (likely untranslated;
-//       upstream's completeness test only checks that keys exist)
+//       es.ts as the build ships it (P10 overrides + P6 brand rules): keys
+//       missing from es.ts, values identical to en.ts that are not in
+//       brand/catalog-overrides.mjs IDENTICAL_TO_ENGLISH, and stale allowlist
+//       entries. Enforced by scripts/spanish.test.mjs.
 //   node apps/desktop-janitor/scripts/brand-report.mjs thrown-errors [--write]
 //       inventory of `new Error(<literal>)` in apps/desktop src/ and electron/
 //       (path, line, has-brand, literal); --write refreshes
@@ -12,16 +14,18 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { identicalToEnglish } from './catalog-brand.mjs'
+import { allPatches } from './brand-patches.mjs'
+import { spanishCoverage } from './catalog-overrides.mjs'
+import { computePatchedFiles } from './patch-engine.mjs'
 
 const OVERLAY_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const APP_DIR = path.resolve(OVERLAY_DIR, '..', 'desktop')
 export const INVENTORY_FILE = path.join(OVERLAY_DIR, 'brand', 'inventory', 'thrown-errors.tsv')
 
-export function untranslatedReport(appDir = APP_DIR, locale = 'es') {
-  const read = name => fs.readFileSync(path.join(appDir, 'src', 'i18n', `${name}.ts`), 'utf8')
+export function untranslatedReport(appDir = APP_DIR) {
+  const es = computePatchedFiles(appDir, allPatches(appDir)).get('src/i18n/es.ts').toString('utf8')
 
-  return identicalToEnglish(read(locale), read('en'))
+  return spanishCoverage(es, fs.readFileSync(path.join(appDir, 'src', 'i18n', 'en.ts'), 'utf8'))
 }
 
 function walk(dir, out = []) {
@@ -71,12 +75,14 @@ function main(argv) {
   const [command] = argv
 
   if (command === 'untranslated') {
-    const rows = untranslatedReport()
+    const { missing, identical, stale } = untranslatedReport()
 
-    for (const row of rows) console.log(`${row.path}\t${JSON.stringify(row.value)}`)
-    console.error(`${rows.length} es.ts value(s) identical to en.ts (many are legitimately identical: URLs, product names, acronyms)`)
+    for (const key of missing) console.log(`missing\t${key}`)
+    for (const row of identical) console.log(`identical\t${row.path}\t${JSON.stringify(row.value)}`)
+    for (const key of stale) console.log(`stale-allowlist\t${key}`)
+    console.error(`${missing.length} missing, ${identical.length} identical to English (not allowlisted), ${stale.length} stale allowlist entries`)
 
-    return 0
+    return missing.length + identical.length + stale.length === 0 ? 0 : 1
   }
 
   if (command === 'thrown-errors') {

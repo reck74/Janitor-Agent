@@ -248,6 +248,42 @@ export const LITERALS = {
     ['a piece of the Hermes app itself', 'a piece of the Janitor app itself'],
     ['never touch the Hermes install itself', 'never touch the Janitor install itself']
   ],
+  // F1-08/F1-10: English renderer literals seen on a fresh install.
+  'src/lib/model-status-label.ts': [
+    // Provider titles in the first-run picker and the model pill.
+    ["  anthropic: 'Anthropic API Key',", "  anthropic: 'Anthropic (clave API)',"],
+    [
+      "  'claude-code': 'Anthropic OAuth: Required Extra Usage Credits to Use Subscription',",
+      "  'claude-code': 'Anthropic OAuth: requiere créditos de uso adicional para usar la suscripción',"
+    ],
+    ["  'openai-codex': 'ChatGPT or Codex Subscription',", "  'openai-codex': 'Suscripción de ChatGPT o Codex',"]
+  ],
+  // Settings section without a catalog key (t.settings.sections.browser is
+  // absent, so the English fallback label renders).
+  'src/app/settings/constants.ts': [["    label: 'Browser',", "    label: 'Navegador',"]],
+  // Composer "+" button label.
+  'src/app/chat/index.tsx': [["        label: 'Add context',", "        label: 'Añadir contexto',"]],
+  // Boot overlay decode word ("CONE" stays legible via prefix={4}).
+  'src/components/gateway-connecting-overlay.tsx': [["const TEXT = 'CONNECTING'", "const TEXT = 'CONECTANDO'"]],
+  // Capabilities ▸ Plugins descriptions of the bundled plugins.
+  'src/plugins/kanban/plugin.tsx': [
+    [
+      "  description: 'Multi-agent task board — board page, sidebar entry, and a live in-flight count in the status bar.',",
+      "  description: 'Tablero de tareas multiagente: página del tablero, entrada en la barra lateral y recuento en vivo en la barra de estado.',"
+    ]
+  ],
+  'src/plugins/radio/plugin.js': [
+    [
+      "  description: 'Free live radio with pinned stations, search, and an audio-reactive waveform.',",
+      "  description: 'Radio en vivo gratuita con emisoras fijadas, búsqueda y una onda que reacciona al audio.',"
+    ]
+  ],
+  'src/plugins/hermes-bots/plugin.tsx': [
+    [
+      "    'Bot Mode — a one-chat-per-agent roster with avatars, routines, group chats, and bot-to-bot messaging. Ships with the app; disable here if unwanted.',",
+      "    'Modo Bot: una lista con un chat por agente, avatares, rutinas, chats de grupo y mensajes entre bots. Viene con la app; desactívalo aquí si no lo quieres.',"
+    ]
+  ],
   'src/store/onboarding-script.ts': [
     // Onboarding runbook/persona sent to the model.
     ['that Hermes installs and runs locally', 'that Janitor installs and runs locally', 2],

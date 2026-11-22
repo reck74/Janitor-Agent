@@ -80,7 +80,7 @@ export function applyOverlay(appDir = APP_DIR, overlayDir = OVERLAY_DIR, { patch
 }
 
 /** --check: anchors, transforms (catalog guard) and transpilation; never writes. */
-export function runCheck(appDir = APP_DIR, patches = allPatches(), out = console.log) {
+export function runCheck(appDir = APP_DIR, patches = allPatches(appDir), out = console.log) {
   const { ok, results } = checkPatches(appDir, patches)
 
   for (const result of results) {
