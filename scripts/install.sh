@@ -3990,6 +3990,7 @@ if [ "$MANIFEST_MODE" = true ]; then
 elif [ -n "$STAGE_NAME" ]; then
     run_stage_protocol "$STAGE_NAME"
 elif [ -n "$ENSURE_DEPS" ]; then
+    janitor_refuse_legacy_home || exit 1  # JANITOR: --ensure installs packages; same guard
     ensure_mode
 else
     main

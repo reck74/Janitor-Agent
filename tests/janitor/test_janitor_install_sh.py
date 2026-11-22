@@ -159,6 +159,18 @@ def test_stage_refuses_a_home_with_the_terminal_install(tmp_path, stage):
     assert tree_snapshot(tmp_path) == before
 
 
+def test_ensure_mode_refuses_a_home_with_the_terminal_install(tmp_path):
+    """``--ensure`` installs packages: it stops at the same guard, before doing anything."""
+    home = _legacy_home(tmp_path)
+    before = tree_snapshot(tmp_path)
+
+    result = run_install_sh(tmp_path, "--ensure", "node", "--hermes-home", str(home))
+
+    assert result.returncode != 0
+    assert "janitor-core" in result.stderr and "no toqué nada" in result.stderr
+    assert tree_snapshot(tmp_path) == before
+
+
 def test_stage_without_the_terminal_install_is_not_refused(tmp_path):
     install = fake_install_dir(tmp_path)
     home = tmp_path / ".janitor"
