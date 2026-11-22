@@ -115,7 +115,7 @@ def test_overlay_brand_fixes_name_live_upstream_keys():
     upstream_en = _load(UPSTREAM / "en.yaml")
     for lang, path in janitor_locales.overlay_files().items():
         assert (UPSTREAM / f"{lang}.yaml").is_file(), f"overlay for a language upstream lacks: {lang}"
-        stale = [k for k in _load(path) if not k.startswith("tui_gateway.") and k not in upstream_en]
+        stale = [k for k in _load(path) if not k.startswith(janitor_locales.FORK_NAMESPACES) and k not in upstream_en]
         assert not stale, f"{path.name}: keys not in upstream en.yaml: {stale}"
 
 

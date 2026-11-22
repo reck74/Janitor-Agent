@@ -1463,11 +1463,14 @@ class GatewayTurnMixin:
         if not home_env:
             # Slack routes every command through the parent `/hermes`; bare `/sethome` would fail.
             sethome_cmd = "/hermes sethome" if source.platform == Platform.SLACK else "/sethome"
+            from agent.i18n import t_default  # JANITOR: touchpoint runtime-copy
             await self._deliver_platform_notice(
-                source, f"📬 No home channel is set for {platform_name.title()}. "
-                f"A home channel is where Hermes delivers cron job results and cross-platform "
-                f"messages.\n\nType {sethome_cmd} to make this chat your home channel, or ignore "
-                f"to skip.",
+                source, t_default(  # JANITOR: touchpoint runtime-copy
+                    "runtime_copy.gateway.home_channel_prompt",  # JANITOR: touchpoint runtime-copy
+                    "📬 No home channel is set for {platform}. "  # JANITOR: runtime-copy
+                    "A home channel is where Hermes delivers cron job results and cross-platform "  # JANITOR: runtime-copy
+                    "messages.\n\nType {sethome_cmd} to make this chat your home channel, or ignore "  # JANITOR: runtime-copy
+                    "to skip.", platform=platform_name.title(), sethome_cmd=sethome_cmd),  # JANITOR: touchpoint runtime-copy
             )
 
     def _hmwa_apply_message_timestamp(self, event, message_text):

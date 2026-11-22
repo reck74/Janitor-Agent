@@ -464,6 +464,13 @@ def _is_gateway_available(cmd: CommandDef, config_overrides: set[str] | None = N
     return cmd.name in overrides
 
 
+# JANITOR: (touchpoint runtime-copy) gateway menus and /help read a command's description through the
+# i18n catalog (key ``runtime_copy.commands.<name>``) with the registry's English as the fallback.
+def localized_description(cmd: CommandDef) -> str:
+    from agent.i18n import t_default
+    return t_default(f"runtime_copy.commands.{cmd.name}", cmd.description)
+
+
 def gateway_help_lines(allowed: Optional[Iterable[str]] = None) -> list[str]:
     """Generate gateway help text lines from the registry.
 
@@ -484,7 +491,7 @@ def gateway_help_lines(allowed: Optional[Iterable[str]] = None) -> list[str]:
         alias_parts = [f"`/{a}`" for a in cmd.aliases
                        if not (a.replace("-", "_") == cmd.name.replace("-", "_") and a != cmd.name)]
         alias_note = f" (alias: {', '.join(alias_parts)})" if alias_parts else ""
-        lines.append(f"`/{cmd.name}{args}` -- {cmd.description}{alias_note}")
+        lines.append(f"`/{cmd.name}{args}` -- {localized_description(cmd)}{alias_note}")  # JANITOR: runtime-copy
     return lines
 
 

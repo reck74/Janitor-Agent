@@ -23,6 +23,10 @@ from typing import Optional
 
 from janitor import update_core as janitor_update_core
 
+# Printed to the terminal and, since ``/update`` from messaging runs this
+# module (directive #13), streamed into the chat: Spanish, like every surface.
+BANNER = "🔥 THE JANITOR: actualización táctica en marcha. No toques nada."
+
 
 def run_update(argv: Optional[list[str]] = None) -> int:
     """Print Janitor branding and delegate to ``janitor.update_core``.
@@ -32,7 +36,7 @@ def run_update(argv: Optional[list[str]] = None) -> int:
     args = janitor_update_core.parse_update_args(
         sys.argv[2:] if argv is None else argv
     )
-    print("\n🔥 THE JANITOR: Initiating tactical update...\n")
+    print(f"\n{BANNER}\n")
     return janitor_update_core.run_janitor_update(args)
 
 

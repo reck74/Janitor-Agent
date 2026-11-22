@@ -2,13 +2,16 @@
 #
 # Only the keys that differ from upstream live here: `janitor.locales` merges
 # this file over upstream's catalog at launch and points the engine at the
-# result (HERMES_BUNDLED_LOCALES). Two kinds of keys:
+# result (HERMES_BUNDLED_LOCALES). Three kinds of keys:
 #   - brand fixes: upstream keys (they must exist in locales/en.yaml) whose
 #     Spanish text says "Hermes" or names a `hermes` command; the `janitor`
 #     launcher passes every one of these subcommands through to the engine.
 #   - `tui_gateway.*`: copy that tui_gateway/user_messages.py looks up before
 #     falling back to its English text (touchpoint backend-user-copy).
-# tests/janitor/test_janitor_backend_i18n.py guards both.
+#   - `runtime_copy.*`: English literals other upstream call sites look up
+#     through agent.i18n.t_default (touchpoint runtime-copy), at the end.
+# tests/janitor/test_janitor_backend_i18n.py and
+# tests/janitor/test_janitor_locales_runtime_copy.py guard them.
 
 approval:
   timeout:         "      ⏱ Sin respuesta en {waited} — el comando no se ejecutó. Pide de nuevo para reintentar, o sube el límite: janitor config set approvals.timeout {suggested}"
@@ -122,3 +125,100 @@ tui_gateway:
       provider:
         title: "El proveedor del modelo devolvió un error"
         hint: "Envía /retry, o cambia de modelo con /model."
+
+# `runtime_copy.*`: text upstream code emits as an English literal (no key in
+# upstream's en.yaml). The touchpoint runtime-copy makes those call sites ask
+# the catalog first (agent.i18n.t_default) and keep the English otherwise.
+# tests/janitor/test_janitor_locales_runtime_copy.py guards these keys.
+runtime_copy:
+  gateway:
+    home_channel_prompt: "📬 No hay canal principal para {platform}. Ahí es donde Janitor deja los resultados de las tareas programadas y los mensajes entre plataformas.\n\nEscribe {sethome_cmd} para que este chat sea el canal principal, o ignóralo."
+    update_finished: "✅ Actualización de Janitor terminada."
+    update_finished_successfully: "✅ Actualización de Janitor terminada sin errores."
+    update_failed: "❌ La actualización de Janitor falló; sigue corriendo la versión anterior. Ejecuta `janitor update` en el equipo para ver el error completo, o vuelve a intentar /update más tarde."
+    update_last_lines: "Últimas líneas:"
+    update_timed_out: "❌ La actualización de Janitor no terminó en 30 minutos. Se cortó."
+    update_prompt: "☤ **La actualización necesita una respuesta:**\n\n{prompt}{default_hint}\n\nResponde `{p}approve` (sí) o `{p}deny` (no), o escribe la respuesta directamente."
+    update_prompt_default: " (por defecto: {default})"
+    restarted: "♻ Gateway reiniciado. Tu sesión sigue donde estaba."
+  telegram_onboarding:
+    # expired/claimed stay English on purpose: the app detects a dead pairing
+    # by reading "expired"/"claimed" in the 410 body (telegram-qr-setup.tsx).
+    not_found: "No existe ese emparejamiento de Telegram. Empieza la configuración de nuevo."
+    unauthorized: "El servicio de configuración de Telegram rechazó la petición."
+    telegram_manager_bot_token_not_configured: "El servicio de configuración de Telegram no está configurado."
+    telegram_token_fetch_failed: "Telegram no pudo terminar de crear el bot. Inténtalo otra vez."
+    error: "El servicio de configuración de Telegram devolvió un error."
+    unavailable: "El servicio de configuración de Telegram no responde. Prueba en un momento."
+    invalid: "El servicio de configuración de Telegram devolvió una respuesta inválida."
+  # Descriptions in /help, /commands and the Telegram command menu, by command name.
+  commands:
+    start: "Confirma el /start de la plataforma sin responder"
+    new: "Empieza una sesión nueva (ID e historial limpios)"
+    topic: "Activa o revisa las sesiones por tema en los DM de Telegram"
+    save: "Exporta la conversación actual (/save solo muestra el uso)"
+    retry: "Reintenta el último mensaje"
+    undo: "Retrocede N turnos tuyos y vuelve a preguntar (por defecto 1)"
+    title: "Pon título a la sesión actual"
+    branch: "Ramifica la sesión actual (hilo nuevo en Discord/Telegram/Slack/Matrix; --here se queda aquí)"
+    compress: "Comprime el contexto de la conversación ('here [N]' conserva los N turnos recientes; --preview muestra qué haría)"
+    rollback: "Lista o restaura puntos de control del sistema de archivos (respeta tus ediciones; --all las pisa)"
+    stop: "Mata todos los procesos en segundo plano"
+    pause: "Pausa todo trabajo nuevo (parada de emergencia); '/pause off' lo reanuda"
+    approve: "Aprueba un comando peligroso pendiente"
+    deny: "Rechaza un comando peligroso pendiente (con motivo, si quieres)"
+    bg: "Ejecuta un prompt en una sesión aparte en segundo plano"
+    btw: "Pregunta algo al margen de la conversación sin interrumpirla"
+    agents: "Muestra los agentes activos y las tareas en curso"
+    queue: "Encola un prompt para el siguiente turno, o lista/edita/borra/mueve/vacía la cola"
+    steer: "Mete un mensaje tras la siguiente llamada a herramienta sin interrumpir"
+    goal: "Fija un objetivo en el que Janitor trabaja turno tras turno hasta cumplirlo"
+    heartbeat: "Fija un prompt recurrente que vuelve a esta sesión cuando está inactiva"
+    refine: "Revisa esta conversación ahora y guarda lo aprendido en memoria/skills"
+    review: "Lanza un subagente independiente que revisa el trabajo recién discutido (PR, código, docs)"
+    loop: "Repite un prompt a intervalos en esta sesión"
+    plan: "Escribe un plan de implementación en markdown en la carpeta de planes del proyecto, sin ejecutar nada"
+    moa: "Pasa un prompt por el preset Mixture of Agents por defecto y luego restaura tu modelo"
+    subgoal: "Añade o gestiona criterios extra del objetivo activo"
+    status: "Muestra sesión, modelo, tokens y contexto"
+    egress: "Muestra el estado del proxy de salida de Docker"
+    context: "Vista detallada de la ventana de contexto: uso, desglose por categoría, compresión y rendimiento"
+    whoami: "Muestra tu acceso a comandos (admin / usuario)"
+    profile: "Muestra el perfil activo y su directorio"
+    sethome: "Hace de este chat el canal principal"
+    resume: "Reanuda una sesión con nombre"
+    sessions: "Explora y reanuda sesiones anteriores"
+    model: "Cambia de modelo (solo esta sesión; --global para guardarlo)"
+    codex-runtime: "Activa o desactiva el runtime app-server de Codex para modelos OpenAI/Codex"
+    personality: "Elige una personalidad predefinida"
+    diff: "Muestra los cambios de git del directorio de trabajo"
+    verbose: "Rota la vista de progreso de herramientas: off -> new -> all -> verbose"
+    footer: "Activa o desactiva el pie con metadatos del gateway en las respuestas"
+    yolo: "Activa o desactiva el modo YOLO (sin aprobaciones de comandos peligrosos)"
+    approvals: "Muestra o fija el modo persistente de aprobación de comandos peligrosos"
+    reasoning: "Gestiona el esfuerzo de razonamiento y su visualización"
+    fast: "Modo rápido: Priority Processing de OpenAI / Fast Mode de Anthropic (normal/fast/auto/cold)"
+    voice: "Activa o desactiva el modo voz"
+    busy: "Decide qué pasa con tus mensajes mientras Janitor trabaja"
+    skills: "Busca, instala, inspecciona o gestiona skills"
+    memory: "Revisa escrituras de memoria pendientes / activa o quita la aprobación"
+    bundles: "Lista los paquetes de skills (alias /<nombre> para varias skills)"
+    learn: "Aprende una skill reutilizable de lo que describas (directorios, URLs, este chat, notas)"
+    init: "Genera o actualiza las instrucciones AGENTS.md a partir del repositorio"
+    suggestions: "Revisa automatizaciones sugeridas (aceptar/descartar)"
+    blueprint: "Monta una automatización a partir de una plantilla"
+    curator: "Mantenimiento de skills en segundo plano (status, run, pin, archive, list-archived)"
+    kanban: "Tablero de colaboración entre perfiles (tareas, enlaces, comentarios)"
+    reload-mcp: "Recarga los servidores MCP desde la configuración"
+    reload-skills: "Vuelve a escanear las skills instaladas o eliminadas"
+    commands: "Explora todos los comandos y skills (paginado)"
+    help: "Muestra los comandos disponibles (/help skills lista las skills, /help <texto> filtra)"
+    restart: "Reinicia el gateway con calma tras vaciar las ejecuciones activas"
+    usage: "Muestra el uso de tokens y los límites; `reset` canjea un reinicio de límite de Codex guardado"
+    login: "Inicia sesión con una cuenta de Nous (conserva tus conectores)"
+    topup: "Muestra tu saldo de Nous y gestiona la facturación en el portal"
+    insights: "Muestra estadísticas y análisis de uso"
+    platform: "Pausa, reanuda o lista una plataforma del gateway que falla"
+    update: "Actualiza Janitor a la última versión"
+    version: "Muestra la versión de Janitor"
+    debug: "Sube un informe de depuración (sistema + registros) y devuelve enlaces para compartir"

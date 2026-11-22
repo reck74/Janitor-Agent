@@ -28,6 +28,10 @@ from janitor.home import REPO_ROOT, janitor_home
 OVERLAY_DIR = Path(__file__).resolve().parent
 UPSTREAM_LOCALES = REPO_ROOT / "locales"
 ENV_VAR = "HERMES_BUNDLED_LOCALES"
+# Overlay namespaces only Janitor defines: upstream call sites read them through a
+# touchpoint with their English inline (backend-user-copy, runtime-copy). Every
+# other overlay key fixes an upstream key and must exist in upstream's en.yaml.
+FORK_NAMESPACES = ("tui_gateway.", "runtime_copy.")
 
 
 def root_home() -> Path:

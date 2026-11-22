@@ -178,4 +178,13 @@ def t(key: str, lang: str | None = None, **format_kwargs: Any) -> str:
         return value
 
 
-__all__ = ["SUPPORTED_LANGUAGES", "DEFAULT_LANGUAGE", "t", "get_language", "reset_language_cache"]
+# JANITOR: (touchpoint runtime-copy) a call site whose text has no key in upstream's en.yaml offers
+# a catalog key with its inline English as the fallback; a catalog without the key keeps the English.
+def t_default(key: str, english: str, /, **format_kwargs: Any) -> str:
+    text = t(key, **format_kwargs)
+    if text != key:
+        return text
+    return english.format(**format_kwargs) if format_kwargs else english
+
+
+__all__ = ["SUPPORTED_LANGUAGES", "DEFAULT_LANGUAGE", "t", "t_default", "get_language", "reset_language_cache"]  # JANITOR: t_default

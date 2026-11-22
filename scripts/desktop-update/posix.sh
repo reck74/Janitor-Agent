@@ -315,7 +315,7 @@ linux_gate() {
   [ -n "$RELAUNCH_TARGET" ] && RELAUNCH_TARGET="$(readlink -m -- "$RELAUNCH_TARGET")"
   case "$RELAUNCH_TARGET" in
     "$unpacked"/*) ;;
-    *) GATE=skew GATE_MSG="Backend updated, but the desktop app package (AppImage/deb/rpm) was not changed. Update or reinstall it to match."; return ;;
+    *) GATE=skew GATE_MSG="El motor quedó actualizado, pero el paquete de la app (AppImage/deb/rpm) sigue siendo el viejo. Actualízalo o reinstálalo para que coincidan."; return ;;  # JANITOR: Spanish copy (shown verbatim by the app)
   esac
 
   sb="$unpacked/chrome-sandbox"
@@ -332,7 +332,7 @@ linux_gate() {
     [ "$arg" = "--no-sandbox" ] && { GATE=relaunch; return; }
   done
 
-  GATE=manual GATE_MSG="Update complete, but the rebuilt app can't relaunch itself (its sandbox helper needs root ownership). Reopen Hermes to finish."
+  GATE=manual GATE_MSG="Actualización completa, pero la app recompilada no puede reiniciarse sola (su chrome-sandbox necesita ser de root). Vuelve a abrir Janitor para terminar."  # JANITOR: Spanish copy (shown verbatim by the app)
 }
 
 mac_swap() {

@@ -86,6 +86,18 @@ def check_desktop_update_posix(tmp_path):
     assert args["keep_stash"] is True and args["yes"] is True and args["gateway"] is True, args
     assert args["branch"] == "main", args
     assert seen["result"]["ok"] is True, seen["result"]
+    # The relaunch gate's message reaches the app verbatim (boot dialog / shim window): Spanish.
+    import subprocess
+
+    foreign = tmp_path / "opt" / "Janitor.AppImage"
+    gate = subprocess.run(
+        ["bash", str(REPO_ROOT / "scripts" / "desktop-update" / "posix.sh"), "--self-test-gate",
+         "--install-root", str(tmp_path / "hermes-agent"), "--relaunch-target", str(foreign)],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    decision, _, message = gate.partition(":")
+    assert decision == "skew" and "AppImage" in message, gate
+    assert "Backend updated" not in message and "hermes" not in message.lower(), gate
 
 
 def check_backend_user_copy(tmp_path):
@@ -118,8 +130,38 @@ def check_backend_user_copy(tmp_path):
         reset_language_cache()
 
 
+def check_runtime_copy(tmp_path):
+    """English literals with no upstream key ask the catalog: Janitor's gives Spanish, upstream's English."""
+    import os
+
+    from agent.i18n import reset_language_cache, t_default
+    from hermes_cli.commands import COMMAND_REGISTRY, localized_description
+    from janitor import locales
+
+    home = os.environ["HERMES_HOME"]
+    os.makedirs(home, exist_ok=True)
+    with open(os.path.join(home, "config.yaml"), "w", encoding="utf-8") as f:
+        f.write("display:\n  language: es\n")
+    saved = os.environ.pop(locales.ENV_VAR, None)
+    update = next(c for c in COMMAND_REGISTRY if c.name == "update")
+    try:
+        reset_language_cache()
+        assert localized_description(update) == update.description
+        assert t_default("runtime_copy.gateway.restarted", "Back {x}.", x=1) == "Back 1."
+        os.environ[locales.ENV_VAR] = str(locales.build(tmp_path / "locales"))
+        reset_language_cache()
+        assert localized_description(update) == "Actualiza Janitor a la última versión"
+        assert t_default("runtime_copy.gateway.restarted", "x").startswith("♻ Gateway reiniciado")
+    finally:
+        os.environ.pop(locales.ENV_VAR, None)
+        if saved is not None:
+            os.environ[locales.ENV_VAR] = saved
+        reset_language_cache()
+
+
 CHECKS = {
     "backend-user-copy": check_backend_user_copy,
+    "runtime-copy": check_runtime_copy,
     "version": check_version,
     "packaging": check_packaging,
     "banner": check_banner,
@@ -152,7 +194,7 @@ def test_touchpoint_contract(check_id, capsys, tmp_path):
     check = CHECKS[check_id]
     if check is check_banner:
         check(capsys)
-    elif check in (check_install_sh, check_desktop_update_posix, check_backend_user_copy):
+    elif check in (check_install_sh, check_desktop_update_posix, check_backend_user_copy, check_runtime_copy):
         check(tmp_path)
     else:
         check()

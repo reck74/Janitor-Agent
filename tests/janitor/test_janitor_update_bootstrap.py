@@ -97,7 +97,7 @@ def test_bootstrap_run_update_prints_branding(capsys):
         rc = jub.run_update([])
 
     out = capsys.readouterr().out
-    assert "THE JANITOR" in out
+    assert "THE JANITOR" in out and jub.BANNER in out
     assert rc == 0
     mock_delegate.assert_called_once()
 

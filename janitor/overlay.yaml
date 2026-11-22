@@ -103,6 +103,30 @@ touchpoints:
     merge: reapply
     upstream_candidate: true
 
+  - id: runtime-copy
+    files:
+      - agent/i18n.py
+      - gateway/run_turn.py
+      - gateway/run_notifications.py
+      - hermes_cli/commands.py
+      - hermes_cli/commands_platforms.py
+      - hermes_cli/web_server_messaging.py
+    why: >-
+      English literals the engine sends to a user with no key in upstream's
+      en.yaml ask the i18n catalog first: `agent.i18n.t_default(key,
+      english)` returns the catalog text, else the inline English, so
+      upstream catalogs give upstream output byte for byte. Call sites: the
+      one-time "no home channel" notice (run_turn), the /update watcher and
+      post-update/restart notices (run_notifications), command descriptions
+      in gateway /help, /commands and the Telegram command menu
+      (`commands.localized_description`), and the Telegram QR pairing errors
+      (web_server_messaging; expired/claimed stay English because the app
+      matches those words in the 410 body). Keys live under `runtime_copy.*`
+      in janitor/locales/es.yaml. Every changed line carries `# JANITOR:`.
+    verify: test:runtime-copy
+    merge: reapply
+    upstream_candidate: true
+
   - id: web-typecheck
     files: [web/package.json]
     why: "`tsc -b --noEmit`; upstream's `tsc -p .` checks no files (tsconfig has `files: []`)."
@@ -145,7 +169,7 @@ touchpoints:
       --link-command`, defaults to --no-skills, and runs `python -m
       janitor.seed --home` in the config stage before any skills sync. A
       home that already holds the legacy terminal install (`janitor-core/`)
-      is refused in every --stage and in the monolithic run before anything
+      is refused in every --stage, in --ensure and in the monolithic run before anything
       is written, with a Spanish message (and the {ok:false} JSON frame's
       reason) telling the user to keep using `janitor` from the terminal
       until adoption exists (plan F1-22 / F5-01). Every changed hunk carries
@@ -161,7 +185,11 @@ touchpoints:
       instead of `hermes update` whenever the checkout's venv has the
       `janitor` script, so app-driven updates go through
       janitor/update_core.py (directive #13). One `# JANITOR:` block right
-      after the update invoke is chosen.
+      after the update invoke is chosen. The Linux relaunch gate's two
+      messages (`skew`: app package not updated — every AppImage update;
+      `manual`: rebuilt app cannot relaunch) are Spanish, because the app
+      shows the result `message` verbatim (main.ts boot dialog `detail`,
+      ui.html shim, notify-send); each line carries `# JANITOR:`.
     verify: test:desktop-update-posix
     merge: reapply
 
