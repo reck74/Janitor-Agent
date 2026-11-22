@@ -625,7 +625,7 @@ plugins = ["**/plugin.yaml", "**/plugin.yml"]
 # Bot Desktop starts Xvnc + Xfce through a shell launcher and seeds the wallpaper; both are read
 # via Path(__file__).parent in tools/bot_desktop/runtime.py and vanish from sealed wheels otherwise.
 tools = ["bot_desktop/launcher.sh", "bot_desktop/wallpaper.png"]
-janitor = ["overlay.yaml", "skills/**/*"]
+janitor = ["overlay.yaml", "catalog.yaml", "skills/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

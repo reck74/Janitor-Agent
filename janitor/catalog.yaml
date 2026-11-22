@@ -1,0 +1,250 @@
+# Janitor skill catalog (directive #19).
+#
+# The catalog decides which skills a Janitor agent (a Hermes profile) can see.
+# A profile lists catalog ids in `janitor.skills` of its config.yaml and
+# `janitor.catalog.apply(home)` turns that list into one absolute
+# `skills.external_dirs` entry per skill. A skill upstream adds is never
+# active just because it exists: it has to be listed here AND chosen.
+#
+# Fields per skill:
+#   id         the skill's frontmatter `name:` (checked by `python -m janitor.catalog check`)
+#   source     janitor          -> path relative to janitor/skills/
+#              upstream-bundled -> path relative to the install tree's skills/
+#              upstream-optional-> path relative to the install tree's optional-skills/
+#              hub              -> installed per home from the skills hub (no path)
+#   purpose    a key of `purposes`
+#   platforms  optional OS gate: linux | macos | windows (absent = every OS)
+#   templates  keys of `templates` that include the skill; [] = optional,
+#              the user ticks it.
+
+schema: 1
+
+purposes:
+  sistema: "Equipo y sistema"
+  documentos: "Documentos y oficina"
+  investigacion: "Investigación"
+  proyectos: "Proyectos"
+  opcional: "Opcionales"
+  aplicativos: "Aplicativos opcionales"
+
+templates:
+  main: "Janitor"
+  investigador: "Investigador"
+  creador-proyectos: "Creador de proyectos"
+
+skills:
+  # --- Equipo y sistema -------------------------------------------------
+  - id: janitor-onboarding
+    source: janitor
+    path: core/janitor-onboarding
+    purpose: sistema
+    platforms: [linux, macos]
+    templates: [main]
+
+  # PENDIENTE (fase 3, F3-01..F3-05): las cinco skills de administración del
+  # equipo todavía no existen. Irán aquí, con `source: janitor`, cuando se
+  # creen: limpieza del equipo, organización de archivos, salud del sistema,
+  # mantenimiento programado y creación de proyectos. No se listan antes de
+  # existir: `check` exige que cada entrada resuelva a su SKILL.md.
+
+  # --- Documentos y oficina --------------------------------------------
+  - id: pdf
+    source: upstream-bundled
+    path: productivity/pdf
+    purpose: documentos
+    templates: [main]
+  - id: docx
+    source: upstream-bundled
+    path: productivity/docx
+    purpose: documentos
+    templates: [main]
+  - id: xlsx
+    source: upstream-bundled
+    path: productivity/xlsx
+    purpose: documentos
+    templates: [main]
+  - id: powerpoint
+    source: upstream-bundled
+    path: productivity/powerpoint
+    purpose: documentos
+    templates: [main]
+  - id: document-to-action-items
+    source: upstream-bundled
+    path: productivity/document-to-action-items
+    purpose: documentos
+    templates: [main]
+  - id: weekly-review-planning
+    source: upstream-bundled
+    path: productivity/weekly-review-planning
+    purpose: documentos
+    templates: [main]
+
+  # --- Investigación ---------------------------------------------------
+  - id: grounded-citations
+    source: upstream-bundled
+    path: research/grounded-citations
+    purpose: investigacion
+    templates: [main, investigador]
+  - id: blocked-page-recovery
+    source: upstream-bundled
+    path: web/blocked-page-recovery
+    purpose: investigacion
+    templates: [main]
+  - id: arxiv
+    source: upstream-bundled
+    path: research/arxiv
+    purpose: investigacion
+    templates: [investigador]
+  - id: llm-wiki
+    source: upstream-bundled
+    path: research/llm-wiki
+    purpose: investigacion
+    templates: [investigador]
+  - id: competitor-news-monitor
+    source: upstream-bundled
+    path: research/competitor-news-monitor
+    purpose: investigacion
+    templates: [investigador]
+  - id: youtube-content
+    source: upstream-bundled
+    path: media/youtube-content
+    purpose: investigacion
+    templates: [investigador]
+  - id: janitor-repo-research-agent
+    source: janitor
+    path: agents/janitor-repo-research-agent
+    purpose: investigacion
+    platforms: [linux, macos]
+    templates: [investigador]
+
+  # --- Proyectos -------------------------------------------------------
+  - id: github
+    source: upstream-bundled
+    path: software-development/github
+    purpose: proyectos
+    templates: [creador-proyectos]
+  - id: spike
+    source: upstream-bundled
+    path: software-development/spike
+    purpose: proyectos
+    templates: [creador-proyectos]
+  - id: systematic-debugging
+    source: upstream-bundled
+    path: software-development/systematic-debugging
+    purpose: proyectos
+    templates: [creador-proyectos]
+  - id: test-driven-development
+    source: upstream-bundled
+    path: software-development/test-driven-development
+    purpose: proyectos
+    templates: [creador-proyectos]
+  - id: claude-code
+    source: upstream-bundled
+    path: autonomous-ai-agents/claude-code
+    purpose: proyectos
+    templates: [creador-proyectos]
+  - id: codex
+    source: upstream-bundled
+    path: autonomous-ai-agents/codex
+    purpose: proyectos
+    templates: [creador-proyectos]
+  - id: opencode
+    source: upstream-bundled
+    path: autonomous-ai-agents/opencode
+    purpose: proyectos
+    templates: [creador-proyectos]
+
+  # --- Opcionales (el usuario las marca) -------------------------------
+  - id: google-workspace
+    source: upstream-bundled
+    path: productivity/google-workspace
+    purpose: opcional
+    templates: []
+  - id: email-inbox-triage
+    source: upstream-bundled
+    path: email/email-inbox-triage
+    purpose: opcional
+    templates: []
+  - id: notion
+    source: upstream-bundled
+    path: productivity/notion
+    purpose: opcional
+    templates: []
+  - id: obsidian
+    source: upstream-bundled
+    path: note-taking/obsidian
+    purpose: opcional
+    templates: []
+  - id: computer-use
+    source: upstream-bundled
+    path: autonomous-ai-agents/computer-use
+    purpose: opcional
+    templates: []
+  - id: apple-notes
+    source: upstream-bundled
+    path: apple/apple-notes
+    purpose: opcional
+    platforms: [macos]
+    templates: []
+  - id: apple-reminders
+    source: upstream-bundled
+    path: apple/apple-reminders
+    purpose: opcional
+    platforms: [macos]
+    templates: []
+  - id: findmy
+    source: upstream-bundled
+    path: apple/findmy
+    purpose: opcional
+    platforms: [macos]
+    templates: []
+  - id: imessage
+    source: upstream-bundled
+    path: apple/imessage
+    purpose: opcional
+    platforms: [macos]
+    templates: []
+
+  # --- Aplicativos opcionales (service.yaml + `janitor services`) -------
+  - id: janitor-honcho
+    source: janitor
+    path: services/janitor-honcho
+    purpose: aplicativos
+    platforms: [linux, macos]
+    templates: []
+  - id: janitor-n8n
+    source: janitor
+    path: services/janitor-n8n
+    purpose: aplicativos
+    platforms: [linux, macos]
+    templates: []
+  - id: janitor-lightrag
+    source: janitor
+    path: services/janitor-lightrag
+    purpose: aplicativos
+    platforms: [linux]
+    templates: []
+  - id: janitor-nocodb
+    source: janitor
+    path: services/janitor-nocodb
+    purpose: aplicativos
+    platforms: [linux, macos]
+    templates: []
+  - id: janitor-waha
+    source: janitor
+    path: services/janitor-waha
+    purpose: aplicativos
+    platforms: [linux]
+    templates: []
+  - id: janitor-firecrawl
+    source: janitor
+    path: services/janitor-firecrawl
+    purpose: aplicativos
+    platforms: [linux, macos]
+    templates: []
+  - id: janitor-opendesign
+    source: janitor
+    path: integrations/janitor-opendesign
+    purpose: aplicativos
+    platforms: [linux, macos]
+    templates: []
