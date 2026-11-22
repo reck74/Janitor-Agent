@@ -252,8 +252,8 @@ Estados: `pendiente` · `en curso (quién)` · `hecho` (lo dice quien lo ejecut�
 | ID | Tarea | Estado |
 |---|---|---|
 | F0-01 | Decisiones de producto cerradas | auditado |
-| F0-02 | Verificación de supuestos en el código (sección 3) | hecho |
-| F0-03 | `AGENTS.md`: directivas 8 y 9 reescritas, 17-20 nuevas | hecho |
+| F0-02 | Verificación de supuestos en el código (sección 3) | auditado |
+| F0-03 | `AGENTS.md`: directivas 8 y 9 reescritas, 17-20 nuevas | auditado |
 
 ### Fase 1 — La app instala Janitor de verdad
 
@@ -263,17 +263,17 @@ funcional en español, con su identidad, sin «Hermes» en el uso normal y con
 
 | ID | Tarea | Alcance de archivos | Verificación | Estado |
 |---|---|---|---|---|
-| F1-01 | Siembra `janitor/seed.py` + semilla mínima + lanzador apto para la app | `janitor/seed.py`, `janitor/cli.py`, `janitor/home.py`, `assets/janitor/config.yaml`, `tests/janitor/` | `scripts/run_tests.sh tests/janitor/` | pendiente |
-| F1-02 | `scripts/install.sh` como touchpoint: repo del fork, comando `janitor`, sin skills heredadas | `scripts/install.sh`, `janitor/overlay.yaml`, `tests/janitor/` | `python -m janitor.overlay check` + pruebas | pendiente |
-| F1-03 | Motor de parches de la capa de construcción (anclas, aplicar, revertir a prueba de fallos) + P1-P5 | `apps/desktop-janitor/` | pruebas node de `apps/desktop-janitor/` | pendiente |
-| F1-04 | Reglas de marca del catálogo (P6) + prueba de vigilancia | `apps/desktop-janitor/` | prueba de vigilancia en verde | pendiente |
-| F1-05 | Literales de Electron y de la interfaz (P7, P8) | `apps/desktop-janitor/` | prueba de anclas + vigilancia | pendiente |
-| F1-06 | `SOUL.md` y bienvenida de Telegram: de código a tecnología | `assets/janitor/SOUL.md`, `janitor/plugin/telegram.py`, su prueba | `scripts/run_tests.sh tests/janitor/` | pendiente |
-| F1-07 | Compilación real de la app Janitor y prueba en home limpio | — | AppImage arranca, instala y abre chat | pendiente |
-| F1-08 | Onboarding: MiniMax primero, Nous y «Hermes Cloud» ocultos | `apps/desktop-janitor/` | revisión visual | pendiente |
-| F1-09 | Actualización desde la app por el flujo Janitor (directiva 13) | por definir | por definir | pendiente |
-| F1-10 | Español para plugins `kanban`, `hermes-bots`, `radio` y las 6 claves sin traducir | `apps/desktop-janitor/` | vigilancia de idioma | pendiente |
-| F1-11 | CI: compilar la app Janitor y publicar el AppImage | `.github/workflows/` | job en verde | pendiente |
+| F1-01 | Siembra `janitor/seed.py` + semilla mínima + lanzador apto para la app | `janitor/seed.py`, `janitor/cli.py`, `janitor/home.py`, `assets/janitor/config.yaml`, `tests/janitor/` | `scripts/run_tests.sh tests/janitor/` | auditado |
+| F1-02 | `scripts/install.sh` como touchpoint: repo del fork, comando `janitor`, sin skills heredadas | `scripts/install.sh`, `janitor/overlay.yaml`, `tests/janitor/` | `python -m janitor.overlay check` + pruebas | auditado |
+| F1-03 | Motor de parches de la capa de construcción (anclas, aplicar, revertir a prueba de fallos) + P1-P5 | `apps/desktop-janitor/` | pruebas node de `apps/desktop-janitor/` | auditado |
+| F1-04 | Reglas de marca del catálogo (P6) + prueba de vigilancia | `apps/desktop-janitor/` | prueba de vigilancia en verde | auditado |
+| F1-05 | Literales de Electron y de la interfaz (P7, P8) | `apps/desktop-janitor/` | prueba de anclas + vigilancia | auditado |
+| F1-06 | `SOUL.md` y bienvenida de Telegram: de código a tecnología | `assets/janitor/SOUL.md`, `janitor/plugin/telegram.py`, su prueba | `scripts/run_tests.sh tests/janitor/` | auditado |
+| F1-07 | Compilación real de la app Janitor y prueba en home limpio | — | AppImage arranca, instala y abre chat | compilación auditada; arranque en curso (subagente Opus) |
+| F1-08 | Onboarding: MiniMax primero, Nous y «Hermes Cloud» ocultos | `apps/desktop-janitor/` | revisión visual | en curso (subagente Opus) |
+| F1-09 | Actualización desde la app por el flujo Janitor (directiva 13) | por definir | por definir | en curso (subagente Opus) |
+| F1-10 | Español para plugins `kanban`, `hermes-bots`, `radio` y las 6 claves sin traducir | `apps/desktop-janitor/` | vigilancia de idioma | en curso (subagente Opus) |
+| F1-11 | CI: compilar la app Janitor y publicar el AppImage | `.github/workflows/` | job en verde | en curso (subagente Opus) |
 
 ### Fase 2 — Agente principal y catálogo de skills
 
@@ -354,3 +354,6 @@ Windows y macOS (firma de código). WhatsApp como canal.
 | Fecha | Quién | Qué |
 |---|---|---|
 | 2026-11-22 | Claude (orquestador) | Decisiones de producto cerradas; verificación de supuestos con tres subagentes; `AGENTS.md` actualizado; plan reescrito |
+| 2026-11-22 | Subagentes Opus, auditado por el orquestador | F1-01 a F1-06 hechas y auditadas. Evidencia: `scripts/run_tests.sh tests/janitor/` → 24 archivos, 341 pruebas, 0 fallos; `python -m janitor.overlay check` limpio; `node --test apps/desktop-janitor/scripts/build.test.mjs` → 31/31; `build.mjs --check` → 135/135 anclas |
+| 2026-11-22 | Claude (orquestador) | F1-07 primera mitad: `build.mjs --linux --dir` compila (requirió `npm ci` en la raíz). En el binario: instalador desde `reck74/Janitor-Agent`, home `.janitor`, motor por `-m janitor.cli` (3 sitios), menús en español, «Janitor terminó». `apps/desktop` quedó idéntico a upstream tras compilar y también tras una compilación fallida. **Sin probar:** instalación real en home limpio — el instalador se descarga por el SHA de la compilación, que debe existir en GitHub (hace falta push) |
+| 2026-11-22 | Claude (orquestador) | Ajustes propios sobre F1-01: personalidades ampliadas a tecnología; `approvals.mode` se mantiene en `manual` (upstream pasó a `smart`: decisión pendiente del dueño) |
