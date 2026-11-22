@@ -274,10 +274,14 @@ funcional en español, con su identidad, sin «Hermes» en el uso normal y con
 | F1-09 | Actualización desde la app por el flujo Janitor (directiva 13) | por definir | por definir | auditado |
 | F1-10 | Español para plugins `kanban`, `hermes-bots`, `radio` y las 6 claves sin traducir | `apps/desktop-janitor/` | vigilancia de idioma | auditado por pruebas; sin revisar en pantalla |
 | F1-11 | CI: compilar la app Janitor y publicar el AppImage | `.github/workflows/` | job en verde | auditado (los workflows no se han ejecutado) |
-| F1-12 | `janitor update` lanzado desde la app: reiniciar gateways en ejecución y reconstruir `web/`, como hace el flujo de upstream | `janitor/update_core.py`, pruebas | prueba de comportamiento | pendiente |
-| F1-13 | La primera pantalla sale con tema claro: aplicar los colores del skin desde el arranque | `apps/desktop-janitor/` | captura de la primera pantalla | pendiente |
-| F1-14 | Mensajes del motor que llegan a la app en inglés o con «Hermes» (errores de credenciales, «run `hermes setup`») | por definir | captura | pendiente |
+| F1-12 | `janitor update` lanzado desde la app: reiniciar gateways en ejecución y reconstruir `web/`, como hace el flujo de upstream | `janitor/update_core.py`, pruebas | prueba de comportamiento | auditado (sin actualización ni reinicio reales) |
+| F1-13 | La primera pantalla sale con tema claro: aplicar los colores del skin desde el arranque | `apps/desktop-janitor/` | captura de la primera pantalla | auditado (comprobado en captura de compilación real) |
+| F1-14 | Mensajes del motor que llegan a la app en inglés o con «Hermes» (errores de credenciales, «run `hermes setup`») | por definir | captura | auditado; quedan superficies listadas en F1-19 |
 | F1-15 | Instalación real de punta a punta en un home limpio con el AppImage publicado | — | checklist del criterio de terminado | pendiente (bloqueado: requiere push y release) |
+| F1-16 | Un gateway arrancado como servicio (sin pasar por el lanzador) no ve el catálogo español de Janitor: que el plugin exporte `HERMES_BUNDLED_LOCALES` al registrarse | `janitor/plugin/__init__.py`, `janitor/locales/`, pruebas | prueba de comportamiento | pendiente |
+| F1-17 | Los gateways lanzados como `janitor gateway run` / `-m janitor.cli gateway run` no los reconoce el descubrimiento de upstream (`looks_like_gateway_command_line`), así que ninguna actualización los reinicia | `gateway/status.py` (touchpoint) o lanzar siempre por `hermes_cli.main` | prueba de comportamiento | pendiente |
+| F1-18 | El verde lima del skin no llega a la app: el conversor de upstream nunca lee `ui_primary`; el color de marca en la app queda en morado | `apps/desktop-janitor/` | captura | pendiente — **decisión del dueño** |
+| F1-19 | Textos del motor aún en inglés o con «Hermes»: aviso de canal principal de Telegram, descripciones de comandos en `/help`, errores RPC crudos, routers web, `setup`/`doctor` | por definir (ver informe de F1-14 en la bitácora) | vigilancia | pendiente |
 
 ### Fase 2 — Agente principal y catálogo de skills
 
@@ -295,17 +299,17 @@ Diseño, alcances y verificaciones: [`fase-2-diseno.md`](fase-2-diseno.md).
 
 | ID | Tarea | Estado |
 |---|---|---|
-| F3-01 | Limpieza del equipo | en curso (subagente Opus) |
-| F3-02 | Organización de archivos | en curso (subagente Opus) |
+| F3-01 | Limpieza del equipo | auditado |
+| F3-02 | Organización de archivos | auditado |
 | F3-03 | Salud del sistema | auditado |
 | F3-04 | Mantenimiento programado | auditado |
-| F3-05 | Creación de proyectos | pendiente |
+| F3-05 | Creación de proyectos | auditado |
 
 ### Fase 4 — Aplicativos opcionales
 
 | ID | Tarea | Estado |
 |---|---|---|
-| F4-01 | Skill guiada de Honcho | pendiente |
+| F4-01 | Skill guiada de Honcho | en curso (subagente Opus) |
 | F4-02 | Plugin de escritorio: pantalla de servicios | pendiente |
 | F4-03 | Mismo patrón para n8n, LightRAG, NocoDB, WAHA, Firecrawl, Open Design | pendiente |
 
@@ -370,3 +374,21 @@ Windows y macOS (firma de código). WhatsApp como canal.
 | 2026-11-22 | Subagente Opus, auditado por el orquestador | F2-04: retiro de `agents.py`, `opencode/` y seis skills; `research/janitor-repo-research`; migración v2. `AGENTS.md` actualizado por el orquestador (directiva 3, contrato de instalación, jerarquía de skills) |
 | 2026-11-22 | Subagente Opus, auditado por el orquestador | F3-03 y F3-04: `janitor-system-health` y `janitor-maintenance`. La auditoría corrió de verdad en el equipo de desarrollo: 24 hallazgos, salida 0, sin sudo ni escrituras. Sin probar: parsers de apt/dnf en una máquina real, y un disparo real de la tarea programada |
 | 2026-11-22 | Subagente Opus, auditado por el orquestador | F2-01, F2-03, F2-05: perfil principal desde el catálogo, `janitor plantillas`, onboarding. Evidencia: `run_tests.sh tests/janitor/` → 31 archivos, 430 pruebas, 0 fallos; prueba manual en home temporal: `plantillas crear investigador` → perfil con memoria vacía y sus 6 skills. El orquestador corrigió `migrations/v1.py` para no re-añadir la raíz de skills a un home gestionado por el catálogo |
+| 2026-11-22 | Subagente Opus, auditado por el orquestador | F3-01 y F3-02: `janitor-cleanup` y `janitor-file-organizer`. 30 pruebas. Prueba adversaria propia del orquestador en un home temporal: entradas metidas a mano en el plan (archivo fuera del home, `~/.ssh/id_rsa`, enlace simbólico hacia fuera, `/etc/hostname`) rechazadas; archivo cambiado tras planificar omitido; el elemento legítimo fue a la papelera con su `.trashinfo`. Organizador: plan → apply → undo devuelve el árbol idéntico. Devuelto una vez al subagente para dos correcciones: diario escrito antes de cada movimiento y no revelar el digest válido en el error |
+| 2026-11-22 | Subagente Opus, auditado por el orquestador | F3-05 `janitor-project-create`: 39 pruebas. El subagente generó y verificó con red proyectos reales de Python (uv) y Node (npm y pnpm): lint y pruebas pasan. El tipo ops queda sin lint verificado (no hay shellcheck en la máquina) |
+| 2026-11-22 | Subagente Opus, auditado por el orquestador | F1-13 tema: 174 anclas, 62 pruebas node. Recompilado y capturado: primera pantalla oscura con la paleta del skin, sin azul ni naranja; formulario de clave con MiniMax preseleccionado |
+| 2026-11-22 | Subagente Opus, auditado por el orquestador | F1-14 mensajes del motor: `janitor/locales/es.yaml` (solo diferencias) + touchpoint `backend-user-copy`. Mensaje real generado por el orquestador: «Janitor no pudo iniciar el asistente de esta sesión… ejecuta `janitor setup`…». Pruebas de upstream de los módulos tocados: pasan sin cambios |
+| 2026-11-22 | Subagente Opus, auditado por el orquestador | F1-12: `janitor update` reconstruye `web/`, escribe el código de salida del gateway y reinicia la flota del home con los ayudantes de upstream; no reinicia nada si algún gateway del home corre desde otra instalación. 108 pruebas de actualización. Hallazgo → F1-17 |
+
+## 9. Decisiones pendientes del dueño
+
+No bloquean el trabajo en curso; cada una tiene un valor provisional ya aplicado.
+
+| Tema | Valor provisional | Qué decidir |
+|---|---|---|
+| `approvals.mode` en la semilla | `manual` (como antes) | Upstream pasó su valor por defecto a `smart`. Mantener `manual` o seguir a upstream |
+| Verde lima en la app (F1-18) | La app usa el morado del skin | Si el lima `#c2ef4e` debe ser el color de acento de la app |
+| Frases nuevas de «pensando» | No aplicadas | Diez frases propuestas sobre equipos, redes y seguridad (bitácora de F1-06); el dueño dijo que las frases del terminal se conservan |
+| `.claude/agents/janitor-dev-boss-autonomous.md` | Sin tocar | Importa `OpenCodeOrchestrator`, que ya no existe. Borrarlo o reescribirlo |
+| Push y release | Nada publicado | La instalación real de punta a punta (F1-15) necesita la rama en GitHub y un AppImage publicado |
+| Valor rescatable de skills retiradas | Nada rescatado | `janitor-config-audit` (diff de config frente a la semilla) puede servir para adoptar instalaciones viejas (F5-01) |
