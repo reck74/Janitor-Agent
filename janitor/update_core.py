@@ -7,7 +7,7 @@ Aligned with the official Hermes ``_cmd_update_impl`` in
 ``janitor/cli.py``) and the monkey-patched ``cmd_update`` (also in
 ``janitor/cli.py``) delegate here.
 
-The 11-step pipeline:
+The 12-step pipeline:
 
   1. Hangup protection (captures IO state for restore on exit)
   2. Pre-update backup (optional via ``_run_pre_update_backup``)
@@ -25,7 +25,8 @@ The 11-step pipeline:
   7. Python dependency install via uv/pip + lazy-feature/bootstrap refresh.
   8. Node repair (``_update_node_dependencies`` + TUI build). Failures
      write ``update-incomplete.json`` with ``failed_step="node_deps"`` and
-     exit 1 — no success banner, no stash restore.
+     exit 1 — no success banner, no stash restore. Then the ``web/`` build
+     (upstream ``_build_web_ui``, non-fatal).
   9. Fresh-wrapper config migration phase (``_run_config_check_fresh`` +
      conditional ``_run_migrate_config_fresh(interactive=False, quiet=True)``).
      Any failure (missing helpers, exception from check / migrate / post-check,
@@ -37,6 +38,12 @@ The 11-step pipeline:
      banner. Cleanup / restore failures return 1 and skip the banner.
      ``--keep-stash`` (the desktop updater, ``scripts/desktop-update/posix.sh``)
      leaves every autostash parked instead of restoring it.
+ 12. Only on success: ``--gateway`` writes ``.update_exit_code``, then the
+     running gateways of THIS checkout are restarted with upstream's
+     ``_restart_gateway_fleet_after_update`` (skipped by
+     ``--no-gateway-restart``; skipped with a notice when a gateway of the
+     same home runs from another checkout). Any other ``--gateway`` exit
+     writes a failing ``.update_exit_code``.
 
 Helpers from ``hermes_cli.update_cmd`` (``_run_config_check_fresh``,
 ``_run_migrate_config_fresh``, ``_print_update_completion``) and from
@@ -54,7 +61,6 @@ from __future__ import annotations
 import importlib
 import json
 import os
-import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -115,6 +121,11 @@ _ensure_uv_for_termux: Optional[Callable] = None
 _run_config_check_fresh: Optional[Callable] = None
 _run_migrate_config_fresh: Optional[Callable] = None
 _print_update_completion: Optional[Callable] = None
+# Post-update phases shared with ``hermes update`` (``_finish_pulled_update``):
+# the web UI build, the gateway's ``.update_exit_code`` and the fleet restart.
+_build_web_ui: Optional[Callable] = None
+_write_gateway_update_exit_code: Optional[Callable] = None
+_restart_gateway_fleet_after_update: Optional[Callable] = None
 
 
 # Lazy-import cache: only try each helper once per process.
@@ -237,6 +248,9 @@ def _ensure_loaded() -> None:
         "_is_android_python",
         "_install_psutil_android_compat",
         "_ensure_uv_for_termux",
+        "_build_web_ui",
+        "_write_gateway_update_exit_code",
+        "_restart_gateway_fleet_after_update",
     )
     for name in lazy_helpers:
         if globals().get(name) is None:
@@ -784,12 +798,30 @@ def _tui_install_context(ui_tui_dir: Path) -> Optional[tuple[Path, tuple[str, ..
     return ws_root, (() if ws_root == ui_tui_dir else ("--workspace", "ui-tui"))
 
 
+def _find_npm() -> Optional[str]:
+    """Fallback for ``_resolve_node_runtime_npm`` when ``hermes_cli`` cannot be
+    imported: the same lookup it delegates to (``find_node_executable``: Hermes'
+    managed Node first, then PATH), else ``hermes_platform``'s PATH resolver."""
+    try:
+        from hermes_constants import find_node_executable
+    except Exception:
+        find_node_executable = None
+    if find_node_executable is not None:
+        return find_node_executable("npm")
+    try:
+        from hermes_platform.resolver import locate_command
+    except Exception:
+        return None
+    command = locate_command("npm").command
+    return command[0] if command else None
+
+
 def _build_tui(ui_tui_dir: Path) -> list[str]:
     # A plain ``npm install`` here re-resolves the whole workspace and rewrites
     # the root package-lock.json on every update; that churn then blocks the
     # stash restore. Upstream's Node step already installs the ui-tui
     # workspace, so only repair a stale node_modules, and never via ``install``.
-    npm = _call("_resolve_node_runtime_npm", fallback=lambda: shutil.which("npm"))
+    npm = _call("_resolve_node_runtime_npm", fallback=_find_npm)
     if not npm:
         return ["ui-tui npm (npm not found)"]
 
@@ -1239,6 +1271,10 @@ def parse_update_args(argv: list[str]):
         "--keep-stash", action="store_true",
         help="Do NOT re-apply local changes after the update; they stay in git stash",
     )
+    parser.add_argument(
+        "--no-gateway-restart", action="store_true",
+        help="Update code and dependencies but leave running gateways on the old code",
+    )
     return parser.parse_args(argv)
 
 
@@ -1283,6 +1319,133 @@ def _reapply_skill_catalog() -> None:
         print(f"  ⚠ Skill catalog not re-applied: {exc}")
 
 
+# ---------------------------------------------------------------------------
+# Post-update phases shared with ``hermes update``
+# ---------------------------------------------------------------------------
+
+
+def _rebuild_web_ui(project_root: Path) -> None:
+    """Rebuild ``web/`` with upstream's ``_build_web_ui`` (non-fatal and
+    staleness-checked, as ``hermes update`` calls it on both the pulled and the
+    already-current path). Never fails the update."""
+    web_dir = Path(project_root) / "web"
+    if not web_dir.is_dir():
+        return
+    if globals().get("_build_web_ui") is None:
+        print("  ⚠ Web UI build helper unavailable — web/ not rebuilt.")
+        return
+    try:
+        _call("_build_web_ui", web_dir)
+    except Exception as exc:  # noqa: BLE001 — the dashboard build must not fail a good pull
+        print(f"  ⚠ Web UI not rebuilt: {exc}")
+
+
+def _local_write_gateway_exit_code(ok: bool) -> None:
+    """Fallback for upstream's ``_write_gateway_update_exit_code``: the gateway's
+    ``/update`` watcher waits for this file and reports a timeout without it."""
+    try:
+        (get_hermes_home() / ".update_exit_code").write_text(
+            "0" if ok else "1", encoding="utf-8"
+        )
+    except (OSError, RuntimeError) as exc:
+        print(f"  ⚠ Could not write the gateway update exit code: {exc}")
+
+
+def _write_gateway_exit_code(ok: bool) -> None:
+    """``--gateway`` mode: write ``$HERMES_HOME/.update_exit_code`` like ``hermes update``."""
+    try:
+        _call("_write_gateway_update_exit_code", ok, fallback=_local_write_gateway_exit_code)
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ⚠ Could not write the gateway update exit code: {exc}")
+
+
+def _fleet_runs_stale_code() -> bool:
+    """Does a gateway of this install still serve pre-update code? Upstream's
+    fleet probe (``collect_fleet_versions``) compares each running gateway's
+    stamped ``code_sha`` with this checkout's HEAD; a gateway of another
+    checkout is ``external``, never ``stale``. False when the probe fails."""
+    try:
+        from hermes_cli.update_receipt import collect_fleet_versions
+
+        return any(row.get("state") == "stale" for row in collect_fleet_versions())
+    except Exception:
+        return False
+
+
+def _gateways_in_update_scope() -> list[tuple[int, Optional[Path]]]:
+    """``(pid, checkout)`` of every running gateway upstream's restart phase
+    would touch, discovered and home-scoped with upstream's own helpers.
+
+    Upstream scopes the restart by home only (``hermes_cli/update_fleet_scope.py``):
+    the homes this update owns, plus every gateway mapped to their profile PID
+    files. The checkout is what ``hermes update``'s fleet probe reads
+    (``_gateway_code_root``: the status record's argv, the process'
+    ``VIRTUAL_ENV``, exe and argv); ``None`` when it cannot be read.
+    """
+    from hermes_cli.dashboard_procs import _hermes_home_for_pid
+    from hermes_cli.gateway import find_gateway_pids, find_profile_gateway_processes
+    from hermes_cli.update_fleet_scope import partition_gateway_pids_by_scope
+    from hermes_cli.update_receipt import _gateway_code_root
+
+    pids = list(find_gateway_pids(all_profiles=True))
+    mapped = {proc.pid for proc in find_profile_gateway_processes() if proc.pid in pids}
+    owned, _other_homes = partition_gateway_pids_by_scope(
+        [pid for pid in pids if pid not in mapped]
+    )
+    rows: list[tuple[int, Optional[Path]]] = []
+    for pid in pids:
+        if pid not in mapped and pid not in owned:
+            continue
+        try:
+            home = _hermes_home_for_pid(pid)
+        except Exception:
+            home = None
+        rows.append((pid, _gateway_code_root(pid, Path(home) if home else get_hermes_home())))
+    return rows
+
+
+def _restart_gateways_after_update(gateway_mode: bool) -> None:
+    """Restart this install's running gateways onto the updated code.
+
+    Delegates to upstream's ``_restart_gateway_fleet_after_update`` (systemd,
+    launchd and manual gateways; drain first; never raises). Upstream scopes by
+    home, but one Janitor home can be served by two checkouts (the pre-1.0
+    ``janitor-core/.venv`` and the app's ``hermes-agent/venv``), and upstream
+    relaunches a stopped manual gateway with THIS install's interpreter. So when
+    any in-scope gateway runs from another checkout (or one that cannot be
+    read), nothing is restarted. Every failure is a warning, never an exit code.
+    """
+    if globals().get("_restart_gateway_fleet_after_update") is None:
+        print("  ⚠ Gateway restart helper unavailable — restart running gateways with `janitor gateway restart`.")
+        return
+    try:
+        gateways = _gateways_in_update_scope()
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ⚠ Could not list running gateways ({exc}) — restart them with `janitor gateway restart`.")
+        return
+    if not gateways:
+        return
+
+    ours = Path(PROJECT_ROOT).resolve()
+    foreign = [(pid, root) for pid, root in gateways if root is None or Path(root).resolve() != ours]
+    if foreign:
+        print("→ Gateway restart skipped: a gateway of this home runs from another install.")
+        for pid, root in foreign:
+            where = root if root is not None else "a checkout that could not be read"
+            print(f"  ↷ PID {pid}: gateway running from {where} — left alone (not restarted)")
+        print(f"  Gateways of {ours} keep the previous code until restarted (`janitor gateway restart`).")
+        return
+
+    print("→ Restarting gateways onto the updated code...")
+    try:
+        outcome = _call("_restart_gateway_fleet_after_update", None, gateway_mode)
+    except Exception as exc:  # noqa: BLE001 — upstream never raises; a stale venv might
+        print(f"  ⚠ Gateway restart failed: {exc} — run `janitor gateway restart`.")
+        return
+    if getattr(outcome, "incomplete", False):
+        print("  ⚠ Gateway restart incomplete — check `janitor gateway status`.")
+
+
 def run_janitor_update(args) -> int:
     """Canonical Janitor update flow.
 
@@ -1295,7 +1458,14 @@ def run_janitor_update(args) -> int:
             branch (str|None): target branch (default ``"main"``).
             keep_stash (bool): leave the autostash parked instead of
                 re-applying it (the desktop updater's mode).
+            no_gateway_restart (bool): leave running gateways on the old code.
             yes (bool): accepted and ignored; the flow never prompts.
+
+    After a successful update the running gateways of this install are
+    restarted onto the new code (pulled path, or already-current when one still
+    serves stale code), like ``hermes update``. Under ``--gateway`` the exit
+    code is also written to ``$HERMES_HOME/.update_exit_code`` — before the
+    restart, which can take this process down with the gateway it runs in.
 
     Returns:
         Process exit code: 0 = updated, 1 = failed, 2 = another update holds
@@ -1318,6 +1488,8 @@ def run_janitor_update(args) -> int:
     gateway_mode = bool(getattr(args, "gateway", False))
     branch = getattr(args, "branch", None) or "main"
     keep_stash = bool(getattr(args, "keep_stash", False))
+    check_only = bool(getattr(args, "check", False))
+    gateway_exit_code_written = False
 
     _update_io_state = _call(
         "_install_hangup_protection",
@@ -1331,7 +1503,7 @@ def run_janitor_update(args) -> int:
     git_cmd: Optional[list[str]] = None
     update_lock = None
     try:
-        if getattr(args, "check", False):
+        if check_only:
             return _check_only(branch)
 
         update_lock, refusal = _acquire_update_lock()
@@ -1484,6 +1656,8 @@ def run_janitor_update(args) -> int:
             _write_incomplete_marker("node_deps", auto_stash_ref)
             return 1
 
+        _rebuild_web_ui(project_root)
+
         # Fresh-wrapper config migration phase. Any failure (missing
         # helpers, initial check exception, migration exception, post-check
         # exception, still-behind without an explicit support-floor
@@ -1547,6 +1721,16 @@ def run_janitor_update(args) -> int:
                 )
                 return 1
 
+        # Exit code before the restart: under --gateway this process can live
+        # in the gateway's service cgroup and die with it.
+        if gateway_mode:
+            _write_gateway_exit_code(True)
+            gateway_exit_code_written = True
+        if getattr(args, "no_gateway_restart", False):
+            print("→ Gateway restart skipped (--no-gateway-restart).")
+        elif not already_current or _fleet_runs_stale_code():
+            _restart_gateways_after_update(gateway_mode)
+
         print()
         print("✓ Janitor Agent updated successfully!")
         print("  Restart Janitor to use the new version.")
@@ -1563,6 +1747,8 @@ def run_janitor_update(args) -> int:
             _settle_stash(git_cmd, project_root, auto_stash_ref, keep_stash)
         return 1
     finally:
+        if gateway_mode and not check_only and not gateway_exit_code_written:
+            _write_gateway_exit_code(False)
         if update_lock is not None:
             update_lock.release()
         _call(

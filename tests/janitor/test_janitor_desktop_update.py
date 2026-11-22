@@ -130,6 +130,9 @@ def _stub_everything_but_git(monkeypatch, root: Path, home: Path, parked: list):
     monkeypatch.setattr(juc, "_run_config_check_fresh", lambda: (1, 1))
     monkeypatch.setattr(juc, "_run_migrate_config_fresh", lambda **kw: {})
     monkeypatch.setattr(juc, "_print_update_completion", lambda message: None)
+    monkeypatch.setattr(juc, "_build_web_ui", lambda *a, **kw: True)
+    monkeypatch.setattr(juc, "_gateways_in_update_scope", lambda: [])
+    monkeypatch.setattr(juc, "_fleet_runs_stale_code", lambda: False)
 
 
 def test_keep_stash_updates_and_leaves_local_edits_parked(checkout, tmp_path, monkeypatch):

@@ -144,6 +144,11 @@ def _stub_helpers(monkeypatch, tmp_path, *, syntax_break_in: str | None = None):
         lambda *a, **kw: None,
     )
 
+    # Post-update phases: never build web/, probe or restart real gateways.
+    monkeypatch.setattr(juc, "_build_web_ui", lambda *a, **kw: True)
+    monkeypatch.setattr(juc, "_gateways_in_update_scope", lambda: [])
+    monkeypatch.setattr(juc, "_fleet_runs_stale_code", lambda: False)
+
 
 # ---------------------------------------------------------------------------
 # Tests
