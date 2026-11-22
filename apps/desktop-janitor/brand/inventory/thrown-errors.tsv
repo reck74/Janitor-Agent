@@ -1,0 +1,542 @@
+path	line	has_hermes	literal
+src/api/plugins.ts	60	no	${caller}: illegal path traversal in "${path}"
+src/api/plugins.ts	74	yes	Hermes desktop bridge unavailable
+src/api/profiles.ts	54	no	Profile name required
+src/api/profiles.ts	58	no	The default profile cannot be deleted.
+src/api/sessions.ts	616	no	Session transcript exceeds the Desktop safe-load limit; use the Web Dashboard export for this session.
+src/app/capabilities/mcp/mcp-doc.ts	12	no	Expected a JSON object
+src/app/capabilities/mcp/mcp-doc.ts	19	no	Wrap the server in {"mcpServers": {"name": …}} so it has a name
+src/app/capabilities/plugins/plugin-settings-form.tsx	49	no	${field.label}: not one of ${field.choices?.join(', ') ?? ''}
+src/app/capabilities/plugins/plugin-settings-form.tsx	58	no	${field.label}: expected a JSON list or object
+src/app/capabilities/plugins/plugin-settings-form.tsx	67	no	${field.label}: expected a number
+src/app/chat/composer/status-stack/preview-row.tsx	32	no	Could not open preview target: ${item.target}
+src/app/chat/composer/status-stack/use-subagent-snapshot.ts	10	no	Subagent owner unavailable
+src/app/chat/history-window.ts	59	no	History response exceeds the bounded page size.
+src/app/chat/right-rail/preview-annotate-host.ts	28	no	preview webview is not ready
+src/app/chat/right-rail/preview-annotate-host.ts	112	no	preview capture is unavailable
+src/app/chat/right-rail/preview-artifact.tsx	53	no	Desktop bridge unavailable
+src/app/chat/right-rail/preview-artifact.tsx	60	no	Could not write artifact file
+src/app/chat/right-rail/preview-file.tsx	233	no	Invalid PDF data URL
+src/app/chat/right-rail/preview-file.tsx	244	no	Invalid PDF data URL type
+src/app/chat/right-rail/preview-file.tsx	252	no	Invalid PDF data URL payload
+src/app/chat/right-rail/preview-file.tsx	256	no	Invalid PDF file header
+src/app/chat/right-rail/preview-pane.tsx	425	no	preview guest has no webContents
+src/app/chat/right-rail/preview-pane.tsx	435	no	preview capture is unavailable
+src/app/chat/right-rail/preview-pane.tsx	770	no	preview webview is not ready
+src/app/chat/right-rail/preview-pane.tsx	794	no	preview webview is not ready
+src/app/chat/right-rail/preview-pane.tsx	827	no	preview webview cannot take input events
+src/app/chat/short-session-hang-repro.tsx	187	no	renderer became hidden before paint validation
+src/app/chat/short-session-hang-repro.tsx	217	no	renderer became hidden during paint validation
+src/app/chat/short-session-hang-repro.tsx	223	no	paint validation did not observe two frames
+src/app/chat/short-session-hang-repro.tsx	228	no	renderer became hidden before the first paint frame
+src/app/chat/short-session-hang-repro.tsx	235	no	renderer became hidden before the second paint frame
+src/app/contrib/handoff-leg.ts	67	no	Could not verify the first build. Retry when the connection recovers.
+src/app/contrib/handoff-leg.ts	107	no	The first build has no confirmed start, but its session still reports running. Retry when it is idle; no duplicate was sent.
+src/app/contrib/handoff-leg.ts	113	no	The first build has not acknowledged its start. Check its session before retrying; no duplicate was sent.
+src/app/contrib/handoff-leg.ts	130	no	The first build did not acknowledge starting. Check its session before retrying.
+src/app/contrib/handoff-receipt.ts	31	no	The saved first-build receipt could not be read. Check your sessions before starting another build.
+src/app/contrib/handoff-receipt.ts	53	no	The saved first-build receipt could not be read. Check your sessions before starting another build.
+src/app/contrib/handoff-receipt.ts	71	no	Could not save the first-build session for recovery. No new start was sent.
+src/app/contrib/hooks/use-session-tile-delegate.ts	360	no	stored transcript unavailable on every reachable backend
+src/app/contrib/hooks/use-session-tile-delegate.ts	397	no	resume returned no session id
+src/app/contrib/onboarding-handoff.ts	148	no	The welcome chat owner is not available yet. Reopen it and retry the first build.
+src/app/contrib/onboarding-handoff.ts	177	no	Could not save your onboarding preferences. Retry before starting the first build.
+src/app/contrib/onboarding-handoff.ts	199	no	Could not open the first-build session.
+src/app/contrib/onboarding-handoff.ts	208	no	The first-build session did not return a durable identity. Check your sessions before retrying.
+src/app/contrib/onboarding-kickoff.ts	174	no	The welcome chat could not be created. Please try again.
+src/app/gateway/hooks/use-gateway-boot.ts	1117	yes	Hermes gateway is not connected
+src/app/gateway/hooks/use-gateway-request.ts	131	yes	Hermes gateway unavailable
+src/app/pet-generate/lib/read-reference-image.ts	8	no	unreadable image
+src/app/pet-generate/lib/read-reference-image.ts	22	no	reference image too large
+src/app/pet-generate/lib/read-reference-image.ts	40	no	could not create canvas context
+src/app/right-sidebar/terminal/use-terminal-session.ts	896	no	Terminal session disappeared before its output stream attached
+src/app/session/hooks/use-message-stream/test-harness.tsx	97	no	renderMessageStream: the hook never mounted
+src/app/session/hooks/use-message-stream/test-harness.tsx	106	no	renderMessageStream: the hook never mounted
+src/app/session/hooks/use-message-stream/test-harness.tsx	115	no	renderMessageStream: the hook never mounted
+src/app/session/hooks/use-preview-routing.ts	47	no	No active session for background restart
+src/app/session/hooks/use-preview-routing.ts	62	no	Background restart did not return a task id
+src/app/session/hooks/use-prompt-actions/index.ts	164	no	Could not read ${label}
+src/app/session/hooks/use-prompt-actions/index.ts	1040	no	No active session to restore.
+src/app/session/hooks/use-prompt-actions/rewind.ts	593	no	Could not find the message to restore.
+src/app/session/hooks/use-prompt-actions/rewind.ts	600	no	Cannot restore an empty message.
+src/app/session/hooks/use-prompt-actions/utils.ts	481	no	${label} is too large to upload to the remote gateway${cap}.
+src/app/session/hooks/use-session-actions/index.ts	2402	no	nothing to branch — send a message first
+src/app/session/hooks/use-session-actions/index.ts	2707	no	Session ownership could not be resolved
+src/app/session/hooks/use-session-actions/index.ts	2846	no	Session ownership could not be resolved
+src/app/settings/computer-use-panel.tsx	96	no	spawn failed
+src/app/settings/field-copy.ts	29	no	Invalid field copy key: ${[...prefix, key].join('.')}
+src/app/settings/field-copy.ts	38	no	Duplicate field copy key: ${flatKey}
+src/app/settings/field-copy.ts	47	no	Invalid field copy value for key: ${path.join('.')}
+src/app/settings/helpers.ts	63	no	Unsafe config path: ${path}
+src/app/settings/helpers.ts	71	no	Unsafe config key: ${key}
+src/app/settings/helpers.ts	228	no	Unsafe config path part: ${part}
+src/app/settings/toolset-config-panel.tsx	296	no	spawn failed
+src/components/assistant-ui/embeds/listing-embed.tsx	45	no	listing: no renderable listings
+src/components/assistant-ui/thread/assistant-message.tsx	664	no	slash delegate unavailable
+src/components/assistant-ui/thread/assistant-message.tsx	817	no	logs root unavailable
+src/components/assistant-ui/thread/index.tsx	92	no	Restore is unavailable for this message.
+src/components/assistant-ui/tool/approval.tsx	165	no	Gateway disconnected
+src/components/chat/preview-attachment.tsx	78	no	Could not open preview target: ${requestTarget}
+src/components/onboarding-chat/setup-profile.ts	256	no	The desktop plugin folder is unavailable. Retry before starting the first build.
+src/components/pane-shell/tree/store.ts	1016	no	Invalid collapsed sides
+src/components/ui/copy-button.tsx	34	no	Clipboard API is unavailable
+src/components/ui/sidebar.tsx	40	no	useSidebar must be used within a SidebarProvider.
+src/contrib/runtime-loader.ts	267	no	unsupported import${unsupported.length > 1 ? 's' : ''}: ${unsupported.join(', ')} — 
+src/contrib/runtime-loader.ts	285	no	import timed out after ${IMPORT_TIMEOUT_MS / 1000}s — module evaluation never settled
+src/contrib/runtime-loader.ts	299	yes	${origin} has no valid default HermesPlugin export
+src/contrib/runtime-loader.ts	331	no	duplicate id "${plugin.id}", already loaded from ${owner.file ?? owner.kind}
+src/hooks/use-image-download.ts	58	no	Could not fetch image: ${response.status}
+src/i18n/context.tsx	226	no	Failed to save language
+src/lib/desktop-fs.ts	63	yes	Hermes Desktop bridge is unavailable
+src/lib/desktop-fs.ts	100	no	Saving is not available
+src/lib/desktop-fs.ts	186	no	Rename is not available
+src/lib/desktop-fs.ts	199	no	Delete is not available
+src/lib/desktop-git.ts	26	yes	Hermes Desktop bridge is unavailable
+src/lib/local-preview.ts	176	no	Desktop preview browser bridge is unavailable
+src/lib/local-preview.ts	183	no	Remote HTML preview could not be loaded
+src/lib/local-preview.ts	192	no	Desktop preview buffer bridge is unavailable
+src/lib/local-preview.ts	200	no	Could not stage remote HTML preview
+src/lib/mcp-dashboard-oauth.ts	52	yes	Update Hermes Desktop to support MCP OAuth callbacks.
+src/lib/mcp-dashboard-oauth.ts	94	no	OAuth server did not provide an authorization URL and session
+src/lib/mcp-dashboard-oauth.ts	120	no	OAuth server did not provide a local loopback callback URL
+src/lib/mcp-dashboard-oauth.ts	154	no	Timed out waiting for MCP OAuth authorization
+src/lib/media.ts	336	no	Missing gateway file path
+src/lib/media.ts	340	no	Desktop file download bridge is unavailable
+src/lib/oneshot.ts	41	no	Gateway not connected
+src/lib/plugin-source-urls.ts	13	no	Plugin identifier is required.
+src/lib/plugin-source-urls.ts	64	no	Invalid plugin identifier.
+src/lib/sibling-ws-url.ts	53	yes	Hermes Desktop connection bridge unavailable
+src/lib/sibling-ws-url.ts	88	no	Unexpected gateway WebSocket path: ${url.pathname}
+src/lib/svg-image.ts	90	no	no 2d context
+src/lib/svg-image.ts	97	no	toBlob failed
+src/lib/svg-image.ts	100	no	svg load failed
+src/lib/voice-client-direct.ts	207	no	Transcription timed out after ${seconds}s (${stt.provider} did not answer)
+src/lib/voice-client-direct.ts	253	no	${stt.provider} STT error (HTTP ${response.status}): ${await providerErrorText(response)}
+src/lib/voice-client-direct.ts	276	no	xAI STT error (HTTP ${response.status}): ${await providerErrorText(response)}
+src/lib/voice-client-direct.ts	304	no	ElevenLabs STT error (HTTP ${response.status}): ${await providerErrorText(response)}
+src/lib/voice-client-direct.ts	352	no	${tts.provider} TTS error (HTTP ${response.status}): ${await providerErrorText(response)}
+src/lib/voice-client-direct.ts	373	no	ElevenLabs TTS error (HTTP ${response.status}): ${await providerErrorText(response)}
+src/lib/voice-client-direct.ts	379	no	Unknown TTS wire: ${(tts as { wire?: string }).wire}
+src/lib/voice-live.ts	208	no	WebRTC connection failed
+src/lib/voice-live.ts	280	no	GPT-Live session already started
+src/lib/voice-live.ts	323	no	Missing local SDP offer
+src/lib/voice-live.ts	339	no	GPT-Live session creation failed
+src/lib/voice-playback.ts	283	no	Playback failed
+src/lib/voice-playback.ts	619	no	Playback stalled
+src/lib/voice-playback.ts	630	no	Playback failed
+src/lib/wake-client-capture.ts	91	no	AudioContext unavailable for client wake capture
+src/lib/wake-client-capture.ts	95	no	getUserMedia unavailable for client wake capture
+src/lib/yolo-session.ts	72	yes	Hermes gateway unavailable
+src/plugins/hermes-bots/canonical-chat.ts	88	yes	This Hermes Desktop version cannot open stored sessions
+src/plugins/hermes-bots/canonical-chat.ts	267	no	Could not check ${name}'s Bot Chat registry${detail} — not starting a new chat
+src/plugins/hermes-bots/canonical-chat.ts	286	no	Could not confirm ${name}'s Bot Chat registry — not starting a new chat
+src/plugins/hermes-bots/data.ts	197	no	bot metadata v2 storage is unavailable
+src/plugins/hermes-bots/group-chat-view-members.tsx	86	no	A group chat needs between 2 and ${GROUP_CHAT_MAX_MEMBERS} bots
+src/plugins/hermes-bots/group-chat.ts	1007	no	Group chat gateway changed before sync
+src/plugins/hermes-bots/group-chat.ts	1195	no	Gateway rejected group chat ui_meta
+src/plugins/hermes-bots/group-chat.ts	1202	no	Gateway did not advance group chat ui_meta revision
+src/plugins/hermes-bots/group-chat.ts	1208	no	Group chat ui_meta revision missing after read-back
+src/plugins/hermes-bots/group-chat.ts	1798	no	No free name for the group.
+src/plugins/hermes-bots/group-turns.ts	377	no	Could not check ${member?.name || 'member'}'s group session${detail} — not starting a new one
+src/plugins/hermes-bots/model-picker.tsx	56	no	model.options did not answer within ${Math.round(settleMs / 1000)}s (#95279 settle guard)
+src/plugins/hermes-bots/profile-ops.ts	116	no	rasterize failed
+src/plugins/hermes-bots/profile-ops.ts	333	no	No free name for the duplicate.
+src/plugins/hermes-bots/profile-ops.ts	393	no	The default profile cannot be deleted.
+src/plugins/hermes-bots/profile-ops.ts	405	no	Source-scoped profile deletion requires host.deleteProfile.
+src/plugins/hermes-bots/routing.ts	85	no	Bot ${resolved.profile} has no connection owner
+src/plugins/hermes-bots/routing.ts	227	no	Cannot route ${method} for ${route.connectionId}::${route.profile}
+src/plugins/hermes-bots/screen-connection.ts	113	no	Bot ${bot.name} has no connection owner
+src/plugins/hermes-bots/screen-connection.ts	153	no	Bot ${bot.name} has no connection owner
+src/plugins/kanban/api.ts	218	no	kanban api not ready
+src/sdk/index.ts	274	no	Profile route must include connectionId, profile, and targetProfile
+src/sdk/index.ts	306	no	Profile "${profile}" requires a route descriptor from host.profileRoutes(); profile-only routing is limited to legacy/local profiles.
+src/sdk/index.ts	503	no	Session open was superseded by a newer selection.
+src/sdk/index.ts	587	no	Timed out loading ${profile}'s session history.
+src/sdk/index.ts	633	no	Timed out loading ${targetProfile}'s session history.
+src/sdk/index.ts	796	no	deleteProfile: route requires connectionId, profile, and targetProfile
+src/sdk/index.ts	812	no	deleteProfile: profile name required
+src/sdk/index.ts	816	no	The default profile cannot be deleted.
+src/sdk/index.ts	881	yes	This Desktop build has no connection registry. Update Hermes Desktop.
+src/sdk/index.ts	898	yes	This Desktop build cannot enumerate multi-source agents. Update Hermes Desktop.
+src/sdk/index.ts	1056	no	Session open was superseded by a newer selection.
+src/sdk/index.ts	1071	no	Session open was superseded by a newer selection.
+src/sdk/index.ts	1181	no	The ${targetProfile} gateway is no longer available.
+src/sdk/index.ts	1258	no	openWorkspace: an id and a render function are required
+src/sdk/index.ts	1420	yes	Hermes Desktop connection routing unavailable
+src/sdk/index.ts	1488	no	Profile route must include connectionId and profile
+src/sdk/index.ts	1504	no	Profile route must include connectionId, profile, and targetProfile
+src/sdk/index.ts	1510	no	Persisted session reads require a profile
+src/sdk/index.ts	1539	no	Profile route must include connectionId, profile, and targetProfile
+src/sdk/index.ts	1545	no	Persisted session updates require a profile and session id
+src/sdk/index.ts	1564	yes	Hermes gateway unavailable
+src/sdk/settings.ts	66	no	Unsupported desktop setting: ${key}
+src/sdk/settings.ts	81	no	Invalid value for desktop setting: ${key}
+src/store/composer-status.ts	462	no	Gateway is not connected
+src/store/connections.ts	501	no	Connection "${targetConnection.label}" did not become active.
+src/store/default-profile.ts	40	no	This Desktop version cannot save a default profile.
+src/store/gateway-reconnect.ts	26	no	Gateway reconnect is unavailable
+src/store/gateway.ts	506	yes	Hermes gateway unavailable
+src/store/gateway.ts	880	no	Backend for "${entry.profile}" was retired; open it explicitly to reconnect.
+src/store/gateway.ts	1191	yes	Hermes gateway unavailable for profile "${route.key}"
+src/store/gateway.ts	1252	yes	This Desktop build cannot dial registry connections. Update Hermes Desktop.
+src/store/gateway.ts	1747	yes	Hermes gateway unavailable
+src/store/gateway.ts	1754	yes	This Desktop build cannot dial registry connections. Update Hermes Desktop.
+src/store/gateway.ts	1808	yes	This Desktop build cannot dial registry connections. Update Hermes Desktop.
+src/store/onboarding-scope.ts	35	yes	This Desktop build cannot dial registry connections. Update Hermes Desktop.
+src/store/pet-generate.ts	421	no	generation produced no drafts
+src/store/pet-generate.ts	542	no	hatch produced no preview
+src/store/pet-generate.ts	615	no	adopt failed
+src/store/pool-limits.ts	87	no	Applying pool limits failed
+src/store/profile.ts	1073	no	Agent profile route is missing connectionId
+src/store/projects.ts	302	yes	Hermes gateway is not connected
+src/store/projects.ts	319	no	Projects are unavailable while viewing all profiles
+src/store/projects.ts	330	no	Projects are unavailable while viewing all profiles
+src/store/projects.ts	361	no	Projects are unavailable while viewing all profiles
+src/store/projects.ts	371	yes	Active Hermes profile changed while connecting
+src/store/projects.ts	704	no	projects.discover_repos returned no repo list
+src/store/prompts.ts	358	yes	Hermes gateway is not connected
+src/store/send-diagnostics.ts	100	yes	Hermes gateway unavailable
+src/store/session-control.ts	769	no	Invalid session.control.read response
+src/store/session-control.ts	809	no	A session id is required for session control
+src/store/session-control.ts	813	no	Session not found
+src/store/session-control.ts	819	no	Session control gateway is unavailable
+src/store/session-control.ts	836	no	Invalid session.control action response
+src/store/session-request-router.ts	188	no	Session owner route is missing connectionId
+src/store/session-states.ts	2121	no	dropTilesForProfile: route without profile cannot be scoped
+src/store/transcript-tail-cache.ts	247	no	empty
+src/store/voice-live.ts	49	no	gateway not connected
+src/store/wake-word.ts	145	yes	Hermes gateway unavailable
+src/themes/install.ts	40	no	"${result.extensionId}" does not contribute any color themes.
+src/themes/install.ts	80	no	Expected a Marketplace id like "publisher.extension".
+src/themes/install.ts	86	no	Marketplace install is only available in the desktop app.
+src/themes/user-themes.ts	71	no	"${theme.name}" collides with a built-in theme.
+src/themes/user-themes.ts	75	no	Theme is missing required colors.
+src/themes/vscode.ts	85	no	Theme file is not a JSON object.
+src/themes/vscode.ts	211	no	Theme has no "colors" map — not a VS Code color theme.
+electron/api-transport.ts	186	no	${status}: ${detail}
+electron/api-transport.ts	240	no	Expected JSON from ${url} but the request was redirected (status ${statusCode})${target ? 
+electron/api-transport.ts	245	yes	Expected JSON from ${url} but got HTML (status ${statusCode}). The endpoint is likely missing on the Hermes backend.
+electron/backend-child.ts	115	no	Backend child${child.pid ? 
+electron/backend-claim.ts	34	no	${command} timed out after ${timeout}ms
+electron/backend-claim.ts	71	no	PID ${pid} no longer exists
+electron/backend-claim.ts	83	no	Invalid /proc start marker for PID ${pid}
+electron/backend-claim.ts	113	no	Invalid Windows start marker for PID ${pid}
+electron/backend-claim.ts	122	no	Missing process start marker for PID ${pid}
+electron/backend-connection-state.ts	53	yes	Hermes backend start was superseded by a newer connection attempt.
+electron/backend-health.ts	129	no	Nous Cloud agent ${hostname} is down 
+electron/backend-health.ts	227	no	SSH bootstrap was superseded by newer connection settings.
+electron/backend-health.ts	318	yes	Hermes backend did not become ready: ${detail}
+electron/backend-ownership.ts	169	no	Cannot own a backend without a complete process identity.
+electron/backend-ownership.ts	209	no	Cannot release a backend without a complete process identity.
+electron/backend-probes.ts	113	no	Runtime probe failed: ${command} (${signal || code})
+electron/backend-ready.ts	110	yes	Hermes backend: exited before port announcement (${signal || code})${describeOutputTail()}
+electron/backend-ready.ts	120	yes	Timed out waiting for Hermes backend port announcement (${timeoutMs}ms)
+electron/backend-ready.ts	197	yes	Hermes backend: exited before port announcement (${signal || code})${describeOutputTail()}
+electron/backend-ready.ts	207	yes	Timed out waiting for Hermes backend port announcement (${timeoutMs}ms)
+electron/bootstrap-runner.ts	262	no	Failed to download ${scriptName}: HTTP ${res2.statusCode} from redirect ${res.headers.location}
+electron/bootstrap-runner.ts	293	no	Failed to download ${scriptName}: HTTP ${res.statusCode} from ${url}
+electron/bootstrap-runner.ts	350	no	Cannot resolve ${installScriptName()}: no SOURCE_REPO_ROOT and no install stamp. 
+electron/bootstrap-runner.ts	749	no	${isPosix ? 'install.sh --manifest' : 'install.ps1 -Manifest'} failed: exit ${result.code}\n${tail}
+electron/bootstrap-runner.ts	771	no	${isPosix ? 'install.sh --manifest' : 'install.ps1 -Manifest'} produced no parseable JSON payload\n${result.stdout}
+electron/command-screenshot.ts	168	no	Screenshot request from an untrusted frame
+electron/command-screenshot.ts	178	no	Screenshot setting must be a boolean
+electron/command-screenshot.ts	222	no	Unknown screenshot permission
+electron/connection-apply.ts	51	no	Remote connection is not ready yet. Try again in a moment.
+electron/connection-config.ts	51	no	Remote gateway URL is required.
+electron/connection-config.ts	69	no	Remote gateway URL is not valid: ${error.message}
+electron/connection-config.ts	73	no	Remote gateway URL must be http:// or https://, got ${parsed.protocol}
+electron/connection-config.ts	224	no	resolveTestWsUrl: a mintTicket function is required in OAuth mode.
+electron/connection-registry.ts	415	no	Could not resolve effective SSH config for connection "${source.label}" (${source.id}) via ssh -G: ${detail}
+electron/connection-registry.ts	858	no	Every connection needs a name. Give this instance a device name (e.g. "Homelab", "Work laptop").
+electron/connection-registry.ts	862	no	Connection name is too long (max ${LABEL_MAX} characters).
+electron/connection-registry.ts	869	no	A connection named "${collision.label}" already exists. Connection names must be unique.
+electron/connection-registry.ts	885	no	The id "local" is reserved for the local connection.
+electron/connection-registry.ts	907	no	SSH connections need a host.
+electron/connection-registry.ts	921	no	A connection to this SSH host already exists ("${sshDupe.label}").
+electron/connection-registry.ts	950	no	A connection to this gateway URL already exists ("${urlDupe.label}").
+electron/connection-registry.ts	992	no	Unknown connection kind: ${String(kind)}
+electron/connection-registry.ts	1448	no	The local connection cannot be removed.
+electron/connection-registry.ts	1464	no	No connection with id "${id}".
+electron/connection-registry.ts	1473	no	No connection with id "${id}".
+electron/connection-registry.ts	1684	no	Unknown connection launch mode "${String(launchMode)}".
+electron/dashboard-token.ts	16	yes	Unsupported Hermes backend URL protocol: ${protocol}
+electron/dashboard-token.ts	23	yes	Timed out connecting to Hermes backend after ${timeoutMs}ms
+electron/dashboard-token.ts	32	no	${res.status}: ${text || res.statusText}
+electron/dashboard-token.ts	96	no	${label} exited and ${dashboardIndexUrl(baseUrl)} is served by a process we did not spawn; refusing its session token.
+electron/desktop-installation.ts	55	no	Could not generate a valid desktop installation ID.
+electron/desktop-installation.ts	92	no	Desktop installation ID path is not a regular file.
+electron/desktop-installation.ts	96	no	Desktop installation ID is owned by another user.
+electron/desktop-installation.ts	122	no	Could not repair the desktop installation ID.
+electron/desktop-installation.ts	127	no	Desktop installation ID is invalid.
+electron/desktop-plugin-install.ts	52	no	Plugin identifier is required.
+electron/desktop-plugin-install.ts	103	no	Invalid plugin identifier. Use a Git URL or 'owner/repo' (optionally with a subdirectory).
+electron/desktop-plugin-install.ts	144	no	Plugin subdirectory '${subdir}' escapes the repository.
+electron/desktop-plugin-install.ts	281	no	Git ${args[0]} timed out after ${GIT_TIMEOUT_MS / 1000} seconds.
+electron/desktop-plugin-install.ts	304	no	Git ${args[0]} failed:\n${stderr.trim()}
+electron/desktop-plugin-install.ts	347	no	Plugin subdirectory '${subdir}' does not exist in the repository.
+electron/desktop-profile.ts	17	no	A connection and profile route is required.
+electron/desktop-profile.ts	23	no	Invalid profile name.
+electron/desktop-profile.ts	30	no	Invalid connection id.
+electron/desktop-profile.ts	135	no	Invalid profile name: ${profile}
+electron/desktop-remote-route.ts	127	yes	HERMES_DESKTOP_REMOTE_URL is set but HERMES_DESKTOP_REMOTE_TOKEN is not. 
+electron/desktop-remote-route.ts	140	no	SSH remote mode is selected but no host is configured.
+electron/desktop-uninstall.ts	42	no	Unknown uninstall mode: ${mode}
+electron/fs-ipc.ts	178	no	Invalid rename
+electron/fs-ipc.ts	188	no	"${name}" already exists
+electron/fs-ipc.ts	204	no	Invalid path
+electron/fs-ipc.ts	210	no	Content too large
+electron/fs-ipc.ts	216	no	Parent directory does not exist
+electron/fs-ipc.ts	230	no	Invalid delete
+electron/gateway-file-download.ts	301	no	Malformed data URL
+electron/git-review-ops.ts	702	no	gh pr create failed (is gh installed and authenticated?)
+electron/git-worktree-ops.ts	249	no	Branch name is required.
+electron/git-worktree-ops.ts	462	no	Branch name is required.
+electron/hardening.ts	184	yes	Secure token storage is unavailable (no OS keyring service was found), so Hermes Desktop cannot save remote gateway tokens. 
+electron/hardening.ts	199	no	Failed to encrypt the remote gateway token for secure storage${detail}. 
+electron/hardening.ts	391	no	not a file URL
+electron/host-backend-singleton.ts	88	no	Passive read: no warm backend for "${poolKey}"
+electron/hud-modifier.ts	102	no	HUD gesture setting must be a boolean
+electron/hud-modifier.ts	130	no	HUD gesture request from an untrusted frame
+electron/local-backend-lifecycle.ts	64	yes	Hermes Desktop is quitting.
+electron/main.ts	1497	no	OAuth session partition is unavailable.
+electron/main.ts	3581	no	HTTP ${res.statusCode}
+electron/main.ts	3606	no	timeout
+electron/main.ts	3881	no	Could not verify backend PID ${identity.pid} before stopping it.
+electron/main.ts	3922	no	Backend PID ${identity.pid} did not stop cleanly.
+electron/main.ts	3978	yes	Hermes backend (PID ${child.pid}) died before its identity could be recorded: ${decision.reason}${outputTail?.describe() ?? ''}
+electron/main.ts	4015	yes	Could not persist ownership for the Hermes backend: ${error.message}${outputTail?.describe() ?? ''}
+electron/main.ts	4196	no	An update is already in progress.
+electron/main.ts	5492	yes	Hermes recovery was handed off to Hermes Setup. The desktop will restart when recovery completes.
+electron/main.ts	5557	yes	Hermes install was cancelled.
+electron/main.ts	5604	yes	Hermes needs a helper called Git for Windows, which isn't installed. 
+electron/main.ts	5676	yes	Unsupported Hermes backend URL protocol: ${parsed.protocol}
+electron/main.ts	5744	no	Invalid JSON from ${url} (status ${res.statusCode}): ${text.slice(0, 200)}
+electron/main.ts	5752	yes	Timed out connecting to Hermes backend after ${timeoutMs}ms
+electron/main.ts	5782	no	Invalid URL: ${error.message}
+electron/main.ts	5788	yes	Unsupported Hermes backend URL protocol: ${parsed.protocol}
+electron/main.ts	5823	yes	Timed out connecting to Hermes backend after ${timeoutMs}ms
+electron/main.ts	5844	no	Invalid URL: ${error.message}
+electron/main.ts	5854	yes	Unsupported Hermes backend URL protocol: ${parsed.protocol}
+electron/main.ts	5907	no	Invalid JSON from ${url} (status ${res.statusCode}): ${text.slice(0, 200)}
+electron/main.ts	5915	yes	Timed out connecting to Hermes backend after ${timeoutMs}ms
+electron/main.ts	6456	no	Missing URL
+electron/main.ts	6463	no	Invalid data URL
+electron/main.ts	6486	no	Failed to fetch ${rawUrl}: ${res.statusCode}
+electron/main.ts	6791	no	Not a directory: ${watchDir}
+electron/main.ts	8033	no	Desktop is not ready to start an OAuth login.
+electron/main.ts	8041	no	OAuth session partition is unavailable.
+electron/main.ts	8148	no	Login window closed before authentication completed.
+electron/main.ts	8178	no	OAuth session partition is unavailable.
+electron/main.ts	8188	no	Invalid URL: ${error.message}
+electron/main.ts	8194	yes	Unsupported Hermes backend URL protocol: ${parsed.protocol}
+electron/main.ts	8227	yes	Timed out connecting to Hermes backend after ${timeoutMs}ms
+electron/main.ts	8373	no	OAuth session partition is unavailable.
+electron/main.ts	8383	no	Invalid URL: ${error.message}
+electron/main.ts	8389	yes	Unsupported Hermes backend URL protocol: ${parsed.protocol}
+electron/main.ts	8419	yes	Timed out connecting to Hermes backend after ${timeoutMs}ms
+electron/main.ts	8545	no	Missing gateway file path
+electron/main.ts	8602	no	Gateway returned no file data
+electron/main.ts	8721	yes	You are not signed in to Hermes Cloud. Open Settings → Gateway, choose Hermes Cloud, and sign in.
+electron/main.ts	8772	yes	Your Hermes Cloud session has expired. Open Settings → Gateway and sign in again.
+electron/main.ts	8868	yes	Your Hermes Cloud session has expired. Sign in to Hermes Cloud again.
+electron/main.ts	9080	no	OS keychain encryption is unavailable on this machine, so stored gateway secrets cannot be encrypted.
+electron/main.ts	9700	no	Remote gateway session token is required.
+electron/main.ts	9751	no	No connection with id "${route.connectionId}".
+electron/main.ts	9914	no	Remote gateway session token is required.
+electron/main.ts	10075	no	SSH host is required.
+electron/main.ts	10135	yes	Remote Hermes gateway is selected, but no session token is saved. 
+electron/main.ts	10193	no	Primary connection routing cannot change while managed SSH update recovery is pending for ${[...ids].join(', ')}.
+electron/main.ts	10207	no	Managed SSH recovery journal is not a safe owner-only file.
+electron/main.ts	10213	no	Managed SSH recovery journal has an unsupported shape.
+electron/main.ts	10259	no	Managed SSH recovery journal contains an invalid record.
+electron/main.ts	10268	no	Managed SSH recovery state is unreadable or malformed; refusing connection startup and edits.
+electron/main.ts	10313	no	Managed SSH recovery record disappeared before remote update launch.
+electron/main.ts	10654	no	An SSH bootstrap crossed the managed-update gate and its exact owned serve could not be fenced: ${cleanupErrors.join('; ')}
+electron/main.ts	10906	no	SSH connection "${source.label}" has no host configured.
+electron/main.ts	11279	no	Reached the gateway over HTTP, but the live WebSocket (/api/ws) connection failed: ${probe.reason} 
+electron/main.ts	11575	no	No connection with id "${id}".
+electron/main.ts	11612	no	SSH connection "${source.label}" has no host configured.
+electron/main.ts	11830	no	SSH connection "${source.label}" has no host configured.
+electron/main.ts	11958	no	Another managed SSH primary restore is already in progress.
+electron/main.ts	12074	no	Managed SSH update found multiple primary scopes; refusing an ambiguous drain.
+electron/main.ts	12109	no	The managed SSH scope does not carry a complete remote runtime identity.
+electron/main.ts	12113	no	Unsupported managed SSH update platform: ${state.remotePlatform || 'unknown'}.
+electron/main.ts	12131	no	SSH connection "${source.label}" has no host configured.
+electron/main.ts	12209	no	Unsupported managed SSH update platform: ${state.remotePlatform || 'unknown'}.
+electron/main.ts	12295	no	The original ${scope.profile} SSH forward could not be restored safely.
+electron/main.ts	12508	no	Profile backend start for "${poolKey}" was cancelled before it became ready.
+electron/main.ts	12795	yes	Hermes backend for profile "${profile}" exited before it became ready (${signal || code}).${outputTail.describe()}
+electron/main.ts	12859	yes	Hermes backend for profile "${profile}" is HTTP-reachable but the WebSocket (/api/ws) rejected the session token: ${wsProbe.reason}
+electron/main.ts	13294	yes	Hermes Desktop is already running in another window.
+electron/main.ts	13587	yes	Hermes backend start was superseded by a newer connection attempt.
+electron/main.ts	13605	yes	Hermes backend start was superseded by a newer connection attempt.
+electron/main.ts	13632	yes	Hermes backend start was superseded by a newer connection attempt.
+electron/main.ts	13656	yes	Hermes backend exited before it became ready (${signal || code}). Log: ${DESKTOP_LOG_PATH}\n${recentHermesLog()}
+electron/main.ts	13707	yes	Local Hermes backend is HTTP-reachable but the WebSocket (/api/ws) rejected the session token: ${wsProbe.reason}
+electron/main.ts	16048	no	SSH host is required.
+electron/main.ts	16063	no	SSH config resolution timed out.
+electron/main.ts	16149	no	No connection with id "${String(id || '')}".
+electron/main.ts	16199	no	This connection has no saved session token. Edit the connection and paste one.
+electron/main.ts	16220	no	Reached the gateway over HTTP, but the live WebSocket (/api/ws) connection failed: ${probe.reason} 
+electron/main.ts	16359	no	roster enumeration timed out
+electron/main.ts	16698	no	File uploads are not supported against OAuth-gated remote backends yet.
+electron/main.ts	17272	no	pending
+electron/main.ts	17333	no	No connection with id "${connectionId}".
+electron/main.ts	17717	no	saveImageBuffer: missing data
+electron/main.ts	17729	no	savePastedText: missing text
+electron/main.ts	18054	no	Invalid external URL
+electron/main.ts	18118	no	Invalid preview URL
+electron/main.ts	18141	no	Could not create directory: ${error.message}
+electron/managed-ssh-update.ts	113	no	Managed SSH update correlation ID is invalid.
+electron/managed-ssh-update.ts	124	no	Managed SSH update ${label} is invalid.
+electron/managed-ssh-update.ts	488	no	Remote update observation was malformed.
+electron/managed-ssh-update.ts	492	no	Remote update marker state was malformed.
+electron/managed-ssh-update.ts	496	no	Remote update launch intent was malformed.
+electron/managed-ssh-update.ts	500	no	Remote update terminal status was ${parsed.exitCode}.
+electron/managed-ssh-update.ts	506	no	Remote update terminal status was malformed.
+electron/managed-ssh-update.ts	517	no	Remote update receipt did not match this transaction.
+electron/managed-ssh-update.ts	534	no	Remote update coordinator readiness proof was malformed.
+electron/managed-ssh-update.ts	543	no	Remote update marker PID was malformed.
+electron/managed-ssh-update.ts	575	no	The remote install update marker is ${observation.marker}${owner}; refusing to drain its serves.
+electron/managed-ssh-update.ts	603	no	Remote Windows update launcher did not acknowledge its detached child.
+electron/managed-ssh-update.ts	606	no	Remote update launcher did not acknowledge its detached child.
+electron/managed-ssh-update.ts	644	no	Remote update marker remained ${observation.marker} through the update timeout; 
+electron/managed-ssh-update.ts	660	no	Remote update marker PID ${observation.markerPid || 'unknown'} did not match coordinator PID ${observation.coordinatorReady.pid}.
+electron/managed-ssh-update.ts	673	no	Remote update finished without a correlated durable receipt.
+electron/managed-ssh-update.ts	754	no	Could not prove remote update clearance before the recovery timeout (marker: ${lastState}); 
+electron/managed-ssh-update.ts	814	no	Could not safely drain every managed SSH scope (${drainErrors.join('; ')}).
+electron/managed-ssh-update.ts	1019	no	SSH connection "${id}" is paused while its managed update is in progress.
+electron/managed-ssh-update.ts	1030	no	SSH connection "${id}" cannot be edited or removed while its managed update recovery is pending.
+electron/mcp-oauth-callback-ipc.ts	100	no	Too many MCP OAuth listeners are already pending
+electron/media-protocol.ts	61	no	Unsupported media protocol target
+electron/media-protocol.ts	67	no	Missing media path
+electron/media-protocol.ts	101	yes	Unsupported Hermes backend URL protocol: ${url.protocol}
+electron/minimize-to-tray.ts	130	no	System tray host disappeared
+electron/minimize-to-tray.ts	144	no	No usable tray icon
+electron/native-oauth-login.ts	177	no	Failed to bind loopback listener for native login
+electron/native-oauth-login.ts	193	no	Native sign-in timed out. The browser window may not have completed 
+electron/native-oauth-login.ts	204	no	Could not open the system browser for native sign-in: ${\n              error instanceof Error ? error.message : String(error)\n            }
+electron/native-oauth.ts	170	no	Gateway rejected native login: ${error}${desc ? 
+electron/native-oauth.ts	177	no	Loopback callback missing authorization code
+electron/native-oauth.ts	183	no	Loopback callback state mismatch (possible CSRF)
+electron/native-oauth.ts	198	no	Gateway token response missing access_token
+electron/native-oauth.ts	223	no	Stored token set missing accessToken
+electron/native-token-store.ts	113	no	Secure token storage returned no encrypted payload; refusing to overwrite stored native tokens.
+electron/notification-linux.ts	227	no	Notification owner changed during lookup
+electron/notification-linux.ts	236	no	Notification owner changed before delivery
+electron/notification-linux.ts	274	no	Notification owner changed during delivery
+electron/notification-linux.ts	278	no	Notify returned an invalid id: ${String(id)}
+electron/oauth-rest-request.ts	65	no	Gateway did not return a WS ticket.
+electron/oauth-session-response.ts	71	no	Expected JSON from ${url} but got HTML (status ${statusCode}).
+electron/oauth-session-response.ts	79	no	Invalid JSON from ${url} (status ${statusCode}): ${text.slice(0, 200)}
+electron/parent-process-identity.ts	72	no	Parent watchdog requires a positive process ID.
+electron/parent-process-identity.ts	83	no	Parent watchdog marker and nonce must be non-empty.
+electron/pool-retire.ts	147	no	Backend for "${key}" was retired; open it explicitly to reconnect.
+electron/pool-retirement-live-fixture/main.ts	65	no	POSIX fixture only
+electron/pool-retirement-live-fixture/main.ts	92	no	Timed out: ${description}\n${JSON.stringify(receipts)}\n${[...children].map(([key, entry]) => 
+electron/pool-retirement-live-fixture/main.ts	127	no	Retirement HTTP ${response.status}: ${JSON.stringify(reply)}
+electron/pool-retirement-live-fixture/main.ts	203	no	${key} exited before ready:\n${entry.output}
+electron/pool-retirement-live-fixture/main.ts	470	no	Native fixture interrupted
+electron/pool-spawn-coordinator.ts	247	no	Local backend start for "${key}" was cancelled while queued.
+electron/portal-session.ts	240	yes	Desktop is not ready to start a Hermes Cloud sign-in.
+electron/portal-session.ts	246	no	OAuth session partition is unavailable.
+electron/portal-session.ts	257	no	Sign-in window closed before authentication completed.
+electron/preview-capture.ts	79	no	preview capture was empty
+electron/preview-capture.ts	91	no	preview guest is gone
+electron/preview-capture.ts	97	no	preview capture was empty
+electron/primary-backend-startup.ts	135	no	First-run remote setup completed without a saved remote backend.
+electron/profile-delete-routing.ts	96	no	Connection-scoped profile deletion requires a connection and profile.
+electron/profile-delete-routing.ts	100	no	The default profile cannot be deleted.
+electron/profile-delete-routing.ts	104	no	Invalid profile name: ${targetProfile}
+electron/profile-delete-routing.ts	174	no	Profile "${key}" is being deleted.
+electron/profile-delete-routing.ts	196	no	Profile "${key}" no longer exists.
+electron/remote-lifecycle.ts	77	no	SSH ownership ID is invalid.
+electron/remote-lifecycle.ts	87	no	SSH spawn nonce is invalid.
+electron/remote-lifecycle.ts	138	no	Remote path must not be empty.
+electron/remote-lifecycle.ts	143	no	Unsafe remote path: contains NUL or newline.
+electron/remote-lifecycle.ts	150	no	Remote path must be absolute or start with ~/: "${s}"
+electron/remote-lifecycle.ts	200	yes	The Hermes path you set is not an executable on the remote host: "${remoteHermesPath}". 
+electron/remote-lifecycle.ts	238	yes	Hermes is not installed on the remote host (could not find a `hermes` executable). 
+electron/remote-lifecycle.ts	269	yes	Unsupported remote platform "${osName || 'unknown'}". Hermes Desktop SSH mode supports Linux, macOS, and Windows remote hosts.
+electron/remote-lifecycle.ts	289	yes	Could not resolve the remote Hermes home.
+electron/remote-lifecycle.ts	353	yes	Could not prove that the remote Hermes install is clear for SSH startup.
+electron/remote-lifecycle.ts	383	yes	Could not list remote Hermes profiles.
+electron/remote-lifecycle.ts	405	yes	Could not read the remote Hermes install id.
+electron/remote-lifecycle.ts	427	yes	Unsafe remote Hermes home.
+electron/remote-lifecycle.ts	449	no	Could not read the SSH backend ownership record.
+electron/remote-lifecycle.ts	762	no	Could not terminate the stale SSH backend.
+electron/remote-lifecycle.ts	1006	no	The remote POSIX serve has no process creation-time proof.
+electron/remote-lifecycle.ts	1014	no	The remote POSIX ownership record changed before the managed update.
+electron/remote-lifecycle.ts	1024	no	The remote POSIX PID creation time no longer matches its ownership record.
+electron/remote-lifecycle.ts	1040	no	Refusing to terminate a remote process whose Desktop ownership is unproven.
+electron/remote-lifecycle.ts	1050	no	The remote POSIX ownership record changed during process verification.
+electron/remote-lifecycle.ts	1067	no	The remote POSIX process identity changed during managed update drain.
+electron/remote-lifecycle.ts	1097	no	Could not terminate the Desktop-owned remote serve for update.
+electron/remote-lifecycle.ts	1216	no	Remote dashboard process exited before announcing its port.
+electron/remote-lifecycle.ts	1238	no	Timed out waiting for the remote dashboard to announce its port (${timeoutMs}ms).
+electron/remote-lifecycle.ts	1256	yes	The remote Hermes install does not support --ssh-session-token-file and --ssh-owner-nonce. 
+electron/remote-lifecycle.ts	1369	no	Failed to launch the remote dashboard (no pid returned).
+electron/remote-lifecycle.ts	1430	no	${label} exited while its served token was being resolved.
+electron/remote-lifecycle.ts	1455	no	Timed out waiting for the concurrent SSH connection to publish its backend.
+electron/remote-lifecycle.ts	1504	yes	The remote ownership record ${lpath} does not match this Hermes Desktop build (${lock.reason}). 
+electron/remote-lifecycle.ts	1559	no	Could not verify the existing SSH backend.
+electron/remote-lifecycle.ts	1602	no	SSH reuse proof returned an invalid classification.
+electron/remote-lifecycle.ts	1633	no	Another SSH connection owns this remote dashboard; a session token is required to reuse it.
+electron/remote-liveness.ts	155	no	Remote liveness failure limit must be a positive integer.
+electron/remote-liveness.ts	159	no	Remote liveness failure window must be positive.
+electron/remote-liveness.ts	233	no	Remote backend descriptor is unavailable.
+electron/remote-liveness.ts	308	no	Remote backend descriptor is unavailable.
+electron/ssh-bootstrap-coordinator.ts	30	no	SSH bootstrap was cancelled because Desktop is quitting.
+electron/ssh-bootstrap-coordinator.ts	59	no	SSH bootstrap was superseded by newer connection settings.
+electron/ssh-connection.ts	70	no	Unsafe SSH target: host is required.
+electron/ssh-connection.ts	74	no	Unsafe SSH target: host must not start with a dash ("${host}").
+electron/ssh-connection.ts	78	no	Unsafe SSH target: host contains control characters.
+electron/ssh-connection.ts	82	no	Invalid SSH host: contains whitespace. Enter only the destination (user@host or host) — no "ssh " prefix or extra options.
+electron/ssh-connection.ts	88	no	Invalid SSH host "${host}": commas are not valid in a hostname or IP (use dots, e.g. 192.168.1.10).
+electron/ssh-connection.ts	101	no	Invalid SSH host "${host.split(':')[0]}:<hidden>": unexpected ":" segment. 
+electron/ssh-connection.ts	107	no	Invalid SSH host "${redactSecrets(host)}": not a valid hostname or IP address.
+electron/ssh-connection.ts	111	no	Unsafe SSH target: user contains control characters.
+electron/ssh-connection.ts	115	no	Unsafe SSH target: user must not start with a dash ("${user}").
+electron/ssh-connection.ts	119	no	Invalid SSH user "${user}": contains whitespace or "@". Enter only the destination (user@host) — no "ssh " prefix.
+electron/ssh-connection.ts	127	no	Unsafe SSH port: ${port} (must be 1-65535).
+electron/ssh-connection.ts	137	no	Unsafe SSH key path: contains control characters.
+electron/ssh-connection.ts	141	no	Unsafe SSH key path: must not start with a dash ("${keyPath}").
+electron/ssh-connection.ts	451	no	SSH operation was cancelled.
+electron/ssh-connection.ts	490	no	ssh timed out after ${timeoutMs}ms
+electron/ssh-connection.ts	510	no	SSH operation was cancelled.
+electron/ssh-connection.ts	572	no	SSH tunnel did not exit after termination.
+electron/ssh-connection.ts	578	no	SSH tunnel termination was refused.
+electron/ssh-connection.ts	607	no	SshConnection requires a host.
+electron/ssh-connection.ts	727	no	Unsafe SSH control dir: ${controlDir} is a symlink.
+electron/ssh-connection.ts	731	no	Unsafe SSH control dir: ${controlDir} is not a directory.
+electron/ssh-connection.ts	735	no	Unsafe SSH control dir: ${controlDir} is owned by uid ${st.uid}, not ${process.getuid!()}.
+electron/ssh-connection.ts	869	no	tunnel did not confirm local forwarding
+electron/ssh-connection.ts	926	no	tunnel process exited with code ${code}
+electron/ssh-connection.ts	929	no	tunnel process closed with code ${code}
+electron/ssh-connection.ts	1157	no	SSH bootstrap was cancelled.
+electron/tray-host.ts	97	no	No system tray host is available
+electron/vscode-marketplace.ts	39	no	Too many redirects.
+electron/vscode-marketplace.ts	60	no	Request failed (${status}) for ${url}
+electron/vscode-marketplace.ts	73	no	Response exceeded the size limit.
+electron/vscode-marketplace.ts	84	no	Request timed out.
+electron/vscode-marketplace.ts	107	no	Extension "${id}" was not found on the Marketplace.
+electron/vscode-marketplace.ts	113	no	Extension "${id}" has no published versions.
+electron/vscode-marketplace.ts	120	no	Could not find a downloadable package for "${id}".
+electron/vscode-marketplace.ts	220	no	Not a valid zip archive (no end-of-central-directory).
+electron/vscode-marketplace.ts	255	no	Corrupt zip: bad local file header.
+electron/vscode-marketplace.ts	280	no	Package manifest missing from the extension.
+electron/vscode-marketplace.ts	325	no	Expected a Marketplace id like "publisher.extension".
+electron/windows-remote-lifecycle.ts	149	yes	Could not prove that the remote Hermes install is clear for SSH startup.
+electron/windows-remote-lifecycle.ts	207	no	The remote operating system is not supported by Desktop SSH.${detail ? 
+electron/windows-remote-lifecycle.ts	416	no	The remote Windows ownership record changed before the managed update.
+electron/windows-remote-lifecycle.ts	424	no	Could not prove the remote Windows process identity for the managed update.
+electron/windows-remote-lifecycle.ts	434	no	Refusing to terminate a remote Windows process whose ownership is unproven.
+electron/windows-remote-lifecycle.ts	443	no	The remote Windows ownership record changed during process verification.
+electron/windows-remote-lifecycle.ts	451	no	The remote Windows process identity changed during managed update drain.
+electron/windows-remote-lifecycle.ts	490	no	Remote Windows backend exited before announcing its port. state=${JSON.stringify(state)} ${detail.slice(-2000)}
+electron/windows-remote-lifecycle.ts	519	no	Timed out waiting for the remote Windows backend (${timeoutMs}ms).
+electron/windows-remote-lifecycle.ts	541	no	Timed out waiting for the concurrent Windows SSH connection to publish its backend.
+electron/windows-remote-lifecycle.ts	569	yes	Update Hermes on the remote Windows host before connecting with Desktop SSH.
+electron/windows-remote-lifecycle.ts	586	no	Could not determine the state of the existing remote backend.
+electron/windows-remote-lifecycle.ts	622	no	Invalid SSH reuse classification.
+electron/windows-remote-lifecycle.ts	675	no	Another SSH connection owns this remote dashboard; a session token is required to reuse it.

@@ -14,6 +14,11 @@ import {
   readJson
 } from './build.mjs'
 
+// The desktop-overlay CI job runs only this file; the brand layer suites
+// register their tests on import.
+import './patch-engine.test.mjs'
+import './brand.test.mjs'
+
 test('overrides deep-merge into the upstream config without dropping keys', () => {
   const upstream = readJson(path.join(APP_DIR, 'package.json')).build
   const merged = janitorBuilderConfig()
@@ -33,10 +38,15 @@ test('overrides deep-merge into the upstream config without dropping keys', () =
   }
 })
 
-test('the packaged productName keeps the userData directory of earlier builds', () => {
+test('the packaged productName is Janitor, so userData is ~/.config/Janitor (plan 4.3)', () => {
   const pkg = readJson(path.join(APP_DIR, 'package.json'))
+  const merged = janitorBuilderConfig()
 
-  assert.equal(janitorBuilderConfig().extraMetadata.productName, pkg.productName)
+  // extraMetadata.productName is what Electron reads at runtime for app.name /
+  // userData; it must match the packaged product so neither state nor the
+  // single-instance lock is shared with a real Hermes Desktop.
+  assert.equal(merged.extraMetadata.productName, merged.productName)
+  assert.notEqual(merged.extraMetadata.productName, pkg.productName)
 })
 
 test('arrays are replaced, nested objects merged', () => {
@@ -75,6 +85,7 @@ test('applyOverlay restores every touched file', () => {
   restore()
 
   assert.equal(fs.existsSync(path.join(appDir, 'assets/janitor-icon.png')), false)
+  assert.equal(fs.existsSync(path.join(appDir, '.janitor-build-journal')), false)
 
   for (const [, target] of OVERLAY_FILES) {
     if (target === 'assets/janitor-icon.png') continue
