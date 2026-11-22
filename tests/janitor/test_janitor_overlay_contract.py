@@ -88,7 +88,38 @@ def check_desktop_update_posix(tmp_path):
     assert seen["result"]["ok"] is True, seen["result"]
 
 
+def check_backend_user_copy(tmp_path):
+    """user_messages reads the catalog: Janitor's overlay gives Spanish, upstream's keeps English."""
+    import os
+
+    from agent.i18n import reset_language_cache
+    from janitor import locales
+    from tui_gateway.user_messages import agent_init_failed_message, turn_error_text
+
+    home = os.environ["HERMES_HOME"]
+    os.makedirs(home, exist_ok=True)
+    with open(os.path.join(home, "config.yaml"), "w", encoding="utf-8") as f:
+        f.write("display:\n  language: es\n")
+    saved = os.environ.pop(locales.ENV_VAR, None)
+    exc = RuntimeError("No usable credentials found for provider 'minimax'. Set MINIMAX_API_KEY.")
+    try:
+        reset_language_cache()
+        assert agent_init_failed_message(exc).startswith("Hermes could not start the assistant")
+        os.environ[locales.ENV_VAR] = str(locales.build(tmp_path / "locales"))
+        reset_language_cache()
+        text = agent_init_failed_message(exc)
+        assert text.startswith("Janitor no pudo iniciar el asistente") and "`janitor setup`" in text, text
+        assert "Configura MINIMAX_API_KEY" in text, text
+        assert turn_error_text("x").startswith("La petición falló."), turn_error_text("x")
+    finally:
+        os.environ.pop(locales.ENV_VAR, None)
+        if saved is not None:
+            os.environ[locales.ENV_VAR] = saved
+        reset_language_cache()
+
+
 CHECKS = {
+    "backend-user-copy": check_backend_user_copy,
     "version": check_version,
     "packaging": check_packaging,
     "banner": check_banner,
@@ -121,7 +152,7 @@ def test_touchpoint_contract(check_id, capsys, tmp_path):
     check = CHECKS[check_id]
     if check is check_banner:
         check(capsys)
-    elif check in (check_install_sh, check_desktop_update_posix):
+    elif check in (check_install_sh, check_desktop_update_posix, check_backend_user_copy):
         check(tmp_path)
     else:
         check()

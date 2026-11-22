@@ -10,6 +10,7 @@ on (``Session busy``) are part of the wire contract — keep them.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 # Provider-layer failure codes → (title, hint). Codes are ``agent.error_classifier.FailoverReason``
@@ -50,6 +51,41 @@ _TURN_ERROR_DEFAULT = ("The request failed", "Send /retry, or switch with /model
 _DETAIL_LIMIT = 400
 
 
+# JANITOR: (touchpoint backend-user-copy) every sentence below is looked up in the i18n catalog
+# under ``tui_gateway.*`` first; a catalog without the key (upstream's) keeps the English text.
+def _catalog_text(key: str) -> str | None:
+    from agent.i18n import t
+    text = t(key)
+    return None if text == key else text
+
+
+def _copy(key: str, english: str, **fields: Any) -> str:
+    text = _catalog_text(f"tui_gateway.{key}") or english
+    return text.format(**fields) if fields else text
+
+
+# Raw exception text shown after "Details:" that users hit on a normal path (first run without a key).
+_DETAIL_COPY = (
+    (re.compile(r"No usable credentials found for provider '(?P<provider>[^']+)'\. Set (?P<env>[^.]+)\."),
+     "detail.missing_credentials"),
+)
+
+
+def _localized_detail(detail: str) -> str:
+    for pattern, key in _DETAIL_COPY:
+        if (match := pattern.fullmatch(detail)) and (text := _catalog_text(f"tui_gateway.{key}")):
+            return text.format(**match.groupdict())
+    return detail
+
+
+def _turn_copy(surface: dict) -> tuple[str, str]:
+    code, layer = str(surface.get("code") or ""), str(surface.get("layer") or "")
+    key, (title, hint) = (f"code.{code}", _TURN_ERROR_CODE_COPY[code]) if code in _TURN_ERROR_CODE_COPY \
+        else (f"layer.{layer}", _TURN_ERROR_LAYER_COPY[layer]) if layer in _TURN_ERROR_LAYER_COPY \
+        else ("default", _TURN_ERROR_DEFAULT)
+    return _copy(f"turn_error.{key}.title", title), _copy(f"turn_error.{key}.hint", hint)
+
+
 def _identity(surface: dict | None) -> str:
     provider = str((surface or {}).get("provider") or "").strip()
     return f" ({provider})" if provider else ""
@@ -58,27 +94,26 @@ def _identity(surface: dict | None) -> str:
 def turn_error_title(surface: dict | None) -> str:
     """Plain title for a failed turn, picked from ``error_surface`` code then layer."""
     surface = surface if isinstance(surface, dict) else {}
-    title, _ = _TURN_ERROR_CODE_COPY.get(str(surface.get("code") or "")) \
-        or _TURN_ERROR_LAYER_COPY.get(str(surface.get("layer") or "")) or _TURN_ERROR_DEFAULT
+    title, _ = _turn_copy(surface)
     return f"{title}{_identity(surface)}"
 
 
 def turn_error_hint(surface: dict | None, recoverable: bool = True) -> str:
     surface = surface if isinstance(surface, dict) else {}
-    _, hint = _TURN_ERROR_CODE_COPY.get(str(surface.get("code") or "")) \
-        or _TURN_ERROR_LAYER_COPY.get(str(surface.get("layer") or "")) or _TURN_ERROR_DEFAULT
-    return hint if recoverable else hint.replace("Send /retry", "Pick another model with /model")
+    _, hint = _turn_copy(surface)
+    return hint if recoverable else hint.replace(
+        _copy("turn_error.retry_step", "Send /retry"), _copy("turn_error.switch_step", "Pick another model with /model"))
 
 
 def turn_error_text(error: Any, surface: dict | None = None, *, recoverable: bool = True) -> str:
     """The assistant-slot text for a turn that produced no reply: title, what it means for the
     user, the raw provider detail on its own dimmed-able line, and the next step."""
-    detail = " ".join(str(error or "").split())
+    detail = _localized_detail(" ".join(str(error or "").split()))
     if len(detail) > _DETAIL_LIMIT:
         detail = detail[:_DETAIL_LIMIT - 1] + "…"
-    lines = [f"{turn_error_title(surface)}. Your message was not answered."]
+    lines = [_copy("turn_error.not_answered", "{title}. Your message was not answered.", title=turn_error_title(surface))]
     if detail:
-        lines.append(f"Details: {detail}")
+        lines.append(_copy("details", "Details: {detail}", detail=detail))
     lines.append(turn_error_hint(surface, recoverable))
     return "\n".join(lines)
 
@@ -92,8 +127,10 @@ def busy_message(command: str) -> str:
 
 
 def agent_init_failed_message(exc: Any) -> str:
-    return (f"Hermes could not start the assistant for this session. Details: {exc}. "
-            "Check the model and provider with /model, or run `hermes setup` in a terminal to reconfigure.")
+    return _copy("agent_init_failed",
+                 "Hermes could not start the assistant for this session. Details: {exc}. "
+                 "Check the model and provider with /model, or run `hermes setup` in a terminal to reconfigure.",
+                 exc=exc, detail=_localized_detail(" ".join(str(exc).split())).rstrip("."))
 
 
 AGENT_STILL_STARTING = (

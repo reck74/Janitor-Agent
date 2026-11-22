@@ -1,0 +1,124 @@
+# Janitor overlay on top of upstream's locales/es.yaml.
+#
+# Only the keys that differ from upstream live here: `janitor.locales` merges
+# this file over upstream's catalog at launch and points the engine at the
+# result (HERMES_BUNDLED_LOCALES). Two kinds of keys:
+#   - brand fixes: upstream keys (they must exist in locales/en.yaml) whose
+#     Spanish text says "Hermes" or names a `hermes` command; the `janitor`
+#     launcher passes every one of these subcommands through to the engine.
+#   - `tui_gateway.*`: copy that tui_gateway/user_messages.py looks up before
+#     falling back to its English text (touchpoint backend-user-copy).
+# tests/janitor/test_janitor_backend_i18n.py guards both.
+
+approval:
+  timeout:         "      ⏱ Sin respuesta en {waited} — el comando no se ejecutó. Pide de nuevo para reintentar, o sube el límite: janitor config set approvals.timeout {suggested}"
+
+gateway:
+  debug:
+    full_logs_hint:        "Para subir registros completos, usa `janitor debug share` desde la CLI."
+    share_hint:            "Comparte estos enlaces con quien te dé soporte de Janitor."
+  help:
+    header:                "📖 **Comandos de Janitor**\n"
+  kanban:
+    truncated_suffix:      "… (truncado; usa `janitor kanban …` en tu terminal para la salida completa)"
+  restart:
+    restarting:            "♻ Reiniciando el gateway. Si no recibes notificación en 60 segundos, reinicia desde la consola con `janitor gateway restart`."
+  resume:
+    matrix_blocked_no_origin: "⚠️ Matrix /resume bloqueado: esta sesión con nombre no tiene sala de origen registrada, por lo que Janitor no la reanudará dentro de la sala actual por defecto. Usa `/resume --cross-room {name}` si quieres cruzar los límites de sala intencionadamente."
+  status:
+    header:                "📊 **Estado del gateway de Janitor**"
+  topic:
+    thread_ready:            "Los topics multisesión de Telegram están habilitados.\n\nEste topic se usará como una sesión independiente de Janitor. Usa /new para reemplazar la sesión actual de este topic. Para trabajo paralelo, abre All Messages y envía un mensaje allí para crear otro topic."
+  update:
+    platform_not_messaging:  "✗ /update solo está disponible en plataformas de mensajería. Ejecuta `janitor update` desde la terminal."
+    hermes_cmd_not_found:    "✗ No se pudo localizar el comando de actualización. Janitor está en ejecución, pero no encontró el ejecutable en PATH ni a través del intérprete de Python actual. Ejecuta `janitor update` manualmente en tu terminal."
+    starting:                "☤ Iniciando la actualización de Janitor… Transmitiré el progreso aquí."
+  verbose:
+    mode_log:              "⚙️ Progreso de herramientas: **LOG** — silencioso en el chat; las llamadas a herramientas se escriben en ~/.janitor/logs/tool_calls.log."
+
+tui_gateway:
+  agent_init_failed: "Janitor no pudo iniciar el asistente de esta sesión. Detalles: {detail}. Revisa el modelo y el proveedor con /model, o ejecuta `janitor setup` en una terminal para reconfigurarlo."
+  details: "Detalles: {detail}"
+  detail:
+    missing_credentials: "No hay credenciales utilizables para el proveedor '{provider}'. Configura {env}."
+  turn_error:
+    not_answered: "{title}. Tu mensaje quedó sin respuesta."
+    retry_step: "Envía /retry"
+    switch_step: "Elige otro modelo con /model"
+    default:
+      title: "La petición falló"
+      hint: "Envía /retry, o cambia de modelo con /model."
+    code:
+      auth:
+        title: "El proveedor del modelo rechazó la clave de API"
+        hint: "Corrige la clave con /model y luego usa /retry."
+      auth_permanent:
+        title: "El proveedor del modelo rechazó la clave de API"
+        hint: "Corrige la clave con /model y luego usa /retry."
+      billing:
+        title: "El proveedor del modelo indica que no queda saldo"
+        hint: "Recarga la cuenta o cambia de modelo con /model."
+      billing_unverified:
+        title: "El proveedor del modelo indica que no queda saldo"
+        hint: "Recarga la cuenta o cambia de modelo con /model."
+      rate_limit:
+        title: "El proveedor del modelo está limitando las peticiones"
+        hint: "Espera un momento y luego usa /retry."
+      upstream_rate_limit:
+        title: "El proveedor del modelo está limitando las peticiones"
+        hint: "Espera un momento y luego usa /retry."
+      upstream_blocked:
+        title: "Un firewall o CDN delante del proveedor del modelo bloqueó la petición"
+        hint: "Define un User-Agent en los extra_headers del proveedor, o cambia de modelo con /model."
+      overloaded:
+        title: "El proveedor del modelo está saturado"
+        hint: "Espera un momento y luego usa /retry."
+      server_error:
+        title: "El proveedor del modelo tuvo un error interno"
+        hint: "Espera un momento y luego usa /retry."
+      timeout:
+        title: "El proveedor del modelo no respondió a tiempo"
+        hint: "Prueba /retry; si se repite, cambia de modelo con /model."
+      context_overflow:
+        title: "La conversación es demasiado larga para este modelo"
+        hint: "Ejecuta /compress y luego /retry."
+      payload_too_large:
+        title: "La petición es demasiado grande para este modelo"
+        hint: "Ejecuta /compress y luego /retry."
+      model_not_found:
+        title: "El proveedor del modelo no conoce este modelo"
+        hint: "Elige otro modelo con /model."
+      content_policy_blocked:
+        title: "El proveedor del modelo rechazó esta petición (política de contenido)"
+        hint: "Reformula el mensaje y envíalo de nuevo."
+      provider_policy_blocked:
+        title: "El proveedor del modelo rechazó esta petición (política de la cuenta)"
+        hint: "Cambia de modelo con /model."
+      format_error:
+        title: "El proveedor del modelo rechazó el formato de la petición"
+        hint: "Prueba /retry; si persiste, cambia de modelo con /model."
+      ssl_cert_verification:
+        title: "No se pudo verificar la conexión con el proveedor del modelo (TLS)"
+        hint: "Revisa el certificado del endpoint y luego usa /retry."
+    layer:
+      auth:
+        title: "El proveedor del modelo rechazó las credenciales"
+        hint: "Corrígelas con /model y luego usa /retry."
+      billing:
+        title: "El proveedor del modelo indica que no queda saldo"
+        hint: "Recarga la cuenta o cambia de modelo con /model."
+      endpoint:
+        title: "Tu endpoint de modelo personalizado no respondió"
+        hint: "Comprueba que el endpoint está en marcha y luego usa /retry."
+      streaming:
+        title: "La conexión con el proveedor del modelo se cortó a mitad de la respuesta"
+        hint: "Envía /retry."
+      disk:
+        title: "El disco está lleno, así que Janitor no pudo guardar el turno"
+        hint: "Libera espacio y luego usa /retry."
+      gateway:
+        title: "Janitor tuvo un error interno al ejecutar este turno"
+        hint: "Envía /retry; escribe /logs para ver la traza."
+      provider:
+        title: "El proveedor del modelo devolvió un error"
+        hint: "Envía /retry, o cambia de modelo con /model."

@@ -96,6 +96,17 @@ try:
 except Exception as _seed_exc:  # noqa: BLE001
     print(f"⚠ Janitor home seeding failed: {_seed_exc}", file=sys.stderr)
 
+# Backend messages (TUI gateway, desktop backend, messaging gateways) read
+# Janitor's catalogs: upstream's with janitor/locales/ merged in, exported as
+# HERMES_BUNDLED_LOCALES so every child process inherits them. On failure the
+# engine keeps upstream's catalogs.
+try:
+    from janitor.locales import export_env as _export_locales
+
+    _export_locales()
+except Exception as _locale_exc:  # noqa: BLE001
+    print(f"⚠ Janitor message catalogs unavailable: {_locale_exc}", file=sys.stderr)
+
 # Upstream resolves ``--profile`` / ``active_profile`` (and loads that home's
 # .env) when hermes_cli.main is imported; ``cli`` reads the home at import, so
 # it must come second or a profile process starts on the root profile's state.

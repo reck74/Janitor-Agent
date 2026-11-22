@@ -88,6 +88,21 @@ touchpoints:
     merge: reapply
     upstream_candidate: true
 
+  - id: backend-user-copy
+    files: [tui_gateway/user_messages.py]
+    why: >-
+      The session/turn error copy the TUI, desktop and dashboard print
+      (`turn_error_text`, `agent_init_failed_message`) is looked up under
+      `tui_gateway.*` in the i18n catalog before falling back to the English
+      text, and the missing-credentials detail is matched to a catalog
+      sentence. Upstream catalogs lack those keys, so upstream output is
+      unchanged; Janitor's overlay (janitor/locales/es.yaml, merged and
+      exported as HERMES_BUNDLED_LOCALES by the launcher) supplies Spanish
+      "Janitor" copy. One `# JANITOR:` block plus the call sites using it.
+    verify: test:backend-user-copy
+    merge: reapply
+    upstream_candidate: true
+
   - id: web-typecheck
     files: [web/package.json]
     why: "`tsc -b --noEmit`; upstream's `tsc -p .` checks no files (tsconfig has `files: []`)."
