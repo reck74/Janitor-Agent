@@ -100,6 +100,15 @@ except Exception as _seed_exc:  # noqa: BLE001
 # .env) when hermes_cli.main is imported; ``cli`` reads the home at import, so
 # it must come second or a profile process starts on the root profile's state.
 import hermes_cli.main  # noqa: E402,F401
+
+# The home is final now (root or the ``--profile`` home): bring its skill
+# selection up to the catalog before ``cli`` loads the config. A no-op rewrite
+# is skipped, a config without ``janitor.skills`` is untouched, and a broken
+# catalog/config only warns.
+from janitor.catalog import apply_quietly  # noqa: E402
+
+apply_quietly(Path(os.environ["HERMES_HOME"]))
+
 import cli  # noqa: E402
 
 

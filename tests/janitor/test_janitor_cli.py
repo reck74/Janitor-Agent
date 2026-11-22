@@ -345,6 +345,77 @@ class TestLauncherProfiles:
         assert self._resolved(tmp_path, tmp_path / ".hermes", "serve")[0] == str(root)
 
 
+class TestLauncherCatalog:
+    """Every start reconciles the served home's skills with the catalog (F2-01)."""
+
+    @staticmethod
+    def _run(tmp_path, *argv):
+        env = launcher_env(tmp_path)
+        env["HERMES_HOME"] = str(tmp_path / ".janitor")
+        result = subprocess.run(
+            [sys.executable, "-c", "import sys; sys.argv = ['janitor', *sys.argv[1:]]; import janitor.cli", *argv],
+            capture_output=True, text=True, env=env, cwd=str(tmp_path), timeout=180,
+        )
+        assert result.returncode == 0, result.stderr
+        return result
+
+    @staticmethod
+    def _blank_dirs(home):
+        import yaml
+
+        path = home / "config.yaml"
+        config = yaml.safe_load(path.read_text(encoding="utf-8"))
+        config["skills"]["external_dirs"] = []
+        path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+        return path.read_bytes()
+
+    @staticmethod
+    def _dirs(home):
+        import yaml
+
+        return yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))["skills"]["external_dirs"]
+
+    def test_profile_flag_applies_the_catalog_to_the_profile_home_only(self, tmp_path, monkeypatch):
+        from janitor.profile_templates import create_from_template
+        from janitor.seed import ensure_home
+
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        root = tmp_path / ".janitor"
+        monkeypatch.setenv("HERMES_HOME", str(root))
+        ensure_home(root)
+        profile = create_from_template("investigador", home_root=root).path
+        expected = self._dirs(profile)
+        root_before = self._blank_dirs(root)
+        self._blank_dirs(profile)
+
+        self._run(tmp_path, "--profile", "investigador", "serve")
+
+        assert self._dirs(profile) == expected
+        assert (root / "config.yaml").read_bytes() == root_before
+
+    def test_existing_style_home_is_untouched(self, tmp_path):
+        root = tmp_path / ".janitor"
+        root.mkdir()
+        legacy = ("# mine\nplugins:\n  enabled: [janitor]\nskills:\n"
+                  "  external_dirs:\n  - ${JANITOR_SKILLS_ROOT}\n")
+        (root / "config.yaml").write_text(legacy, encoding="utf-8")
+
+        self._run(tmp_path, "serve")
+
+        assert (root / "config.yaml").read_text(encoding="utf-8") == legacy
+
+    def test_broken_catalog_input_never_stops_the_launcher(self, tmp_path):
+        root = tmp_path / ".janitor"
+        root.mkdir()
+        broken = "janitor:\n  template: main\n  skills: {not: a-list}\n"
+        (root / "config.yaml").write_text(broken, encoding="utf-8")
+
+        self._run(tmp_path, "serve")  # returncode 0 asserted inside
+
+        assert (root / "config.yaml").read_text(encoding="utf-8") == broken
+
+
 @pytest.mark.parametrize(
     ("current", "expected"),
     [

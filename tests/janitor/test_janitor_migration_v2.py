@@ -12,6 +12,7 @@ import pytest
 import yaml
 
 from janitor import migrations
+from janitor.home import SKILLS_ROOT  # noqa: E402
 from janitor.home import LAYOUT_VERSION, SKILLS_EXTERNAL_DIRS, read_layout_version, write_layout_version
 from janitor.migrations import v1, v2
 from tests.janitor.legacy_home import (
@@ -117,7 +118,10 @@ def test_config_references_are_cleaned_and_renamed(home_v1):
     assert after["janitor"]["skills"] == ["pdf", "janitor-repo-research"]
     dirs = after["skills"]["external_dirs"]
     assert f"{ROOT_VAR}/research" in dirs and not any("/agents" in d for d in dirs)
-    assert all(d in dirs for d in SKILLS_EXTERNAL_DIRS), "whole-root external_dirs must stay"
+    # This home lists `janitor.skills`, so its external_dirs belong to the catalog
+    # (janitor.catalog.apply): the migration must not re-add the whole janitor/skills
+    # root. Homes without `janitor.skills` keep it -- see the next test.
+    assert str(SKILLS_ROOT) not in dirs
 
     touched = ("disabled", "platform_disabled", "external_dirs")
     assert {k: v for k, v in after["skills"].items() if k not in touched} == {

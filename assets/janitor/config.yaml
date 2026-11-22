@@ -2,8 +2,10 @@
 # Everything else comes from upstream's DEFAULT_CONFIG (merged at load time).
 #
 # janitor/seed.py writes this into a NEW home (never over a user's config) and
-# adds `_config_version` (from DEFAULT_CONFIG) and the absolute path of this
-# install's janitor/skills to skills.external_dirs at seed time.
+# adds at seed time `_config_version` (from DEFAULT_CONFIG) and the agent's
+# skills from the catalog's `main` template (janitor/catalog.yaml):
+# `janitor.template`, `janitor.skills`, `janitor.catalog_seen` and the generated
+# `skills.external_dirs` (one absolute entry per skill).
 
 # Recommended, preconfigured provider (MINIMAX_API_KEY). Not mandatory: the
 # first graphical start lets the user pick another one.
@@ -63,8 +65,3 @@ approvals:
 plugins:
   enabled:
     - janitor
-skills:
-  # Janitor skills are read in place from the install tree (janitor/skills);
-  # ${JANITOR_SKILLS_ROOT} is exported by the janitor launcher.
-  external_dirs:
-    - ${JANITOR_SKILLS_ROOT}

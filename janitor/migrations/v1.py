@@ -177,7 +177,12 @@ def _plan_config(plan: Plan) -> None:
     dirs = skills.get("external_dirs") or []
     if isinstance(dirs, str):
         dirs = [dirs]
-    missing = [d for d in EXTERNAL_DIRS if d not in dirs]
+    # A catalog-managed home (janitor.skills present) owns its external_dirs through
+    # janitor.catalog.apply; re-adding the whole janitor/skills root here would make
+    # every Janitor skill visible again (AGENTS.md directive 19).
+    janitor_cfg = config.get("janitor")
+    catalog_managed = isinstance(janitor_cfg, dict) and "skills" in janitor_cfg
+    missing = [] if catalog_managed else [d for d in EXTERNAL_DIRS if d not in dirs]
     if missing:
         skills["external_dirs"] = list(dirs) + missing
         config["skills"] = skills

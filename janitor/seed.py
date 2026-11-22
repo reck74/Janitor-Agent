@@ -18,8 +18,15 @@ Idempotent, and it never overwrites what the user wrote:
   module just seeded, never for an existing one.
 * ``.env`` is never touched.
 
-This module imports no ``hermes_cli.config``: that import seeds upstream's
-default ``SOUL.md`` into whatever ``HERMES_HOME`` points at.
+A new home is provisioned from the catalog's ``main`` template: the seed
+writes ``janitor.template`` and ``janitor.skills`` (plus ``janitor.catalog_seen``)
+and generates ``skills.external_dirs`` with ``janitor.catalog.reconcile_config``
+— the same reconciliation ``janitor.catalog.apply`` runs later, so applying it
+to a just-seeded home is a no-op.
+
+This module imports no ``hermes_cli.config`` (nor does the in-memory catalog
+reconciliation it uses): the launcher seeds before ``--profile`` is resolved,
+and module state of ``hermes_cli.config`` would bind to the wrong home.
 """
 
 from __future__ import annotations
@@ -37,7 +44,6 @@ from janitor.home import (
     ASSETS_ROOT,
     LAYOUT_VERSION,
     REPO_ROOT,
-    SKILLS_EXTERNAL_DIRS,
     janitor_home,
     read_layout_version,
     write_layout_version,
@@ -51,6 +57,7 @@ SOUL_FILE = "SOUL.md"
 SKIN_FILE = "sentry-janitor.yaml"
 UPSTREAM_CONFIG_EXAMPLE = REPO_ROOT / "cli-config.yaml.example"
 COMMAND_NAME = "janitor"
+MAIN_TEMPLATE = "main"
 
 _CONFIG_HEADER = (
     "# Janitor config. Only Janitor's changes on top of the Hermes defaults are\n"
@@ -70,18 +77,38 @@ def _atomic_write(path: Path, data: bytes, mode: int = 0o600) -> None:
         raise
 
 
-def seed_config() -> dict:
-    """The config a new Janitor home starts with."""
+def base_config() -> dict:
+    """``assets/janitor/config.yaml`` plus ``_config_version``: what every Janitor agent starts from."""
     from hermes_cli.config_defaults import DEFAULT_CONFIG  # the object hermes_cli.config re-exports
 
     config = yaml.safe_load((ASSETS_ROOT / CONFIG_FILE).read_text(encoding="utf-8"))
-    skills = config.setdefault("skills", {})
-    dirs = list(skills.get("external_dirs") or [])
-    skills["external_dirs"] = dirs + [d for d in SKILLS_EXTERNAL_DIRS if d not in dirs]
     # Stamped at seed time so the first load does not replay every config
     # migration from version 0 over a config that is already current.
     config["_config_version"] = DEFAULT_CONFIG["_config_version"]
     return config
+
+
+def with_template(config: dict, template: str, home: Path) -> dict:
+    """``config`` provisioned from catalog template ``template`` for ``home``.
+
+    Sets ``janitor.template`` / ``janitor.skills`` / ``janitor.catalog_seen`` and
+    generates ``skills.external_dirs`` (absolute, one entry per skill).
+    """
+    from janitor import catalog as cat
+
+    catalog = cat.load_catalog()
+    ids = cat.skills_for_template(template, catalog=catalog)
+    janitor_cfg = config.setdefault("janitor", {})
+    janitor_cfg[cat.TEMPLATE_KEY] = template
+    janitor_cfg[cat.SKILLS_KEY] = list(ids)
+    janitor_cfg[cat.SEEN_KEY] = list(ids)
+    new, _ = cat.reconcile_config(config, home, catalog=catalog)
+    return new
+
+
+def seed_config(home: Path) -> dict:
+    """The config a new Janitor home starts with: the base config, provisioned from ``main``."""
+    return with_template(base_config(), MAIN_TEMPLATE, home)
 
 
 def _config_is_replaceable(path: Path) -> bool:
@@ -136,7 +163,7 @@ def ensure_home(home: Optional[Path] = None) -> List[str]:
     fresh = _config_is_replaceable(config_path)
     if fresh:
         body = _CONFIG_HEADER + yaml.safe_dump(
-            seed_config(), sort_keys=False, allow_unicode=True, default_flow_style=False
+            seed_config(home), sort_keys=False, allow_unicode=True, default_flow_style=False
         )
         _atomic_write(config_path, body.encode("utf-8"))
         changes.append(CONFIG_FILE)

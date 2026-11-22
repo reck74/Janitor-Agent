@@ -15,10 +15,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-from janitor import migrations, seed
+from janitor import catalog, migrations, seed
 from janitor.home import ASSETS_ROOT, LAYOUT_VERSION, REPO_ROOT, SKILLS_ROOT, read_layout_version
 from janitor.migrations import v1
 from tests.janitor.legacy_home import launcher_env
+from tests.janitor.skill_index import ESSENTIAL, skill_index
 
 
 def _tree(home: Path) -> dict:
@@ -44,7 +45,6 @@ def _load(home: Path, monkeypatch) -> dict:
 
 
 def test_fresh_home_is_a_working_janitor_home(home, monkeypatch):
-    from agent.skill_utils import get_external_skills_dirs
     from hermes_cli.config import DEFAULT_CONFIG
 
     changes = seed.ensure_home(home)
@@ -59,8 +59,6 @@ def test_fresh_home_is_a_working_janitor_home(home, monkeypatch):
     assert config["display"]["language"] == "es"
     assert config["display"]["skin"] == "sentry-janitor"
     assert config["memory"].get("provider", "") != "honcho"
-    # Janitor's skills resolve even when the launcher did not export the root.
-    assert SKILLS_ROOT.resolve() in get_external_skills_dirs()
 
     assert (home / "skins" / "sentry-janitor.yaml").read_bytes() == (ASSETS_ROOT / "sentry-janitor.yaml").read_bytes()
     assert (home / "SOUL.md").read_bytes() == (ASSETS_ROOT / "SOUL.md").read_bytes()
@@ -77,11 +75,16 @@ def test_marker_name_matches_the_skills_sync_contract():
 
 def test_seeded_home_needs_no_layout_migration(home):
     seed.ensure_home(home)
+    config_before = (home / "config.yaml").read_bytes()
     assert read_layout_version(home) == LAYOUT_VERSION
     assert not migrations.pending(home)
-    assert v1.build_plan(home).empty
+    # v1's skill/skin steps have nothing to do; its config step (whole-root
+    # external_dirs) never runs on a stamped home, which is catalog-managed.
+    plan = v1.build_plan(home)
+    assert not (plan.remove or plan.keep or plan.drop_manifest or plan.refresh_skin)
     migrations.auto_migrate(home)
     assert not (home / ".backup").exists()
+    assert (home / "config.yaml").read_bytes() == config_before
 
 
 def test_second_run_is_a_noop(home):
@@ -108,7 +111,7 @@ def test_upstream_default_soul_is_replaced(home, variant):
     assert "janitor" in config["plugins"]["enabled"]
 
 
-def test_raw_asset_copied_by_the_terminal_installer_gets_the_seed_additions(home):
+def test_raw_asset_copied_by_the_terminal_installer_gets_the_seed_additions(home, monkeypatch):
     from hermes_cli.config import DEFAULT_CONFIG
 
     home.mkdir()
@@ -116,7 +119,37 @@ def test_raw_asset_copied_by_the_terminal_installer_gets_the_seed_additions(home
     seed.ensure_home(home)
     config = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
     assert config["_config_version"] == DEFAULT_CONFIG["_config_version"]
-    assert str(SKILLS_ROOT) in config["skills"]["external_dirs"]
+    assert config["janitor"]["template"] == "main"
+    assert skill_index(home, monkeypatch) == set(catalog.skills_for_template("main")) | {ESSENTIAL}
+
+
+# ── F2-01: the main agent's skills come from the catalog ─────────────────
+
+
+def test_fresh_home_index_is_exactly_the_main_template(home, monkeypatch):
+    """Not the whole janitor/skills root: only ``main`` + the essential skill."""
+    monkeypatch.delenv("JANITOR_SKILLS_ROOT", raising=False)
+    seed.ensure_home(home)
+    main = catalog.skills_for_template("main")
+
+    index = skill_index(home, monkeypatch)
+
+    assert index == set(main) | {ESSENTIAL}
+    shipped = {catalog.read_skill_name(d) for d in SKILLS_ROOT.glob("*/*") if (d / "SKILL.md").is_file()}
+    assert shipped - set(main), "the tree ships Janitor skills outside main"
+    assert not (shipped - set(main)) & index  # none of them leaks in
+    raw = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
+    assert raw["janitor"]["skills"] == main
+    assert raw["janitor"]["catalog_seen"] == main
+    assert all(Path(d).is_absolute() for d in raw["skills"]["external_dirs"])
+
+
+def test_catalog_apply_on_a_seeded_home_is_a_noop(home):
+    seed.ensure_home(home)
+    before = (home / "config.yaml").read_bytes()
+    result = catalog.apply(home)
+    assert result.managed and not result.changed
+    assert (home / "config.yaml").read_bytes() == before
 
 
 def test_upstream_default_soul_is_replaced_in_an_existing_home(home):

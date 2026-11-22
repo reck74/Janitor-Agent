@@ -2328,3 +2328,56 @@ def test_tui_dependency_repair_failure_is_reported_and_skips_the_build(monkeypat
 
     assert juc._install_node_dependencies(tmp_path) == ["ui-tui npm (install)"]
     assert commands == []
+
+
+# ---------------------------------------------------------------------------
+# Skill catalog re-apply after a pull (F2-01)
+# ---------------------------------------------------------------------------
+
+
+def test_pull_reapplies_the_skill_catalog_already_current_does_not(monkeypatch, tmp_path):
+    calls: list[str] = []
+    for commit_count, expected in (("3", ["reapply"]), ("0", [])):
+        calls.clear()
+        _stub_pipeline_helpers(monkeypatch, tmp_path)
+        monkeypatch.setattr(juc, "_install_python_dependencies", lambda root: None)
+        monkeypatch.setattr(juc, "_reapply_skill_catalog", lambda: calls.append("reapply"))
+        side_effect, _ = _make_side_effect(commit_count=commit_count)
+        monkeypatch.setattr(juc.subprocess, "run", side_effect)
+
+        assert juc.run_janitor_update(SimpleNamespace()) == 0
+        assert calls == expected, commit_count
+
+
+def test_reapply_regenerates_managed_homes_and_leaves_legacy_ones(monkeypatch, tmp_path):
+    """Root + every profile; a moved install's stale entry is replaced; a config
+    without ``janitor.skills`` (pre-catalog home) keeps its bytes."""
+    import yaml
+
+    from janitor import catalog as cat
+
+    root = tmp_path / ".janitor"
+    managed = root / "profiles" / "investigador"
+    legacy = root / "profiles" / "viejo"
+    stale = str(tmp_path / "old-install" / "skills" / "productivity" / "pdf")
+    for home, config in (
+        (root, {"janitor": {"template": "main", "skills": ["pdf"], "catalog_seen": cat.skills_for_template("main")},
+                "skills": {"external_dirs": [stale]}}),
+        (managed, {"janitor": {"skills": ["arxiv"]}}),
+        (legacy, {"skills": {"external_dirs": ["${JANITOR_SKILLS_ROOT}"]}}),
+    ):
+        home.mkdir(parents=True)
+        (home / "config.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
+    legacy_before = (legacy / "config.yaml").read_bytes()
+    monkeypatch.setattr(juc, "get_hermes_home", lambda: managed)  # update run from a profile
+
+    juc._reapply_skill_catalog()
+
+    def dirs(home):
+        return yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))["skills"]["external_dirs"]
+
+    pdf = cat.resolve(cat.load_catalog().by_id()["pdf"])
+    arxiv = cat.resolve(cat.load_catalog().by_id()["arxiv"])
+    assert dirs(root) == [str(pdf)]
+    assert dirs(managed) == [str(arxiv)]
+    assert (legacy / "config.yaml").read_bytes() == legacy_before

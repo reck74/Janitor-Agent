@@ -7,6 +7,11 @@ into ``skills.external_dirs`` — one absolute entry per skill, pointing at the
 skill's directory in this install tree (upstream indexes a single-skill
 directory under the ``general`` category).
 
+A profile created from a template (``janitor.template``) also follows that
+template as the catalog evolves: see :func:`evolve_selection`. The seed, the
+launcher (every start, for the home it serves) and ``janitor update`` (every
+Janitor home) run the same reconciliation.
+
 Import-light on purpose (stdlib + PyYAML): the launcher and the seed call it
 before Hermes is configured, and ``hermes_cli.config`` is imported only inside
 :func:`apply`, the same way ``janitor.migrations.v1`` does.
@@ -19,6 +24,7 @@ before Hermes is configured, and ``hermes_cli.config`` is imported only inside
 from __future__ import annotations
 
 import argparse
+import copy
 import logging
 import os
 import re
@@ -27,7 +33,7 @@ import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import yaml
 
@@ -78,6 +84,16 @@ class ApplyResult:
     unknown: List[str] = field(default_factory=list)        # ids not in the catalog
     unresolved: List[str] = field(default_factory=list)     # ids whose directory is missing here
     other_platform: List[str] = field(default_factory=list)  # ids gated to another OS
+    added: List[str] = field(default_factory=list)          # template skills offered for the first time
+    dropped: List[str] = field(default_factory=list)        # ids gone from the catalog, removed from janitor.skills
+
+
+@dataclass
+class SelectionChange:
+    """What :func:`evolve_selection` changed in ``janitor.skills``."""
+
+    added: List[str] = field(default_factory=list)
+    dropped: List[str] = field(default_factory=list)
 
 
 # --- loading -----------------------------------------------------------------
@@ -323,12 +339,130 @@ def plan_external_dirs(selected: Sequence, current: Sequence[str], home: Path,
     return dirs, result
 
 
-def apply(home: Path, *, catalog: Optional[Catalog] = None, platform: Optional[str] = None) -> ApplyResult:
-    """Regenerate ``skills.external_dirs`` of ``home/config.yaml`` from ``janitor.skills``.
+# Profile config keys (under ``janitor:``). ``skills`` is the agent's selection,
+# ``template`` the catalog template it was created from, ``catalog_seen`` every
+# template id already offered to this profile (so a removed skill stays removed).
+SKILLS_KEY = "skills"
+TEMPLATE_KEY = "template"
+SEEN_KEY = "catalog_seen"
 
-    Idempotent; the file is rewritten only when the list changes. A config with
-    no ``janitor.skills`` key is left untouched. Unknown ids are reported in the
-    result (and logged), never fatal.
+
+def _id_list(value) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        raise CatalogError("janitor.skills / janitor.catalog_seen must be lists of catalog ids")
+    out: List[str] = []
+    for raw in value:
+        sid = str(raw).strip()
+        if sid and sid not in out:
+            out.append(sid)
+    return out
+
+
+def evolve_selection(config: dict, template_skills: Sequence[str],
+                     catalog_ids: Iterable[str]) -> Tuple[dict, SelectionChange]:
+    """Bring a template-managed profile's ``janitor.skills`` up to the current catalog.
+
+    Pure: returns a new config dict and what changed; ``config`` is not mutated.
+    Only a config carrying both ``janitor.skills`` and ``janitor.template`` is
+    managed (anything else comes back unchanged):
+
+    * an id of the template (``template_skills``) never offered before — absent
+      from ``janitor.catalog_seen`` — is appended to ``janitor.skills`` once;
+    * every template id is then recorded in ``catalog_seen``, so a skill the user
+      removed from ``janitor.skills`` is never re-added;
+    * ids no longer in the catalog leave ``janitor.skills`` (reported as dropped)
+      and ``catalog_seen``.
+
+    A profile without ``catalog_seen`` (written before this rule existed) counts
+    the current template as already offered: it is recorded, nothing is added.
+    """
+    new = copy.deepcopy(config)
+    change = SelectionChange()
+    janitor_cfg = new.get("janitor")
+    if not isinstance(janitor_cfg, dict) or SKILLS_KEY not in janitor_cfg or not janitor_cfg.get(TEMPLATE_KEY):
+        return new, change
+    known = set(catalog_ids)
+    offered = [str(s).strip() for s in template_skills if str(s).strip() in known]
+    skills = _id_list(janitor_cfg.get(SKILLS_KEY))
+    seen_raw = janitor_cfg.get(SEEN_KEY)
+    seen = list(offered) if seen_raw is None else _id_list(seen_raw)
+
+    change.dropped = [s for s in skills if s not in known]
+    skills = [s for s in skills if s in known]
+    seen = [s for s in seen if s in known]
+    change.added = [s for s in offered if s not in seen and s not in skills]
+    skills += change.added
+    seen += [s for s in offered if s not in seen]
+
+    janitor_cfg[SKILLS_KEY] = skills
+    janitor_cfg[SEEN_KEY] = seen
+    return new, change
+
+
+def reconcile_config(config: dict, home: Path, *, catalog: Optional[Catalog] = None,
+                     platform: Optional[str] = None) -> Tuple[dict, ApplyResult]:
+    """The config ``apply()`` would write for ``home``: evolved selection + generated ``external_dirs``.
+
+    No I/O besides checking that skill directories exist. A config with no
+    ``janitor.skills`` comes back unchanged with ``result.managed == False``.
+    """
+    janitor_cfg = config.get("janitor")
+    if not isinstance(janitor_cfg, dict) or SKILLS_KEY not in janitor_cfg:
+        return config, ApplyResult()
+    catalog = catalog or load_catalog()
+    platform = platform or current_platform()
+    new = copy.deepcopy(config)
+    change = SelectionChange()
+    template = janitor_cfg.get(TEMPLATE_KEY)
+    if template:
+        if template in catalog.templates:
+            offered = skills_for_template(str(template), catalog=catalog, platform=platform)
+            new, change = evolve_selection(new, offered, (e.id for e in catalog.entries))
+        else:
+            logger.warning("janitor.template: %r is not a catalog template; selection not evolved", template)
+    selected = _id_list(new["janitor"].get(SKILLS_KEY))
+
+    skills = new.get("skills")
+    if not isinstance(skills, dict):
+        skills = {}
+    current = skills.get("external_dirs") or []
+    if isinstance(current, str):
+        current = [current]
+    current = [str(d) for d in current]
+    dirs, result = plan_external_dirs(selected, current, home, catalog, platform)
+    result.added, result.dropped = change.added, change.dropped
+    if dirs != current:
+        skills["external_dirs"] = dirs
+        new["skills"] = skills
+    return new, result
+
+
+def _log_result(result: ApplyResult, where: Path) -> None:
+    for sid in result.unknown:
+        logger.warning("%s: janitor.skills %r is not in the Janitor catalog; skipped", where, sid)
+    for sid in result.unresolved:
+        logger.warning("%s: janitor.skills %r is not present in this install; skipped", where, sid)
+    for sid in result.dropped:
+        logger.warning("%s: skill %r left the Janitor catalog; removed from janitor.skills", where, sid)
+    for sid in result.added:
+        logger.info("%s: new template skill %r added to janitor.skills", where, sid)
+
+
+def dump_config(config: dict, header: str = "") -> str:
+    body = yaml.safe_dump(config, sort_keys=False, allow_unicode=True, default_flow_style=False)
+    return (header + "\n" if header else "") + body
+
+
+def apply(home: Path, *, catalog: Optional[Catalog] = None, platform: Optional[str] = None) -> ApplyResult:
+    """Bring ``home/config.yaml`` up to the catalog: evolve ``janitor.skills``, regenerate ``external_dirs``.
+
+    Idempotent; the file is rewritten only when something changed (a second run
+    is a byte-for-byte no-op). A config with no ``janitor.skills`` key is left
+    untouched. Unknown ids are reported in the result (and logged), never fatal.
     """
     home = Path(home).expanduser()
     path = home / "config.yaml"
@@ -338,36 +472,35 @@ def apply(home: Path, *, catalog: Optional[Catalog] = None, platform: Optional[s
 
     # Raises on an unreadable / unparseable file instead of rewriting it.
     config = require_readable_config_before_write(path)
-    janitor_cfg = config.get("janitor")
-    if not isinstance(janitor_cfg, dict) or "skills" not in janitor_cfg:
-        return ApplyResult()
-    selected = janitor_cfg.get("skills") or []
-    if isinstance(selected, str):
-        selected = [selected]
-    if not isinstance(selected, list):
-        raise CatalogError(f"{path}: `janitor.skills` must be a list of catalog ids")
-
-    skills = config.get("skills")
-    if not isinstance(skills, dict):
-        skills = {}
-    current = skills.get("external_dirs") or []
-    if isinstance(current, str):
-        current = [current]
-    current = [str(d) for d in current]
-    dirs, result = plan_external_dirs(selected, current, home, catalog or load_catalog(), platform)
-    for sid in result.unknown:
-        logger.warning("janitor.skills: %r is not in the Janitor catalog; skipped", sid)
-    for sid in result.unresolved:
-        logger.warning("janitor.skills: %r is not present in this install; skipped", sid)
-    if dirs == current:
+    new, result = reconcile_config(config, home, catalog=catalog, platform=platform)
+    if not result.managed:
         return result
-    skills["external_dirs"] = dirs
-    config["skills"] = skills
+    _log_result(result, path)
+    if new == config:
+        return result
     header = _leading_comments(path.read_text(encoding="utf-8"))
-    body = yaml.safe_dump(config, sort_keys=False, allow_unicode=True, default_flow_style=False)
-    _atomic_write(path, (header + "\n" if header else "") + body)
+    _atomic_write(path, dump_config(new, header))
     result.changed = True
     return result
+
+
+def janitor_homes(home: Path) -> List[Path]:
+    """The Janitor root owning ``home`` (itself or ``<root>/profiles/<name>``) and every profile under it."""
+    home = Path(home).expanduser()
+    root = home.parent.parent if home.parent.name == "profiles" else home
+    profiles = root / "profiles"
+    named = sorted(p for p in profiles.iterdir() if p.is_dir() and not p.name.startswith(".")) \
+        if profiles.is_dir() else []
+    return [root, *named]
+
+
+def apply_quietly(home: Path) -> Optional[ApplyResult]:
+    """:func:`apply` for callers that must never fail (launcher, update): a problem is logged."""
+    try:
+        return apply(home)
+    except Exception as exc:  # noqa: BLE001 — a broken catalog/config must not stop the caller
+        logger.warning("Janitor skill catalog not applied to %s: %s", home, exc)
+        return None
 
 
 # --- CLI ---------------------------------------------------------------------
@@ -399,9 +532,11 @@ def _cmd_apply(home: Path) -> int:
         print(f"{home / 'config.yaml'}: no janitor.skills — left unchanged")
         return 0
     for label, ids in (("unknown", result.unknown), ("not in this install", result.unresolved),
-                       ("other platform", result.other_platform)):
+                       ("other platform", result.other_platform), ("left the catalog", result.dropped)):
         if ids:
             print(f"skipped ({label}): {', '.join(ids)}")
+    if result.added:
+        print(f"added (new in template): {', '.join(result.added)}")
     print(f"skills.external_dirs: {len(result.external_dirs)} entries "
           f"({'updated' if result.changed else 'already current'})")
     return 0

@@ -225,3 +225,79 @@ def test_every_available_entry_can_be_activated(env, monkeypatch, catalog):
     result = cat.apply(home)
     assert not result.unknown and not result.unresolved
     assert _index(home, monkeypatch) == set(ids) | {ESSENTIAL}
+
+
+# --- template evolution (janitor.template + janitor.catalog_seen) -------------
+
+
+def _managed(skills, seen=None, template="t") -> dict:
+    cfg = {"janitor": {"template": template, "skills": list(skills)}, "model": {"default": "m"}}
+    if seen is not None:
+        cfg["janitor"]["catalog_seen"] = list(seen)
+    return cfg
+
+
+def test_new_template_skill_is_offered_once():
+    config = _managed(["a", "b"], seen=["a", "b"])
+    new, change = cat.evolve_selection(config, ["a", "b", "c"], {"a", "b", "c"})
+    assert change.added == ["c"] and change.dropped == []
+    assert new["janitor"]["skills"] == ["a", "b", "c"]
+    assert config["janitor"]["skills"] == ["a", "b"]  # input not mutated
+
+    # the user removes it afterwards: it is never offered again
+    new["janitor"]["skills"] = ["a", "b"]
+    again, change = cat.evolve_selection(new, ["a", "b", "c"], {"a", "b", "c"})
+    assert change.added == [] and again["janitor"]["skills"] == ["a", "b"]
+
+
+def test_user_removed_template_skill_is_not_re_added():
+    config = _managed(["a"], seen=["a", "b"])
+    new, change = cat.evolve_selection(config, ["a", "b"], {"a", "b"})
+    assert change.added == [] and new == config
+
+
+def test_skill_dropped_from_catalog_is_removed_and_reported():
+    config = _managed(["a", "gone", "extra"], seen=["a", "gone"])
+    new, change = cat.evolve_selection(config, ["a"], {"a", "extra"})
+    assert change.dropped == ["gone"]
+    assert new["janitor"]["skills"] == ["a", "extra"]  # a user-ticked optional skill stays
+    assert "gone" not in new["janitor"]["catalog_seen"]
+
+
+def test_profile_without_seen_record_adds_nothing():
+    """Written before the rule existed: today's template counts as already offered."""
+    config = _managed(["a"])
+    new, change = cat.evolve_selection(config, ["a", "b"], {"a", "b"})
+    assert change.added == [] and new["janitor"]["skills"] == ["a"]
+    assert new["janitor"]["catalog_seen"] == ["a", "b"]
+
+
+@pytest.mark.parametrize("config", [
+    {"skills": {"external_dirs": ["${JANITOR_SKILLS_ROOT}"]}},
+    {"janitor": {"skills": ["a"]}},                       # no template: hand-picked list
+    {"janitor": {"template": "t"}},                       # no selection
+])
+def test_unmanaged_configs_are_not_evolved(config):
+    new, change = cat.evolve_selection(config, ["a", "b"], {"a", "b"})
+    assert new == config and change.added == [] and change.dropped == []
+
+
+def test_apply_evolves_a_real_home_and_is_idempotent(env, monkeypatch):
+    """End to end with a catalog whose ``t`` template grew one skill and lost one."""
+    entries = (
+        cat.Entry("pdf", "upstream-bundled", "productivity/pdf", "p", ("t",)),
+        cat.Entry("docx", "upstream-bundled", "productivity/docx", "p", ("t",)),
+        cat.Entry("xlsx", "upstream-bundled", "productivity/xlsx", "p", ("t",)),
+    )
+    grown = cat.Catalog({"p": "P"}, {"t": "T"}, entries)
+    # pdf + retired were offered and kept; docx was offered and removed by the user.
+    home = _make_home(env, "p", _managed(["pdf", "retired"], seen=["pdf", "docx", "retired"]))
+
+    result = cat.apply(home, catalog=grown)
+
+    assert result.added == ["xlsx"] and result.dropped == ["retired"]
+    assert _index(home, monkeypatch) == {"pdf", "xlsx", ESSENTIAL}
+    first = (home / "config.yaml").read_bytes()
+    again = cat.apply(home, catalog=grown)
+    assert not again.changed and again.added == [] and again.dropped == []
+    assert (home / "config.yaml").read_bytes() == first

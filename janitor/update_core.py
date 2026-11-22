@@ -1266,6 +1266,23 @@ def _acquire_update_lock():
 # ---------------------------------------------------------------------------
 
 
+def _reapply_skill_catalog() -> None:
+    """Regenerate every Janitor home's ``skills.external_dirs`` from the pulled catalog.
+
+    The entries are absolute paths into the install tree, and a release may add
+    a skill to a template; homes without ``janitor.skills`` are left untouched.
+    Imported after the pull so the freshly pulled catalog code and data run;
+    never fails the update (``apply_quietly`` logs per home).
+    """
+    try:
+        from janitor.catalog import apply_quietly, janitor_homes
+
+        for home in janitor_homes(get_hermes_home()):
+            apply_quietly(home)
+    except Exception as exc:  # noqa: BLE001 — a broken catalog must not fail a good pull
+        print(f"  ⚠ Skill catalog not re-applied: {exc}")
+
+
 def run_janitor_update(args) -> int:
     """Canonical Janitor update flow.
 
@@ -1447,6 +1464,8 @@ def run_janitor_update(args) -> int:
                 "_refresh_active_lazy_features",
                 fallback=lambda: None,
             )
+
+            _reapply_skill_catalog()
 
         # Node repair — fail-loud. Non-empty failure list writes the
         # incomplete marker, prints NO receipt, NO success banner, and does

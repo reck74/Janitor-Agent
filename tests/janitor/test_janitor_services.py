@@ -14,7 +14,7 @@ import yaml
 
 from janitor import services
 from janitor.home import SKILLS_ROOT
-from tests.janitor.legacy_home import REPO_ROOT, expected_listing_count, launcher_env
+from tests.janitor.legacy_home import REPO_ROOT, launcher_env
 
 ALL_SERVICES = services.discover_services()
 
@@ -202,15 +202,19 @@ def _janitor(root, *args, env=None):
 
 
 def test_skills_resolve_from_the_install_tree(fresh_home):
+    """A fresh home lists its catalog skills (``main``) in place, once each; the
+    other Janitor skills, services included, stay out until chosen (F2-01)."""
+    from janitor import catalog
+
     result = _janitor(fresh_home, "skills", "list")
     assert result.returncode == 0, result.stderr
     rows = [line for line in result.stdout.splitlines() if line.startswith("│")]
     names = [row.split("│")[1].strip() for row in rows]
-    for skill_md in sorted(SKILLS_ROOT.rglob("SKILL.md")):
-        name, expected = skill_md.parent.name, expected_listing_count(skill_md.parent)
-        assert names.count(name) == expected, (
-            f"{name} listed {names.count(name)}x, expected {expected}\n{result.stdout}"
-        )
+    main = catalog.skills_for_template("main")
+    for name in main:
+        assert names.count(name) == 1, f"{name} listed {names.count(name)}x\n{result.stdout}"
+    shipped = {catalog.read_skill_name(md.parent) for md in SKILLS_ROOT.rglob("SKILL.md")}
+    assert not (shipped - set(main)) & set(names), result.stdout
     assert not (fresh_home / ".janitor" / "skills" / "janitor-firecrawl").exists()
 
 
