@@ -269,30 +269,36 @@ funcional en español, con su identidad, sin «Hermes» en el uso normal y con
 | F1-04 | Reglas de marca del catálogo (P6) + prueba de vigilancia | `apps/desktop-janitor/` | prueba de vigilancia en verde | auditado |
 | F1-05 | Literales de Electron y de la interfaz (P7, P8) | `apps/desktop-janitor/` | prueba de anclas + vigilancia | auditado |
 | F1-06 | `SOUL.md` y bienvenida de Telegram: de código a tecnología | `assets/janitor/SOUL.md`, `janitor/plugin/telegram.py`, su prueba | `scripts/run_tests.sh tests/janitor/` | auditado |
-| F1-07 | Compilación real de la app Janitor y prueba en home limpio | — | AppImage arranca, instala y abre chat | compilación auditada; arranque en curso (subagente Opus) |
+| F1-07 | Compilación real de la app Janitor y prueba en home limpio | — | AppImage arranca, instala y abre chat | compilación y arranque auditados; **instalación real en home limpio sin probar** (requiere push) |
 | F1-08 | Onboarding: MiniMax primero, Nous y «Hermes Cloud» ocultos | `apps/desktop-janitor/` | revisión visual | en curso (subagente Opus) |
-| F1-09 | Actualización desde la app por el flujo Janitor (directiva 13) | por definir | por definir | en curso (subagente Opus) |
+| F1-09 | Actualización desde la app por el flujo Janitor (directiva 13) | por definir | por definir | auditado |
 | F1-10 | Español para plugins `kanban`, `hermes-bots`, `radio` y las 6 claves sin traducir | `apps/desktop-janitor/` | vigilancia de idioma | en curso (subagente Opus) |
-| F1-11 | CI: compilar la app Janitor y publicar el AppImage | `.github/workflows/` | job en verde | en curso (subagente Opus) |
+| F1-11 | CI: compilar la app Janitor y publicar el AppImage | `.github/workflows/` | job en verde | auditado (los workflows no se han ejecutado) |
+| F1-12 | `janitor update` lanzado desde la app: reiniciar gateways en ejecución y reconstruir `web/`, como hace el flujo de upstream | `janitor/update_core.py`, pruebas | prueba de comportamiento | pendiente |
+| F1-13 | La primera pantalla sale con tema claro: aplicar los colores del skin desde el arranque | `apps/desktop-janitor/` | captura de la primera pantalla | pendiente |
+| F1-14 | Mensajes del motor que llegan a la app en inglés o con «Hermes» (errores de credenciales, «run `hermes setup`») | por definir | captura | pendiente |
+| F1-15 | Instalación real de punta a punta en un home limpio con el AppImage publicado | — | checklist del criterio de terminado | pendiente (bloqueado: requiere push y release) |
 
 ### Fase 2 — Agente principal y catálogo de skills
+
+Diseño, alcances y verificaciones: [`fase-2-diseno.md`](fase-2-diseno.md).
 
 | ID | Tarea | Estado |
 |---|---|---|
 | F2-01 | Perfil principal con su lista de skills | pendiente |
-| F2-02 | Catálogo por propósito | pendiente |
+| F2-02 | Catálogo por propósito | auditado |
 | F2-03 | Plantillas Investigador y Creador de proyectos | pendiente |
-| F2-04 | Retiro de `agents.py`, `opencode/` y skills obsoletas | pendiente |
+| F2-04 | Retiro de `agents.py`, `opencode/` y skills obsoletas | en curso (subagente Opus) |
 | F2-05 | `janitor-onboarding` reescrita | pendiente |
 
 ### Fase 3 — Skills nuevas del equipo (Linux)
 
 | ID | Tarea | Estado |
 |---|---|---|
-| F3-01 | Limpieza del equipo | pendiente |
-| F3-02 | Organización de archivos | pendiente |
-| F3-03 | Salud del sistema | pendiente |
-| F3-04 | Mantenimiento programado | pendiente |
+| F3-01 | Limpieza del equipo | en curso (subagente Opus) |
+| F3-02 | Organización de archivos | en curso (subagente Opus) |
+| F3-03 | Salud del sistema | en curso (subagente Opus) |
+| F3-04 | Mantenimiento programado | en curso (subagente Opus) |
 | F3-05 | Creación de proyectos | pendiente |
 
 ### Fase 4 — Aplicativos opcionales
@@ -357,3 +363,6 @@ Windows y macOS (firma de código). WhatsApp como canal.
 | 2026-11-22 | Subagentes Opus, auditado por el orquestador | F1-01 a F1-06 hechas y auditadas. Evidencia: `scripts/run_tests.sh tests/janitor/` → 24 archivos, 341 pruebas, 0 fallos; `python -m janitor.overlay check` limpio; `node --test apps/desktop-janitor/scripts/build.test.mjs` → 31/31; `build.mjs --check` → 135/135 anclas |
 | 2026-11-22 | Claude (orquestador) | F1-07 primera mitad: `build.mjs --linux --dir` compila (requirió `npm ci` en la raíz). En el binario: instalador desde `reck74/Janitor-Agent`, home `.janitor`, motor por `-m janitor.cli` (3 sitios), menús en español, «Janitor terminó». `apps/desktop` quedó idéntico a upstream tras compilar y también tras una compilación fallida. **Sin probar:** instalación real en home limpio — el instalador se descarga por el SHA de la compilación, que debe existir en GitHub (hace falta push) |
 | 2026-11-22 | Claude (orquestador) | Ajustes propios sobre F1-01: personalidades ampliadas a tecnología; `approvals.mode` se mantiene en `manual` (upstream pasó a `smart`: decisión pendiente del dueño) |
+| 2026-11-22 | Subagente Opus, revisado por el orquestador | F1-07 arranque: la app compilada abre sin pantalla (Playwright + `--ozone-platform=headless`) con un HOME temporal y `HERMES_DESKTOP_HERMES_ROOT` apuntando al repo. Título «Janitor», interfaz en español, motor por `python -m janitor.cli serve`, `HERMES_HOME=<tmp>/.janitor`, userData `<tmp>/.config/Janitor`, nada en `<tmp>/.hermes`, home sembrado correcto, 16 skills visibles. El `~/.janitor` real no cambió. **Fallos vistos:** Nous Portal como único proveedor «RECOMENDADO»; error crudo del motor en inglés por la clave de MiniMax ausente; MiniMax al final de la lista de claves; tema claro en la primera pantalla; textos en inglés sueltos. Sin probar: instalación por red, menús nativos, `--profile` |
+| 2026-11-22 | Subagente Opus, auditado por el orquestador | F1-09 y F1-11. Evidencia: `run_tests.sh tests/janitor/` → 26 archivos, 368 pruebas, 0 fallos; `run_tests.sh tests/scripts/desktop_update/` (upstream) → 25 pasan, 9 omitidas; overlay check limpio. Pendiente detectado → F1-12 |
+| 2026-11-22 | Subagente Opus, auditado por el orquestador | F2 diseño (`fase-2-diseno.md`) y F2-02 catálogo: `python -m janitor.catalog check` → 37/37; 17 pruebas |
