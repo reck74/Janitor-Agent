@@ -125,14 +125,15 @@ Reply in Spanish. Show what you will change before changing it.
       `log_tail`. Volumes are kept; after the fix, re-run `deploy`.
    4. Run `activate --mode local --port <port>`.
 5. Mode A (cloud):
-   1. If `modes.cloud.credential` is not `api_key`, do step 3 for `HONCHO_API_KEY`
-      (from https://app.honcho.dev).
+   1. If `modes.cloud.credential` is `none`, do step 3 for `HONCHO_API_KEY`
+      (from https://app.honcho.dev), or offer `cloud-login` (see Pitfalls).
    2. Run `verify --mode cloud`; on failure report `round_trip.error` (wrong key,
       no network) and stop.
    3. Get a yes, then run `activate --mode cloud`.
 6. `activate` refusals change nothing: `verification_failed` (report
    `verification.reason` / `round_trip.error`, fix, retry), `failsafe_would_block`
-   (cloud without `HONCHO_API_KEY`: go to step 3), `honcho_json_unparseable` (the user
+   (cloud with no `HONCHO_API_KEY` and no API key or OAuth grant in `honcho.json`: go to
+   step 3), `honcho_json_unparseable` (the user
    fixes or moves the file).
 7. After `activate` with `ok: true` tell the user, in this order:
    - what changed (`changed[]`) and the backup of the old `honcho.json`
@@ -148,15 +149,16 @@ Reply in Spanish. Show what you will change before changing it.
 
 ## Pitfalls
 
-- Activation only after verification is the safety net: the `janitor` launcher exits at
-  start when `memory.provider: honcho` has no `HONCHO_API_KEY` / `HONCHO_BASE_URL`.
-  Never set `memory.provider` by hand or with another command.
+- Activation only after verification is the safety net: the `janitor` launcher refuses to
+  open a session when `memory.provider: honcho` has no credential (`HONCHO_API_KEY` /
+  `HONCHO_BASE_URL`, or an API key, OAuth grant or base URL in `honcho.json`); the user
+  gets out of it with `janitor memory off`. Never set `memory.provider` by hand or with
+  another command.
 - `cloud-login` (device code: the user opens a URL and types a code; prints one
   `device_code` JSON line first, run it in the background and relay `user_code` and
-  `verification_uri`) stores an OAuth grant in `honcho.json`. The launcher does not
-  accept a grant yet, so `activate --mode cloud` refuses it with `failsafe_would_block`;
-  use the API key path. Do not use `janitor memory setup honcho` either: it activates
-  before verifying and its OAuth option locks the launcher out.
+  `verification_uri`) stores an OAuth grant in `honcho.json`, which the launcher accepts:
+  then run `verify --mode cloud` and `activate --mode cloud` as with an API key. Do not
+  use `janitor memory setup honcho`: it activates before verifying.
 - `deploy` keeps a `honcho-compose.yml` or `honcho-llm.env` the user edited
   (`kept-user-file`); it only replaces files Janitor shipped (old copy backed up).
 - `honcho-llm.env` holds only the LLM keys Honcho needs (mode 0600); the containers

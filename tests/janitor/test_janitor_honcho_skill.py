@@ -453,16 +453,44 @@ def test_activation_is_refused_when_verification_fails_and_touches_nothing(env):
     assert not (env.home / "janitor" / "honcho" / "state.json").exists()
 
 
-def test_cloud_activation_without_a_launcher_credential_is_refused(env, honcho_api):
-    # An OAuth grant alone does not satisfy the launcher fail-safe today: refuse, write nothing.
-    (env.home / "honcho.json").write_text(json.dumps({
-        "baseUrl": f"http://127.0.0.1:{honcho_api.port}",
-        "hosts": {"hermes": {"apiKey": HONCHO_JSON_SECRET, "oauth": {"refresh_token": "rt-SEEDED-77777"}}},
-    }), encoding="utf-8")
+def test_cloud_activation_without_a_launcher_credential_is_refused(env):
+    # No HONCHO_API_KEY and no apiKey / OAuth grant in honcho.json: refuse, write nothing.
+    (env.home / "honcho.json").write_text(json.dumps({"hosts": {"hermes": {"aiPeer": "x"}}}), encoding="utf-8")
     before = _snapshot(env)
     doc, _ = env.run("activate", "--mode", "cloud", expect=1)
     assert doc["reason"] == "failsafe_would_block"
     assert _snapshot(env) == before
+
+
+def _load_script():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("janitor_honcho_setup_under_test", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize("honcho_json,gate", [
+    # What `cloud-login` stores: an OAuth grant (access token as apiKey + refresh block).
+    ({"hosts": {"hermes": {"apiKey": HONCHO_JSON_SECRET, "oauth": {"refreshToken": "rt-SEEDED-77777"}}}}, True),
+    ({"hosts": {"hermes": {"oauth": {"refreshToken": "rt-SEEDED-77777"}}}}, True),
+    ({"apiKey": HONCHO_JSON_SECRET}, True),
+    ({"hosts": {"hermes": {"aiPeer": "x"}}}, False),
+])
+def test_cloud_gate_agrees_with_the_launcher_fail_safe(env, monkeypatch, honcho_json, gate):
+    """An OAuth-only cloud setup passes the gate exactly when the launcher would start with it."""
+    script = _load_script()
+    (env.home / "honcho.json").write_text(json.dumps(honcho_json), encoding="utf-8")
+    for name, value in env.env().items():
+        monkeypatch.setenv(name, value)
+    for name in ("HONCHO_API_KEY", "HONCHO_BASE_URL", "HONCHO_URL"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(Path, "home", lambda: env.tmp)
+    assert script.launcher_gate(script.resolve_homes(), "cloud") is gate
+
+    result = _launcher_fail_safe(env.tmp, config="memory:\n  provider: honcho\n")
+    assert (result.returncode == 0) is gate, result.stderr[-2000:]
 
 
 def test_local_activation_backs_up_a_user_edited_honcho_json(env, honcho_api):
@@ -513,7 +541,9 @@ def test_rollback_without_an_activation_record_changes_nothing(env):
     assert _snapshot(env) == before
 
 
-def _launcher_fail_safe(root: Path) -> subprocess.CompletedProcess:
+def _launcher_fail_safe(root: Path, config: str | None = None) -> subprocess.CompletedProcess:
+    if config is not None:
+        (root / ".janitor" / "config.yaml").write_text(config, encoding="utf-8")
     code = "import janitor.cli as launcher; launcher._owasp_honcho_fail_safe(); print('PASSED')"
     env = launcher_env(root)
     env = {k: v for k, v in env.items() if not k.startswith("HONCHO_")}
@@ -528,13 +558,22 @@ def test_seeded_home_activation_passes_the_launcher_fail_safe(env, honcho_api):
     env.write_env()
     doc, _ = env.run("activate", "--mode", "local", "--port", str(honcho_api.port))
     assert doc["ok"] and _provider(env) == "honcho"
+    # Built from the shipped template: the user's peer name, no placeholder, no foreign host.
+    written = json.loads((env.home / "honcho.json").read_text(encoding="utf-8"))
+    assert written["peerName"] == written["hosts"]["hermes"]["peerName"] == "tester"
+    assert list(written["hosts"]) == ["hermes"]
 
     result = _launcher_fail_safe(env.tmp)
     assert result.returncode == 0 and "PASSED" in result.stdout, result.stderr[-2000:]
 
-    # Control: the same home without the URL activation wrote does trip the fail-safe.
+    # Control: the same home without the URL activation wrote (.env and honcho.json) trips it.
     env_file = env.home / ".env"
     env_file.write_text("".join(l for l in env_file.read_text(encoding="utf-8").splitlines(True)
                                 if not l.startswith("HONCHO_BASE_URL=")), encoding="utf-8")
+    written = json.loads((env.home / "honcho.json").read_text(encoding="utf-8"))
+    written.pop("baseUrl", None)
+    for block in written.get("hosts", {}).values():
+        block.pop("baseUrl", None)
+    (env.home / "honcho.json").write_text(json.dumps(written), encoding="utf-8")
     blocked = _launcher_fail_safe(env.tmp)
-    assert blocked.returncode == 1 and "FATAL" in blocked.stderr
+    assert blocked.returncode == 1 and "janitor memory off" in blocked.stderr

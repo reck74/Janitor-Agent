@@ -8,10 +8,45 @@ here instead of edits to core files.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
+
+def _export_message_catalogs() -> None:
+    """Janitor's backend catalogs for a process the launcher did not start.
+
+    A gateway service or ``python -m hermes_cli.main ...`` loads this plugin
+    but never ran the launcher's export, so ``t()`` would read upstream's
+    catalogs. Runs at plugin discovery, which a gateway reaches while loading
+    its config (``gateway.config_loader.load_yaml_layer``), before any message.
+    """
+    try:
+        from janitor.locales import ensure_exported
+
+        ensure_exported()
+    except Exception as exc:  # noqa: BLE001 — upstream's catalogs are a working fallback
+        logger.warning("Janitor message catalogs unavailable, using upstream's: %s", exc)
+
+
+def _use_janitor_tips() -> None:
+    """Janitor's Spanish tip corpus in every process the plugin runs in, not only the
+    launcher's: a gateway (service, or handed off by the launcher) shows one on ``/reset``
+    (``gateway/slash_commands_session.py``). Same patch as ``janitor.cli.main()``;
+    signature guarded by ``tests/janitor/test_janitor_monkeypatch_signatures.py``."""
+    import hermes_cli.tips as tips
+
+    from janitor.tips_es import JANITOR_TIPS, get_janitor_tip
+
+    tips.TIPS = JANITOR_TIPS
+    tips.get_random_tip = get_janitor_tip
 
 
 def register(ctx: Any) -> None:
+    _export_message_catalogs()
+    _use_janitor_tips()
+
     from janitor import profile_templates, services
     from janitor.language import language_prompt_section
     from janitor.plugin import telegram

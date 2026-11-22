@@ -69,3 +69,16 @@ def test_enabled_plugin_registers_its_hooks(discover):
     assert "plantillas" in manager._cli_commands
     # A Janitor agent is a Hermes profile (directive 19): no parallel agent command.
     assert "agents" not in manager._cli_commands
+
+
+def test_enabled_plugin_gives_gateways_the_janitor_tips(discover):
+    """A gateway the launcher did not patch (service, or handed off) shows Janitor's tip on /reset."""
+    import hermes_cli.tips as tips
+    from janitor.tips_es import get_janitor_tip
+
+    _write_config({"plugins": {"enabled": ["janitor"]}})
+    discover()
+
+    from hermes_cli.tips import get_random_tip  # how gateway/slash_commands_session.py reads it
+
+    assert get_random_tip is get_janitor_tip and tips.get_random_tip() in tips.TIPS

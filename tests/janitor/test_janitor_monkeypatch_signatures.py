@@ -89,7 +89,8 @@ class TestCmdUpdateSignature:
 
 
 class TestTipsSignature:
-    """hermes_cli.tips.get_random_tip / TIPS — replaced by janitor.cli.main()."""
+    """hermes_cli.tips.get_random_tip / TIPS — replaced by janitor.cli.main() and by the
+    Janitor plugin's register() (gateways and other processes the launcher did not start)."""
 
     def test_wrapper_signature_covers_original(self):
         import hermes_cli.tips as hermes_tips

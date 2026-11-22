@@ -811,7 +811,7 @@ def build_candidate(homes: Homes, mode: str, url: str | None, peer_name: str | N
     cfg = json.loads(json.dumps(base))
     hosts = cfg.setdefault("hosts", {})
     template_block = json.loads(TEMPLATE_HONCHO_JSON.read_text(encoding="utf-8")).get("hosts", {}).get("hermes", {})
-    block = hosts.setdefault(host, {k: v for k, v in template_block.items() if k != "peerName"})
+    block = hosts.setdefault(host, dict(template_block))
     block["enabled"] = True
     if peer_name and not (block.get("peerName") or cfg.get("peerName")):
         cfg["peerName"] = peer_name
@@ -887,13 +887,18 @@ def verify_candidate(homes: Homes, mode: str, url: str | None, peer_name: str | 
 
 
 def launcher_gate(homes: Homes, mode: str) -> bool:
-    """The janitor launcher refuses to start with memory.provider=honcho unless HONCHO_API_KEY or
-    HONCHO_BASE_URL is set (janitor/cli.py::_owasp_honcho_fail_safe). Local mode writes
-    HONCHO_BASE_URL; cloud mode needs HONCHO_API_KEY in the profile .env or the environment."""
+    """The janitor launcher refuses to open a session with memory.provider=honcho unless Honcho
+    has a credential: HONCHO_API_KEY / HONCHO_BASE_URL, or an apiKey, OAuth grant or baseUrl in
+    the honcho.json upstream resolves (janitor/cli.py::_owasp_honcho_fail_safe). Local mode writes
+    HONCHO_BASE_URL; cloud mode needs the key in the profile .env or the environment, or an
+    apiKey / OAuth grant (`cloud-login`) in honcho.json, which activation carries over."""
     if mode == "local":
         return True
     env = read_env_file(homes.env_file)
-    return bool((env.get("HONCHO_API_KEY") or os.environ.get("HONCHO_API_KEY") or "").strip())
+    if (env.get("HONCHO_API_KEY") or os.environ.get("HONCHO_API_KEY") or "").strip():
+        return True
+    status = honcho_json_status(homes)
+    return bool(status["has_api_key"] or status["has_oauth"])
 
 
 def cmd_activate(args, homes: Homes) -> int:
@@ -910,7 +915,7 @@ def cmd_activate(args, homes: Homes) -> int:
     peer_name = args.peer_name or os.environ.get("USER") or None
 
     if not launcher_gate(homes, args.mode):
-        hint("El lanzador janitor exige HONCHO_API_KEY o HONCHO_BASE_URL con memory.provider=honcho: no se activa.")
+        hint("El lanzador janitor exige una credencial de Honcho (HONCHO_API_KEY, o apiKey/OAuth en honcho.json) con memory.provider=honcho: no se activa.")
         return refuse("activate", "failsafe_would_block")
     verification = verify_candidate(homes, args.mode, url, peer_name)
     if not verification["ok"]:

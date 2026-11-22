@@ -7,7 +7,10 @@ merged copy of upstream's catalogs with each ``janitor/locales/<lang>.yaml``
 overlay applied key by key, and exports ``HERMES_BUNDLED_LOCALES`` at it, so
 no upstream catalog is edited and only the keys Janitor changes live in the
 fork. Every process the launcher starts (TUI gateway, desktop backend,
-detached gateways) inherits the variable.
+detached gateways) inherits the variable; a process started without the
+launcher (a gateway installed as a systemd/launchd service, ``python -m
+hermes_cli.main ...``) gets it from the Janitor plugin's ``register()``
+through :func:`ensure_exported`.
 
 Stdlib + PyYAML only: the launcher runs this before any ``hermes_*`` import.
 """
@@ -15,6 +18,8 @@ Stdlib + PyYAML only: the launcher runs this before any ``hermes_*`` import.
 from __future__ import annotations
 
 import os
+import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -25,9 +30,23 @@ UPSTREAM_LOCALES = REPO_ROOT / "locales"
 ENV_VAR = "HERMES_BUNDLED_LOCALES"
 
 
+def root_home() -> Path:
+    """The process' root home: ``HERMES_HOME`` without a ``profiles/<name>`` suffix.
+
+    The launcher sets ``HERMES_HOME`` to ``~/.janitor`` or one of its profiles,
+    so this is ``janitor_home()`` there; a service unit sets it explicitly.
+    """
+    raw = os.environ.get("HERMES_HOME", "").strip()
+    if not raw:
+        return janitor_home()
+    home = Path(os.path.expanduser(raw))
+    return home.parent.parent if home.parent.name == "profiles" else home
+
+
 def default_output_dir() -> Path:
-    # Root home, not the profile's: catalogs are install data, shared by every profile.
-    return janitor_home() / "cache" / "janitor-locales"
+    # Root home, not the profile's: catalogs are install data, identical for every
+    # profile of one install, so a multi-profile process shares one copy.
+    return root_home() / "cache" / "janitor-locales"
 
 
 def overlay_files() -> dict[str, Path]:
@@ -91,3 +110,26 @@ def export_env(output: Path | None = None) -> Path:
     path = build(output)
     os.environ[ENV_VAR] = str(path)
     return path
+
+
+_ensured: Path | None = None
+_ensure_lock = threading.Lock()
+
+
+def ensure_exported() -> Path:
+    """:func:`export_env` once per process, then drop ``agent.i18n``'s catalog cache.
+
+    ``agent.i18n`` caches each catalog on first use, so a ``t()`` that ran
+    before the export would keep upstream's text for the life of the process;
+    ``reset_language_cache()`` (its public reset) makes the next ``t()`` read
+    the merged copy. Later calls return the first result without touching disk.
+    Raises on a broken overlay; callers that must not fail catch it.
+    """
+    global _ensured
+    with _ensure_lock:
+        if _ensured is None:
+            _ensured = export_env()
+            i18n = sys.modules.get("agent.i18n")
+            if i18n is not None:
+                i18n.reset_language_cache()
+        return _ensured

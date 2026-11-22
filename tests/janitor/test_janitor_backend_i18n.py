@@ -267,3 +267,82 @@ def test_plain_engine_process_keeps_upstream_catalog(tmp_path):
         [sys.executable, "-c", _CHILD], env=env, cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=120,
     )
     assert result.stdout.strip() == _load(UPSTREAM / "es.yaml")["gateway.status.header"], result.stderr
+
+
+# ── reach: processes the launcher did not start (gateway service) ───────────
+
+_PLUGIN_ONLY = """
+import json, os
+from agent.i18n import t
+before = t('gateway.status.header')
+from gateway.config import load_gateway_config
+load_gateway_config()  # a gateway's startup step: discovers plugins, so the Janitor plugin registers
+after = t('gateway.status.header')
+from janitor.locales import ensure_exported
+first = os.environ.get('HERMES_BUNDLED_LOCALES')
+again = str(ensure_exported())
+print(json.dumps({'before': before, 'after': after, 'exported': first, 'again': again}))
+"""
+
+
+def _service_home(tmp_path: Path) -> tuple[Path, dict]:
+    """A Janitor home as a gateway service sees it: HERMES_HOME set, no launcher environment."""
+    home = tmp_path / ".janitor"
+    home.mkdir()
+    (home / "config.yaml").write_text(
+        "plugins:\n  enabled: [janitor]\ndisplay:\n  language: es\n", encoding="utf-8",
+    )
+    env = launcher_env(tmp_path)
+    env.pop(janitor_locales.ENV_VAR, None)
+    env["HERMES_HOME"] = str(home)
+    return home, env
+
+
+def test_plugin_gives_a_launcherless_gateway_the_janitor_catalog(tmp_path):
+    """A gateway started as a service (no launcher) reads Janitor's catalog once its plugin loads,
+    even for a key ``t()`` had already cached from upstream; a second export is a no-op."""
+    home, env = _service_home(tmp_path)
+    result = subprocess.run(
+        [sys.executable, "-c", _PLUGIN_ONLY], env=env, cwd=str(tmp_path), capture_output=True, text=True, timeout=300,
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
+    seen = json.loads(result.stdout.strip().splitlines()[-1])
+    assert seen["before"] == _load(UPSTREAM / "es.yaml")["gateway.status.header"]
+    assert seen["after"] == "📊 **Estado del gateway de Janitor**"
+    assert seen["exported"] == seen["again"] == str(home / "cache" / "janitor-locales")
+
+
+def test_catalog_export_is_once_per_process(tmp_path, monkeypatch):
+    monkeypatch.setattr(janitor_locales, "_ensured", None)
+    monkeypatch.delenv(janitor_locales.ENV_VAR, raising=False)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "root" / "profiles" / "coder"))
+    first = janitor_locales.ensure_exported()
+    assert first == tmp_path / "root" / "cache" / "janitor-locales", "profiles share the root home's copy"
+    builds = []
+    monkeypatch.setattr(janitor_locales, "build", lambda *a, **kw: builds.append(a))
+    assert janitor_locales.ensure_exported() == first
+    assert builds == []
+
+
+def test_broken_overlay_never_blocks_plugin_registration(tmp_path, monkeypatch):
+    from hermes_cli import plugins
+    from hermes_constants import get_hermes_home
+
+    broken = tmp_path / "overlays"
+    broken.mkdir()
+    (broken / "es.yaml").write_text("gateway: {help: [unclosed\n", encoding="utf-8")
+    monkeypatch.setattr(janitor_locales, "OVERLAY_DIR", broken)
+    monkeypatch.setattr(janitor_locales, "_ensured", None)
+    monkeypatch.delenv(janitor_locales.ENV_VAR, raising=False)
+    home = get_hermes_home()
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "config.yaml").write_text("plugins:\n  enabled: [janitor]\n", encoding="utf-8")
+    plugins._reset_plugin_managers_for_tests()
+    try:
+        plugins.discover_plugins(force=True)
+        loaded = plugins.get_plugin_manager()._plugins["janitor"]
+        assert loaded.enabled and not loaded.error
+        assert plugins.has_hook("pre_gateway_dispatch")
+        assert janitor_locales.ENV_VAR not in os.environ
+    finally:
+        plugins._reset_plugin_managers_for_tests()

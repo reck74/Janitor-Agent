@@ -2,8 +2,7 @@ name: Janitor Desktop release
 
 # Builds the Janitor Desktop AppImage from the upstream apps/desktop plus the
 # apps/desktop-janitor build overlay (directive #17) and, for a `v*` tag,
-# attaches it to the fork's GitHub release (the janitor-desktop-launcher skill
-# downloads it from there).
+# attaches it to the fork's GitHub release, where users download it.
 #
 # The build is always of the commit this run was triggered for (tag push, a
 # manual run from a branch or tag, or a PR head), never of another ref: the app

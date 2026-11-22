@@ -188,46 +188,125 @@ class TestJanitorCLIBranding:
 
 
 class TestOWASPFailSafe:
-    """Test OWASP fail-safe for Honcho memory integration."""
+    """The launcher refuses to open a session on Honcho without anything to connect with,
+    accepts every credential form upstream's Honcho client accepts, and leaves the way out
+    (``janitor memory off``) runnable while it is tripped."""
 
-    def test_owasp_blocked_when_honcho_configured_but_no_env_vars(
-        self, tmp_path, monkeypatch
-    ):
-        """Must exit with code 1 when memory.provider=honcho and no HONCHO_API_KEY."""
-        monkeypatch.delenv("HONCHO_API_KEY", raising=False)
-        monkeypatch.delenv("HONCHO_BASE_URL", raising=False)
-        config_file = tmp_path / "config.yaml"
-        config_file.write_text("memory:\n  provider: honcho\n")
+    @pytest.fixture
+    def home(self, tmp_path, monkeypatch):
+        home = tmp_path / ".janitor"
+        home.mkdir()
+        monkeypatch.setenv("HERMES_HOME", str(home))
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        for name in ("HONCHO_API_KEY", "HONCHO_BASE_URL", "HONCHO_URL"):
+            monkeypatch.delenv(name, raising=False)
+        return home
+
+    HONCHO = {"memory": {"provider": "honcho"}}
+
+    @staticmethod
+    def _refusal(cfg):
         import janitor_cli
 
-        ok, msg = janitor_cli._owasp_honcho_fail_safe_for_test(str(tmp_path))
-        assert not ok, f"OWASP check should have blocked but passed. msg: {msg}"
-        assert "HONCHO_API_KEY" in msg
+        return janitor_cli._honcho_failsafe_refusal(cfg)
 
-    def test_owasp_allows_when_honcho_key_set(self, tmp_path, monkeypatch):
-        """Must NOT block when HONCHO_API_KEY is set even if memory.provider=honcho."""
-        monkeypatch.setenv("HONCHO_API_KEY", "test-key-from-env")
+    def test_blocks_without_any_credential_and_names_the_way_back(self, home):
+        msg = self._refusal(self.HONCHO)
+        assert msg and msg.startswith("FATAL")
+        assert "janitor memory off" in msg
+        assert "fail-safe OWASP" in msg
+
+    def test_profile_refusal_names_the_profile(self, tmp_path, monkeypatch, home):
+        profile = home / "profiles" / "coder"
+        profile.mkdir(parents=True)
+        monkeypatch.setenv("HERMES_HOME", str(profile))
+        assert "janitor -p coder memory off" in self._refusal(self.HONCHO)
+
+    @pytest.mark.parametrize("name,value", [
+        ("HONCHO_API_KEY", "test-key-from-env"),
+        ("HONCHO_BASE_URL", "http://localhost:1973"),
+    ])
+    def test_allows_a_credential_in_the_environment(self, home, monkeypatch, name, value):
+        monkeypatch.setenv(name, value)
+        assert self._refusal(self.HONCHO) is None
+
+    @pytest.mark.parametrize("honcho_json", [
+        {"hosts": {"hermes": {"apiKey": "hch-key"}}},
+        {"apiKey": "hch-key"},
+        {"baseUrl": "http://127.0.0.1:1973"},
+        # What the Honcho wizard / desktop "Connect" store after an OAuth login.
+        {"hosts": {"hermes": {"apiKey": "hch-at-access", "oauth": {
+            "refreshToken": "hch-rt-refresh", "expiresAt": 4102444800, "clientId": "hermes",
+            "tokenEndpoint": "https://auth.example/token"}}}},
+    ])
+    def test_allows_a_credential_only_in_honcho_json(self, home, honcho_json):
+        import json
+
+        (home / "honcho.json").write_text(json.dumps(honcho_json), encoding="utf-8")
+        assert self._refusal(self.HONCHO) is None
+
+    @pytest.mark.parametrize("honcho_json,ok", [
+        ({"hosts": {"hermes": {"oauth": {"refreshToken": "rt"}}}}, True),
+        ({"endpoint": {"baseUrl": "http://127.0.0.1:1973"}}, True),
+        ({"hosts": {"hermes": {"workspace": "w"}}}, False),
+    ])
+    def test_file_fallback_without_the_honcho_plugin(self, home, monkeypatch, honcho_json, ok):
+        import json
+
+        monkeypatch.setitem(sys.modules, "plugins.memory.honcho.client", None)  # import fails
+        (home / "honcho.json").write_text(json.dumps(honcho_json), encoding="utf-8")
+        assert (self._refusal(self.HONCHO) is None) is ok
+
+    def test_allows_when_memory_provider_not_honcho(self, home):
+        assert self._refusal({"memory": {"provider": "mem0"}}) is None
+        assert self._refusal({}) is None
+
+    @pytest.mark.parametrize("args,applies", [
+        ([], True), (["chat", "-q", "hola"], True), (["serve"], True), (["gateway", "run"], True),
+        (["memory", "off"], False), (["-p", "coder", "memory", "off"], False),
+        (["config", "set", "memory.provider", ""], False), (["setup"], False), (["doctor"], False),
+        (["--version"], False), (["-h"], False),
+    ])
+    def test_recovery_commands_are_exempt(self, args, applies):
         import janitor_cli
 
-        ok, msg = janitor_cli._owasp_honcho_fail_safe_for_test(str(tmp_path))
-        assert ok, f"OWASP should allow when HONCHO_API_KEY is set: {msg}"
+        assert janitor_cli._failsafe_applies(["janitor", *args]) is applies
 
-    def test_owasp_allows_when_honcho_base_url_set(self, tmp_path, monkeypatch):
-        """Must NOT block when HONCHO_BASE_URL is set (local Honcho instance)."""
-        monkeypatch.setenv("HONCHO_BASE_URL", "http://localhost:1973")
-        import janitor_cli
+    def test_recovery_command_runs_while_blocked(self, tmp_path):
+        """Real launcher: a session is refused, `janitor memory off` runs and clears the block."""
+        import yaml
+        from janitor.seed import ensure_home
 
-        ok, msg = janitor_cli._owasp_honcho_fail_safe_for_test(str(tmp_path))
-        assert ok, f"OWASP should allow when HONCHO_BASE_URL is set: {msg}"
+        root = tmp_path / ".janitor"
+        ensure_home(root)
+        cfg = yaml.safe_load((root / "config.yaml").read_text(encoding="utf-8")) or {}
+        cfg.setdefault("memory", {})["provider"] = "honcho"
+        (root / "config.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
+        env = {k: v for k, v in launcher_env(tmp_path).items() if not k.startswith("HONCHO_")}
 
-    def test_owasp_allows_when_memory_provider_not_honcho(self, tmp_path, monkeypatch):
-        """Must NOT block when memory.provider is something other than honcho."""
-        config_file = tmp_path / "config.yaml"
-        config_file.write_text("memory:\n  provider: mem0\n")
-        import janitor_cli
+        def launch(*args):
+            return subprocess.run([sys.executable, "-m", "janitor.cli", *args], env=env, cwd=str(tmp_path),
+                                  capture_output=True, text=True, timeout=300, stdin=subprocess.DEVNULL)
 
-        ok, msg = janitor_cli._owasp_honcho_fail_safe_for_test(str(tmp_path))
-        assert ok, f"OWASP should allow when provider is not honcho: {msg}"
+        blocked = launch("chat", "-q", "hola")
+        assert blocked.returncode == 1 and "janitor memory off" in blocked.stderr, blocked.stderr[-2000:]
+
+        recovered = launch("memory", "off")
+        assert recovered.returncode == 0, recovered.stderr[-2000:]
+        assert (yaml.safe_load((root / "config.yaml").read_text(encoding="utf-8"))["memory"]["provider"] or "") == ""
+
+    def test_freshly_seeded_home_never_trips_it(self, tmp_path, monkeypatch):
+        import yaml
+        from janitor.seed import ensure_home
+
+        root = tmp_path / ".janitor"
+        ensure_home(root)
+        monkeypatch.setenv("HERMES_HOME", str(root))
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        for name in ("HONCHO_API_KEY", "HONCHO_BASE_URL", "HONCHO_URL"):
+            monkeypatch.delenv(name, raising=False)
+        cfg = yaml.safe_load((root / "config.yaml").read_text(encoding="utf-8")) or {}
+        assert self._refusal(cfg) is None
 
 
 class TestJanitorVersionDisplay:
