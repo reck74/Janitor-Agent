@@ -41,11 +41,23 @@ skills:
     platforms: [linux, macos]
     templates: [main]
 
-  # PENDIENTE (fase 3, F3-01..F3-05): las cinco skills de administración del
-  # equipo todavía no existen. Irán aquí, con `source: janitor`, cuando se
-  # creen: limpieza del equipo, organización de archivos, salud del sistema,
-  # mantenimiento programado y creación de proyectos. No se listan antes de
-  # existir: `check` exige que cada entrada resuelva a su SKILL.md.
+  - id: janitor-system-health
+    source: janitor
+    path: system/janitor-system-health
+    purpose: sistema
+    platforms: [linux]
+    templates: [main]
+
+  - id: janitor-maintenance
+    source: janitor
+    path: system/janitor-maintenance
+    purpose: sistema
+    platforms: [linux]
+    templates: [main]
+
+  # PENDIENTE (fase 3): limpieza del equipo (F3-01), organización de archivos
+  # (F3-02) y creación de proyectos (F3-05) se añaden aquí cuando existan y
+  # estén auditadas. `check` exige que cada entrada resuelva a su SKILL.md.
 
   # --- Documentos y oficina --------------------------------------------
   - id: pdf
