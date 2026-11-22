@@ -55,9 +55,19 @@ skills:
     platforms: [linux]
     templates: [main]
 
-  # PENDIENTE (fase 3): limpieza del equipo (F3-01), organización de archivos
-  # (F3-02) y creación de proyectos (F3-05) se añaden aquí cuando existan y
-  # estén auditadas. `check` exige que cada entrada resuelva a su SKILL.md.
+  - id: janitor-cleanup
+    source: janitor
+    path: system/janitor-cleanup
+    purpose: sistema
+    platforms: [linux]
+    templates: [main]
+
+  - id: janitor-file-organizer
+    source: janitor
+    path: system/janitor-file-organizer
+    purpose: sistema
+    platforms: [linux]
+    templates: [main]
 
   # --- Documentos y oficina --------------------------------------------
   - id: pdf
