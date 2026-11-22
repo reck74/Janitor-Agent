@@ -18,6 +18,11 @@ Idempotent, and it never overwrites what the user wrote:
   module just seeded, never for an existing one.
 * ``.env`` is never touched.
 
+Every call also installs or refreshes the Janitor desktop plugin
+(:func:`janitor.desktop_plugin.sync`: the "Servicios" screen and its backend
+routes). That refresh follows the release, not the seed, so it is not part of
+the returned list; a copy the user edited is backed up before it is replaced.
+
 A new home is provisioned from the catalog's ``main`` template: the seed
 writes ``janitor.template`` and ``janitor.skills`` (plus ``janitor.catalog_seen``)
 and generates ``skills.external_dirs`` with ``janitor.catalog.reconcile_config``
@@ -194,6 +199,9 @@ def ensure_home(home: Optional[Path] = None) -> List[str]:
             write_layout_version(LAYOUT_VERSION, home)
             changes.append(f".layout_version={LAYOUT_VERSION}")
 
+    from janitor import desktop_plugin
+
+    desktop_plugin.sync(home)
     return changes
 
 

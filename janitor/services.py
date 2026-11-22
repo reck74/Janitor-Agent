@@ -127,6 +127,36 @@ def container_states(service: Service, runner: Runner = subprocess.run) -> dict[
     return states
 
 
+DOCKER_OK = "ok"
+DOCKER_MISSING = "missing"          # no ``docker`` CLI on PATH
+DOCKER_UNAVAILABLE = "unavailable"  # CLI present, daemon down or no permission
+DOCKER_TIMEOUT = "timeout"
+
+
+def docker_status(runner: Runner = subprocess.run, timeout: float = 10.0) -> str:
+    """Whether the Docker daemon answers (read-only): one of the ``DOCKER_*`` values.
+
+    ``container_states`` reports every container ``absent`` when the daemon is
+    down, which would read as "not deployed"; callers that show state to a
+    user check this first.
+    """
+    try:
+        proc = runner(
+            ["docker", "version", "--format", "{{.Server.Version}}"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout,
+        )
+    except FileNotFoundError:
+        return DOCKER_MISSING
+    except subprocess.TimeoutExpired:
+        return DOCKER_TIMEOUT
+    except OSError:
+        return DOCKER_UNAVAILABLE
+    return DOCKER_OK if proc.returncode == 0 and (proc.stdout or "").strip() else DOCKER_UNAVAILABLE
+
+
 def summarize(states: dict[str, str]) -> str:
     values = set(states.values())
     if values == {"running"}:
