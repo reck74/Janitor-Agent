@@ -43,15 +43,27 @@ def _use_janitor_tips() -> None:
     tips.get_random_tip = get_janitor_tip
 
 
+def _route_gateway_update() -> None:
+    """``/update`` from a messaging platform runs ``janitor update`` (directive #13)."""
+    try:
+        from janitor.plugin import gateway_update
+
+        gateway_update.install()
+    except Exception as exc:  # noqa: BLE001 — the gateway must still start; /update then runs upstream's flow
+        logger.warning("Janitor could not route /update through `janitor update`: %s", exc)
+
+
 def register(ctx: Any) -> None:
     _export_message_catalogs()
     _use_janitor_tips()
+    _route_gateway_update()
 
     from janitor import profile_templates, services
     from janitor.language import language_prompt_section
-    from janitor.plugin import telegram
+    from janitor.plugin import gateway_update, telegram
 
     ctx.register_hook("pre_gateway_dispatch", telegram.pre_gateway_dispatch)
+    ctx.register_hook("pre_gateway_dispatch", gateway_update.pre_gateway_dispatch)
     ctx.register_system_prompt_section("janitor.language", language_prompt_section)
     ctx.register_cli_command(
         "services",

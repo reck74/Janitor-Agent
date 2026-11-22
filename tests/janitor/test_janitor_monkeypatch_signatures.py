@@ -126,3 +126,66 @@ class TestArgparseInitSignature:
         )
         assert parser.prog == "janitor-test"
         assert parser.description == "test"
+
+
+class TestGatewayUpdateSpawner:
+    """gateway.slash_commands._spawn_detached_update — wrapped by the Janitor plugin so the
+    messaging ``/update`` runs ``janitor update`` (directive #13), not upstream's flow."""
+
+    @pytest.fixture
+    def spawner(self, monkeypatch):
+        import gateway.run  # noqa: F401 — install() only acts in a gateway process
+        import gateway.slash_commands as slash_commands
+        from janitor.plugin import gateway_update
+
+        original = slash_commands._spawn_detached_update
+        monkeypatch.setattr(slash_commands, "_spawn_detached_update", original)
+        assert gateway_update.install() is True
+        assert gateway_update.install() is True  # a plugin reload must not nest wrappers
+        return slash_commands, original
+
+    def test_wrapper_signature_covers_original(self, spawner):
+        slash_commands, original = spawner
+        wrapper = slash_commands._spawn_detached_update
+
+        assert wrapper._janitor_original is original
+        missing = _missing_params(original, wrapper)
+        assert not missing, (
+            f"upstream _spawn_detached_update now accepts {sorted(missing)} which the "
+            f"wrapper in janitor/plugin/gateway_update.py does not."
+        )
+
+    def test_dispatch_hook_installs_the_wrapper_when_registration_came_too_early(self, monkeypatch):
+        """Plugins can register before ``gateway.run`` exists; the first message fixes it."""
+        import gateway.run  # noqa: F401
+        import gateway.slash_commands as slash_commands
+        from janitor.plugin import gateway_update
+
+        original = getattr(
+            slash_commands._spawn_detached_update, "_janitor_original", slash_commands._spawn_detached_update
+        )
+        monkeypatch.setattr(slash_commands, "_spawn_detached_update", original)
+
+        assert gateway_update.pre_gateway_dispatch(event=None, gateway=None) is None
+        assert slash_commands._spawn_detached_update._janitor_original is original
+
+    @pytest.mark.linux_only
+    def test_update_command_runs_the_janitor_launcher(self, spawner, monkeypatch, tmp_path):
+        import subprocess
+        import sys
+
+        from janitor.update_core import parse_update_args
+
+        slash_commands, _original = spawner
+        spawned = []
+        monkeypatch.setattr(subprocess, "Popen", lambda argv, **_kw: spawned.append(argv))
+
+        upstream_argv = [sys.executable, "-m", "hermes_cli.main"]
+        slash_commands._spawn_detached_update(upstream_argv, tmp_path / "out.txt", tmp_path / "code")
+
+        (argv,) = spawned
+        shell_command = argv[-1]
+        assert f"{sys.executable} -m janitor.cli update --gateway" in shell_command
+        assert "hermes_cli.main" not in shell_command
+        # The flags upstream appends are ones the Janitor update understands.
+        assert parse_update_args(["--gateway"]).gateway is True
