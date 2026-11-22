@@ -9,7 +9,11 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import socket
 import sys
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -89,7 +93,8 @@ class FakeDocker:
 
 @pytest.fixture
 def services_root(tmp_path):
-    """Two services shaped like the shipped ones (one multi-container)."""
+    """Two services shaped like the shipped ones (one multi-container). No ``url``:
+    a running service here must never make the listing call a real local port."""
     root = tmp_path / "services"
     for name, containers in (("alpha", ["janitor-alpha"]), ("beta", ["janitor-beta-api", "janitor-beta-db"])):
         skill = root / f"janitor-{name}"
@@ -97,7 +102,7 @@ def services_root(tmp_path):
         (skill / "SKILL.md").write_text(f"---\nname: janitor-{name}\n---\n")
         (skill / "service.yaml").write_text(yaml.safe_dump({
             "name": name, "description": f"{name} service", "deploy": "scripts/deploy.sh",
-            "url": f"http://127.0.0.1:{len(name)}000", "containers": containers,
+            "containers": containers,
         }))
     return root
 
@@ -193,6 +198,114 @@ def test_a_hanging_docker_is_bounded(docker, services_root, monkeypatch):
     view = api.list_view(root=services_root)
     assert view["docker"]["status"] == "timeout"
     assert {s["state"] for s in view["services"]} == {"docker_unavailable"}
+
+
+# ── health: a running container is not a working service (F4-06) ─────────
+
+
+class _Answers401(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.server.hits.append(self.path)
+        self.send_response(401)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def log_message(self, *args):
+        pass
+
+
+@pytest.fixture
+def http_server():
+    """A real HTTP server on an ephemeral loopback port that answers 401 to everything."""
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Answers401)
+    server.hits = []
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    yield server
+    server.shutdown()
+    server.server_close()
+
+
+def _closed_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def _set_url(root: Path, name: str, url: str) -> None:
+    manifest = root / f"janitor-{name}" / "service.yaml"
+    data = yaml.safe_load(manifest.read_text())
+    manifest.write_text(yaml.safe_dump({**data, "url": url}))
+
+
+_ALL_RUNNING = {"janitor-alpha": "running", "janitor-beta-api": "running", "janitor-beta-db": "running"}
+
+
+def test_running_service_that_answers_is_responding(docker, services_root, http_server):
+    _set_url(services_root, "alpha", f"http://127.0.0.1:{http_server.server_port}/health")
+    docker.set(_ALL_RUNNING)
+
+    view = _by_name(api.list_view(root=services_root))
+
+    assert view["alpha"]["state"] == "running" and view["alpha"]["health"] == "responding"
+    assert http_server.hits == ["/health"]
+    # No url: the plain container state, honestly unchecked.
+    assert view["beta"]["state"] == "running" and view["beta"]["health"] == "unchecked"
+
+
+def test_running_container_on_a_closed_port_is_not_responding(docker, services_root):
+    _set_url(services_root, "alpha", f"http://localhost:{_closed_port()}")
+    docker.set(_ALL_RUNNING)
+
+    alpha = _by_name(api.list_view(root=services_root))["alpha"]
+
+    assert alpha["state"] == "running" and alpha["health"] == "not_responding"
+
+
+def test_a_silent_listener_is_not_responding_within_the_budget(docker, services_root, monkeypatch):
+    """Accepts the connection, never answers: the listing still returns, bounded."""
+    monkeypatch.setattr(api, "HEALTH_BUDGET", 0.5)
+    with socket.socket() as silent:
+        silent.bind(("127.0.0.1", 0))
+        silent.listen(8)
+        for name in ("alpha", "beta"):
+            _set_url(services_root, name, f"http://127.0.0.1:{silent.getsockname()[1]}")
+        docker.set(_ALL_RUNNING)
+
+        started = time.monotonic()
+        view = _by_name(api.list_view(root=services_root))
+        elapsed = time.monotonic() - started
+
+    assert {s["health"] for s in view.values()} == {"not_responding"}
+    assert elapsed < 4.0  # both probes in parallel, under the budget (+ fake docker)
+
+
+@pytest.mark.parametrize("url", [
+    "http://192.0.2.10:{port}", "http://127.0.0.2:{port}", "http://127.0.0.1@example.invalid:{port}",
+    "http://localhost.example.invalid:{port}", "file:///etc/passwd", "ftp://127.0.0.1:{port}",
+])
+def test_non_loopback_urls_are_never_requested(docker, services_root, http_server, monkeypatch, url):
+    connects = []
+    real = socket.create_connection
+    monkeypatch.setattr(socket, "create_connection", lambda *a, **k: connects.append(a) or real(*a, **k))
+    _set_url(services_root, "alpha", url.format(port=http_server.server_port))
+    docker.set(_ALL_RUNNING)
+
+    alpha = _by_name(api.list_view(root=services_root))["alpha"]
+
+    assert alpha["state"] == "running" and alpha["health"] == "unchecked"
+    assert connects == [] and http_server.hits == []
+
+
+def test_health_is_only_reported_for_running_services(docker, services_root, http_server):
+    _set_url(services_root, "beta", f"http://127.0.0.1:{http_server.server_port}")
+    docker.set({"janitor-beta-api": "running", "janitor-beta-db": "exited"})
+
+    view = _by_name(api.list_view(root=services_root))
+
+    assert view["beta"]["state"] == "partial" and view["beta"]["health"] is None
+    assert view["alpha"]["state"] == "not_installed" and view["alpha"]["health"] is None
+    assert http_server.hits == []
 
 
 # ── actions ────────────────────────────────────────────────────────────────

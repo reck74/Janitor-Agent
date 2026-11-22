@@ -84,7 +84,7 @@ export function appInfo(skill, fallbackName) {
 }
 
 const STATES = {
-  running: { label: 'En marcha', variant: 'success', actions: ['stop'] },
+  running: { label: 'Contenedor en marcha', variant: 'success', actions: ['stop'] },
   partial: { label: 'En marcha a medias', variant: 'warn', actions: ['start', 'stop'] },
   stopped: { label: 'Detenido', variant: 'muted', actions: ['start'] },
   not_installed: { label: 'No instalado', variant: 'outline', actions: ['install'] },
@@ -92,9 +92,40 @@ const STATES = {
   unknown: { label: 'Estado desconocido', variant: 'muted', actions: ['install'] }
 }
 
-/** Badge label/variant and the buttons a service in `state` offers. */
-export function stateView(state) {
-  return STATES[state] ?? STATES.unknown
+/** A running service, refined by whether its local address answers (backend `health`).
+ *  `unchecked` (no address to ask) keeps the plain container state. */
+const HEALTH = {
+  responding: { label: 'En marcha', variant: 'success', actions: ['stop'], openable: true },
+  not_responding: {
+    label: 'Contenedor en marcha, no responde',
+    variant: 'warn',
+    actions: ['stop'],
+    openable: false,
+    hint:
+      'El contenedor está arriba, pero el servicio no contesta en su dirección. Si lo acabas de iniciar, ' +
+      'espera un poco; si sigue así, está caído: revisa sus registros o pídeselo a Janitor.'
+  }
+}
+
+/** Badge label/variant, the buttons a service in `state` offers, whether «Abrir»
+ *  makes sense and, when something is off, a line explaining it. */
+export function stateView(state, health) {
+  if (state === 'running' && HEALTH[health]) {
+    return HEALTH[health]
+  }
+
+  const view = STATES[state] ?? STATES.unknown
+
+  return { ...view, openable: state === 'running' || state === 'partial' }
+}
+
+const PENDING = {
+  start: 'Iniciando… Docker puede tardar hasta un par de minutos.',
+  stop: 'Deteniendo…'
+}
+
+export function pendingText(action) {
+  return PENDING[action] ?? 'Trabajando…'
 }
 
 const CONTAINER_STATES = {
@@ -173,6 +204,7 @@ export function entriesFrom(payload) {
       skillMd: s.skill_md,
       url: s.url,
       state: s.state,
+      health: s.health ?? null,
       containers: Array.isArray(s.containers) ? s.containers : [],
       managed: true,
       ...appInfo(s.skill, s.name)
@@ -184,6 +216,7 @@ export function entriesFrom(payload) {
       skillMd: a.skill_md,
       url: '',
       state: 'unknown',
+      health: null,
       containers: [],
       managed: false,
       ...appInfo(a.skill, a.skill)
@@ -290,8 +323,7 @@ export function restErrorCode(error) {
 function ServiceRow({ ctx, entry, onChanged }) {
   const [pending, setPending] = useState(null)
   const [error, setError] = useState(null)
-  const view = stateView(entry.state)
-  const running = entry.state === 'running' || entry.state === 'partial'
+  const view = stateView(entry.state, entry.health)
 
   const run = async action => {
     if (!isValidServiceName(entry.name)) {
@@ -367,12 +399,14 @@ function ServiceRow({ ctx, entry, onChanged }) {
       entry.note ? jsx('p', { style: S.note, children: entry.note }) : null,
       entry.url ? jsx('p', { style: S.meta, children: `Dirección: ${entry.url}` }) : null,
       containers ? jsx('p', { style: S.meta, children: containers }) : null,
+      view.hint ? jsx('p', { style: S.note, children: view.hint }) : null,
+      pending ? jsx('p', { role: 'status', style: S.meta, children: pendingText(pending) }) : null,
       error ? jsx('p', { role: 'alert', style: S.error, children: error }) : null,
       jsxs('div', {
         style: S.actions,
         children: [
           ...buttons,
-          running && isOpenableUrl(entry.url)
+          view.openable && isOpenableUrl(entry.url)
             ? jsx(
                 Button,
                 { onClick: () => void ctx.os.openExternal(entry.url), size: 'sm', variant: 'ghost', children: 'Abrir' },

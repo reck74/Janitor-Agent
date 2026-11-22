@@ -163,6 +163,48 @@ def test_deploy_runs_the_skill_script_with_janitor_env(monkeypatch):
     assert seen["env"]["JANITOR_SOURCE_DIR"] == str(REPO_ROOT)
 
 
+def test_status_tells_a_running_container_from_a_service_that_answers(tmp_path, monkeypatch):
+    """`janitor services status` asks the loopback url of a running service (F4-06)."""
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    import socket
+    import threading
+
+    class NotFound(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(404)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), NotFound)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        closed = sock.getsockname()[1]
+
+    def svc(name, url):
+        return services.Service(name, "", tmp_path, "deploy.sh", "", url, (f"janitor-{name}",))
+
+    fleet = [svc("up", f"http://127.0.0.1:{server.server_port}"),
+             svc("booting", f"http://127.0.0.1:{closed}"), svc("nourl", "")]
+    monkeypatch.setattr(services, "discover_services", lambda root=None: fleet)
+    docker = FakeDocker({f"janitor-{s.name}": "running" for s in fleet})
+    lines: list[str] = []
+    try:
+        assert services.handle(_args("status"), runner=docker, out=lines.append) == 0
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    heads = {l.split(":", 1)[0]: l for l in lines if not l.startswith(" ")}
+    assert heads["up"] == "up: running: responde"
+    assert heads["booting"] == "booting: running: contenedor en marcha, el servicio no responde (todavía)"
+    assert heads["nourl"] == "nourl: running: contenedor en marcha"
+    assert docker.mutating() == []
+
+
 def test_missing_docker_is_a_clean_error():
     def runner(argv, **kwargs):
         raise FileNotFoundError(argv[0])
@@ -228,7 +270,7 @@ def test_services_status_end_to_end_with_fake_docker(fresh_home):
         f"#!{sys.executable}\n"
         "import sys\n"
         f"open({str(log)!r}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"
-        "print('running' if sys.argv[1] == 'inspect' else '')\n",
+        "print('exited' if sys.argv[1] == 'inspect' else '')\n",
         encoding="utf-8",
     )
     fake.chmod(0o755)
@@ -237,7 +279,9 @@ def test_services_status_end_to_end_with_fake_docker(fresh_home):
 
     result = _janitor(fresh_home, "services", "status", "honcho", env=env)
     assert result.returncode == 0, result.stderr
-    assert "honcho: running" in result.stdout
+    # Containers reported stopped: a running one would make `status` call the
+    # honcho url, which on a developer machine is the real local service.
+    assert "honcho: stopped" in result.stdout
 
     result = _janitor(fresh_home, "services", "stop", "honcho", env=env)
     assert result.returncode == 0, result.stderr

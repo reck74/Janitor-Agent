@@ -112,6 +112,28 @@ test('each state maps to a badge and only the buttons that make sense for it', (
   assert.equal(new Set(labels).size, labels.length, 'every state reads differently')
 })
 
+test('a running container is not a working service: health decides the badge and «Abrir»', () => {
+  const responding = plugin.stateView('running', 'responding')
+  const silent = plugin.stateView('running', 'not_responding')
+  const unchecked = plugin.stateView('running', 'unchecked')
+  const oldBackend = plugin.stateView('running', undefined)
+
+  assert.equal(responding.openable, true)
+  assert.equal(silent.openable, false)
+  assert.match(silent.hint, /no contesta/)
+  assert.equal(unchecked.label, oldBackend.label)
+  assert.match(unchecked.label, /[Cc]ontenedor/)
+  assert.equal(new Set([responding.label, silent.label, unchecked.label]).size, 3)
+  for (const view of [responding, silent, unchecked]) {
+    assert.deepEqual(view.actions, ['stop'])
+  }
+  // Health only refines a running service; it never turns a stopped one into "En marcha".
+  assert.equal(plugin.stateView('stopped', 'responding').label, plugin.stateView('stopped').label)
+
+  const [entry] = plugin.entriesFrom({ services: [{ name: 'n8n', skill: 'janitor-n8n', state: 'running', health: 'not_responding' }] })
+  assert.equal(entry.health, 'not_responding')
+})
+
 test('the install hand-off names the guided skill and asks for confirmation, without sending anything', () => {
   const text = plugin.installRequest({
     label: 'Honcho',
@@ -160,7 +182,13 @@ test('visible copy never says Hermes', () => {
   const texts = [
     ...Object.values(plugin.APPS).flatMap(a => [a.label, a.description, a.note ?? '']),
     ...['ok', 'missing', 'unavailable', 'timeout'].map(status => plugin.dockerLine({ status })),
-    ...['busy', 'docker_unavailable', 'not_installed', 'timeout', 'docker_failed', 'x'].map(plugin.errorText)
+    ...['busy', 'docker_unavailable', 'not_installed', 'timeout', 'docker_failed', 'x'].map(plugin.errorText),
+    ...['start', 'stop', 'x'].map(plugin.pendingText),
+    ...['responding', 'not_responding', 'unchecked'].flatMap(h => {
+      const view = plugin.stateView('running', h)
+
+      return [view.label, view.hint ?? '']
+    })
   ]
 
   for (const text of texts) {

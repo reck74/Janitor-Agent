@@ -17,15 +17,23 @@ and therefore the volume prefix — differs between installs. Container names
 are fixed by ``container_name:`` in every compose file and are stable.
 
 Nothing here ever removes Docker volumes: user data survives ``uninstall``.
+
+A running container is not a working service: when every container runs and
+the manifest declares a loopback ``url``, :func:`check_health` asks it once
+(read-only GET, short timeout, no redirects followed) whether it answers.
 """
 
 from __future__ import annotations
 
+import http.client
 import os
+import ssl
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Sequence
+from typing import Callable, Iterable, Optional, Sequence
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -168,6 +176,101 @@ def summarize(states: dict[str, str]) -> str:
     return "stopped"
 
 
+# ── health: does the running service answer? ──────────────────────────────
+
+HEALTH_RESPONDING = "responding"          # an HTTP response came back (any status)
+HEALTH_NOT_RESPONDING = "not_responding"  # connection refused / reset / timed out
+HEALTH_UNCHECKED = "unchecked"            # no url, or a url this module will not call
+HEALTH_TIMEOUT = 2.0
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def _loopback_target(url: str) -> Optional[tuple[str, str, Optional[int], str]]:
+    """``(scheme, host, port, path)`` for an http(s) url on loopback; ``None`` for anything else."""
+    try:
+        parts = urlsplit(url or "")
+        port = parts.port
+    except ValueError:
+        return None
+    if parts.scheme not in ("http", "https") or (parts.hostname or "") not in LOOPBACK_HOSTS:
+        return None
+    return parts.scheme, parts.hostname, port, parts.path or "/"
+
+
+def probe_url(url: str, timeout: float = HEALTH_TIMEOUT) -> str:
+    """One GET against a loopback ``url``: any HTTP status (401, 404, 3xx…) means it answers.
+
+    Redirects are never followed and the body is never read. A url whose host
+    is not 127.0.0.1 / localhost / ::1 is not requested at all.
+    """
+    target = _loopback_target(url)
+    if target is None or timeout <= 0:
+        return HEALTH_UNCHECKED
+    scheme, host, port, path = target
+    if scheme == "https":
+        # Liveness only, on loopback, sending nothing: a self-signed local
+        # certificate must not read as "down".
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        conn = http.client.HTTPSConnection(host, port, timeout=timeout, context=context)
+    else:
+        conn = http.client.HTTPConnection(host, port, timeout=timeout)
+    try:
+        conn.request("GET", path, headers={"Connection": "close"})
+        conn.getresponse()
+    except (OSError, http.client.HTTPException):
+        return HEALTH_NOT_RESPONDING
+    finally:
+        conn.close()
+    return HEALTH_RESPONDING
+
+
+def check_health(
+    entries: Iterable[tuple[Service, Optional[dict]]], budget: float = HEALTH_TIMEOUT
+) -> dict[str, Optional[str]]:
+    """Service name -> health (``HEALTH_*``) for every service whose containers all run.
+
+    Other services map to ``None`` (their container state already says it all).
+    Probes run in parallel and the whole call returns within about ``budget``
+    seconds; a probe still pending then counts as not responding.
+    """
+    result: dict[str, Optional[str]] = {}
+    to_probe: list[Service] = []
+    for service, states in entries:
+        if not states or summarize(states) != "running":
+            result[service.name] = None
+        elif _loopback_target(service.url) is None:
+            result[service.name] = HEALTH_UNCHECKED
+        else:
+            to_probe.append(service)
+    if not to_probe:
+        return result
+    timeout = min(HEALTH_TIMEOUT, budget)
+    if timeout <= 0:
+        result.update({s.name: HEALTH_UNCHECKED for s in to_probe})
+        return result
+    pool = ThreadPoolExecutor(max_workers=len(to_probe), thread_name_prefix="janitor-health")
+    futures = {pool.submit(probe_url, s.url, timeout): s for s in to_probe}
+    wait(futures, timeout=budget)
+    pool.shutdown(wait=False)
+    for future, service in futures.items():
+        result[service.name] = future.result() if future.done() else HEALTH_NOT_RESPONDING
+    return result
+
+
+_HEALTH_TEXT = {
+    HEALTH_RESPONDING: "responde",
+    HEALTH_NOT_RESPONDING: "contenedor en marcha, el servicio no responde (todavía)",
+    HEALTH_UNCHECKED: "contenedor en marcha",
+}
+
+
+def state_text(summary: str, health: Optional[str]) -> str:
+    """CLI state cell: the container summary, qualified by health when it is known."""
+    return f"{summary}: {_HEALTH_TEXT[health]}" if health else summary
+
+
 def deploy(service: Service, runner: Runner = subprocess.run) -> int:
     script = service.deploy_script
     if not script.is_file():
@@ -228,18 +331,21 @@ def setup_parser(parser) -> None:
 def handle(args, runner: Runner = subprocess.run, out=print) -> int:
     action = getattr(args, "services_action", None) or "list"
     try:
-        if action == "list":
-            for service in discover_services():
-                state = summarize(container_states(service, runner))
-                out(f"{service.name:<10} {state:<13} {service.url:<24} {service.description}")
-            return 0
-        if action == "status":
-            services = [get_service(args.name)] if args.name else discover_services()
-            for service in services:
-                states = container_states(service, runner)
-                out(f"{service.name}: {summarize(states)}")
-                for container, state in states.items():
-                    out(f"  {container:<32} {state}")
+        if action in ("list", "status"):
+            if action == "list" or not args.name:
+                services = discover_services()
+            else:
+                services = [get_service(args.name)]
+            rows = [(service, container_states(service, runner)) for service in services]
+            health = check_health(rows)
+            for service, states in rows:
+                state = state_text(summarize(states), health[service.name])
+                if action == "list":
+                    out(f"{service.name:<10} {state:<13} {service.url:<24} {service.description}")
+                    continue
+                out(f"{service.name}: {state}")
+                for container, container_state in states.items():
+                    out(f"  {container:<32} {container_state}")
             return 0
         service = get_service(args.name)
         if action == "deploy":

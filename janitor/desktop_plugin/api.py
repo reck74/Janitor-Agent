@@ -16,7 +16,11 @@ Read/act surface over :mod:`janitor.services`, safe by construction:
   containers). Deploy goes through the agent's guided skill; uninstall stays
   CLI-only;
 * Docker missing / down / slow is a state in the payload, never a 500;
-* every Docker call runs under a deadline; one action per service at a time.
+* every Docker call runs under a deadline; one action per service at a time;
+* a ``running`` service also carries ``health`` (``janitor.services.HEALTH_*``):
+  whether its loopback ``url`` answers, so a container that is up while the
+  application inside is down or still booting does not read as ready. The
+  probes of one listing run in parallel under ``HEALTH_BUDGET``.
 """
 
 from __future__ import annotations
@@ -36,6 +40,7 @@ APPS_PURPOSE = "aplicativos"
 PROBE_TIMEOUT = 10.0    # docker version
 LIST_TIMEOUT = 30.0     # every inspect of one listing
 ACTION_TIMEOUT = 120.0  # inspect + start/stop of one service
+HEALTH_BUDGET = 3.0     # every HTTP probe of one listing or action, in parallel
 
 STATE_RUNNING = "running"
 STATE_PARTIAL = "partial"
@@ -87,7 +92,8 @@ def resolve_service(name: str, root: Path = services.SERVICES_ROOT) -> services.
     raise UnknownService(name)
 
 
-def _service_view(service: services.Service, docker: str, states: Optional[dict]) -> dict:
+def _service_view(service: services.Service, docker: str, states: Optional[dict],
+                  health: Optional[str] = None) -> dict:
     if states is not None:
         state = _SUMMARY_STATE[services.summarize(states)]
     elif docker == services.DOCKER_MISSING:
@@ -103,6 +109,7 @@ def _service_view(service: services.Service, docker: str, states: Optional[dict]
         "description": service.description,
         "url": service.url,
         "state": state,
+        "health": health if state == STATE_RUNNING else None,
         "containers": [
             {"name": c, "state": container_state.get(c, "unknown")} for c in service.containers
         ],
@@ -146,10 +153,12 @@ def list_view(runner: Runner = subprocess.run, root: Path = services.SERVICES_RO
     """Docker availability, every service with its state, and the stateless apps."""
     docker = services.docker_status(runner, PROBE_TIMEOUT)
     bounded = _deadline_runner(runner, time.monotonic() + LIST_TIMEOUT)
-    items = []
-    for service in services.discover_services(root):
-        states = _states(service, bounded) if docker == services.DOCKER_OK else None
-        items.append(_service_view(service, docker, states))
+    rows = [
+        (service, _states(service, bounded) if docker == services.DOCKER_OK else None)
+        for service in services.discover_services(root)
+    ]
+    health = services.check_health(rows, HEALTH_BUDGET)
+    items = [_service_view(service, docker, states, health[service.name]) for service, states in rows]
     return {
         "docker": {"available": docker == services.DOCKER_OK, "status": docker},
         "services": items,
@@ -196,7 +205,9 @@ def act(name: str, action: str, runner: Runner = subprocess.run,
         else:
             error = None if code == 0 else "docker_failed"
         after = _states(service, _deadline_runner(runner, time.monotonic() + PROBE_TIMEOUT))
-        return {"ok": error is None, "error": error, "service": _service_view(service, docker, after)}
+        health = services.check_health([(service, after)], HEALTH_BUDGET)[service.name]
+        return {"ok": error is None, "error": error,
+                "service": _service_view(service, docker, after, health)}
     finally:
         lock.release()
 
