@@ -109,6 +109,8 @@ scripts/janitor-sync-verify.sh
 | `python -m janitor.overlay check` | un archivo difiere de upstream sin estar declarado | volver a upstream, o declararlo como touchpoint con su `why` |
 | `tests/janitor/` | contrato de touchpoints (versión `+janitor.N`, banner, packaging, cache refresh, endpoints MCP), firmas de monkey-patch (#14), definiciones duplicadas (#15), preservación de `~/.janitor`, plugin, servicios, skills, skin | actualizar el código Janitor, **nunca** debilitar el test |
 | Overlay desktop | un asset destino ya no existe upstream, o el `productName` empaquetado deja de coincidir (rompería el `userData` de los usuarios) | ajustar `apps/desktop-janitor/` |
+| Parches de marca (`node apps/desktop-janitor/scripts/build.mjs --check`, directiva #17) | upstream movió o cambió el texto ancla de un parche en `apps/desktop/` (la salida nombra el parche con `FAIL <id>`), o un archivo parcheado deja de transpilar | rehacer el ancla de ese parche en `apps/desktop-janitor/brand/`; nunca editar `apps/desktop/`. Sin `node_modules` los `.tsx` no se transpilan (`skip transpile`); el job `desktop-overlay` de `janitor-ci.yml` sí los cubre |
+| `tests/janitor/` → touchpoint `desktop-update-posix` | upstream cambió `scripts/desktop-update/posix.sh` y la actualización desde la app vuelve a llamar a `hermes update` | re-aplicar el bloque `# JANITOR:` tras la elección de `UPDATE_INVOKE` (directiva #13) |
 | TUI (`npm run build` + `npm test`, directiva #7) | el hook de branding del skin o el TUI no compila | re-aplicar el touchpoint `tui-branding-hook` |
 
 **Directiva #14.** Si upstream añade parámetros a una función que

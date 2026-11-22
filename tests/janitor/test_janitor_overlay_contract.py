@@ -75,16 +75,30 @@ def check_install_sh(tmp_path):
     assert (home / ".no-bundled-skills").is_file()
 
 
+def check_desktop_update_posix(tmp_path):
+    """The desktop's update hand-off drives `janitor update` with flags its parser accepts."""
+    from tests.janitor.desktop_update_harness import run_posix_handoff
+
+    seen = run_posix_handoff(tmp_path)
+    assert seen["hermes"] == [], seen
+    assert len(seen["core"]) == 1, seen
+    args = seen["core"][0]
+    assert args["keep_stash"] is True and args["yes"] is True and args["gateway"] is True, args
+    assert args["branch"] == "main", args
+    assert seen["result"]["ok"] is True, seen["result"]
+
+
 CHECKS = {
     "version": check_version,
     "packaging": check_packaging,
     "banner": check_banner,
     "mcp-dashboard-endpoints": check_mcp_dashboard_endpoints,
     "install-sh": check_install_sh,
+    "desktop-update-posix": check_desktop_update_posix,
 }
 
 # Checks that drive a POSIX shell script run on Linux only (directive #11 lanes).
-_LINUX_ONLY_CHECKS = {"install-sh"}
+_LINUX_ONLY_CHECKS = {"install-sh", "desktop-update-posix"}
 
 
 @pytest.fixture(scope="module")
@@ -107,7 +121,7 @@ def test_touchpoint_contract(check_id, capsys, tmp_path):
     check = CHECKS[check_id]
     if check is check_banner:
         check(capsys)
-    elif check is check_install_sh:
+    elif check in (check_install_sh, check_desktop_update_posix):
         check(tmp_path)
     else:
         check()

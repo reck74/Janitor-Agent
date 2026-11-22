@@ -134,6 +134,18 @@ touchpoints:
     verify: test:install-sh
     merge: reapply
 
+  - id: desktop-update-posix
+    files: [scripts/desktop-update/posix.sh]
+    why: >-
+      The desktop app's POSIX update hand-off runs `venv/bin/janitor update`
+      (or `python -m janitor.cli update` on the bricked-alias fallback)
+      instead of `hermes update` whenever the checkout's venv has the
+      `janitor` script, so app-driven updates go through
+      janitor/update_core.py (directive #13). One `# JANITOR:` block right
+      after the update invoke is chosen.
+    verify: test:desktop-update-posix
+    merge: reapply
+
   - id: fork-docs
     files: [AGENTS.md, README.md, CHANGELOG.md, MERGE_GUIDE.md, .env.example, .gitignore]
     why: Fork directives, docs and ignore rules.

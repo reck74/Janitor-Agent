@@ -35,6 +35,8 @@ The 11-step pipeline:
  11. Marker cleanup, stash restore LAST (using persisted marker stash_ref
      as fallback when the current run did not produce a new stash), success
      banner. Cleanup / restore failures return 1 and skip the banner.
+     ``--keep-stash`` (the desktop updater, ``scripts/desktop-update/posix.sh``)
+     leaves every autostash parked instead of restoring it.
 
 Helpers from ``hermes_cli.update_cmd`` (``_run_config_check_fresh``,
 ``_run_migrate_config_fresh``, ``_print_update_completion``) and from
@@ -95,6 +97,7 @@ _discard_lockfile_churn: Optional[Callable] = None
 _normalize_managed_eol: Optional[Callable] = None
 _stash_local_changes_if_needed: Optional[Callable] = None
 _restore_stashed_changes: Optional[Callable] = None
+_park_stashed_changes: Optional[Callable] = None
 _refresh_active_lazy_features: Optional[Callable] = None
 _update_node_dependencies: Optional[Callable] = None
 _resolve_node_runtime_npm: Optional[Callable] = None
@@ -220,6 +223,7 @@ def _ensure_loaded() -> None:
         "_normalize_managed_eol",
         "_stash_local_changes_if_needed",
         "_restore_stashed_changes",
+        "_park_stashed_changes",
         "_refresh_active_lazy_features",
         "_update_node_dependencies",
         "_resolve_node_runtime_npm",
@@ -373,6 +377,49 @@ def _local_restore_stash(
 
     subprocess.run(git_cmd + ["stash", "drop", selector], cwd=cwd, check=True)
     return True
+
+
+def _local_park_stash(stash_ref: str) -> None:
+    """Local fallback for ``_park_stashed_changes``."""
+    print()
+    print(" ℹ Local changes were stashed before updating and were NOT re-applied (--keep-stash).")
+    print(f"  Stash ref: {stash_ref}")
+    print(f"  Restore manually with: git stash apply {stash_ref}")
+
+
+def _settle_stash(
+    git_cmd: list[str], cwd: Path, stash_ref: str, keep_stash: bool
+) -> Any:
+    """Restore an autostash, or leave it parked under ``--keep-stash``.
+
+    ``--keep-stash`` is the desktop updater's mode: local source edits stay in
+    ``git stash`` instead of riding along onto the updated code.
+    """
+    if keep_stash:
+        _call("_park_stashed_changes", stash_ref, fallback=_local_park_stash)
+        return True
+    return _call(
+        "_restore_stashed_changes",
+        git_cmd,
+        cwd,
+        stash_ref,
+        fallback=lambda *a, **kw: _local_restore_stash(a[0], a[1], a[2]),
+    )
+
+
+def _project_venv(project_root: Path) -> Path:
+    """The virtualenv this update installs into.
+
+    The checkout's ``venv`` (desktop app / ``install.sh`` layout,
+    ``~/.janitor/hermes-agent/venv``) or ``.venv`` (pre-1.0 ``bootstrap.sh``
+    layout, ``~/.janitor/janitor-core/.venv``); ``venv`` wins when both exist,
+    like upstream's ``project_venv_dir``. Otherwise the running interpreter's.
+    """
+    for name in ("venv", ".venv"):
+        candidate = Path(project_root) / name
+        if candidate.is_dir():
+            return candidate
+    return Path(sys.prefix)
 
 
 def _git_cmd() -> list[str]:
@@ -623,7 +670,7 @@ def _install_python_dependencies(project_root: Path) -> None:
     install_group = "all"
 
     if uv_bin:
-        uv_env = {**os.environ, "VIRTUAL_ENV": str(project_root / "venv")}
+        uv_env = {**os.environ, "VIRTUAL_ENV": str(_project_venv(project_root))}
         is_termux = _call("_is_termux_env", uv_env, fallback=lambda env: False)
         is_android = _call("_is_android_python", fallback=lambda: False)
         if is_termux:
@@ -1182,6 +1229,16 @@ def parse_update_args(argv: list[str]):
         "--branch", default=None, metavar="NAME",
         help="Update against this branch instead of main",
     )
+    # The desktop updater (scripts/desktop-update/posix.sh) always passes
+    # these two; the core never prompts, so --yes changes nothing.
+    parser.add_argument(
+        "--yes", "-y", action="store_true",
+        help="Accepted for the desktop updater; janitor update never prompts",
+    )
+    parser.add_argument(
+        "--keep-stash", action="store_true",
+        help="Do NOT re-apply local changes after the update; they stay in git stash",
+    )
     return parser.parse_args(argv)
 
 
@@ -1219,6 +1276,9 @@ def run_janitor_update(args) -> int:
             backup (bool): forces a pre-update backup for this run.
             no_backup (bool): skips pre-update backup even if config has it on.
             branch (str|None): target branch (default ``"main"``).
+            keep_stash (bool): leave the autostash parked instead of
+                re-applying it (the desktop updater's mode).
+            yes (bool): accepted and ignored; the flow never prompts.
 
     Returns:
         Process exit code: 0 = updated, 1 = failed, 2 = another update holds
@@ -1240,6 +1300,7 @@ def run_janitor_update(args) -> int:
 
     gateway_mode = bool(getattr(args, "gateway", False))
     branch = getattr(args, "branch", None) or "main"
+    keep_stash = bool(getattr(args, "keep_stash", False))
 
     _update_io_state = _call(
         "_install_hangup_protection",
@@ -1457,14 +1518,8 @@ def run_janitor_update(args) -> int:
             restore_sequence.append(persisted_stash_ref)
 
         for stash_to_restore in restore_sequence:
-            restored = _call(
-                "_restore_stashed_changes",
-                git_cmd,
-                project_root,
-                stash_to_restore,
-                fallback=lambda *a, **kw: _local_restore_stash(
-                    a[0], a[1], a[2],
-                ),
+            restored = _settle_stash(
+                git_cmd, project_root, stash_to_restore, keep_stash
             )
             if restored is False:
                 print(
@@ -1481,28 +1536,12 @@ def run_janitor_update(args) -> int:
     except KeyboardInterrupt:
         print("\n✗ Update cancelled.")
         if auto_stash_ref and git_cmd is not None and project_root is not None:
-            _call(
-                "_restore_stashed_changes",
-                git_cmd,
-                project_root,
-                auto_stash_ref,
-                fallback=lambda *a, **kw: _local_restore_stash(
-                    a[0], a[1], a[2],
-                ),
-            )
+            _settle_stash(git_cmd, project_root, auto_stash_ref, keep_stash)
         return 130
     except subprocess.CalledProcessError as e:
         print(f"\n❌ Update failed at step: {e.cmd}")
         if auto_stash_ref and git_cmd is not None and project_root is not None:
-            _call(
-                "_restore_stashed_changes",
-                git_cmd,
-                project_root,
-                auto_stash_ref,
-                fallback=lambda *a, **kw: _local_restore_stash(
-                    a[0], a[1], a[2],
-                ),
-            )
+            _settle_stash(git_cmd, project_root, auto_stash_ref, keep_stash)
         return 1
     finally:
         if update_lock is not None:

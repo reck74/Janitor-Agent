@@ -733,6 +733,10 @@ tcc_pick_update_invoke "$INSTALL_ROOT/venv/bin"
 if [ "${UPDATE_INVOKE[0]}" != "$HERMES_BIN" ]; then
   log "venv/bin/python3 still unbootable; invoking the update via ${UPDATE_INVOKE[*]}"
 fi
+# JANITOR: a Janitor checkout updates through `janitor update` (AGENTS.md directive 13).
+if [ -x "$INSTALL_ROOT/venv/bin/janitor" ]; then  # JANITOR:
+  case "${UPDATE_INVOKE[0]}" in "$HERMES_BIN") UPDATE_INVOKE=("$INSTALL_ROOT/venv/bin/janitor") ;; *) UPDATE_INVOKE=("${UPDATE_INVOKE[0]}" -m janitor.cli) ;; esac  # JANITOR:
+fi  # JANITOR:
 
 # Run FROM the install root: `hermes update` resolves the tree it mutates
 # from the working directory, and we inherit the Desktop's cwd (which can be

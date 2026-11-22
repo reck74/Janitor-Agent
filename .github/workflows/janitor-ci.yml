@@ -55,9 +55,27 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
-          node-version: '22'
+          node-version: '26'
+          cache: npm
+      - name: Install npm 12
+        run: npm install --global npm@12.2.2
+      - name: Install apps/desktop dependencies (no install scripts)
+        # Only for esbuild: `build.mjs --check` transpiles every patched file
+        # with it. Without it the .tsx files are skipped (Node's type
+        # stripping covers .ts only). No Electron download is needed.
+        run: npm ci --workspace apps/desktop --ignore-scripts --no-audit --no-fund
       - name: apps/desktop-janitor overlay tests
         run: node --test apps/desktop-janitor/scripts/build.test.mjs
+      - name: Brand patches resolve against apps/desktop (drift detector)
+        # Fails with the patch id when an upstream sync moves a patch anchor,
+        # and when a patched file no longer transpiles.
+        shell: bash
+        run: |
+          node apps/desktop-janitor/scripts/build.mjs --check | tee "$RUNNER_TEMP/brand-check.log"
+          if grep -q '^skip transpile' "$RUNNER_TEMP/brand-check.log"; then
+            echo "::error::build.mjs --check skipped transpilation (esbuild missing)"
+            exit 1
+          fi
 
   web-tests:
     name: web-tests

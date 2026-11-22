@@ -7,7 +7,9 @@
 #   2. `python -m janitor.overlay check` — every divergence from the upstream
 #      base is fork-owned or a declared touchpoint (janitor/overlay.yaml);
 #   3. the Janitor Python suite (tests/janitor/, via scripts/run_tests.sh);
-#   4. the desktop build-overlay unit tests (node --test);
+#   4. the desktop build overlay: its unit tests (node --test) and
+#      `build.mjs --check`, which fails naming the patch id when an upstream
+#      change moved a brand-patch anchor in apps/desktop (directive #17);
 #   5. the TUI gate: `npm run build:ink`, `npm run build` + `npm test` in
 #      ui-tui (directive #7).
 #
@@ -28,7 +30,7 @@ while [ $# -gt 0 ]; do
         --base) BASE="${2:?--base needs a ref}"; shift 2 ;;
         --skip-tui) RUN_TUI=0; shift ;;
         --skip-desktop) RUN_DESKTOP=0; shift ;;
-        -h|--help) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -72,6 +74,8 @@ scripts/run_tests.sh tests/janitor/
 if [ "$RUN_DESKTOP" -eq 1 ]; then
     step "Desktop build overlay"
     node --test apps/desktop-janitor/scripts/build.test.mjs
+    step "Desktop brand patches resolve against apps/desktop"
+    node apps/desktop-janitor/scripts/build.mjs --check
 fi
 
 if [ "$RUN_TUI" -eq 1 ]; then
