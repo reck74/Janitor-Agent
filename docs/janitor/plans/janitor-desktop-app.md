@@ -278,10 +278,11 @@ funcional en español, con su identidad, sin «Hermes» en el uso normal y con
 | F1-13 | La primera pantalla sale con tema claro: aplicar los colores del skin desde el arranque | `apps/desktop-janitor/` | captura de la primera pantalla | auditado (comprobado en captura de compilación real) |
 | F1-14 | Mensajes del motor que llegan a la app en inglés o con «Hermes» (errores de credenciales, «run `hermes setup`») | por definir | captura | auditado; quedan superficies listadas en F1-19 |
 | F1-15 | Instalación real de punta a punta en un home limpio con el AppImage publicado | — | checklist del criterio de terminado | pendiente (bloqueado: requiere push y release) |
-| F1-16 | Un gateway arrancado como servicio (sin pasar por el lanzador) no ve el catálogo español de Janitor: que el plugin exporte `HERMES_BUNDLED_LOCALES` al registrarse | `janitor/plugin/__init__.py`, `janitor/locales/`, pruebas | prueba de comportamiento | pendiente |
-| F1-17 | Los gateways lanzados como `janitor gateway run` / `-m janitor.cli gateway run` no los reconoce el descubrimiento de upstream (`looks_like_gateway_command_line`), así que ninguna actualización los reinicia | `gateway/status.py` (touchpoint) o lanzar siempre por `hermes_cli.main` | prueba de comportamiento | pendiente |
+| F1-16 | Un gateway arrancado como servicio (sin pasar por el lanzador) no ve el catálogo español de Janitor: que el plugin exporte `HERMES_BUNDLED_LOCALES` al registrarse | `janitor/plugin/__init__.py`, `janitor/locales/`, pruebas | prueba de comportamiento | auditado |
+| F1-17 | Los gateways lanzados como `janitor gateway run` / `-m janitor.cli gateway run` no los reconoce el descubrimiento de upstream (`looks_like_gateway_command_line`), así que ninguna actualización los reinicia | `gateway/status.py` (touchpoint) o lanzar siempre por `hermes_cli.main` | prueba de comportamiento | auditado (sin tocar `gateway/status.py`: el lanzador hace exec al comando canónico) |
 | F1-18 | El verde lima del skin no llega a la app: el conversor de upstream nunca lee `ui_primary`; el color de marca en la app queda en morado | `apps/desktop-janitor/` | captura | pendiente — **decisión del dueño** |
 | F1-19 | Textos del motor aún en inglés o con «Hermes»: aviso de canal principal de Telegram, descripciones de comandos en `/help`, errores RPC crudos, routers web, `setup`/`doctor` | por definir (ver informe de F1-14 en la bitácora) | vigilancia | pendiente |
+| F1-20 | `/update` enviado desde Telegram ejecuta `python -m hermes_cli.main update --gateway`: el flujo de upstream, no `janitor update` (directiva 13) | `gateway/run.py::_resolve_hermes_bin` (touchpoint) o parche del lanzador | prueba de comportamiento | pendiente |
 
 ### Fase 2 — Agente principal y catálogo de skills
 
@@ -309,9 +310,11 @@ Diseño, alcances y verificaciones: [`fase-2-diseno.md`](fase-2-diseno.md).
 
 | ID | Tarea | Estado |
 |---|---|---|
-| F4-01 | Skill guiada de Honcho | en curso (subagente Opus) |
-| F4-02 | Plugin de escritorio: pantalla de servicios | pendiente |
+| F4-01 | Skill guiada de Honcho | auditado (sin despliegue real ni cuenta de Honcho Cloud) |
+| F4-02 | Plugin de escritorio: pantalla de servicios | auditado (página comprobada en la app compilada; iniciar/detener sin probar) |
 | F4-03 | Mismo patrón para n8n, LightRAG, NocoDB, WAHA, Firecrawl, Open Design | pendiente |
+| F4-04 | Activar desde la app una skill del catálogo en un perfil (hoy los aplicativos no están en ninguna plantilla y «Instalar con Janitor» pasa la ruta del SKILL.md en la petición) | pendiente |
+| F4-05 | Plantillas de agente desde la app (el diálogo de crear perfil de upstream clona la memoria) | pendiente |
 
 ### Fase 5 — Migración y limpieza
 
@@ -379,6 +382,10 @@ Windows y macOS (firma de código). WhatsApp como canal.
 | 2026-11-22 | Subagente Opus, auditado por el orquestador | F1-13 tema: 174 anclas, 62 pruebas node. Recompilado y capturado: primera pantalla oscura con la paleta del skin, sin azul ni naranja; formulario de clave con MiniMax preseleccionado |
 | 2026-11-22 | Subagente Opus, auditado por el orquestador | F1-14 mensajes del motor: `janitor/locales/es.yaml` (solo diferencias) + touchpoint `backend-user-copy`. Mensaje real generado por el orquestador: «Janitor no pudo iniciar el asistente de esta sesión… ejecuta `janitor setup`…». Pruebas de upstream de los módulos tocados: pasan sin cambios |
 | 2026-11-22 | Subagente Opus, auditado por el orquestador | F1-12: `janitor update` reconstruye `web/`, escribe el código de salida del gateway y reinicia la flota del home con los ayudantes de upstream; no reinicia nada si algún gateway del home corre desde otra instalación. 108 pruebas de actualización. Hallazgo → F1-17 |
+| 2026-11-22 | Subagente Opus, auditado por el orquestador | F4-01 skill guiada de Honcho: 20 pruebas con Docker simulado; preflight de solo lectura corrido por el orquestador en un home temporal. Corrige que el compose pasaba todo el `.env` del home a los contenedores |
+| 2026-11-22 | Subagente Opus, auditado por el orquestador | F4-02 pantalla Servicios: plugin de ejecución sembrado en `<home>/desktop-plugins/janitor` + backend en `<home>/plugins/janitor/dashboard`. Abierta por el orquestador en la app compilada sin pantalla: entrada en la barra lateral y estado real de los contenedores (solo lectura) |
+| 2026-11-22 | Subagente Opus, auditado por el orquestador | F1-16, F1-17 y fail-safe de Honcho. Hallazgo → F1-20 |
+| 2026-11-22 | Claude (orquestador) | **Verificación final de la rama `janitor-app/fase-1` (22 commits sobre `main`, sin push):** `scripts/run_tests.sh tests/janitor/` → 37 archivos, 619 pruebas, 0 fallos · `node --test apps/desktop-janitor/scripts/build.test.mjs` → 70/70 · `build.mjs --check` → 174/174 anclas · `python -m janitor.overlay check` limpio · `python -m janitor.catalog check` → 42/42 · `build.mjs --linux --dir` compila y la app arranca sin pantalla. **No verificado en ningún momento:** instalación real desde la app en una máquina limpia, AppImage, workflows de CI, actualización real, reinicio real de gateways, despliegue real de Honcho, un bot de Telegram real, Windows y macOS, y la suite completa de upstream (solo se corrieron los archivos de upstream de los módulos tocados) |
 
 ## 9. Decisiones pendientes del dueño
 
