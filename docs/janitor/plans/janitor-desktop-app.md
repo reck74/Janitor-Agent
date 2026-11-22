@@ -110,7 +110,7 @@ guiada conversacional + pantalla de servicios; se conserva `service.yaml` y
 - El QR depende de un servicio de Nous (`setup.hermes-agent.nousresearch.com`,
   `hermes_cli/web_server_messaging.py:376`; se puede cambiar con
   `TELEGRAM_ONBOARDING_URL`). No se ha probado desde el fork. La app también permite
-  pegar un token de BotFather: esa ruta debe quedar siempre disponible (F1-23).
+  pegar un token de BotFather: esa ruta queda siempre visible (decidido; F1-23).
 - WhatsApp como canal para hablar con el agente queda para después.
 
 ### 2.7 Plataforma y estructura
@@ -269,17 +269,20 @@ Lo que se sabe hoy por lectura de código; cada punto abierto tiene su tarea.
   proceso que los atienda: la app abierta, o un gateway instalado como servicio
   (`janitor gateway install`). Con la app cerrada y sin servicio, se detienen. Sin
   verificar: inicio de sesión, reinicio del equipo, app y TUI a la vez, y que no se
-  dupliquen gateways (F1-24).
+  dupliquen gateways (F1-24). Decidido: al configurar Telegram la app ofrece instalar
+  el gateway como servicio.
 - **Actualización.** El motor se actualiza por `janitor update` (directiva 13). El
   AppImage **no** se reemplaza: `scripts/desktop-update/posix.sh` termina con un aviso
   en inglés de que el paquete de escritorio no cambió. Falta el contrato único de
   actualización: origen de los releases, compatibilidad entre app, motor y plugin,
-  cómo recibe el usuario el AppImage nuevo y qué ve si algo falla (F1-21).
+  y qué ve el usuario si algo falla (F1-21). Decidido: el AppImage nuevo llega por
+  descarga guiada desde los releases del fork; no hay actualización automática.
 - **Instalación existente.** La app y la instalación antigua comparten `~/.janitor`.
   Abierta sobre un home con `janitor-core`, la app instalaría un segundo motor en
   `hermes-agent/`, la migración de layout correría sobre ese home y
   `janitor/seed.py::ensure_command_link` reapuntaría el comando `janitor` al motor
-  nuevo. Es una adopción parcial sin diseñar: hasta F5-01 debe impedirse (F1-22).
+  nuevo. Es una adopción parcial sin diseñar. Decidido: una guarda lo impide (F1-22)
+  y la adopción completa (F5-01) se hace después de la primera instalación real.
 - **Dónde actúan los servicios.** La pantalla Servicios opera sobre el equipo donde
   corre el motor, no sobre el equipo que muestra la app si la conexión es remota.
 
@@ -331,10 +334,10 @@ funcional en español, con su identidad, sin «Hermes» en el uso normal y con
 | F1-18 | El verde lima del skin no llega a la app: el conversor de upstream nunca lee `ui_primary`; el color de marca en la app queda en morado | `apps/desktop-janitor/` | captura | pendiente — **decisión del dueño** |
 | F1-19 | Textos del motor aún en inglés o con «Hermes»: aviso de canal principal de Telegram, descripciones de comandos en `/help`, errores RPC crudos, routers web, `setup`/`doctor`, avisos finales de `scripts/desktop-update/posix.sh` («Backend updated, but…», «Reopen Hermes…») y errores del emparejamiento de Telegram (`hermes_cli/web_server_messaging.py`) | por definir (ver informe de F1-14 en la bitácora) | vigilancia + recorrido visual de F1-15 | pendiente |
 | F1-20 | `/update` enviado desde Telegram ejecuta `python -m hermes_cli.main update --gateway`: el flujo de upstream, no `janitor update` (directiva 13) | `gateway/run.py::_resolve_hermes_bin` (touchpoint) o parche del lanzador | prueba de comportamiento | pendiente |
-| F1-21 | Contrato único de actualización (sección 4.5): origen de releases, compatibilidad app–motor–plugin, cómo llega el AppImage nuevo, bloqueo compartido, interrupción y recuperación, resultado visible en español; cubre app, TUI y Telegram. Reúne la aceptación de F1-09, F1-12, F1-17 y F1-20 | por definir tras la decisión del dueño (sección 9) | actualización real de una versión publicada a la siguiente, con un gateway en marcha | pendiente — **decisión del dueño** |
-| F1-22 | Guarda de instalación existente: si el home tiene `janitor-core`, la app y `install.sh` se detienen con un aviso en español y no instalan un segundo motor ni reapuntan `janitor`, hasta que exista F5-01 | `janitor/seed.py`, `scripts/install.sh` (touchpoint), `apps/desktop-janitor/`, pruebas | prueba de comportamiento con un home temporal que imita la instalación antigua; el home queda intacto | pendiente — **decisión del dueño** (guarda ahora o F5-01 antes de distribuir) |
-| F1-23 | Telegram desde la app: probar el QR con un bot real (autorización, caducidad, reintento, servicio caído), nombre con que nace el bot, `/start` y avatar; la ruta de pegar un token siempre visible | por definir | recorrido con un bot real | pendiente — **decisión del dueño** sobre depender del servicio de Nous |
-| F1-24 | Operación cotidiana (sección 4.5): cerrar ventana, Salir, inicio de sesión, reinicio, app y TUI a la vez, sin gateways duplicados; entrada en el menú de aplicaciones, diagnóstico, reparación y desinstalación conservando datos | por definir | recorrido en la instalación de F1-15 | pendiente — **decisión del dueño** sobre el segundo plano |
+| F1-21 | Contrato único de actualización (sección 4.5): origen de releases, compatibilidad app–motor–plugin, cómo llega el AppImage nuevo, bloqueo compartido, interrupción y recuperación, resultado visible en español; cubre app, TUI y Telegram. Reúne la aceptación de F1-09, F1-12, F1-17 y F1-20 | por definir. **Decidido:** el AppImage nuevo llega por descarga guiada desde los releases del fork, con aviso en español; sin actualización automática | actualización real de una versión publicada a la siguiente, con un gateway en marcha | pendiente |
+| F1-22 | Guarda de instalación existente: si el home tiene `janitor-core`, la app y `install.sh` se detienen con un aviso en español y no instalan un segundo motor ni reapuntan `janitor`, hasta que exista F5-01 | `janitor/seed.py`, `scripts/install.sh` (touchpoint), `apps/desktop-janitor/`, pruebas | prueba de comportamiento con un home temporal que imita la instalación antigua; el home queda intacto | pendiente. **Decidido:** guarda ahora; la adopción completa (F5-01) después de la primera instalación real |
+| F1-23 | Telegram desde la app: probar el QR con un bot real (autorización, caducidad, reintento, servicio caído), nombre con que nace el bot, `/start` y avatar; la ruta de pegar un token siempre visible | por definir | recorrido con un bot real | pendiente. **Decidido:** se mantiene el QR con la ruta por token siempre visible; se revisa si el bot nace con marca Hermes o el servicio no es fiable |
+| F1-24 | Operación cotidiana (sección 4.5): al configurar Telegram la app ofrece instalar el gateway como servicio (el usuario confirma; nunca se instala solo); cerrar ventana, Salir, inicio de sesión, reinicio, app y TUI a la vez, sin gateways duplicados; entrada en el menú de aplicaciones, diagnóstico, reparación y desinstalación conservando datos | por definir | recorrido en la instalación de F1-15 | pendiente. **Decidido:** ofrecer el gateway como servicio al configurar Telegram |
 | F1-25 | Memoria integrada con MiniMax, en casos observables: guardar una preferencia, recuperarla tras reiniciar, corregirla, y que otro perfil no la vea; qué pasa con lo guardado al cambiar de proveedor de memoria | — | los cuatro casos, con evidencia | pendiente (necesita una clave real: la introduce el dueño) |
 
 **Checklist de F1-15.** Con el AppImage publicado, en un Linux limpio, **sin**
@@ -464,6 +467,7 @@ Windows y macOS (firma de código). WhatsApp como canal.
 | 2026-11-22 | Subagente Opus, auditado por el orquestador | F1-16, F1-17 y fail-safe de Honcho. Hallazgo → F1-20 |
 | 2026-11-22 | Claude (orquestador) | **Verificación final de la rama `janitor-app/fase-1` (22 commits sobre `main`, sin push):** `scripts/run_tests.sh tests/janitor/` → 37 archivos, 619 pruebas, 0 fallos · `node --test apps/desktop-janitor/scripts/build.test.mjs` → 70/70 · `build.mjs --check` → 174/174 anclas · `python -m janitor.overlay check` limpio · `python -m janitor.catalog check` → 42/42 · `build.mjs --linux --dir` compila y la app arranca sin pantalla. **No verificado en ningún momento:** instalación real desde la app en una máquina limpia, AppImage, workflows de CI, actualización real, reinicio real de gateways, despliegue real de Honcho, un bot de Telegram real, Windows y macOS, y la suite completa de upstream (solo se corrieron los archivos de upstream de los módulos tocados) |
 | 2026-11-22 | Claude (orquestador) | Revisión de `recomendaciones-codex-para-claude.md` (R01–R13) contra el plan y el código, solo lectura. Resuelta: R13. Parciales: R01, R02, R04, R06, R08, R09, R10. Pendientes: R03, R05, R07, R11, R12. Incorporado al plan con aprobación del dueño: precisiones en 2.1, 2.3, 2.4, 2.6, 3.1 y 3.4; sección 4.5; estado `auditado` desglosado en código, pruebas y aceptación; checklist de F1-15; tareas nuevas F1-21 a F1-25, F4-06 y F4-07; alcance ampliado de F1-19, F4-04, F4-05 y F5-01 a F5-03. No se cambió código. Descartado: tratar el nivel gratuito de Nous como activable (la compilación lo anula a propósito), más pruebas de interrupción del overlay y repetir las pruebas adversarias de F3. Sin verificar en esta revisión: que el aviso en inglés de `posix.sh` llegue tal cual a la pantalla, si los homes antiguos tienen el paquete de skills de Hermes copiado, y el comportamiento real del servicio de QR |
+| 2026-11-22 | Dueño del proyecto | Decisiones tomadas sobre las propuestas del orquestador: AppImage por descarga guiada desde los releases del fork (F1-21); guarda ante instalación antigua ahora y adopción después de la primera instalación real (F1-22, F5-01); QR de Telegram con la ruta por token siempre visible (F1-23); ofrecer el gateway como servicio al configurar Telegram (F1-24). Sigue pendiente la prueba de memoria con MiniMax (F1-25) |
 
 ## 9. Decisiones pendientes del dueño
 
@@ -476,9 +480,5 @@ No bloquean el trabajo en curso; cada una tiene un valor provisional ya aplicado
 | Frases nuevas de «pensando» | No aplicadas | Diez frases propuestas sobre equipos, redes y seguridad (bitácora de F1-06); el dueño dijo que las frases del terminal se conservan |
 | `.claude/agents/janitor-dev-boss-autonomous.md` | Sin tocar | Importa `OpenCodeOrchestrator`, que ya no existe. Borrarlo o reescribirlo |
 | Push y release | Nada publicado | La instalación real de punta a punta (F1-15) necesita la rama en GitHub y un AppImage publicado |
-| Actualización del AppImage (F1-21) | El motor se actualiza; el AppImage no | Descarga guiada del AppImage nuevo desde los releases del fork (propuesta del orquestador) o actualización automática |
-| Usuarios con instalación antigua (F1-22, F5-01) | Sin guarda: la app haría una adopción parcial | Guarda ahora y adopción después de la primera instalación real (propuesta), o F5-01 antes de distribuir |
-| QR de Telegram (F1-23) | Se usa el servicio de Nous, sin probar | Mantener el QR con la ruta por token siempre visible (propuesta), o solo token si el bot nace con marca Hermes o el servicio no es fiable |
-| Segundo plano (F1-24) | Al cerrar la app, Telegram y las tareas programadas se detienen salvo gateway instalado | Ofrecer instalar el gateway como servicio al configurar Telegram (propuesta), o dejarlo manual |
 | Prueba de memoria con MiniMax (F1-25) | Sin probar | Necesita una clave real; ningún agente introduce claves: la corre el dueño o indica cómo |
 | Valor rescatable de skills retiradas | Nada rescatado | `janitor-config-audit` (diff de config frente a la semilla) puede servir para adoptar instalaciones viejas (F5-01) |
