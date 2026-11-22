@@ -20,6 +20,7 @@ import './patch-engine.test.mjs'
 import './brand.test.mjs'
 import './first-run.test.mjs'
 import './spanish.test.mjs'
+import './theme.test.mjs'
 
 test('overrides deep-merge into the upstream config without dropping keys', () => {
   const upstream = readJson(path.join(APP_DIR, 'package.json')).build

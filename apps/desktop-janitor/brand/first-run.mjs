@@ -104,7 +104,8 @@ export const FIRST_RUN_PATCHES = [
       "          onClick={() => openKeyForm('MINIMAX_API_KEY')}\n" +
       '          type="button"\n' +
       '        >\n' +
-      '          <span aria-hidden className="arc-border arc-reverse arc-nous" />\n' +
+      // Theme tokens, not .arc-nous (hardcoded blue → orange): the arc follows the active theme (F1-13).
+      '          <span aria-hidden className="arc-border arc-reverse [--arc-c1:var(--dt-primary)]! [--arc-c2:color-mix(in_srgb,var(--arc-c1)_45%,transparent)]!" />\n' +
       '          <div className="min-w-0">\n' +
       '            <div className="flex items-center gap-2">\n' +
       '              <span className="text-[length:var(--conversation-text-font-size)] font-semibold">MiniMax</span>\n' +
