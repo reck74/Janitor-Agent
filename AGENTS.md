@@ -9,7 +9,7 @@
 
 1. **ZERO-RENAMING POLICY**: Nunca hagas buscar-y-reemplazar de la palabra 'hermes' en el core. El motor subyacente se mantiene intacto para garantizar que el merge de cada release upstream funcione sin conflictos destructivos.
 2. **CLI WRAPPER**: Las extensiones de Janitor heredan de `HermesCLI` en el paquete `janitor/` (lanzador: `janitor/cli.py`). No se modifica `cli.py` original. Los módulos raíz `janitor_cli.py`, `janitor_update_core.py`, `janitor_update_bootstrap.py`, `janitor_version.py` y `janitor_ext/` son alias de compatibilidad para instalaciones pre-1.0 (su console script apunta a `janitor_cli:main`); no se les añade lógica.
-3. **SKILLS AISLADOS**: Toda skill Janitor vive en `janitor/skills/<grupo>/janitor-*/`, con grupos `core`, `services` (con Docker), `agents` e `integrations`. Se cargan in place vía `skills.external_dirs` (`${JANITOR_SKILLS_ROOT}`, exportado por el lanzador) y nunca se copian a `~/.janitor/skills`. Los árboles `skills/` y `optional-skills/` son de upstream y no se tocan. Las skills de `services/` declaran un `service.yaml` (contenedores `janitor-*`, script de deploy) que consume `janitor services list|status|deploy|start|stop|uninstall`.
+3. **SKILLS AISLADOS**: Toda skill Janitor vive en `janitor/skills/<grupo>/janitor-*/`, con grupos `core`, `system` (administración del equipo), `projects`, `research`, `services` (con Docker) e `integrations`. Cada skill tiene su entrada en `janitor/catalog.yaml` (directiva #19). Se cargan in place vía `skills.external_dirs` (`${JANITOR_SKILLS_ROOT}`, exportado por el lanzador) y nunca se copian a `~/.janitor/skills`. Los árboles `skills/` y `optional-skills/` son de upstream y no se tocan. Las skills de `services/` declaran un `service.yaml` (contenedores `janitor-*`, script de deploy) que consume `janitor services list|status|deploy|start|stop|uninstall`.
 4. **TUI ISOLATION**: Los cambios visuales del TUI se inyectan vía el sistema de skins (`skin_engine.py`, skin `assets/janitor/sentry-janitor.yaml`) sin destruir la compatibilidad del protocolo JSON-RPC. No se hace hardcode en los componentes base del TUI; el único hook es el touchpoint `tui-branding-hook` (`branding.tagline` / `branding.vendor`). El desktop se personaliza en el overlay de build `apps/desktop-janitor/`, nunca reemplazando assets en `apps/desktop/`. El texto visible de la app (marca e idioma) se ajusta únicamente con las reglas de la directiva #17.
 5. **NAMING CONVENTION (BRANDING)**: Todo contenedor Docker, red, volumen, servicio de sistema o aplicación de terceros que Janitor instale o configure en el futuro DEBE llevar obligatoriamente el prefijo `janitor-` (ej. `janitor-redis`, `janitor-network`). Sin excepciones.
 6. **merge-auditor**: Cada merge debe ser auditado contra estas directivas. Si un PR introduce 'hermes' renombrado en archivos core, se rechaza automáticamente. El gate mecánico es `scripts/janitor-sync-verify.sh` (ver `MERGE_GUIDE.md`).
@@ -47,33 +47,45 @@ Everything else is delivered as opt-in skills and services.
 | `janitor/cli.py` | `janitor` launcher: `HERMES_HOME=~/.janitor`, skin, layout migration, update intercept |
 | `janitor/update_core.py`, `janitor/update_bootstrap.py` | Update flow (directive #13) |
 | `janitor/migrations/` | `~/.janitor` layout migrations (directive #10) |
-| `janitor/plugin/` | Hermes plugin (`plugins.enabled: [janitor]`): Telegram `/start` + avatar, language prompt section, `janitor services` and `janitor agents` CLI commands |
-| `janitor/services.py`, `janitor/agents.py` | Service lifecycle (`service.yaml`) and specialized-agent catalog |
+| `janitor/plugin/` | Hermes plugin (`plugins.enabled: [janitor]`): Telegram `/start` + avatar, language prompt section, `janitor services` CLI command |
+| `janitor/services.py` | Service lifecycle (`service.yaml`) |
+| `janitor/seed.py` | Seeds a new `~/.janitor` (minimal config, `SOUL.md`, skin, `.no-bundled-skills`); never overwrites user-edited files |
+| `janitor/catalog.py`, `janitor/catalog.yaml` | Skill catalog by purpose and template; `apply(home)` turns a profile's `janitor.skills` into `skills.external_dirs` (directive #19) |
 | `janitor/skills/` | All Janitor skills (directive #3) |
 | `janitor/overlay.py`, `janitor/overlay.yaml` | Overlay inventory and check (directive #16) |
 | `assets/janitor/` | Seed `config.yaml`, `SOUL.md`, `honcho.json`, `sentry-janitor.yaml` skin, Telegram assets |
 | `apps/desktop-janitor/` | Desktop build overlay (`scripts/build.mjs`, `electron-builder.janitor.json`) |
 | `tests/janitor/` | The Janitor test suite (directive #11) |
 
-### Installer Contract
+### Install Contract
 
-`scripts/janitor-install.sh` deploys **only**:
-- `~/.janitor/.env` — environment variables (backed up to `~/.janitor/.backup/install-*/` before a rewrite)
-- `~/.janitor/config.yaml` — agent configuration (kept if it already exists)
-- `~/.janitor/SOUL.md` — agent persona (kept if it already exists)
-- `~/.janitor/skins/sentry-janitor.yaml` — visual theme (kept if it already exists)
-- Optional: local Honcho (via `scripts/setup-honcho.sh`)
+The desktop app is the entry point. A Janitor build of the app (directive #17)
+downloads `scripts/install.sh` from this fork and runs it by stages; the engine
+lands in `~/.janitor/hermes-agent` (venv in `~/.janitor/hermes-agent/venv`), the
+`janitor` command in `~/.local/bin`, and the backend starts as
+`python -m janitor.cli serve`. `janitor/seed.py` seeds a **new** home with only:
+- `~/.janitor/config.yaml` — minimal seed (Janitor's differences; `_config_version` from upstream defaults)
+- `~/.janitor/SOUL.md` — agent persona
+- `~/.janitor/skins/sentry-janitor.yaml` — visual theme
+- `~/.janitor/.no-bundled-skills` — the home does not receive upstream's skill pack
 
-**Does NOT deploy by default**: Firecrawl, Browser, or any other service.
+It never touches `.env` and never overwrites a file the user edited. **Nothing
+else is deployed by default**: no Docker, no Honcho, no services (directives #8, #9).
+
+`scripts/bootstrap.sh`, `scripts/janitor-install.sh` and `scripts/setup-honcho.sh`
+are the legacy terminal installers (layout `~/.janitor/janitor-core` + `.venv`),
+kept only until existing installs are adopted (plan phase 5).
 
 ### Skill Hierarchy
 
 | Group | Skills |
 |-------|--------|
-| `core/` | `janitor-core` (cache/environment hygiene), `janitor-config-audit` (config/SOUL.md drift), `janitor-onboarding` (orientation guide) |
+| `core/` | `janitor-onboarding` (orientation guide) |
+| `system/` | System administration: `janitor-system-health`, `janitor-maintenance`, `janitor-cleanup`, `janitor-file-organizer` (see the plan board for which exist) |
+| `projects/` | Reserved for project-creation skills |
+| `research/` | `janitor-repo-research` |
 | `services/` | `janitor-honcho`, `janitor-firecrawl`, `janitor-n8n`, `janitor-lightrag`, `janitor-nocodb`, `janitor-waha` — each with `service.yaml` + `scripts/deploy.sh` |
-| `agents/` | `janitor-code-review-agent`, `janitor-repo-research-agent` — each with `agent.yaml` |
-| `integrations/` | `janitor-browser`, `janitor-desktop-launcher`, `janitor-opendesign`, `janitor-skill-integration` |
+| `integrations/` | `janitor-opendesign` |
 
 Each skill contains `SKILL.md`, optional `scripts/`, and compose files scoped to
 that service only. SKILL.md prose references its own files as
@@ -83,20 +95,23 @@ that service only. SKILL.md prose references its own files as
 
 1. Create `janitor/skills/<group>/janitor-<name>/` with a `SKILL.md` (name, description ≤ 60 chars, version, platforms, metadata).
 2. Add scripts under `scripts/`. A Docker service also gets a `service.yaml` (`name`, `description`, `deploy`, `compose`, `url`, `containers` — all `janitor-*`).
-3. Reference the skill from `janitor/skills/core/janitor-onboarding/SKILL.md` so users can discover it.
-4. Add its tests under `tests/janitor/`.
-5. Do NOT modify core Hermes files or built-in skills.
+3. Add its entry to `janitor/catalog.yaml` (purpose, platforms, templates); `python -m janitor.catalog check` must pass. A skill is only visible to an agent whose `janitor.skills` lists it.
+4. Reference the skill from `janitor/skills/core/janitor-onboarding/SKILL.md` so users can discover it.
+5. Add its tests under `tests/janitor/`.
+6. Do NOT modify core Hermes files or built-in skills.
+7. A skill that touches the user's files or system follows directive #19: plan first, user confirms, trash instead of delete, never `sudo`.
+
+Retiring or renaming a skill adds its name to `RETIRED` / `RENAMED` and its digests to `SHIPPED_DIGESTS` in the newest migration under `janitor/migrations/`, so existing homes are cleaned.
 
 ### User Workflow
 
-```bash
-# Fresh install — minimal
-curl -fsSL .../bootstrap.sh | bash
-janitor
+Install the Janitor app (Linux AppImage first), open it, pick a provider
+(MiniMax is the recommended one). Then, optionally:
 
-# Post-install: add capabilities as needed
-janitor services list
-janitor services deploy firecrawl
+```bash
+janitor                            # the TUI, same home and sessions as the app
+janitor services list              # optional applications (need Docker)
+janitor services deploy honcho
 ```
 
 ### Upgrading Existing Installs
@@ -105,7 +120,7 @@ janitor services deploy firecrawl
 `~/.janitor` to the current layout (backup first). Manual / preview:
 
 ```bash
-bash scripts/migrate-janitor-v1.sh --dry-run
+bash scripts/migrate-janitor-v2.sh --dry-run
 ```
 
 Users of the pre-v5 full stack run `bash scripts/migrate-janitor-minimal.sh`

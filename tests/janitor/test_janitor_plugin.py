@@ -65,4 +65,6 @@ def test_enabled_plugin_registers_its_hooks(discover):
     loaded = manager._plugins["janitor"]
     assert loaded.enabled and not loaded.error
     assert plugins.has_hook("pre_gateway_dispatch")
-    assert {"services", "agents"} <= set(manager._cli_commands)
+    assert "services" in manager._cli_commands
+    # A Janitor agent is a Hermes profile (directive 19): no parallel agent command.
+    assert "agents" not in manager._cli_commands

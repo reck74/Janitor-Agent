@@ -7,7 +7,8 @@ The layout mirrors what ``scripts/bootstrap.sh`` + ``scripts/janitor-install.sh`
   pre-1.0 550-line seed config (``fixtures/pre-1.0-config.yaml``);
 * Janitor skills synced into ``skills/`` by the bundled-skills sync, at their
   legacy paths (flat ``skills/janitor-*`` and nested ``skills/devops/janitor-*``)
-  with a v2 ``.bundled_manifest`` (``name:hash``);
+  with a v2 ``.bundled_manifest`` (``name:hash``) — including skills Janitor
+  has since retired or renamed (sources frozen in ``fixtures/legacy-skills/``);
 * one user-modified Janitor skill and one skill the user wrote themselves;
 * a real ``state.db`` written through ``SessionDB``;
 * memories, cron jobs and an opt-in Docker compose file.
@@ -33,12 +34,16 @@ ASSETS = REPO_ROOT / "assets" / "janitor"
 # The seed config pre-1.0 installs copied in (assets/janitor/config.yaml has
 # since been reduced to Janitor's differences from the upstream defaults).
 PRE_1_0_CONFIG = Path(__file__).resolve().parent / "fixtures" / "pre-1.0-config.yaml"
+# Byte-exact copies of skills Janitor shipped and later retired or renamed
+# (``janitor-core``, ``janitor-repo-research-agent``), as of their last release.
+LEGACY_SKILL_SOURCES = Path(__file__).resolve().parent / "fixtures" / "legacy-skills"
 
 # Legacy (pre-1.0) on-disk location of each Janitor skill inside
 # ``$HERMES_HOME/skills`` — this is where skills_sync placed them while they
 # lived in the upstream ``skills/`` tree.
 LEGACY_SKILL_PATHS: Dict[str, str] = {
     "janitor-core": "janitor-core",
+    "janitor-repo-research-agent": "janitor-repo-research-agent",
     "janitor-firecrawl": "janitor-firecrawl",
     "janitor-honcho": "janitor-honcho",
     "janitor-onboarding": "janitor-onboarding",
@@ -63,8 +68,13 @@ def _sha256(path: Path) -> str:
 
 
 def find_skill_source(name: str) -> Path:
-    """Locate the current in-repo source directory of a Janitor skill."""
-    for root in (REPO_ROOT / "janitor" / "skills", REPO_ROOT / "skills", REPO_ROOT / "optional-skills"):
+    """Locate the in-repo source directory of a Janitor skill (frozen copy if retired)."""
+    for root in (
+        REPO_ROOT / "janitor" / "skills",
+        REPO_ROOT / "skills",
+        REPO_ROOT / "optional-skills",
+        LEGACY_SKILL_SOURCES,
+    ):
         if not root.is_dir():
             continue
         for skill_md in root.rglob("SKILL.md"):

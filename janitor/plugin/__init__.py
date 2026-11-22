@@ -12,7 +12,7 @@ from typing import Any
 
 
 def register(ctx: Any) -> None:
-    from janitor import agents, services
+    from janitor import services
     from janitor.language import language_prompt_section
     from janitor.plugin import telegram
 
@@ -25,10 +25,4 @@ def register(ctx: Any) -> None:
         handler_fn=services.handle,
         description="Deploy, inspect, stop and remove Janitor Docker services. "
         "Volumes are never deleted.",
-    )
-    ctx.register_cli_command(
-        "agents",
-        "List Janitor specialized agents",
-        agents.setup_parser,
-        handler_fn=agents.handle,
     )

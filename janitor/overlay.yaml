@@ -35,7 +35,6 @@ fork_paths:
   - scripts/*janitor*
   - scripts/setup-honcho.sh
   - scripts/verify-firecrawl-pgcron.sh
-  - scripts/test_opencode_orchestrator.py
   # Pre-1.0 import aliases kept for old console scripts.
   - janitor_cli.py
   - janitor_update_core.py

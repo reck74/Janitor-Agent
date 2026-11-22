@@ -40,10 +40,10 @@ They are grouped by kind:
 
 | Group | Skills |
 |-------|--------|
-| `core` | janitor-core, janitor-config-audit, janitor-onboarding |
+| `core` | janitor-onboarding |
 | `services` | janitor-honcho, janitor-firecrawl, janitor-n8n, janitor-lightrag, janitor-nocodb, janitor-waha |
-| `agents` | janitor-code-review-agent, janitor-repo-research-agent |
-| `integrations` | janitor-browser, janitor-desktop-launcher, janitor-opendesign, janitor-skill-integration |
+| `research` | janitor-repo-research |
+| `integrations` | janitor-opendesign |
 
 Self-hosted services share one lifecycle command. Every deploy is idempotent
 and fully independent of the others:
@@ -66,8 +66,7 @@ janitor services start n8n
 | waha | WhatsApp HTTP API |
 
 Non-service capabilities still ship a script inside their skill, e.g.
-`janitor-browser` → `scripts/install.sh`. `janitor agents list` shows the
-specialized agents.
+`janitor-opendesign` → `scripts/start.sh`.
 
 ## Verification
 

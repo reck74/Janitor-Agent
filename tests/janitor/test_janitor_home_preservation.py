@@ -88,14 +88,14 @@ def test_first_launch_migrates_layout(legacy):
     result = _janitor(legacy.root, "skills", "list")
     assert result.returncode == 0, result.stderr
     assert read_layout_version(legacy.home) == LAYOUT_VERSION
-    assert "layout v1" in result.stderr
+    assert f"layout v{LAYOUT_VERSION}" in result.stderr
 
     skills = legacy.home / "skills"
     for name, rel in LEGACY_SKILL_PATHS.items():
         assert (skills / rel).is_dir() == (name == USER_MODIFIED_SKILL), name
-    assert list((legacy.home / ".backup").glob("v1-*/state.db"))
+    assert list((legacy.home / ".backup").glob(f"v{LAYOUT_VERSION}-*/state.db"))
 
     again = _janitor(legacy.root, "skills", "list")
     assert again.returncode == 0, again.stderr
-    assert "layout v1" not in again.stderr
+    assert f"layout v{LAYOUT_VERSION}" not in again.stderr
     assert len(list((legacy.home / ".backup").iterdir())) == 1

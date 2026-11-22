@@ -1,4 +1,4 @@
-"""``janitor services`` / ``janitor agents`` and the ``service.yaml`` contract."""
+"""``janitor services`` and the ``service.yaml`` contract."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from janitor import agents, services
+from janitor import services
 from janitor.home import SKILLS_ROOT
 from tests.janitor.legacy_home import REPO_ROOT, expected_listing_count, launcher_env
 
@@ -172,19 +172,6 @@ def test_missing_docker_is_a_clean_error():
     assert "Docker" in lines[0]
 
 
-# ── agents ─────────────────────────────────────────────────────────────────
-
-
-def test_agents_are_discovered_from_janitor_skills():
-    found = agents.get_agents()
-    expected = {p for p in (SKILLS_ROOT / "agents").glob("janitor-*-agent")}
-    assert expected and {Path(a["path"]) for a in found} == expected
-    for agent in found:
-        by_name = agents.load_agent_spec(agent["name"])
-        by_dir = agents.load_agent_spec(Path(agent["path"]).name)
-        assert by_name is not None and by_name == by_dir
-
-
 # ── E2E through the real launcher ──────────────────────────────────────────
 
 
@@ -212,13 +199,6 @@ def _janitor(root, *args, env=None):
         cwd=str(root),
         timeout=180,
     )
-
-
-def test_agents_command_is_wired_through_the_plugin(fresh_home):
-    result = _janitor(fresh_home, "agents", "list")
-    assert result.returncode == 0, result.stderr
-    for agent in agents.get_agents():
-        assert agent["name"] in result.stdout
 
 
 def test_skills_resolve_from_the_install_tree(fresh_home):

@@ -115,13 +115,15 @@ def _soul_is_replaceable(path: Path) -> bool:
 
 
 def _needs_layout_migration(home: Path) -> bool:
-    """True when ``home`` still holds pre-1.0 Janitor skill copies or skin."""
-    from janitor.migrations import v1
+    """True when ``home`` still holds old Janitor skill copies or skin."""
+    from janitor.migrations import v1, v2
 
     plan = v1.Plan(home=home)
     v1._plan_skills(plan, v1.shipped_skills())
     v1._plan_skin(plan)
-    return not plan.empty
+    legacy = v2.Plan(home=home)
+    v2._plan_skills(legacy)
+    return not (plan.empty and legacy.empty)
 
 
 def ensure_home(home: Optional[Path] = None) -> List[str]:

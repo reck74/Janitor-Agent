@@ -253,13 +253,13 @@ def _atomic_write(path: Path, text: str) -> None:
         raise
 
 
-def _backup_dir(home: Path) -> Path:
+def _backup_dir(home: Path, version: int) -> Path:
     stamp = time.strftime("%Y%m%d-%H%M%S")
     root = home / ".backup"
-    candidate = root / f"v{VERSION}-{stamp}"
+    candidate = root / f"v{version}-{stamp}"
     n = 1
     while candidate.exists():
-        candidate = root / f"v{VERSION}-{stamp}-{n}"
+        candidate = root / f"v{version}-{stamp}-{n}"
         n += 1
     candidate.mkdir(parents=True)
     try:
@@ -283,9 +283,10 @@ def backup_sqlite(src: Path, dest: Path) -> None:
         source.close()
 
 
-def make_backup(plan: Plan) -> Path:
+def make_backup(plan, version: int = VERSION) -> Path:
+    """Back up everything a layout migration may change (``plan.home`` is all it reads)."""
     home = plan.home
-    dest = _backup_dir(home)
+    dest = _backup_dir(home, version)
     for rel in ("config.yaml", "SOUL.md", "honcho.json", f"skins/{SKIN_FILE}"):
         src = home / rel
         if src.is_file():
@@ -310,13 +311,17 @@ def _remove_skill(copy: Path, skills_dir: Path) -> None:
         parent = parent.parent
 
 
+def write_config(home: Path, config: dict) -> None:
+    _atomic_write(
+        home / "config.yaml",
+        yaml.safe_dump(config, sort_keys=False, allow_unicode=True, default_flow_style=False),
+    )
+
+
 def apply(plan: Plan) -> None:
     home = plan.home
     if plan.config_changes and plan.config is not None:
-        _atomic_write(
-            home / "config.yaml",
-            yaml.safe_dump(plan.config, sort_keys=False, allow_unicode=True, default_flow_style=False),
-        )
+        write_config(home, plan.config)
 
     skills_dir = home / "skills"
     for skill in plan.remove:

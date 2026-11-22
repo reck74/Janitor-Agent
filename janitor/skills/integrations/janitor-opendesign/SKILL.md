@@ -10,7 +10,7 @@ metadata:
   hermes:
     tags: [opendesign, design-tools, coding-agent, janitor, integration]
     category: devops
-    related_skills: [janitor-onboarding, janitor-config-audit]
+    related_skills: [janitor-onboarding]
 ---
 
 # janitor-opendesign
@@ -158,5 +158,4 @@ re-run.
 ## See Also
 
 - `janitor-onboarding` — orientation for first-time Janitor users
-- `janitor-config-audit` — diffs active config against the canonical janitor-core assets
 - `opendesign-install` (upstream Janitor core) — original install skill this one extends

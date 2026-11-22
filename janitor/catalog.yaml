@@ -110,9 +110,9 @@ skills:
     path: media/youtube-content
     purpose: investigacion
     templates: [investigador]
-  - id: janitor-repo-research-agent
+  - id: janitor-repo-research
     source: janitor
-    path: agents/janitor-repo-research-agent
+    path: research/janitor-repo-research
     purpose: investigacion
     platforms: [linux, macos]
     templates: [investigador]
