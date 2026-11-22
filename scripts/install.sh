@@ -243,6 +243,18 @@ log_error() {
     echo -e "${RED}✗${NC} $1"
 }
 
+# JANITOR: a home holding the pre-app terminal install (janitor-core) is
+# refused before anything is written; adopting it is plan task F5-01.
+janitor_legacy_home_message() {
+    printf '%s' "Alto ahí: en $HERMES_HOME ya vive una instalación de Janitor por terminal (janitor-core). Esta app todavía no sabe adoptarla y no pienso plantarte un segundo motor encima, así que no toqué nada: ni el home, ni el comando janitor. Por ahora sigue usando 'janitor' desde el terminal, como hasta hoy."
+}
+
+janitor_refuse_legacy_home() {  # JANITOR: legacy-home guard
+    [ -d "$HERMES_HOME/janitor-core" ] || return 0
+    echo -e "${RED}✗${NC} $(janitor_legacy_home_message)" >&2
+    return 1
+}
+
 json_escape() {
     # Enough for short installer status strings; avoids requiring jq during
     # pre-install bootstrap.
@@ -3891,6 +3903,13 @@ run_stage_protocol() {
         return 2
     fi
 
+    if ! janitor_refuse_legacy_home; then  # JANITOR: every stage, before any write
+        if [ "$JSON_OUTPUT" = true ]; then
+            emit_stage_json "$stage" false false "$(janitor_legacy_home_message)"
+        fi
+        return 1
+    fi  # JANITOR: end of the legacy-home guard
+
     if [ "$NON_INTERACTIVE" = true ] && stage_needs_user_input "$stage"; then
         log_info "Skipping $stage (non-interactive bootstrap)"
         if [ "$JSON_OUTPUT" = true ]; then
@@ -3925,6 +3944,7 @@ run_stage_protocol() {
 # ============================================================================
 
 main() {
+    janitor_refuse_legacy_home || return 1  # JANITOR: before any write
     print_banner
 
     detect_os

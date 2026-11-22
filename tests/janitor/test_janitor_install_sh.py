@@ -15,7 +15,13 @@ import pytest
 import yaml
 
 from janitor.home import ASSETS_ROOT
-from tests.janitor.install_sh_harness import fake_install_dir, run_install_sh, run_stage, stage_frame
+from tests.janitor.install_sh_harness import (
+    fake_install_dir,
+    run_install_sh,
+    run_stage,
+    stage_frame,
+    tree_snapshot,
+)
 
 pytestmark = pytest.mark.linux_only
 
@@ -120,3 +126,47 @@ def test_path_stage_installs_janitor_and_no_hermes_commands(tmp_path):
     assert real_hermes.read_bytes() == b"#!/bin/sh\necho real hermes\n"
     assert not (link_dir / "hermes-agent").exists()
     assert not (link_dir / "hermes-acp").exists()
+
+
+def _legacy_home(root):
+    """A home holding the pre-app terminal install, with `janitor` linked into it."""
+    home = root / ".janitor"
+    legacy_bin = home / "janitor-core" / ".venv" / "bin"
+    legacy_bin.mkdir(parents=True)
+    (legacy_bin / "janitor").write_bytes(b"#!/bin/sh\necho janitor viejo\n")
+    (home / "config.yaml").write_bytes(b"model:\n  default: mine\n")
+    link_dir = root / ".local" / "bin"
+    link_dir.mkdir(parents=True)
+    (link_dir / "janitor").symlink_to(legacy_bin / "janitor")
+    return home
+
+
+@pytest.mark.parametrize("stage", ["path", "config"])
+def test_stage_refuses_a_home_with_the_terminal_install(tmp_path, stage):
+    """F1-22: a home with janitor-core is left byte for byte as it was."""
+    install = fake_install_dir(tmp_path)
+    home = _legacy_home(tmp_path)
+    before = tree_snapshot(tmp_path)
+
+    result = run_stage(tmp_path, stage, install, home)
+
+    assert result.returncode != 0
+    frame = stage_frame(result.stdout)
+    assert frame is not None and frame["ok"] is False and frame["stage"] == stage, result.stdout
+    reason = frame["reason"]
+    assert str(home) in reason and "janitor-core" in reason and "no toqué nada" in reason, reason
+    assert reason in result.stderr
+    assert tree_snapshot(tmp_path) == before
+
+
+def test_stage_without_the_terminal_install_is_not_refused(tmp_path):
+    install = fake_install_dir(tmp_path)
+    home = tmp_path / ".janitor"
+    (tmp_path / ".local" / "bin").mkdir(parents=True)
+
+    result = run_stage(tmp_path, "path", install, home)
+
+    assert stage_frame(result.stdout) == {"ok": True, "stage": "path", "skipped": False}, (
+        result.stdout + result.stderr
+    )
+    assert "janitor-core" not in result.stdout + result.stderr

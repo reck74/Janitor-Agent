@@ -143,8 +143,13 @@ touchpoints:
       into ~/.janitor by default, links `janitor` (never the hermes /
       hermes-agent / hermes-acp launchers) via `python -m janitor.seed
       --link-command`, defaults to --no-skills, and runs `python -m
-      janitor.seed --home` in the config stage before any skills sync. Every
-      changed hunk carries a `# JANITOR:` comment.
+      janitor.seed --home` in the config stage before any skills sync. A
+      home that already holds the legacy terminal install (`janitor-core/`)
+      is refused in every --stage and in the monolithic run before anything
+      is written, with a Spanish message (and the {ok:false} JSON frame's
+      reason) telling the user to keep using `janitor` from the terminal
+      until adoption exists (plan F1-22 / F5-01). Every changed hunk carries
+      a `# JANITOR:` comment.
     verify: test:install-sh
     merge: reapply
 

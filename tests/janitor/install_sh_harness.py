@@ -63,6 +63,20 @@ def stage_frame(stdout: str) -> Optional[dict]:
     return None
 
 
+def tree_snapshot(root: Path) -> dict:
+    """Every entry under ``root``: file bytes, symlink target, or ``dir``."""
+    snap = {}
+    for path in sorted(root.rglob("*")):
+        rel = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            snap[rel] = ("link", os.readlink(path))
+        elif path.is_dir():
+            snap[rel] = ("dir", path.stat().st_mode)
+        else:
+            snap[rel] = ("file", path.stat().st_mode, path.read_bytes())
+    return snap
+
+
 def run_stage(root: Path, stage: str, install: Path, home: Path, **kw) -> subprocess.CompletedProcess:
     return run_install_sh(
         root,
