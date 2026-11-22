@@ -1,0 +1,18 @@
+# AGENTS.md — {{NAME}}
+
+{{PROBLEM}} Usuarios: {{USERS}}
+
+## Build y pruebas
+
+- Gestor de paquetes: **{{PM}}** (no mezclar con otro; el lockfile es `{{LOCKFILE}}`).
+- Instalar: `{{PM}} install`
+- Compilar: `{{PM}} run build`
+- Lint y tipos: `{{PM}} run lint`
+- Pruebas: `{{PM}} test`
+- Nada está terminado hasta que lint y pruebas pasan.
+
+## Reglas
+
+- TypeScript estricto; imports relativos con extensión `.js` (módulos nodenext).
+- Dependencias con versión exacta (`.npmrc` tiene `save-exact=true`) y el lockfile en el mismo commit.
+- Nunca se commitean secretos: van en `.env` (ignorado por git).

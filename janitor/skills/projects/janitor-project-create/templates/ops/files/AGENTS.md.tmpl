@@ -1,0 +1,16 @@
+# AGENTS.md — {{NAME}}
+
+{{PROBLEM}} Usuarios: {{USERS}}
+
+## Lint y pruebas
+
+- Lint: `make lint` (ShellCheck, severidad {{PIN_SHELLCHECK_SEVERITY}}).
+- Pruebas: `make test`
+- Nada está terminado hasta que `make check` pasa.
+
+## Reglas
+
+- Todo script empieza con `set -euo pipefail`, carga `scripts/lib/common.sh` y ejecuta los cambios con `run`.
+- Dry-run por defecto; los cambios reales solo con `--apply`.
+- Cada script nuevo tiene su prueba en `tests/run.sh`.
+- Nunca se commitean secretos: van en `.env` (ignorado por git); `.env.example` documenta las variables.

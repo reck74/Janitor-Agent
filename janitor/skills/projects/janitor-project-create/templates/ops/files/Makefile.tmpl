@@ -1,0 +1,12 @@
+SHELLCHECK ?= shellcheck
+SCRIPTS := $(wildcard scripts/*.sh scripts/lib/*.sh tests/*.sh)
+
+.PHONY: lint test check
+
+lint:
+	$(SHELLCHECK) --severity={{PIN_SHELLCHECK_SEVERITY}} $(SCRIPTS)
+
+test:
+	bash tests/run.sh
+
+check: lint test

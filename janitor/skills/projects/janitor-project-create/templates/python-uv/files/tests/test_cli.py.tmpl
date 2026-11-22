@@ -1,0 +1,15 @@
+import pytest
+
+from {{PY_PACKAGE}}.cli import PROG, main
+
+
+def test_main_without_arguments_succeeds():
+    assert main([]) == 0
+
+
+def test_version_flag_prints_program_and_version(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["--version"])
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert out.startswith(f"{PROG} ")

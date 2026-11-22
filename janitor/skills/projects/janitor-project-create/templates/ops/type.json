@@ -1,0 +1,23 @@
+{
+  "title": "Repositorio de operaciones y automatización (scripts, Makefile, ShellCheck)",
+  "kinds": ["ops"],
+  "tools": ["make", "bash", "shellcheck"],
+  "install": null,
+  "deps_present": [],
+  "verify": [
+    {"id": "lint", "argv": ["make", "lint"], "needs": ["make", "shellcheck"]},
+    {"id": "test", "argv": ["make", "test"], "needs": ["make", "bash"]}
+  ],
+  "purposes": {
+    "Makefile": "Objetivos lint, test y check; la CI usa los mismos.",
+    ".shellcheckrc": "Configuración de ShellCheck (bash, sigue los source, severidad style).",
+    ".env.example": "Variables que los scripts esperan, sin valores reales (copiar a .env).",
+    ".gitignore": "Excluye secretos, .env y artefactos locales.",
+    "README.md": "Qué automatiza, para quién, y cómo ejecutar y probar.",
+    "AGENTS.md": "Instrucciones de lint y pruebas para agentes de código.",
+    ".github/workflows/ci.yml": "CI: ShellCheck y pruebas en cada push y PR.",
+    "scripts/lib/common.sh": "Funciones comunes: log, die, require_cmd, run (respeta --dry-run).",
+    "scripts/{{NAME}}.sh": "Script principal con --help y --dry-run por defecto.",
+    "tests/run.sh": "Pruebas de los scripts (bash puro, sin dependencias)."
+  }
+}

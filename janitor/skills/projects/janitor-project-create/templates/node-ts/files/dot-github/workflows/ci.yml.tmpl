@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: {{ACTION_CHECKOUT}}
+        with:
+          persist-credentials: false
+      - uses: {{ACTION_SETUP_NODE}}
+        with:
+          node-version: "{{PIN_NODE_MAJOR}}"
+{{CI_PM_SETUP}}      - name: Instalar dependencias (lockfile obligatorio)
+        run: {{PM_CI_INSTALL}}
+      - name: Lint y tipos
+        run: {{PM}} run lint
+      - name: Pruebas
+        run: {{PM}} test

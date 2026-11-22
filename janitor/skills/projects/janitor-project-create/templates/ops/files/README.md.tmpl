@@ -1,0 +1,42 @@
+# {{NAME}}
+
+{{PROBLEM}}
+
+**Quién lo usa:** {{USERS}}
+
+## Requisitos
+
+- Bash {{PIN_BASH_MIN}} o superior, GNU make.
+- [ShellCheck](https://www.shellcheck.net/) para `make lint` (paquete `shellcheck` de la distribución).
+- Git.
+
+## Uso
+
+```bash
+cp .env.example .env               # y rellena los valores; .env no se commitea
+./scripts/{{NAME}}.sh --help
+./scripts/{{NAME}}.sh              # dry-run: muestra lo que haría
+./scripts/{{NAME}}.sh --apply      # ejecuta
+```
+
+## Pruebas y calidad
+
+```bash
+make lint    # ShellCheck sobre scripts/ y tests/
+make test    # tests/run.sh
+make check   # ambos
+```
+
+La CI (`.github/workflows/ci.yml`) ejecuta `make lint` y `make test` en cada push y pull request.
+
+## Estructura
+
+```text
+scripts/          scripts de automatización (dry-run por defecto)
+scripts/lib/      funciones comunes
+tests/            pruebas en bash
+```
+
+## Licencia
+
+{{LICENSE_README}}

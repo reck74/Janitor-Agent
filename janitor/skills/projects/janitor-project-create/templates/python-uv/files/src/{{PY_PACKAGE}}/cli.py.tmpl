@@ -1,0 +1,21 @@
+"""Punto de entrada de la línea de órdenes."""
+
+from __future__ import annotations
+
+import argparse
+from collections.abc import Sequence
+from importlib.metadata import version
+
+PROG = "{{NAME}}"
+DESCRIPTION = {{DESCRIPTION_PY}}
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog=PROG, description=DESCRIPTION)
+    parser.add_argument("--version", action="version", version=f"{PROG} {version(PROG)}")
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    build_parser().parse_args(argv)
+    return 0

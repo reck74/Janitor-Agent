@@ -140,6 +140,13 @@ skills:
     templates: [investigador]
 
   # --- Proyectos -------------------------------------------------------
+  - id: janitor-project-create
+    source: janitor
+    path: projects/janitor-project-create
+    purpose: proyectos
+    platforms: [linux]
+    templates: [creador-proyectos]
+
   - id: github
     source: upstream-bundled
     path: software-development/github

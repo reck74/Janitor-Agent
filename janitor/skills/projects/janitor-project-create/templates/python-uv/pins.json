@@ -1,0 +1,12 @@
+{
+  "refreshed": "2026-11-22",
+  "rule": "Cada versión mínima es una publicación con al menos 14 días; techo en la siguiente mayor (pre-1.0: menor + 2).",
+  "pins": {
+    "PYTHON": "3.13",
+    "REQUIRES_PYTHON": ">=3.12",
+    "RUFF_TARGET": "py312",
+    "UV_BUILD": ">=0.13.7,<0.15",
+    "PYTEST": ">=9.2.0,<10",
+    "RUFF": ">=0.17.4,<0.19"
+  }
+}

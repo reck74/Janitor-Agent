@@ -1,0 +1,22 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { PROG, run, VERSION } from "../src/cli.js";
+
+function capture(): { text: string; write(chunk: string): void } {
+  return {
+    text: "",
+    write(chunk: string) {
+      this.text += chunk;
+    },
+  };
+}
+
+test("sin argumentos termina con 0", () => {
+  assert.equal(run([], capture()), 0);
+});
+
+test("--version imprime programa y versión", () => {
+  const out = capture();
+  assert.equal(run(["--version"], out), 0);
+  assert.equal(out.text, `${PROG} ${VERSION}\n`);
+});

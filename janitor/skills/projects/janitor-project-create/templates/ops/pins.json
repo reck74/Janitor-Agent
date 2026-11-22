@@ -1,0 +1,8 @@
+{
+  "refreshed": "2026-11-22",
+  "rule": "Sin dependencias de paquetes: las herramientas vienen del sistema. ShellCheck viene preinstalado en ubuntu-latest.",
+  "pins": {
+    "SHELLCHECK_SEVERITY": "style",
+    "BASH_MIN": "4.4"
+  }
+}

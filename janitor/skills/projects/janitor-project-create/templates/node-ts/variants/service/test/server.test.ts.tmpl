@@ -1,0 +1,31 @@
+import assert from "node:assert/strict";
+import type { AddressInfo } from "node:net";
+import { after, before, test } from "node:test";
+import { createApp } from "../src/server.js";
+
+const server = createApp();
+let base = "";
+
+before(async () => {
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  base = `http://127.0.0.1:${port}`;
+});
+
+after(async () => {
+  await new Promise<void>((resolve, reject) =>
+    server.close((err) => (err ? reject(err) : resolve())),
+  );
+});
+
+test("GET /health responde 200 con status ok", async () => {
+  const res = await fetch(`${base}/health`);
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { status: "ok" });
+});
+
+test("ruta desconocida responde 404", async () => {
+  const res = await fetch(`${base}/no-existe`);
+  assert.equal(res.status, 404);
+  await res.body?.cancel();
+});

@@ -1,0 +1,23 @@
+{
+  "name": "{{NAME}}",
+  "version": "0.1.0",
+  "description": {{DESCRIPTION_JSON}},
+  "private": true,
+  "license": "{{NPM_LICENSE}}",
+  "type": "module",
+{{PM_FIELD}}  "engines": {
+    "node": ">={{PIN_NODE_MAJOR}}"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/main.js",
+    "lint": "biome check . && tsc -p tsconfig.json --noEmit",
+    "format": "biome format --write .",
+    "test": "tsc -p tsconfig.json && node --test \"dist/test/**/*.test.js\""
+  },
+  "devDependencies": {
+    "@biomejs/biome": "{{PIN_BIOME}}",
+    "@types/node": "{{PIN_TYPES_NODE}}",
+    "typescript": "{{PIN_TYPESCRIPT}}"
+  }
+}

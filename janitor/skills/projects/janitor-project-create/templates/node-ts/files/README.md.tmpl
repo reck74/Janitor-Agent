@@ -1,0 +1,46 @@
+# {{NAME}}
+
+{{PROBLEM}}
+
+**Quién lo usa:** {{USERS}}
+
+## Requisitos
+
+- Node.js {{PIN_NODE_MAJOR}} o superior.
+- {{PM_REQUIREMENT}}
+- Git.
+
+## Instalación
+
+```bash
+{{PM}} install
+```
+
+Las herramientas de desarrollo tienen versión exacta en `package.json` y `{{LOCKFILE}}` fija el árbol
+completo. En CI se instala con `{{PM_CI_INSTALL}}`.
+
+## Uso
+
+{{NODE_USAGE}}
+
+## Pruebas y calidad
+
+```bash
+{{PM}} run lint    # Biome + comprobación de tipos (tsc --noEmit)
+{{PM}} test        # compila y ejecuta node --test
+{{PM}} run format  # aplica el formato
+```
+
+La CI (`.github/workflows/ci.yml`) ejecuta lint y pruebas en cada push y pull request.
+
+## Estructura
+
+```text
+src/    código TypeScript
+test/   pruebas (node:test)
+dist/   salida de compilación (ignorada por git)
+```
+
+## Licencia
+
+{{LICENSE_README}}
