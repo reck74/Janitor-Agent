@@ -1,6 +1,6 @@
 ---
 name: janitor-firecrawl
-description: "Guided self-hosted Firecrawl for web extraction."
+description: "Instalación guiada de Firecrawl local para extraer webs."
 version: 2.0.0
 author: Janitor Agent
 license: MIT

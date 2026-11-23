@@ -233,6 +233,11 @@ export const LITERALS = {
     ["['default', 'View',", "['default', 'Ver',"]
   ],
 
+  // F1-19: label of the local entry in Settings → Gateway → Saved connections
+  // (and the gateway switcher). Stored in the connection registry when it is
+  // first written; a registry created by an earlier build keeps its label.
+  'electron/connection-registry.ts': [["function localEntry(label = 'This device'): RegistryConnection {", "function localEntry(label = 'Este equipo'): RegistryConnection {"]],
+
   'electron/update-marker.ts': [
     [
       'message: `An update is already running (PID ${owner.pid}, started ${elapsed} ago). Wait for it to finish, then try again.`',
@@ -270,7 +275,41 @@ export const LITERALS = {
   // /login already does (plan 2.2: Nous account flows hidden). The offline
   // registry row decides, because a non-null row is never overridden by the
   // live catalog (desktop-slash-commands.ts, REGISTRY_OFFERED_NAMES).
-  'src/lib/desktop-slash-registry.json': [['"/topup": null,', '"/topup": "settings",']],
+  'src/lib/desktop-slash-registry.json': [
+    ['"/topup": null,', '"/topup": "settings",'],
+    // F1-19: /subscription (alias /upgrade) is the Nous plan page; hidden like /topup.
+    ['"/subscription": null,', '"/subscription": "advanced",'],
+    ['"/upgrade": null,', '"/upgrade": "advanced",'],
+    // /debug uploads logs (conversation text) to a public paste service or to
+    // Nous staff storage and says to share the links with the Hermes team: an
+    // upstream support flow. `janitor debug share --local` stays in the terminal.
+    ['"/debug": null,', '"/debug": "terminal",']
+  ],
+  // F1-19: what the chat shows when a hidden or desktop-owned command is typed,
+  // and the app-side rows of the slash palette (brand/palette.mjs covers the
+  // group headers, usage hints and skill rows).
+  'src/lib/desktop-slash-commands.ts': [
+    [
+      '`${command} is not shown in the desktop slash palette. Use the relevant desktop control or terminal interface instead.`',
+      '`${command} no está en la paleta de comandos de la app. Usa el control de la app que corresponda o la terminal.`'
+    ],
+    [
+      '\'Voice chat lives in the composer here: click the microphone button and choose "Start voice chat" (or press Ctrl+B).\'',
+      "'El chat de voz está en el compositor: pulsa el micrófono y elige «Iniciar conversación de voz» (o Ctrl+B).'"
+    ],
+    ['`${command} is only used from messaging platforms.`', '`${command} solo se usa desde las plataformas de mensajería.`'],
+    ['`${command} is managed from the desktop sidebar.`', '`${command} se gestiona desde la barra lateral de la app.`'],
+    ['`${command} is only available in the terminal interface.`', '`${command} solo está disponible en la terminal.`'],
+    ['`${command} uses the desktop model picker instead of a slash command.`', '`${command} usa el selector de modelos de la app, no un comando de barra.`'],
+    ['`${command} uses the desktop session picker instead of a slash command.`', '`${command} usa el selector de sesiones de la app, no un comando de barra.`'],
+    ["meta: 'Show available desktop themes'", "meta: 'Mostrar los temas disponibles'"],
+    ["meta: 'Cycle to the next desktop theme'", "meta: 'Pasar al siguiente tema'"],
+    ["${theme.name === activeThemeName ? ' (current)' : ''}", "${theme.name === activeThemeName ? ' (actual)' : ''}"]
+  ],
+  'src/app/chat/composer/hooks/use-slash-completions.ts': [["display: 'Browse all sessions…',", "display: 'Ver todas las sesiones…',"]],
+  'src/app/session/hooks/use-prompt-actions/slash.ts': [
+    ['`/${name} is not available in the desktop app.`', '`/${name} no está disponible en la app.`', 2]
+  ],
   'src/components/assistant-ui/thread/status.tsx': [["label={hint || 'Hermes is working'}", "label={hint || 'Janitor está trabajando'}"]],
   'src/components/assistant-ui/thread/message-reactions.tsx': [['title="Reacted by Hermes"', 'title="Reacción de Janitor"']],
   'src/main.tsx': [["document.title = 'Hermes HUD'", "document.title = 'Janitor HUD'"]],

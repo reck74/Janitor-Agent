@@ -1,6 +1,6 @@
 ---
 name: janitor-onboarding
-description: "Map of Janitor: agents, skills, apps and files."
+description: "Mapa de Janitor: agentes, skills, aplicativos y archivos."
 version: 4.0.0
 author: Janitor Agent
 license: MIT

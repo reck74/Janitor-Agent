@@ -1,6 +1,6 @@
 ---
 name: janitor-project-create
-description: "Scaffold a project that builds and passes tests."
+description: "Monta un proyecto nuevo que compila y pasa sus pruebas."
 version: 1.0.0
 author: Janitor Agent
 license: MIT

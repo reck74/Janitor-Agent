@@ -1,6 +1,6 @@
 ---
 name: janitor-file-organizer
-description: "Organize a messy folder by type or date, with undo."
+description: "Ordena una carpeta por tipo o fecha, y se puede deshacer."
 version: 1.0.0
 author: Janitor Agent
 license: MIT

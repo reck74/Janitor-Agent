@@ -1,6 +1,6 @@
 ---
 name: janitor-maintenance
-description: "Scheduled health audit that reports what changed."
+description: "Revisión programada del equipo que dice qué cambió."
 version: 1.0.0
 author: Janitor Agent
 license: MIT

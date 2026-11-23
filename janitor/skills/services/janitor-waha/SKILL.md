@@ -1,6 +1,6 @@
 ---
 name: janitor-waha
-description: "Read-only audit of your WhatsApp via local WAHA."
+description: "Auditoría de solo lectura de tu WhatsApp con WAHA local."
 version: 3.0.0
 author: Janitor Agent
 license: MIT

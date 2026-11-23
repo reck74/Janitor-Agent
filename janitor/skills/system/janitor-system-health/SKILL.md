@@ -1,6 +1,6 @@
 ---
 name: janitor-system-health
-description: "Read-only Linux health audit with prioritised findings."
+description: "Revisión de salud de Linux sin tocar nada, por prioridad."
 version: 1.0.0
 author: Janitor Agent
 license: MIT

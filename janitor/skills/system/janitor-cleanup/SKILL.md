@@ -1,6 +1,6 @@
 ---
 name: janitor-cleanup
-description: "Reclaim disk space on Linux with a plan sent to Trash."
+description: "Libera disco en Linux con un plan; todo va a la papelera."
 version: 1.0.0
 author: Janitor Agent
 license: MIT

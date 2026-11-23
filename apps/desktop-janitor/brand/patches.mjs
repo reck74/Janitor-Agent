@@ -1,9 +1,12 @@
-// Structural build patches P1-P5 (plan section 4.2, directive #17) and P13,
-// the app↔engine contract gate (F1-21a, brand/compat.mjs).
+// Structural build patches P1-P5 (plan section 4.2, directive #17), P13,
+// the app↔engine contract gate (F1-21a, brand/compat.mjs), and P14, the slash
+// palette in Spanish (F1-19, brand/palette.mjs; before P10/P6 so the catalog
+// guard also sees the skill rows it adds to es.ts).
 // Anchors are exact source text of apps/desktop; `count` is the exact number
 // of matches expected. A mismatch fails the build naming the patch id.
 
 import { compatPatches } from './compat.mjs'
+import { palettePatches } from './palette.mjs'
 
 export const STRUCTURAL_PATCHES = [
   {
@@ -96,5 +99,6 @@ export const STRUCTURAL_PATCHES = [
     count: 1
   },
   // Contract number read from janitor/desktop-compat.json when this module loads.
-  ...compatPatches()
+  ...compatPatches(),
+  ...palettePatches()
 ]

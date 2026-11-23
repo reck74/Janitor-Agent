@@ -1,6 +1,6 @@
 ---
 name: janitor-lightrag
-description: "Guided LightRAG install: local knowledge base."
+description: "Instalación guiada de LightRAG: base de conocimiento local."
 version: 2.0.0
 author: Janitor Agent
 license: MIT

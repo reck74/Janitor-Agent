@@ -1,6 +1,6 @@
 ---
 name: janitor-n8n
-description: "Guided n8n install for local automations."
+description: "Instalación guiada de n8n para automatizaciones locales."
 version: 2.0.0
 author: Janitor Agent
 license: MIT

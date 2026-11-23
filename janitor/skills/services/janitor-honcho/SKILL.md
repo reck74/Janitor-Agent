@@ -1,6 +1,6 @@
 ---
 name: janitor-honcho
-description: "Guided Honcho memory install, cloud or local."
+description: "Instalación guiada de la memoria Honcho, nube o local."
 version: 2.0.0
 author: Janitor Agent
 license: MIT

@@ -1,6 +1,6 @@
 ---
 name: janitor-opendesign
-description: "Guided Open Design install for design generation."
+description: "Instalación guiada de Open Design para generar diseños."
 version: 2.0.0
 author: Janitor Agent
 license: MIT

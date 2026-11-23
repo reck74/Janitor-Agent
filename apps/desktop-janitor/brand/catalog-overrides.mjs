@@ -76,6 +76,47 @@ export const ES_OVERRIDES = [
     en: 'Hermes is not installed on the remote host. Install it there (curl -fsSL https://hermes-agent.nousresearch.com/install.sh | sh) or set the Hermes path.',
     from: 'Hermes no está instalado en el host remoto. Instálalo allí (curl -fsSL https://hermes-agent.nousresearch.com/install.sh | sh) o indica la ruta de Hermes.',
     es: 'La conexión por SSH no está soportada todavía en Janitor: no hay en el host remoto un motor que la app sepa arrancar. Usa la conexión local.'
+  },
+  {
+    // F1-19: SSH (P9-ssh-mode-card) and Cloud (P9-cloud-*) are not offered in
+    // the Janitor build; the header of Saved connections must not promise them.
+    path: 'settings.connections.intro',
+    en: 'Manage this device and every Hermes gateway it can reach through remote, SSH, or Cloud connections.',
+    from: 'Gestiona este dispositivo y cada gateway de Hermes al que puede llegar mediante conexiones remotas, SSH o Cloud.',
+    es: 'Gestiona este equipo y cada gateway de Janitor al que llega por conexión remota.'
+  },
+  // F1-19: palette descriptions that repeated the usage hint in English
+  // (`<level>`, `[name...]`); the Spanish hint now follows from brand/palette.mjs.
+  {
+    path: 'composer.commandDescs./reasoning',
+    en: 'Reasoning effort or display [<level> [--global]|show|hide|full|clamp]',
+    from: 'Esfuerzo o visualización del razonamiento [<level> [--global]|show|hide|full|clamp]',
+    es: 'Esfuerzo del razonamiento o cómo se muestra'
+  },
+  {
+    path: 'composer.commandDescs./wake',
+    en: 'Control the desktop wake-word listener [on|off|status]',
+    from: 'Controlar la escucha de la palabra de activación del escritorio [on|off|status]',
+    es: 'Controlar la escucha de la palabra de activación'
+  },
+  {
+    path: 'composer.commandDescs./tools',
+    en: 'Manage tools: /tools [list|disable|enable] [name...]',
+    from: 'Gestionar herramientas: /tools [list|disable|enable] [name...]',
+    es: 'Gestionar herramientas: listar, activar o desactivar'
+  },
+  {
+    path: 'composer.commandDescs./browser',
+    en: 'Manage browser CDP connection [connect|disconnect|status] (local gateway only)',
+    from: 'Gestionar la conexión CDP del navegador [connect|disconnect|status] (solo gateway local)',
+    es: 'Gestionar la conexión CDP del navegador (solo gateway local)'
+  },
+  {
+    // Same term as settings.model.moaTitle above.
+    path: 'composer.commandDescs./moa',
+    en: 'Run one prompt through the default Mixture of Agents preset, then restore your model',
+    from: 'Ejecutar un prompt con el preajuste predeterminado de Mixture of Agents y luego restaurar tu modelo',
+    es: 'Ejecutar un prompt con el preajuste predeterminado de Mezcla de agentes (MoA) y luego restaurar tu modelo'
   }
 ]
 

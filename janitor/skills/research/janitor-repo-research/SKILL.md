@@ -1,6 +1,6 @@
 ---
 name: janitor-repo-research
-description: Investigate a GitHub repository end to end.
+description: "Investiga un repositorio de GitHub de principio a fin."
 version: 2.0.0
 author: Janitor Agent
 license: MIT

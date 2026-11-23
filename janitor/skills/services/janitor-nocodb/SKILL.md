@@ -1,6 +1,6 @@
 ---
 name: janitor-nocodb
-description: "Guided NocoDB install: databases with UI and API."
+description: "Instalación guiada de NocoDB: tablas con interfaz y API."
 version: 2.0.0
 author: Janitor Agent
 license: MIT
