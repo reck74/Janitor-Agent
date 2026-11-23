@@ -1,5 +1,5 @@
 name: lightrag
-description: Graph RAG knowledge base (LightRAG + Postgres).
+description: Base de conocimiento con grafo y RAG (LightRAG local).
 deploy: scripts/deploy.sh
 compose: scripts/lightrag-compose.yml
 url: http://127.0.0.1:9621

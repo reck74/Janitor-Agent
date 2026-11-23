@@ -1,388 +1,140 @@
 ---
 name: janitor-n8n
-description: "Deploy and operate n8n self-hosted for Janitor."
-version: 1.0.0
+description: "Guided n8n install for local automations."
+version: 2.0.0
 author: Janitor Agent
 license: MIT
 platforms: [linux, macos]
 
 metadata:
   hermes:
-    tags: [n8n, docker, self-host, workflows, automation, compose, devops]
+    tags: [n8n, automation, workflows, docker, local-setup]
     category: devops
+    related_skills: [janitor-nocodb, janitor-lightrag]
 ---
 
-# janitor-n8n
+# Janitor n8n Skill
 
-Deploy and operate n8n self-hosted workflow automation as a Janitor tool.
-n8n provides visual workflow building with 400+ integrations, webhooks, and
-code nodes. This skill covers the full lifecycle: deployment, API access
-pattern (with the masked-API-key workaround), workflow CRUD, and webhook
-triggering.
-
-## Architecture
-
-```
-127.0.0.1:5678 → janitor-n8n (docker.n8n.io/n8nio/n8n:latest)
-                  ├── SQLite DB at $HOME/.n8n/database.sqlite
-                  ├── Encryption key in ~/.janitor/docker/n8n.env
-                  └── Network: janitor-n8n-network (isolated bridge)
-```
+Installs n8n — visual workflow automation with webhooks and hundreds of integrations — as
+one local container, `janitor-n8n`, on `127.0.0.1` only. The user talks; you run the script.
+It never runs `sudo`, never removes a container or a volume, and never asks for, stores or
+prints a password or key: the n8n owner account is created by the user in the web UI.
 
 ## When to Use
 
-- Deploy or repair the n8n Docker stack
-- Create, update, activate, or execute workflows programmatically
-- Set up webhook-triggered automation pipelines
-- Query execution history and status
-- Integrate n8n with other Janitor services (Firecrawl, Honcho)
+- "Install / set up n8n", "I want automations", "something to run workflows / webhooks".
+- "Is n8n working?", "stop n8n".
+- Building or calling workflows on an n8n that is already installed (see Using n8n).
 
-## Deploy (already done — reference for re-deploy)
+Not for: n8n Cloud, deleting n8n data (give the commands in Pitfalls; never run them).
 
-```bash
-janitor services deploy n8n
-```
+## Prerequisites
 
-This script:
-1. Generates `N8N_ENCRYPTION_KEY` via `openssl rand -hex 32`
-2. Creates `~/.janitor/docker/n8n.env` (chmod 600, never overwritten)
-3. Pulls `docker.n8n.io/n8nio/n8n:latest`
-4. Starts container with healthcheck
-5. Injects `N8N_API_URL` into `~/.janitor/.env`
+- Linux or macOS, `python3` on `PATH`, `HERMES_HOME` set (the agent's `terminal` does it).
+- Docker with `docker compose` v2, ~2 GB free, the port free (default 5678).
+- Network access to pull `docker.n8n.io/n8nio/n8n:latest` the first time.
 
-**Files:**
-- Compose: `${HERMES_SKILL_DIR}/scripts/n8n-compose.yml`
-  (copied to `~/.janitor/docker/n8n-compose.yml` on deploy)
-- Env: `~/.janitor/docker/n8n.env` (contains encryption key — chmod 600)
-- Deploy script: `${HERMES_SKILL_DIR}/scripts/deploy.sh`
-- Auth helper: `${HERMES_SKILL_DIR}/scripts/n8n-auth.sh`
-- Credentials in: `~/.janitor/.env` (`N8N_USER_EMAIL`, `N8N_USER_PASSWORD`)
-
-## Authentication (CRITICAL — Read This)
-
-### The API Key Masking Bug
-
-n8n v2.x **masks** the `rawApiKey` field with literal `...` in the HTTP
-response body, even on key creation. This is a security feature that makes
-it impossible to extract the full JWT API key via REST API. The `/api/v1/`
-endpoints require `X-N8N-API-KEY` header and do NOT accept cookies.
-
-### Workaround: Cookie-Based Auth with /rest/ Endpoints
-
-Use the `/rest/` internal endpoints (not `/api/v1/`) with cookie-based
-session auth. The `/rest/` endpoints are the same ones the n8n web UI uses
-and accept the `n8n-auth` session cookie.
-
-**Step 1: Obtain a session cookie**
+## How to Run
 
 ```bash
-source ${HERMES_SKILL_DIR}/scripts/n8n-auth.sh
-# Sets $N8N_COOKIE_JAR to a cookie file path
-# Cookie valid for 7 days (n8n default)
+S=${HERMES_SKILL_DIR}/scripts/n8n_setup.py
+python3 $S preflight [--port N]           # read-only
+python3 $S deploy [--port N]              # prints the plan, changes nothing
+python3 $S deploy [--port N] --yes        # only after the user said yes to that plan
+python3 $S verify [--port N]              # read-only: does n8n answer on loopback?
+python3 $S stop [--yes]                   # stops the container, keeps everything
 ```
 
-The auth helper reads `N8N_USER_EMAIL` and `N8N_USER_PASSWORD` from
-`~/.janitor/.env` automatically.
+- stdout: one JSON document (`ok`, and `reason` when `ok` is false). stderr: Spanish hints.
+  Exit 0 ok, 1 refused/failed, 2 `HERMES_HOME` unset.
+- The first `deploy --yes` pulls the image (a few minutes): run it with
+  `terminal(background=true, notify=true)` and wait with `process(action="wait")`.
+- `janitor services deploy n8n` runs the same deploy (that command is the confirmation).
+- `--port` is remembered in `n8n.env`; later commands use it without the flag. The app's
+  services screen checks the default port declared in `service.yaml` (5678).
 
-**Step 2: Use cookie in all API calls**
+## Quick Reference
+
+| Command | Writes | Guarantees |
+|---|---|---|
+| `preflight` | nothing | Docker calls are inspect/info only |
+| `deploy` | nothing | returns `plan` + `reason: confirmation_required` |
+| `deploy --yes` | `<root>/docker/{n8n-compose.yml,n8n.env,n8n-files/}` | loopback port; `compose up -d` only; keeps a compose you edited; `n8n.env` (0600) holds only the encryption key and timezone |
+| `verify` | nothing | GET `/healthz` on `127.0.0.1`; `ok` only on HTTP 200 |
+| `stop --yes` | nothing on disk | `docker stop`; volume `janitor-n8n-data` and files stay |
+
+Preflight keys you act on: `blockers[]`, `docker.install_hint.command`, `docker.fix_hint`,
+`port`, `service.state`, `health`, `foreign_containers[]`, `files`.
+
+| Blocker | What to tell the user (they run any command themselves) |
+|---|---|
+| `docker_missing` | Show `docker.install_hint.command` |
+| `docker_daemon_down`, `docker_permission_denied` | Show `docker.fix_hint` |
+| `compose_v2_missing` | Arch: `sudo pacman -S docker-compose`; others: the `docker-compose-plugin` package |
+| `port_busy` | Something else listens there: ask for another port, use it as `--port` |
+| `disk_low` | Say how much is free (`disk.free_gb`) and what is needed |
+| `foreign_containers` | A `janitor-n8n` container exists from an older install; see Pitfalls |
+
+## Procedure
+
+Talk to the user in Spanish, dry and direct (Janitor's voice). Show what you will change
+before changing it.
+
+1. Run `preflight`. If `service.state` is `running` and `health.responding` is true, say it
+   is already installed, run `verify`, and stop unless they want something else.
+2. Resolve each blocker with the table, one at a time; re-run `preflight` after each fix.
+3. Run `deploy` (without `--yes`). Show the `plan` in plain Spanish: the files under
+   `<root>/docker/`, the image, the container, the volume, `127.0.0.1:<port>`, and that
+   nothing is ever deleted. Ask for a yes. Example tone: «Voy a descargar n8n, crear un
+   contenedor que solo escucha en tu equipo y un volumen para sus datos. ¿Le doy?».
+4. On yes, run `deploy --yes` (background). On `ok: false`, report `reason`; for
+   `health_timeout` quote each `failing[].container` with its `log_tail`. Volumes are kept;
+   after the fix, re-run `deploy --yes`.
+5. Run `verify`. Only with `ok: true` say it works. Then tell the user, in this order:
+   - open `http://127.0.0.1:<port>` and create the owner account there (their email and
+     password; you never see them);
+   - `n8n.env` holds the key that encrypts the credentials n8n stores: lose it and those
+     credentials are unreadable. It stays in `<root>/docker/n8n.env`; back it up with the rest;
+   - state / stop / start: `janitor services status|stop|start n8n`.
+6. Stop (on request): confirm, run `stop --yes`, list `kept`.
+
+## Using n8n
+
+The n8n public REST API needs an API key the user creates in the UI (Settings → n8n API).
+Never ask for it in the chat: the user stores it with `janitor config set N8N_API_KEY <clave>`
+in their own terminal (or the API keys settings of the app). Then use it without printing it:
 
 ```bash
-curl -s -b "$N8N_COOKIE_JAR" http://127.0.0.1:5678/rest/workflows
+K=$(grep -m1 '^N8N_API_KEY=' "$HERMES_HOME/.env" | cut -d= -f2-)
+curl -s -H "X-N8N-API-KEY: $K" http://127.0.0.1:5678/api/v1/workflows
 ```
 
-## API Reference (Tested Endpoints)
-
-### Login
-
-```bash
-curl -s -c /tmp/cookies.txt -X POST http://127.0.0.1:5678/rest/login \
-  -H "Content-Type: application/json" \
-  -d '{"emailOrLdapLoginId":"janitor@example.com","password":"${N8N_USER_PASSWORD}"}'
-```
-
-**Field name:** `emailOrLdapLoginId` (NOT `email` — this changed in v2.x)
-
-### Health Check
-
-```bash
-curl -s http://127.0.0.1:5678/healthz
-# Returns: {"status":"ok"}
-```
-
-### Workflow CRUD
-
-#### List Workflows
-
-```bash
-curl -s -b "$N8N_COOKIE_JAR" http://127.0.0.1:5678/rest/workflows
-# Returns: {"count": N, "data": [...]}
-```
-
-#### Create Workflow
-
-```bash
-curl -s -b "$N8N_COOKIE_JAR" -X POST http://127.0.0.1:5678/rest/workflows \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "My Workflow",
-    "nodes": [
-      {
-        "parameters": {"path":"my-endpoint","responseMode":"lastNode","options":{}},
-        "name": "Webhook",
-        "type": "n8n-nodes-base.webhook",
-        "typeVersion": 2,
-        "position": [240, 300],
-        "webhookId": "unique-id-here"
-      },
-      {
-        "parameters": {"jsCode": "return [{json: {result: \"processed\"}}];"},
-        "name": "Process",
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
-        "position": [460, 300]
-      }
-    ],
-    "connections": {
-      "Webhook": {"main": [[{"node": "Process", "type": "main", "index": 0}]]}
-    },
-    "settings": {}
-  }'
-```
-
-#### Get Workflow (need versionId for mutations)
-
-```bash
-curl -s -b "$N8N_COOKIE_JAR" http://127.0.0.1:5678/rest/workflows/{id}
-# Extract versionId: .data.versionId
-```
-
-#### Update Workflow
-
-```bash
-curl -s -b "$N8N_COOKIE_JAR" -X PATCH http://127.0.0.1:5678/rest/workflows/{id} \
-  -H "Content-Type: application/json" \
-  -d '{"versionId":"UUID-from-get","name":"New Name"}'
-```
-
-#### Activate / Deactivate
-
-```bash
-# Activate (requires versionId)
-curl -s -b "$N8N_COOKIE_JAR" -X POST http://127.0.0.1:5678/rest/workflows/{id}/activate \
-  -H "Content-Type: application/json" \
-  -d '{"versionId":"UUID"}'
-
-# Deactivate
-curl -s -b "$N8N_COOKIE_JAR" -X POST http://127.0.0.1:5678/rest/workflows/{id}/deactivate \
-  -H "Content-Type: application/json" \
-  -d '{"versionId":"UUID"}'
-```
-
-#### Archive + Delete (two-step — delete requires archive first)
-
-```bash
-# Step 1: Archive
-curl -s -b "$N8N_COOKIE_JAR" -X POST http://127.0.0.1:5678/rest/workflows/{id}/archive \
-  -H "Content-Type: application/json" \
-  -d '{"versionId":"UUID"}'
-
-# Step 2: Delete
-curl -s -b "$N8N_COOKIE_JAR" -X DELETE http://127.0.0.1:5678/rest/workflows/{id}
-```
-
-### Webhook Trigger
-
-Once a workflow with a Webhook node is **active**, trigger it:
-
-```bash
-# GET (default for webhook nodes without httpMethod set)
-curl -s "http://127.0.0.1:5678/webhook/{path}?param=value"
-
-# POST (requires httpMethod: "POST" in webhook node parameters)
-curl -s -X POST "http://127.0.0.1:5678/webhook/{path}" \
-  -H "Content-Type: application/json" \
-  -d '{"key": "value"}'
-```
-
-**CRITICAL:** The webhook is only live when the workflow is `active: true`.
-Test URLs (`/webhook-test/`) work only from the editor. Production URLs
-(`/webhook/`) require activation.
-
-### Execution History
-
-```bash
-# List executions
-curl -s -b "$N8N_COOKIE_JAR" http://127.0.0.1:5678/rest/executions
-
-# Get specific execution
-curl -s -b "$N8N_COOKIE_JAR" http://127.0.0.1:5678/rest/executions/{id}
-```
-
-## Python Helper for Complex Operations
-
-For multi-step API calls (create → activate → trigger → poll), use Python
-instead of chained curl commands:
-
-```python
-import http.cookiejar, urllib.request, json, os
-
-# Login
-cj = http.cookiejar.CookieJar()
-opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
-email = os.environ["N8N_USER_EMAIL"]            # janitor@example.com
-password = os.environ["N8N_USER_PASSWORD"]      # set in ~/.janitor/.env
-login = json.dumps({"emailOrLdapLoginId": email,
-                    "password": password}).encode()
-opener.open(urllib.request.Request("http://127.0.0.1:5678/rest/login", login,
-            headers={"Content-Type": "application/json"}))
-
-# Create workflow
-wf = json.dumps({"name": "...", "nodes": [...], "connections": {...},
-                 "settings": {}}).encode()
-resp = opener.open(urllib.request.Request("http://127.0.0.1:5678/rest/workflows",
-                  wf, headers={"Content-Type": "application/json"}))
-wf_id = json.loads(resp.read())["data"]["id"]
-
-# Get versionId
-resp = opener.open(f"http://127.0.0.1:5678/rest/workflows/{wf_id}")
-ver = json.loads(resp.read())["data"]["versionId"]
-
-# Activate
-act = json.dumps({"versionId": ver}).encode()
-opener.open(urllib.request.Request(f"http://127.0.0.1:5678/rest/workflows/{wf_id}/activate",
-            act, headers={"Content-Type": "application/json"}))
-```
-
-## Container Management
-
-```bash
-# Status
-docker ps --filter name=janitor-n8n
-
-# Logs
-docker logs janitor-n8n --tail 30
-
-# Restart
-docker compose -f ~/.janitor/docker/n8n-compose.yml --env-file ~/.janitor/docker/n8n.env restart
-
-# Stop / Start
-docker compose -f ~/.janitor/docker/n8n-compose.yml --env-file ~/.janitor/docker/n8n.env stop
-docker compose -f ~/.janitor/docker/n8n-compose.yml --env-file ~/.janitor/docker/n8n.env start
-
-# Update to latest
-docker compose -f ~/.janitor/docker/n8n-compose.yml --env-file ~/.janitor/docker/n8n.env pull
-docker compose -f ~/.janitor/docker/n8n-compose.yml --env-file ~/.janitor/docker/n8n.env up -d
-```
+- Production webhooks (`/webhook/<path>`) answer only while the workflow is active;
+  `/webhook-test/<path>` only while the editor is listening.
+- Show the user a workflow (nodes, what it calls, what it sends where) before creating or
+  activating it; activation is a mutation.
+- n8n's own docs are the source of truth: see `${HERMES_SKILL_DIR}/references/n8n-docs-extraction.md`
+  (every page of docs.n8n.io is available as markdown by appending `.md`).
 
 ## Pitfalls
 
-1. **Login field name:** Use `emailOrLdapLoginId`, not `email`. n8n v2.x
-   renamed this field. Using `email` returns 400 `invalid_type`.
+- `foreign_containers`: a container named `janitor-n8n` that this skill did not create
+  (an older Janitor install). Deploy refuses rather than fight it. The user decides: the
+  old one can be removed with `docker rm -f janitor-n8n` (the volume `janitor-n8n-data`
+  survives and the new container reuses it, but credentials saved by the old install need
+  the old encryption key). Never run it yourself.
+- `deploy --yes` keeps a `n8n-compose.yml` the user edited (`kept-user-file`), and an
+  `n8n.env` without Janitor's first-line marker is used as is if it defines every variable
+  the compose needs (else `env_file_incomplete` with the missing names, never values).
+- Never use `docker compose down`, `--remove-orphans` or `-v`: other Janitor stacks share
+  `<root>/docker`.
+- The image is `:latest`; re-running `deploy --yes` does not pull a newer one. Updating is a
+  separate, explicit request: `docker pull docker.n8n.io/n8nio/n8n:latest` then `deploy --yes`.
+- Deleting n8n data is a separate, explicit request. Give the commands, do not run them:
+  `janitor services uninstall n8n`, then `docker volume rm janitor-n8n-data` (irreversible).
 
-2. **API key masking:** n8n literally inserts `...` into the JWT in the
-   HTTP response body for `rawApiKey`. This is NOT a display artifact —
-   the bytes contain literal dots. Do NOT waste time trying to extract
-   the full key. Use cookie-based auth with `/rest/` endpoints instead.
+## Verification
 
-3. **Workflow deletion requires archive first:** `DELETE /rest/workflows/{id}`
-   returns 400 `"Workflow must be archived before it can be deleted."`.
-   You must call `POST /rest/workflows/{id}/archive` with `versionId`
-   first, THEN `DELETE`.
-
-4. **Activation requires versionId:** The `/activate` and `/deactivate`
-   endpoints require `{"versionId":"UUID"}` in the body. Get it from
-   `GET /rest/workflows/{id}` → `.data.versionId`.
-
-5. **PATCH vs PUT:** Use `PATCH /rest/workflows/{id}` for partial updates.
-   `PUT` is NOT supported (returns 404 HTML error page).
-
-6. **Webhook HTTP method:** Default webhook nodes accept GET. For POST,
-   set `"httpMethod": "POST"` in the webhook node parameters.
-
-7. **Webhook only works when active:** Production webhooks (`/webhook/`)
-   are only registered when the workflow is activated. Inactive workflows
-   return 404 `"webhook is not registered"`.
-
-8. **N8N_SECURE_COOKIE:** Set to `false` in the compose for localhost HTTP.
-   If `true`, the auth cookie requires HTTPS and won't work over plain HTTP.
-
-9. **Orphan containers warning:** Running n8n compose shows orphan warnings
-   for Firecrawl/Honcho containers. This is cosmetic — add `--project-name`
-   or ignore it. Do NOT use `--remove-orphans` or you'll kill other stacks.
-
-10. **Python in n8n container:** The n8n image doesn't include Python 3.
-    Code nodes using Python mode will show a warning. JS mode works fine.
-    For Python, deploy an external task runner (see n8n docs).
-
-11. **Two CLI surfaces, not one:** n8n has BOTH a *Server CLI* (runs in
-    the container via `docker exec n8n n8n ...`) AND a *n8n CLI*
-    (the newer `n8n-cli` package that wraps the public REST API and
-    runs anywhere with network access). Server CLI bypasses access
-    controls and requires DB access; n8n CLI requires an API key but
-    respects user permissions. Commands differ: e.g. `n8n-cli package
-    export --workflow-id=...` (API wrapper) is NOT `n8n
-    export:workflow` (server-side, direct DB).
-
-12. **HTML webhook responses are sandboxed (v1.103.0+):** Since v1.103.0
-    n8n automatically wraps HTML webhook responses in `<iframe>` tags.
-    JavaScript that tries to access the top-level window or local
-    storage FAILS inside the iframe. Authentication headers (basic
-    auth) are NOT available in the sandbox. Relative URLs
-    (`<form action="/">`) do NOT work — use absolute URLs. This is
-    intentional security; no env var disables it.
-
-13. **`EXECUTION_DATA_STORAGE_MODE` is tier-gated:** `database`,
-    `filesystem` work on all plans. **`s3` and `azure` modes require
-    an Enterprise license** — setting these on Community or Pro will
-    fail at startup.
-
-14. **`N8N_CONCURRENCY_PRODUCTION_LIMIT` controls BOTH modes:**
-    In regular mode it caps concurrent production executions. In
-    queue mode, when set to a value other than `-1`, n8n uses it
-    INSTEAD of the worker's `--concurrency` flag. Pick one source of
-    truth — setting both leads to quiet surprises.
-
-15. **Queue mode requires shared encryption key:** Workers cannot
-    decrypt credentials without `N8N_ENCRYPTION_KEY` set to the SAME
-    value as the main instance. Forget this and workers will appear
-    "alive" but execution will fail at every credential lookup with
-    opaque decryption errors. Always export `N8N_ENCRYPTION_KEY`
-    alongside the worker env.
-
-## Web UI Access
-
-n8n web UI is accessible at `http://127.0.0.1:5678` from any browser.
-The first-time setup creates the Owner account. The Owner account is
-already created:
-- Email: `janitor@example.com`
-- Password: in `~/.janitor/.env` → `N8N_USER_PASSWORD`
-
-## Integration Opportunities
-
-- **Firecrawl:** Use HTTP Request nodes to call `http://127.0.0.1:1974/v0/*`
-- **Honcho:** Use HTTP Request nodes with Bearer Auth to call Honcho API
-- **Ollama:** Direct LLM calls to `http://127.0.0.1:11434/api/generate`
-- **External services:** Slack, Gmail, Telegram via n8n's built-in nodes
-
-## Authoritative Documentation Source
-
-n8n publishes a full docs index optimized for LLM consumption at
-`https://docs.n8n.io/llms.txt` (~280KB, all pages listed). Every docs page
-is available as clean markdown by appending `.md` to the URL (e.g.
-`docs.n8n.io/build/flow-logic` → `docs.n8n.io/build/flow-logic.md`).
-
-**When building n8n documentation, workflows, or reference material:** extract
-from these `.md` endpoints via `web_extract` instead of relying on model
-knowledge (which goes stale every release). See
-`references/n8n-docs-extraction.md` for the full technique — URL patterns,
-section map, and the 3-subagent parallelization pattern used to build
-a local n8n docs project.
-
-## See Also
-
-- Skill `janitor-docker-selfhost` — Docker Compose deployment patterns
-- Skill `janitor-firecrawl` — Firecrawl integration (scraping from workflows)
-- Skill `janitor-honcho` — Honcho integration (memory in workflows)
-- n8n docs: https://docs.n8n.io
-- n8n llms.txt index: https://docs.n8n.io/llms.txt
-- n8n API reference: https://docs.n8n.io/api/reference
+- `python3 $S verify` → `ok: true`, `health.status: 200`.
+- `janitor services status n8n` → `running: responde`.
+- Tests: `scripts/run_tests.sh tests/janitor/test_janitor_guided_services.py`.

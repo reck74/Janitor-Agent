@@ -1,5 +1,5 @@
 name: n8n
-description: Workflow automation (n8n self-host).
+description: Automatizaciones con flujos visuales (n8n local).
 deploy: scripts/deploy.sh
 compose: scripts/n8n-compose.yml
 url: http://127.0.0.1:5678
