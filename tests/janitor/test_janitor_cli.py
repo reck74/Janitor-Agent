@@ -502,4 +502,5 @@ def test_resolve_hermes_home(tmp_path, monkeypatch, current, expected):
     from janitor.home import resolve_hermes_home
 
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # what ``~`` expands to on Windows
     assert resolve_hermes_home(current) == tmp_path / expected

@@ -110,6 +110,7 @@ def test_frontmatter_follows_authoring_standards():
     assert hermes["tags"] and hermes["category"]
 
 
+@pytest.mark.linux_only  # the executable bit does not exist on Windows
 def test_script_is_executable():
     assert SCRIPT.stat().st_mode & stat.S_IXUSR
 

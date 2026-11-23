@@ -21,6 +21,10 @@ from pathlib import Path
 import pytest
 import yaml
 
+# The git/npm toolchain is faked with POSIX shell scripts on PATH and the skill is Linux-only today
+# (plan decision 2.7: Linux first). Windows and macOS get their own tests when supported.
+pytestmark = pytest.mark.linux_only
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SKILL_DIR = REPO_ROOT / "janitor" / "skills" / "projects" / "janitor-project-create"
 SCRIPT = SKILL_DIR / "scripts" / "project_create.py"

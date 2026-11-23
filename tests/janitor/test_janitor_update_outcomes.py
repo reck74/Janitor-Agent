@@ -87,7 +87,7 @@ def _english_lines(output: str) -> list[str]:
         if line.strip().startswith(juc._DETAIL_PREFIX):
             continue  # git's own words, labelled as such
         prose = re.sub(r"`[^`]*`", "", line)
-        prose = " ".join(tok for tok in prose.split() if "/" not in tok)
+        prose = " ".join(tok for tok in prose.split() if "/" not in tok and "\\" not in tok)  # drop paths, either separator
         if _ENGLISH_WORDS.search(prose) or any(p in line for p in _OLD_PHRASES):
             offending.append(line)
     return offending

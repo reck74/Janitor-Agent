@@ -19,6 +19,10 @@ from pathlib import Path
 import pytest
 import yaml
 
+# The Docker CLI is faked with POSIX shell scripts on PATH and the skill is Linux-only today
+# (plan decision 2.7: Linux first). Windows and macOS get their own tests when supported.
+pytestmark = pytest.mark.linux_only
+
 from janitor import desktop_plugin, services
 from janitor.desktop_plugin import api
 

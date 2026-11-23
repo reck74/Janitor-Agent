@@ -299,7 +299,8 @@ def _leading_comments(text: str) -> str:
 def _atomic_write(path: Path, text: str) -> None:
     fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        # newline="\n": the same bytes on every OS, so a second apply is a no-op on Windows too.
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text)
         shutil.copymode(path, tmp)
         os.replace(tmp, path)
