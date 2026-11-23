@@ -194,19 +194,38 @@ touchpoints:
     merge: reapply
 
   - id: desktop-update-posix
-    files: [scripts/desktop-update/posix.sh]
+    files: [scripts/desktop-update/posix.sh, scripts/desktop-update/repro.sh]
     why: >-
       The desktop app's POSIX update hand-off runs `venv/bin/janitor update`
       (or `python -m janitor.cli update` on the bricked-alias fallback)
       instead of `hermes update` whenever the checkout's venv has the
       `janitor` script, so app-driven updates go through
       janitor/update_core.py (directive #13). One `# JANITOR:` block right
-      after the update invoke is chosen. The Linux relaunch gate's two
-      messages (`skew`: app package not updated — every AppImage update;
-      `manual`: rebuilt app cannot relaunch) are Spanish, because the app
-      shows the result `message` verbatim (main.ts boot dialog `detail`,
-      ui.html shim, notify-send); each line carries `# JANITOR:`.
+      after the update invoke is chosen. When the running binary is not the
+      checkout's rebuilt one and `$APPIMAGE` (AppImage runtime, inherited
+      from the app's env) is an absolute path to an executable regular file,
+      the gate relaunches that AppImage instead of ending in `skew`, with a
+      neutral note: the app decides app/engine compatibility at boot
+      (design actualizacion-diseno.md 3.3). Without `$APPIMAGE` (deb/rpm)
+      `skew` stays. Every Linux-visible text — result messages (main.ts boot
+      dialog `detail`, ui.html shim, notify-send/zenity/kdialog), stage names
+      and the notification title — is Spanish, plus a message of its own for
+      exit 2 (another update holds the lock); macOS-only bundle-swap copy and
+      log lines stay upstream's. repro.sh's launch matrix matches the Spanish
+      messages. Each line carries `# JANITOR:`.
     verify: test:desktop-update-posix
+    merge: reapply
+
+  - id: desktop-update-ui
+    files: [scripts/desktop-update/ui.html]
+    why: >-
+      The shim window shown while the app updates (served by serve-ui.py) is
+      in Spanish and names Janitor: `lang`, title, default heading/line,
+      elapsed clock, the done/manual/error/disconnected states. `done` shows
+      the orchestrator's note when there is one (AppImage relaunch) and
+      `error` shows the orchestrator's reason instead of a fixed hint. Each
+      changed line carries a `JANITOR` comment (HTML or JS).
+    verify: test:desktop-update-ui
     merge: reapply
 
   - id: fork-docs

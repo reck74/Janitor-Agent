@@ -20,10 +20,10 @@
   - Appearance follows the OS. Dark seeds are the installer's neutral
     charcoal (#232323 base, foreground #d6d6d6) — never brand blue.
 -->
-<html lang="en">
+<html lang="es"><!-- JANITOR: Spanish shim copy (overlay touchpoint desktop-update-ui) -->
 <head>
 <meta charset="utf-8">
-<title>Hermes</title>
+<title>Janitor</title><!-- JANITOR -->
 <style>
   :root {
     --background: #ffffff;
@@ -105,10 +105,10 @@
 </head>
 <body>
   <div class="wrap">
-    <div id="loader" role="status" aria-label="Updating"></div>
+    <div id="loader" role="status" aria-label="Actualizando"></div><!-- JANITOR -->
     <div id="glyph"></div>
-    <h2 id="title">Updating Hermes</h2>
-    <p id="line">Hermes will open once done.</p>
+    <h2 id="title">Actualizando Janitor</h2><!-- JANITOR -->
+    <p id="line">Janitor se abre solo al terminar.</p><!-- JANITOR -->
   </div>
 <script>
   /* ── Fourier Flow loader, ported verbatim from loader.tsx ─────────────── */
@@ -208,7 +208,7 @@
   let failures = 0
 
   const elapsedText = s =>
-    s < 60 ? `${s}s elapsed` : `${Math.floor(s / 60)}m ${s % 60}s elapsed`
+    s < 60 ? `${s} s transcurridos` : `${Math.floor(s / 60)} min ${s % 60} s transcurridos`  // JANITOR
 
   function settle(state) {
     settled = true
@@ -227,21 +227,22 @@
     } else if (state.status === 'done') {
       settle('done')
       glyphEl.textContent = '\u2713'
-      titleEl.textContent = 'Update complete'
-      lineEl.textContent = 'Opening Hermes\u2026\nYou can close this window.'
+      titleEl.textContent = 'Actualización completa'  // JANITOR
+      lineEl.textContent = state.message || 'Abriendo Janitor\u2026\nPuedes cerrar esta ventana.'  // JANITOR: AppImage relaunch note
     } else if (state.status === 'manual') {
       // Update landed but Hermes will NOT reopen itself (package skew,
       // sandbox helper, launch rejected). The orchestrator leaves this
       // window up; the message says what to do.
       settle('done')
       glyphEl.textContent = '\u2713'
-      titleEl.textContent = 'Update complete'
-      lineEl.textContent = state.message || 'Reopen Hermes to finish.'
+      titleEl.textContent = 'Actualización completa'  // JANITOR
+      lineEl.textContent = state.message || 'Vuelve a abrir Janitor para terminar.'  // JANITOR
     } else if (state.status === 'error') {
       settle('error')
       glyphEl.textContent = '\u2715'
-      titleEl.textContent = 'Failed to update'
-      lineEl.innerHTML = 'Run <code>hermes debug share</code> in a terminal to send a report.'
+      titleEl.textContent = 'No se pudo actualizar'  // JANITOR
+      if (state.message) lineEl.textContent = state.message  // JANITOR: show the orchestrator's reason
+      else lineEl.innerHTML = 'Ejecuta <code>janitor debug share</code> en un terminal para enviar un informe.'  // JANITOR
     }
   }
 
@@ -279,8 +280,8 @@
         // honest, finite state even if the browser refuses the close request.
         settle('disconnected')
         glyphEl.textContent = '!'
-        titleEl.textContent = 'Update status unavailable'
-        lineEl.textContent = 'The progress connection was lost.\nCheck Hermes for the update result. You can close this window.'
+        titleEl.textContent = 'Estado de la actualización no disponible'  // JANITOR
+        lineEl.textContent = 'Se perdió la conexión con el progreso.\nAl abrir Janitor verás el resultado. Puedes cerrar esta ventana.'  // JANITOR
       }
     }
     if (!settled) setTimeout(poll, 400)

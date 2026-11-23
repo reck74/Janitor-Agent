@@ -76,7 +76,7 @@ STATUS="${TMPDIR:-/tmp}/hermes-update-status.$$"
 STARTED_AT="$(date +%s)"  # the shim's elapsed clock; see serve-ui.py
 
 UI_SERVER_PID="" UI_BROWSER_PID="" UI_PROFILE_DIR="" FINAL_CODE=1
-FINAL_MSG="update did not complete"
+FINAL_MSG="La actualización no terminó."  # JANITOR: Spanish copy (result message, shown by the app)
 DONE_NOTE=""  # set when the update succeeded but the app will NOT reopen itself
 
 log() { echo "$(date +%Y-%m-%dT%H:%M:%S%z) $1" | tee -a "$LOG" 2>/dev/null; }
@@ -99,7 +99,7 @@ on_signal() {
     return 0
   fi
   log "SIGNAL: $sig pid=$$ ppid=$PPID pgid=${pgid:-unknown}"
-  FINAL_MSG="Update hand-off was interrupted by $sig (pid $$)."
+  FINAL_MSG="La actualización se interrumpió por la señal $sig (pid $$)."  # JANITOR: Spanish copy
   case "$sig" in
     HUP) FINAL_CODE=129 ;;
     INT) FINAL_CODE=130 ;;
@@ -136,17 +136,17 @@ notify_fallback() { # status message — renderer-free recovery surface.
     /usr/bin/osascript -e "display notification \"$(printf '%s' "$2" | sed 's/"/\\"/g')\" with title \"Hermes update\"" 2>/dev/null && return 0
   else
     if command -v notify-send >/dev/null 2>&1; then
-      notify-send -u critical "Hermes update" "$2" 2>/dev/null && return 0
+      notify-send -u critical "Actualización de Janitor" "$2" 2>/dev/null && return 0  # JANITOR: Spanish title
     fi
     local p
     if command -v zenity >/dev/null 2>&1; then
-      zenity --warning --title="Hermes update" --text="$2" 2>/dev/null &
+      zenity --warning --title="Actualización de Janitor" --text="$2" 2>/dev/null &  # JANITOR: Spanish title
       p=$!; sleep 1
       kill -0 "$p" 2>/dev/null && return 0
       wait "$p" 2>/dev/null
     fi
     if command -v kdialog >/dev/null 2>&1; then
-      kdialog --title "Hermes update" --sorry "$2" 2>/dev/null &
+      kdialog --title "Actualización de Janitor" --sorry "$2" 2>/dev/null &  # JANITOR: Spanish title
       p=$!; sleep 1
       kill -0 "$p" 2>/dev/null && return 0
       wait "$p" 2>/dev/null
@@ -301,6 +301,15 @@ stop_ui() { # error/manual outcomes keep the window up briefly so a watching
 #     despite a failed preflight.
 # Outcomes mirror decideRelaunchOutcome: relaunch | skew | manual.
 GATE="" GATE_MSG=""
+# JANITOR: an AppImage install reopens the AppImage FILE ($APPIMAGE, set by the
+# JANITOR: AppImage runtime and inherited from the app's env): the running binary
+# JANITOR: sits in its unmounted squashfs. The app decides compatibility at boot.
+# JANITOR: $APPIMAGE is untrusted: absolute, regular file, executable, never evaluated.
+appimage_relaunch_target() {  # JANITOR:
+  case "${APPIMAGE:-}" in /*) ;; *) return 1 ;; esac  # JANITOR:
+  [ -f "$APPIMAGE" ] && [ -x "$APPIMAGE" ] || return 1  # JANITOR:
+  RELAUNCH_TARGET="$APPIMAGE"  # JANITOR:
+}  # JANITOR:
 linux_gate() {
   local unpacked="$INSTALL_ROOT/apps/desktop/release/linux-unpacked" sb arg
   # Canonicalise both sides before the prefix compare. On some distros
@@ -315,7 +324,8 @@ linux_gate() {
   [ -n "$RELAUNCH_TARGET" ] && RELAUNCH_TARGET="$(readlink -m -- "$RELAUNCH_TARGET")"
   case "$RELAUNCH_TARGET" in
     "$unpacked"/*) ;;
-    *) GATE=skew GATE_MSG="El motor quedó actualizado, pero el paquete de la app (AppImage/deb/rpm) sigue siendo el viejo. Actualízalo o reinstálalo para que coincidan."; return ;;  # JANITOR: Spanish copy (shown verbatim by the app)
+    *) appimage_relaunch_target && { GATE=relaunch GATE_MSG="Motor actualizado. Janitor se vuelve a abrir solo; si necesita la app nueva, te lo dirá ahí mismo con el enlace de descarga."; return; }  # JANITOR: AppImage relaunch
+       GATE=skew GATE_MSG="El motor quedó actualizado, pero el paquete de la app (AppImage/deb/rpm) sigue siendo el viejo. Actualízalo o reinstálalo para que coincidan."; return ;;  # JANITOR: Spanish copy (shown verbatim by the app)
   esac
 
   sb="$unpacked/chrome-sandbox"
@@ -382,6 +392,7 @@ deliver_outcome() { # the truth-determining half: swap bundles / gate the relaun
       DONE_NOTE="$GATE_MSG"
       log "no relaunch ($GATE): $GATE_MSG"
     fi
+    [ "$GATE" = "relaunch" ] && [ -n "$GATE_MSG" ] && [ "$FINAL_CODE" -eq 0 ] && FINAL_MSG="$GATE_MSG"  # JANITOR: AppImage relaunch note
   fi
 }
 
@@ -463,11 +474,11 @@ finish() {
     fi
     publish "manual" "$FINAL_MSG"; stop_ui leave-window
   elif launch_app; then
-    publish "done" ""; stop_ui
+    publish "done" "$GATE_MSG"; stop_ui  # JANITOR: AppImage relaunch note on the shim
   else
     # Launch was due and did not land. Downgrade: truthful result for the
     # next boot, manual state held on screen now.
-    FINAL_MSG="Update complete. Reopen Hermes to finish (it could not restart itself)."
+    FINAL_MSG="Actualización completa, pero Janitor no pudo volver a abrirse solo. Ábrelo tú para terminar."  # JANITOR: Spanish copy
     MANUAL=1
     write_result
     publish "manual" "$FINAL_MSG"; stop_ui leave-window
@@ -702,7 +713,7 @@ fi
 if [ "$DESKTOP_PID" -gt 0 ] 2>/dev/null; then
   for _ in $(seq 1 100); do kill -0 "$DESKTOP_PID" 2>/dev/null || break; sleep 0.3; done
   if kill -0 "$DESKTOP_PID" 2>/dev/null; then
-    FINAL_CODE=4 FINAL_MSG="Update aborted: the Hermes window (pid $DESKTOP_PID) did not exit within 30s. Nothing was changed. Close Hermes fully and try again."
+    FINAL_CODE=4 FINAL_MSG="Actualización cancelada: la ventana de Janitor (pid $DESKTOP_PID) no se cerró en 30 s. No se cambió nada. Cierra Janitor del todo y vuelve a intentarlo."  # JANITOR: Spanish copy
     log "$FINAL_MSG"; exit "$FINAL_CODE"
   fi
 fi
@@ -715,7 +726,7 @@ sleep 1
 start_ui
 
 HERMES_BIN="$INSTALL_ROOT/venv/bin/hermes"
-[ -x "$HERMES_BIN" ] || { FINAL_CODE=3 FINAL_MSG="Update aborted: $HERMES_BIN is missing. The install needs repair (run the Hermes installer or hermes doctor)."; log "$FINAL_MSG"; exit 3; }
+[ -x "$HERMES_BIN" ] || { FINAL_CODE=3 FINAL_MSG="Actualización cancelada: falta $HERMES_BIN. La instalación está rota: repárala con el instalador de Janitor o con janitor doctor."; log "$FINAL_MSG"; exit 3; }  # JANITOR: Spanish copy
 
 # Heal a venv the reverted TCC anchor left bricked BEFORE invoking the CLI:
 # venv/bin/hermes execs venv/bin/python3, so a dead alias kills every attempt
@@ -745,7 +756,7 @@ fi  # JANITOR:
 # failed cd would otherwise continue in the wrong tree — the exact class
 # this correction exists to eliminate.
 cd "$INSTALL_ROOT" || {
-  FINAL_CODE=3 FINAL_MSG="Update aborted: cannot enter the install root ($INSTALL_ROOT). Nothing was changed."
+  FINAL_CODE=3 FINAL_MSG="Actualización cancelada: no se puede entrar en la carpeta de instalación ($INSTALL_ROOT). No se cambió nada."  # JANITOR: Spanish copy
   log "$FINAL_MSG"; exit 3
 }
 export PYTHONUNBUFFERED=1
@@ -770,7 +781,7 @@ if [ "$NO_GATEWAY" -eq 1 ]; then
   log "update requested without --gateway (remote-served Desktop)"
 fi
 log "running: ${UPDATE_INVOKE[*]} update --yes $GATEWAY_FLAG $KEEP_STASH --branch $BRANCH"
-publish_stage "Updating code and dependencies"
+publish_stage "Actualizando código y dependencias"  # JANITOR: Spanish stage (shim window)
 OUT="$("${UPDATE_INVOKE[@]}" update --yes $GATEWAY_FLAG $KEEP_STASH --branch "$BRANCH" 2>&1)"; CODE=$?
 printf '%s\n' "$OUT" >> "$LOG" 2>/dev/null
 log "hermes update exit code: $CODE"
@@ -788,11 +799,11 @@ if [ "$CODE" -ne 0 ] && [ "$CODE" -ne 2 ]; then
   if printf '%s' "$OUT" | grep -q "CODE UPDATE SKIPPED"; then
     log "hermes update skipped (checkout parked on a non-target branch); not retrying"
     FINAL_CODE=8
-    FINAL_MSG="Update skipped: the git checkout is on a branch that isn't fully merged into $BRANCH. Switch to the target branch and update again (see the terminal output for the exact commands)."
+    FINAL_MSG="Actualización omitida: el motor está en una rama que no está integrada del todo en $BRANCH. Vuelve a esa rama y actualiza otra vez (los comandos exactos están en el registro de la actualización)."  # JANITOR: Spanish copy
     exit 8
   fi
   log "retrying once (freshly pulled fix loads on the second run)"
-  publish_stage "Retrying update"
+  publish_stage "Reintentando la actualización"  # JANITOR: Spanish stage (shim window)
   OUT="$("${UPDATE_INVOKE[@]}" update --yes $GATEWAY_FLAG $KEEP_STASH --branch "$BRANCH" 2>&1)"; CODE=$?
   printf '%s\n' "$OUT" >> "$LOG" 2>/dev/null
   log "retry exit code: $CODE"
@@ -804,22 +815,24 @@ trap 'on_signal TERM' TERM
 # and call it success -- retry the build once, propagate honestly.
 if [ "$CODE" -eq 0 ] && printf '%s' "$OUT" | grep -q "Desktop build failed"; then
   log "desktop build failed inside hermes update; retrying build"
-  publish_stage "Rebuilding Desktop"
+  publish_stage "Recompilando la app"  # JANITOR: Spanish stage (shim window)
   "${UPDATE_INVOKE[@]}" desktop --force-build --build-only >> "$LOG" 2>&1 || {
-    FINAL_CODE=6 FINAL_MSG="Code and dependencies updated, but the Desktop app rebuild failed - you are running the previous build. Run hermes desktop --force-build from a terminal to retry."
+    FINAL_CODE=6 FINAL_MSG="Código y dependencias actualizados, pero la app no se pudo recompilar: sigues con la compilación anterior. Ejecuta janitor desktop --force-build en un terminal para reintentarlo."  # JANITOR: Spanish copy
     exit 6
   }
 fi
 
-if [ "$CODE" -eq 0 ]; then FINAL_CODE=0 FINAL_MSG="Update complete."
+if [ "$CODE" -eq 0 ]; then FINAL_CODE=0 FINAL_MSG="Actualización completa."  # JANITOR: Spanish copy
 else
-  FINAL_CODE="$CODE" FINAL_MSG="Update failed (exit $CODE). Run hermes debug share in a terminal to send a report."
+  FINAL_CODE="$CODE" FINAL_MSG="La actualización falló (salida $CODE). Ejecuta janitor debug share en un terminal para enviar un informe."  # JANITOR: Spanish copy
+  # JANITOR: exit 2 = `janitor update` refused because another live update holds the lock (directive 13).
+  [ "$CODE" -eq 2 ] && FINAL_MSG="No se actualizó: ya hay otra actualización de Janitor en curso. Espera a que termine y vuelve a intentarlo."  # JANITOR:
   # The bricked-venv class is fixable and must not read as a generic exit 1:
   # a dead interpreter with a failed/impossible heal means retrying can never
   # succeed — tell the user what is actually wrong (#95759).
   if ! tcc_probe_python "$INSTALL_ROOT/venv/bin/python3" \
       && ! tcc_probe_python "$INSTALL_ROOT/venv/bin/python"; then
-    FINAL_MSG="Update failed: the Python interpreter inside $INSTALL_ROOT/venv cannot start (heal state: $TCC_HEAL_STATE). Reinstall the runtime with the Hermes installer, or run hermes doctor --fix from a terminal if any hermes command still works."
+    FINAL_MSG="La actualización falló: el intérprete de Python de $INSTALL_ROOT/venv no arranca (estado de reparación: $TCC_HEAL_STATE). Reinstala el motor con el instalador de Janitor, o ejecuta janitor doctor --fix en un terminal si algún comando de janitor todavía funciona."  # JANITOR: Spanish copy
   fi
 fi
 exit "$FINAL_CODE"

@@ -49,6 +49,109 @@ def test_handoff_without_janitor_script_still_runs_hermes_update(tmp_path):
     assert seen["hermes"][0].split()[:2] == ["update", "--yes"]
 
 
+# ---------------------------------------------------------------------------
+# posix.sh after updating the engine from an AppImage (design 3.3)
+# ---------------------------------------------------------------------------
+
+# Records how it was launched, then stays up like an app that booted.
+_FAKE_APPIMAGE = """#!/bin/bash
+printf '%s\\n' "$PWD" "$@" > "$JANITOR_TEST_APPIMAGE_RECORD"
+echo $$ > "$JANITOR_TEST_APPIMAGE_RECORD.pid"
+exec sleep 30
+"""
+
+
+@pytest.fixture
+def appimage(tmp_path):
+    """A fake AppImage outside the checkout; killed after the test."""
+    path = tmp_path / "Apps" / "Janitor.AppImage"
+    path.parent.mkdir()
+    path.write_text(_FAKE_APPIMAGE, encoding="utf-8")
+    path.chmod(0o755)
+    record = tmp_path / "appimage-launch.txt"
+    yield path, record
+    pid_file = Path(f"{record}.pid")
+    if pid_file.exists():
+        subprocess.run(["kill", pid_file.read_text(encoding="utf-8").strip()], check=False)
+
+
+def _from_appimage(tmp_path, appimage_value: str, record: Path, *extra: str) -> dict:
+    # The running binary lives in the AppImage's own mount, never under the checkout.
+    mounted = tmp_path / ".mount_Janitor" / "janitor"
+    return run_posix_handoff(
+        tmp_path, "--relaunch-target", str(mounted), *extra,
+        env={"APPIMAGE": appimage_value, "JANITOR_TEST_APPIMAGE_RECORD": str(record)},
+    )
+
+
+@pytest.mark.linux_only
+def test_engine_update_from_an_appimage_reopens_that_appimage(tmp_path, appimage):
+    path, record = appimage
+    cwd = tmp_path / "launched-from"
+    cwd.mkdir()
+
+    seen = _from_appimage(tmp_path, str(path), record, "--relaunch-cwd", str(cwd), "--", "janitor://chat")
+
+    assert record.read_text(encoding="utf-8").splitlines() == [str(cwd), "janitor://chat"]
+    result = seen["result"]
+    assert result["ok"] is True and result["manual"] is False, result
+    # posix.sh does not know the app/engine contract: neutral, Spanish, points to the app's own check.
+    assert "Janitor" in result["message"] and "descarga" in result["message"], result
+    assert "hermes" not in result["message"].lower() and "AppImage/deb/rpm" not in result["message"], result
+
+
+@pytest.mark.linux_only
+def test_without_appimage_a_foreign_binary_keeps_the_skew_outcome(tmp_path, appimage):
+    _, record = appimage
+    mounted = tmp_path / "opt" / "janitor"
+
+    seen = run_posix_handoff(
+        tmp_path, "--relaunch-target", str(mounted), env={"JANITOR_TEST_APPIMAGE_RECORD": str(record)}
+    )
+
+    assert not record.exists()
+    result = seen["result"]
+    assert result["ok"] is True and result["manual"] is True, result
+    assert "AppImage/deb/rpm" in result["message"], result
+
+
+@pytest.mark.linux_only
+@pytest.mark.parametrize("kind", ["not-executable", "relative", "directory"])
+def test_an_untrustworthy_appimage_value_is_ignored(tmp_path, appimage, kind):
+    path, record = appimage
+    if kind == "not-executable":
+        path.chmod(0o644)
+        value = str(path)
+    elif kind == "relative":
+        # An executable with that relative name exists in the hand-off's cwd (the checkout).
+        (tmp_path / "hermes-agent").mkdir()
+        local = tmp_path / "hermes-agent" / "Janitor.AppImage"
+        local.write_text(_FAKE_APPIMAGE, encoding="utf-8")
+        local.chmod(0o755)
+        value = "Janitor.AppImage"
+    else:
+        value = str(path.parent)
+
+    seen = _from_appimage(tmp_path, value, record)
+
+    assert not record.exists()
+    result = seen["result"]
+    assert result["ok"] is True and result["manual"] is True, result
+    assert "AppImage/deb/rpm" in result["message"], result
+
+
+@pytest.mark.linux_only
+def test_an_appimage_that_dies_at_once_downgrades_to_reopen_by_hand(tmp_path, appimage):
+    path, record = appimage
+    path.write_text("#!/bin/bash\nexit 1\n", encoding="utf-8")
+
+    seen = _from_appimage(tmp_path, str(path), record)
+
+    result = seen["result"]
+    assert result["ok"] is True and result["manual"] is True, result
+    assert "Janitor" in result["message"] and "hermes" not in result["message"].lower(), result
+
+
 def test_parser_accepts_every_flag_the_desktop_handoff_passes():
     args = juc.parse_update_args(["--yes", "--gateway", "--keep-stash", "--branch", "main"])
 

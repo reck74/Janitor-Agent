@@ -46,8 +46,20 @@ def _write_exe(path: Path, content: str) -> None:
     path.chmod(0o755)
 
 
-def run_posix_handoff(root: Path, *extra_args: str, with_janitor: bool = True) -> dict:
-    """Run the real hand-off end to end; return what each entry point received."""
+def handoff_env(root: Path, **overrides: str) -> dict:
+    """The env the app passes the hand-off, without the test host's HERMES_* and APPIMAGE."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("HERMES_") and k != "APPIMAGE"}
+    env.update({"HOME": str(root), "TMPDIR": str(root), "HERMES_HOME": str(root), **overrides})
+    return env
+
+
+def run_posix_handoff(
+    root: Path, *extra_args: str, with_janitor: bool = True, env: dict | None = None
+) -> dict:
+    """Run the real hand-off end to end; return what each entry point received.
+
+    ``env`` adds variables to the environment the app would pass (e.g. ``APPIMAGE``).
+    """
     install_root = root / "hermes-agent"
     bin_dir = install_root / "venv" / "bin"
     bin_dir.mkdir(parents=True)
@@ -60,11 +72,8 @@ def run_posix_handoff(root: Path, *extra_args: str, with_janitor: bool = True) -
 
     hermes_argv = root / "hermes-argv.txt"
     core_args = root / "core-args.jsonl"
-    env = {k: v for k, v in os.environ.items() if not k.startswith("HERMES_")}
-    env.update({
-        "HOME": str(root),
-        "TMPDIR": str(root),
-        "HERMES_HOME": str(root),
+    run_env = handoff_env(root, **(env or {}))
+    run_env.update({
         "PYTHONPATH": str(REPO_ROOT),
         "JANITOR_TEST_CORE": _RECORDING_CORE,
         "JANITOR_TEST_HERMES_ARGV": str(hermes_argv),
@@ -72,7 +81,7 @@ def run_posix_handoff(root: Path, *extra_args: str, with_janitor: bool = True) -
     })
     subprocess.run(
         ["/bin/bash", str(POSIX_SH), "--install-root", str(install_root), "--no-ui", *extra_args],
-        env=env,
+        env=run_env,
         timeout=60,
         check=True,
     )
@@ -83,6 +92,11 @@ def run_posix_handoff(root: Path, *extra_args: str, with_janitor: bool = True) -
     while time.monotonic() < deadline and not result.exists():
         time.sleep(0.1)
     assert result.exists(), "hand-off never wrote its result file"
+    # finish() removes its status file last, after any relaunch was accepted or
+    # downgraded (which rewrites the result): that is the run's end.
+    while time.monotonic() < deadline and any(root.glob("hermes-update-status.*")):
+        time.sleep(0.1)
+    assert not any(root.glob("hermes-update-status.*")), "hand-off never finished"
 
     return {
         "result": json.loads(result.read_text(encoding="utf-8")),

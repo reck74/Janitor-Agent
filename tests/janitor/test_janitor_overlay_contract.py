@@ -84,15 +84,75 @@ def check_desktop_update_posix(tmp_path):
     # The relaunch gate's message reaches the app verbatim (boot dialog / shim window): Spanish.
     import subprocess
 
-    foreign = tmp_path / "opt" / "Janitor.AppImage"
-    gate = subprocess.run(
-        ["bash", str(REPO_ROOT / "scripts" / "desktop-update" / "posix.sh"), "--self-test-gate",
-         "--install-root", str(tmp_path / "hermes-agent"), "--relaunch-target", str(foreign)],
-        capture_output=True, text=True, check=True,
-    ).stdout.strip()
-    decision, _, message = gate.partition(":")
-    assert decision == "skew" and "AppImage" in message, gate
-    assert "Backend updated" not in message and "hermes" not in message.lower(), gate
+    from tests.janitor.desktop_update_harness import handoff_env
+
+    def gate(**env):
+        out = subprocess.run(
+            ["bash", str(REPO_ROOT / "scripts" / "desktop-update" / "posix.sh"), "--self-test-gate",
+             "--install-root", str(tmp_path / "hermes-agent"), "--relaunch-target", str(foreign)],
+            capture_output=True, text=True, check=True, env=handoff_env(tmp_path, **env),
+        ).stdout.strip()
+        return out.partition(":")[::2]
+
+    foreign = tmp_path / "opt" / "janitor"
+    decision, message = gate()
+    assert decision == "skew" and "AppImage" in message, (decision, message)
+    assert "Backend updated" not in message and "hermes" not in message.lower(), message
+    # Run from an AppImage, the engine update reopens that AppImage; the app judges compatibility.
+    appimage = tmp_path / "Janitor.AppImage"
+    appimage.write_text("#!/bin/sh\n", encoding="utf-8")
+    appimage.chmod(0o755)
+    decision, message = gate(APPIMAGE=str(appimage))
+    assert decision == "relaunch" and "Janitor" in message and "hermes" not in message.lower(), message
+
+
+def check_desktop_update_ui(tmp_path):
+    """The update window the user sees is served in Spanish and never names Hermes."""
+    import subprocess
+    import sys
+    import time
+    from html.parser import HTMLParser
+    from urllib.request import urlopen
+
+    shim = REPO_ROOT / "scripts" / "desktop-update"
+
+    class Visible(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.lang, self.stack, self.text, self.labels = None, [], [], []
+
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            self.lang = attrs.get("lang", self.lang) if tag == "html" else self.lang
+            self.labels += [attrs["aria-label"]] if "aria-label" in attrs else []
+            self.stack.append(tag)
+
+        def handle_endtag(self, tag):
+            if self.stack and self.stack[-1] == tag:
+                self.stack.pop()
+
+        def handle_data(self, data):
+            if data.strip() and not {"script", "style"} & set(self.stack):
+                self.text.append(data.strip())
+
+    proc = subprocess.Popen(
+        [sys.executable, str(shim / "serve-ui.py"), str(shim / "ui.html"),
+         str(tmp_path / "status"), str(time.time())],
+        stdout=subprocess.PIPE, text=True,
+    )
+    try:
+        port = int(proc.stdout.readline().strip())
+        with urlopen(f"http://127.0.0.1:{port}/", timeout=5) as response:
+            page = response.read().decode("utf-8")
+    finally:
+        proc.kill()
+        proc.wait(timeout=5)
+    parsed = Visible()
+    parsed.feed(page)
+    visible = parsed.text + parsed.labels
+    assert parsed.lang == "es", parsed.lang
+    assert any("Janitor" in t for t in visible), visible
+    assert not [t for t in visible if "hermes" in t.lower()], visible
 
 
 def check_backend_user_copy(tmp_path):
@@ -186,6 +246,7 @@ CHECKS = {
     "mcp-dashboard-endpoints": check_mcp_dashboard_endpoints,
     "install-sh": check_install_sh,
     "desktop-update-posix": check_desktop_update_posix,
+    "desktop-update-ui": check_desktop_update_ui,
 }
 
 # Checks that drive a POSIX shell script run on Linux only (directive #11 lanes).
@@ -212,8 +273,8 @@ def test_touchpoint_contract(check_id, capsys, tmp_path):
     check = CHECKS[check_id]
     if check is check_banner:
         check(capsys)
-    elif check in (check_install_sh, check_desktop_update_posix, check_backend_user_copy, check_runtime_copy,
-                   check_update_single_flight):
+    elif check in (check_install_sh, check_desktop_update_posix, check_desktop_update_ui, check_backend_user_copy,
+                   check_runtime_copy, check_update_single_flight):
         check(tmp_path)
     else:
         check()
