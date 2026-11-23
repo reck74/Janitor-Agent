@@ -1197,26 +1197,47 @@ def _read_persisted_marker_raw(marker_path: Path) -> Optional[str]:
     return stash_ref if isinstance(stash_ref, (str, type(None))) else None
 
 
-def _deps_pending_marker(project_root: Path) -> Path:
-    """Per-checkout flag: code was pulled, dependencies not yet installed.
+def _deps_pending_marker(project_root: Path, git_cmd: Optional[list[str]] = None) -> Path:
+    """Per-checkout flag: the tree may hold new code whose dependencies are not installed yet.
 
-    Lives inside ``.git`` so it is tied to the checkout and can never be
-    tracked or show up in ``git status``.
+    Lives in the checkout's own git directory (``git rev-parse
+    --absolute-git-dir``: a linked worktree's ``.git`` is a file), so it is
+    tied to the checkout and can never be tracked or show up in ``git status``.
     """
-    return project_root / ".git" / "janitor-update-deps-pending"
+    git_dir = project_root / ".git"
+    if git_cmd is not None:
+        try:
+            out = subprocess.run(
+                git_cmd + ["rev-parse", "--absolute-git-dir"],
+                cwd=project_root, capture_output=True, text=True, timeout=30,
+            )
+            if out.returncode == 0 and out.stdout.strip():
+                git_dir = Path(out.stdout.strip())
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return git_dir / "janitor-update-deps-pending"
 
 
-def _set_deps_pending(project_root: Path, pending: bool) -> None:
-    """Best effort: an unwritable ``.git`` (a worktree's ``.git`` file) only
-    loses the resume-after-interruption guarantee, never the update."""
-    marker = _deps_pending_marker(project_root)
+def _set_deps_pending(project_root: Path, pending: bool, git_cmd: Optional[list[str]] = None) -> None:
+    """A failure to persist only loses the resume-after-interruption guarantee,
+    never the update — but it is said out loud."""
+    marker = _deps_pending_marker(project_root, git_cmd)
     try:
         if pending:
             marker.write_text(datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ\n"), encoding="utf-8")
         else:
             marker.unlink(missing_ok=True)
-    except OSError:
-        pass
+    except OSError as exc:
+        print(f"  ⚠ No se pudo {'guardar' if pending else 'quitar'} la marca de actualización a medias: {exc}")
+
+
+def _head_sha(git_cmd: list[str], project_root: Path) -> Optional[str]:
+    try:
+        out = subprocess.run(git_cmd + ["rev-parse", "HEAD"], cwd=project_root,
+                             capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.stdout.strip() or None if out.returncode == 0 else None
 
 
 def _clear_incomplete_marker() -> bool:
@@ -1628,18 +1649,22 @@ def run_janitor_update(args) -> int:
             # Node repair, fresh-wrapper config migration, Desktop receipt,
             # marker cleanup, and stash restore per the spec.
         else:
+            # Set BEFORE the pull moves HEAD: a run killed anywhere between the
+            # pull and the end of the dependency phase must not be mistaken for
+            # "already up to date" next time.
+            head_before_pull = _head_sha(git_cmd, project_root)
+            _set_deps_pending(project_root, True, git_cmd)
             update_succeeded = _pull_with_fallback(git_cmd, project_root, branch)
             if not update_succeeded:
+                # Rolled back to where it started: nothing new to install.
+                if head_before_pull and _head_sha(git_cmd, project_root) == head_before_pull:
+                    _set_deps_pending(project_root, False, git_cmd)
                 if auto_stash_ref:
                     print(
                         f"  ℹ️  Local changes preserved in stash (ref: {auto_stash_ref})"
                     )
                     print("  Restore manually with: git stash apply")
                 return 1
-
-            # From here until dependencies and the catalog are done, a killed
-            # run must not be mistaken for "already up to date" next time.
-            _set_deps_pending(project_root, True)
 
             _call("_invalidate_update_cache", fallback=lambda: None)
 
@@ -1659,7 +1684,7 @@ def run_janitor_update(args) -> int:
         # modules. Runs BEFORE the Node / config phase.
         _reload_helper_modules_after_pull()
 
-        if not already_current or _deps_pending_marker(project_root).exists():
+        if not already_current or _deps_pending_marker(project_root, git_cmd).exists():
             if already_current:
                 print("→ La actualización anterior se cortó antes de instalar dependencias: se retoma.")
             _install_python_dependencies(project_root)
@@ -1670,7 +1695,7 @@ def run_janitor_update(args) -> int:
             )
 
             _reapply_skill_catalog()
-            _set_deps_pending(project_root, False)
+            _set_deps_pending(project_root, False, git_cmd)
 
         # Node repair — fail-loud. Non-empty failure list writes the
         # incomplete marker, prints NO receipt, NO success banner, and does

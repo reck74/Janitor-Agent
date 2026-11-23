@@ -112,8 +112,9 @@ touchpoints:
       while the app or a terminal held the update lock) made the first
       update's watcher announce a failure with the real update still running.
       `_update_already_running` answers "already running" before any marker
-      is touched: the shared lock is held, or a pending marker younger than
-      the watcher's 30-minute ceiling has no exit code yet. The defect is
+      is touched: the shared lock is held, or a pending/claimed marker
+      younger than the watcher's 30-minute ceiling still exists (its watcher
+      has not delivered the result yet). The defect is
       upstream's. Every changed line carries `# JANITOR:`.
     verify: test:update-single-flight
     merge: reapply

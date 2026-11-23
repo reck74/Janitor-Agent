@@ -239,7 +239,7 @@ export const LITERALS = {
   // «Obtener el instalador» / «Abrir la página de descarga»: the Janitor app is downloaded from the
   // fork's releases, never from upstream's site (which installs Hermes).
   'src/app/updates-overlay.tsx': [["const INSTALLER_URL = 'https://hermes-agent.nousresearch.com/'", "const INSTALLER_URL = 'https://github.com/reck74/Janitor-Agent/releases/latest'"]],
-  'src/app/settings/about-settings.tsx': [["const INSTALLER_URL = 'https://hermes-agent.nousresearch.com/'", "const INSTALLER_URL = 'https://github.com/reck74/Janitor-Agent/releases/latest'"]],
+  'src/app/settings/about-settings.tsx': [["const RELEASE_NOTES_URL = 'https://github.com/NousResearch/hermes-agent/releases'", "const RELEASE_NOTES_URL = 'https://github.com/reck74/Janitor-Agent/releases'"], ["const INSTALLER_URL = 'https://hermes-agent.nousresearch.com/'", "const INSTALLER_URL = 'https://github.com/reck74/Janitor-Agent/releases/latest'"]],
   'src/components/assistant-ui/thread/status.tsx': [["label={hint || 'Hermes is working'}", "label={hint || 'Janitor está trabajando'}"]],
   'src/components/assistant-ui/thread/message-reactions.tsx': [['title="Reacted by Hermes"', 'title="Reacción de Janitor"']],
   'src/main.tsx': [["document.title = 'Hermes HUD'", "document.title = 'Janitor HUD'"]],

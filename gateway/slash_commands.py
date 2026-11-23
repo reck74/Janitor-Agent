@@ -133,16 +133,20 @@ def _restart_notify_payload(event: MessageEvent) -> dict:
 _UPDATE_PENDING_FRESH_SECONDS = 30 * 60  # JANITOR: the watcher's own ceiling for one update
 
 
-def _update_already_running(pending_path, exit_code_path, lock_path=None) -> bool:  # JANITOR: update-single-flight
-    """An update holds the shared lock (any entry point), or a /update was spawned and has not finished."""
+def _update_already_running(pending_path, lock_path=None) -> bool:  # JANITOR: update-single-flight
+    """An update holds the shared lock (any entry point), or a /update's markers are still owned by
+    its watcher: spawned and unfinished, or finished with its result not yet delivered (the watcher
+    renames pending -> .claimed while it sends, then removes both)."""
     from hermes_cli.update_lock import read_live_update
     if read_live_update(path=lock_path) is not None:
         return True
-    try:
-        age = time.time() - pending_path.stat().st_mtime
-    except OSError:
-        return False
-    return not exit_code_path.exists() and age < _UPDATE_PENDING_FRESH_SECONDS
+    for marker in (pending_path, pending_path.with_suffix(".claimed.json")):
+        try:
+            if time.time() - marker.stat().st_mtime < _UPDATE_PENDING_FRESH_SECONDS:
+                return True
+        except OSError:
+            continue
+    return False
 
 
 def _spawn_detached_update(hermes_cmd, output_path, exit_code_path) -> None:
@@ -1304,7 +1308,7 @@ class GatewaySlashCommandsMixin(
         pending_path = _hermes_home / ".update_pending.json"
         output_path = _hermes_home / ".update_output.txt"
         exit_code_path = _hermes_home / ".update_exit_code"
-        if _update_already_running(pending_path, exit_code_path):  # JANITOR: touchpoint update-single-flight
+        if _update_already_running(pending_path):  # JANITOR: touchpoint update-single-flight
             from agent.i18n import t_default  # JANITOR: update-single-flight
             return t_default("runtime_copy.gateway.update_already_running",  # JANITOR: update-single-flight
                              "⏳ An update is already running. Wait for it to finish.")  # JANITOR: update-single-flight
