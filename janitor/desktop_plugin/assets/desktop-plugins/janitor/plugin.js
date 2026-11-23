@@ -82,7 +82,7 @@ export const APPS = {
   },
   'janitor-firecrawl': {
     label: 'Firecrawl',
-    description: 'Búsqueda y lectura de páginas web totalmente local.'
+    description: 'Extracción y búsqueda web con Firecrawl en tu equipo. El servicio es local; las páginas se siguen pidiendo a Internet.'
   },
   'janitor-opendesign': {
     label: 'Open Design',
@@ -497,14 +497,16 @@ const S = {
   skillText: { display: 'flex', flex: 1, flexDirection: 'column', gap: '2px' },
   sticky: {
     alignItems: 'center',
-    background: 'var(--ui-bg-primary, transparent)',
+    // Opaque on purpose: rows scroll underneath this bar.
+    background: 'var(--ui-bg-chrome, var(--background, #0b0b0c))',
     borderTop: '1px solid var(--ui-stroke-tertiary)',
     bottom: 0,
     display: 'flex',
     flexWrap: 'wrap',
     gap: '8px',
     padding: '10px 0',
-    position: 'sticky'
+    position: 'sticky',
+    zIndex: 1
   },
   input: { maxWidth: '240px' }
 }
