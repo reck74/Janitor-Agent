@@ -25,6 +25,8 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
+import { COMPAT_FILE, readDesktopContract } from '../brand/compat.mjs'
+
 import { allPatches } from './brand-patches.mjs'
 import { beginTransaction, checkPatches, computePatchedFiles, recoverInterrupted, restoreJournal } from './patch-engine.mjs'
 import { checkTranspiles } from './transpile-check.mjs'
@@ -104,6 +106,7 @@ export function runCheck(appDir = APP_DIR, patches = allPatches(appDir), out = c
 
   const failed = results.filter(r => !r.ok).length
   out(`${results.length - failed}/${results.length} patches resolve against ${appDir}${transpileOk ? '' : '; transpile FAILED'}`)
+  out(`app↔engine contract baked into this build: ${readDesktopContract()} (${COMPAT_FILE}, P13)`)
 
   return ok && transpileOk
 }
@@ -135,6 +138,8 @@ function main(argv) {
   const configPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'janitor-desktop-')), 'electron-builder.json')
 
   fs.writeFileSync(configPath, JSON.stringify(janitorBuilderConfig(), null, 2))
+
+  log(`app↔engine contract baked into this build: ${readDesktopContract()} (${COMPAT_FILE})`)
 
   const restore = applyOverlay(APP_DIR, OVERLAY_DIR, { patches: allPatches(), log })
 

@@ -1,6 +1,9 @@
-// Structural build patches P1-P5 (plan section 4.2, directive #17).
+// Structural build patches P1-P5 (plan section 4.2, directive #17) and P13,
+// the app↔engine contract gate (F1-21a, brand/compat.mjs).
 // Anchors are exact source text of apps/desktop; `count` is the exact number
 // of matches expected. A mismatch fails the build naming the patch id.
+
+import { compatPatches } from './compat.mjs'
 
 export const STRUCTURAL_PATCHES = [
   {
@@ -91,5 +94,7 @@ export const STRUCTURAL_PATCHES = [
     find: '<html lang="en">',
     replace: '<html lang="es">',
     count: 1
-  }
+  },
+  // Contract number read from janitor/desktop-compat.json when this module loads.
+  ...compatPatches()
 ]
