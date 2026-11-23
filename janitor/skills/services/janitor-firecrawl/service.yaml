@@ -1,5 +1,5 @@
 name: firecrawl
-description: Web scraping and crawling API (Firecrawl self-host).
+description: Extracción y búsqueda web con Firecrawl en tu equipo (las páginas vienen de Internet).
 deploy: scripts/deploy.sh
 compose: scripts/firecrawl-compose.yml
 url: http://127.0.0.1:1974
