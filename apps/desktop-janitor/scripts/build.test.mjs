@@ -25,6 +25,7 @@ import './servicios-plugin.test.mjs'
 import './nous-urls.test.mjs'
 import './compat.test.mjs'
 import './palette.test.mjs'
+import './install-boot.test.mjs'
 
 test('overrides deep-merge into the upstream config without dropping keys', () => {
   const upstream = readJson(path.join(APP_DIR, 'package.json')).build

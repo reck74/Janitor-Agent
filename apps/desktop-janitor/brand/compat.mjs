@@ -10,7 +10,10 @@
 //   engine < app → the app's updates view opens (its normal «Actualizar motor» path);
 //   absent or unreadable → compatible (an engine older than the contract).
 // A remote backend returns before this point (runPrimaryBackendStartup): the
-// contract is about the local checkout only.
+// contract is about the local checkout only. A first-launch install runs after
+// that gate (no engine yet: compatible), so the gate runs once more when the
+// install succeeds, before the new backend starts (F1-26e); each verdict is
+// acted on once and the blocking dialog is never shown twice.
 //
 // decideDesktopCompat is injected into main.ts as its own source text
 // (Function#toString), so the tested function is byte-for-byte what ships: it
@@ -130,12 +133,29 @@ export function compatGateSource(contract) {
     '  }',
     '}',
     '',
+    '// The gate runs before every local start and again after a first-launch install',
+    '// (F1-26e): each verdict is acted on once, and the blocking dialog is never shown twice.',
+    'let janitorCompatNotified: string | null = null',
+    'let janitorCompatBlocked = false',
+    '',
     'async function janitorDesktopCompatGate(): Promise<void> {',
+    '  if (janitorCompatBlocked) {',
+    '    // The dialog is up (or the app is quitting): no second dialog, no backend.',
+    '    await new Promise<never>(() => {})',
+    '  }',
+    '',
     '  const verdict = decideDesktopCompat(JANITOR_DESKTOP_CONTRACT, janitorReadEngineCompat())',
     '',
     "  rememberLog(`[janitor-compat] app ${verdict.appContract}, engine ${verdict.engineContract ?? 'n/a'}: ${verdict.status}`)",
     '',
     "  if (verdict.status === 'motor_viejo') {",
+    '    const notice = `${verdict.appContract}:${verdict.engineContract}`',
+    '',
+    '    if (janitorCompatNotified === notice) {',
+    '      return',
+    '    }',
+    '',
+    '    janitorCompatNotified = notice',
     '    // The app is newer than the engine: offer the normal engine update path.',
     '    sendOpenUpdatesRequested()',
     '',
@@ -145,6 +165,8 @@ export function compatGateSource(contract) {
     "  if (verdict.status !== 'app_vieja') {",
     '    return',
     '  }',
+    '',
+    '  janitorCompatBlocked = true',
     '',
     '  const { response } = await dialog.showMessageBox({',
     "    type: 'error',",
@@ -197,6 +219,17 @@ export function compatPatches(contract = readDesktopContract()) {
         '\n' +
         '        return parked\n' +
         '      }\n',
+      count: 1
+    },
+    {
+      id: 'P13-compat-after-bootstrap',
+      purpose: 'Run the gate again once a first-launch install succeeds, before the new backend starts (F1-26e)',
+      file: 'electron/main.ts',
+      find: "    rememberLog('[bootstrap] bootstrap complete; marker written. Re-resolving backend.')\n",
+      replace:
+        "    rememberLog('[bootstrap] bootstrap complete; marker written. Re-resolving backend.')\n" +
+        '    // Janitor build (F1-26e): the gate before the install saw no engine; check the one just installed.\n' +
+        '    await janitorDesktopCompatGate()\n',
       count: 1
     }
   ]

@@ -245,6 +245,47 @@ test('engine older than the app: no block, the updates view is requested', async
   }
 })
 
+test('F1-26e: the gate also runs after an install; an engine older than the app opens the updates view once', async () => {
+  const root = engineWith(engineFile(1))
+
+  try {
+    const { calls, gate } = loadGate(2, root)
+
+    await gate() // before the local start
+    await gate() // after the install / on a retry: same verdict, acted on already
+
+    assert.equal(calls.openUpdates, 1)
+    assert.equal(calls.logs.length, 2, 'both evaluations are logged')
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('F1-26e: before the install the engine is absent; after it, an engine newer than the app blocks once', async () => {
+  const root = engineWith(null)
+
+  try {
+    const { calls, quitCalled, gate } = loadGate(1, root)
+
+    await gate() // first launch, nothing installed yet: compatible
+
+    assert.deepEqual(calls.dialogs, [])
+
+    fs.mkdirSync(path.join(root, 'janitor'))
+    fs.writeFileSync(path.join(root, 'janitor', 'desktop-compat.json'), engineFile(2))
+
+    void gate() // after the install (P13-compat-after-bootstrap)
+    void gate() // a concurrent local start while the dialog is up
+    await quitCalled
+    await new Promise(resolve => setImmediate(resolve))
+
+    assert.equal(calls.dialogs.length, 1, 'never a second dialog')
+    assert.equal(calls.quit, 1)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
 // ---- patches against the real apps/desktop ----------------------------------
 
 test('P13 patches are registered, exact literals, resolve against apps/desktop and write no "Hermes"', () => {
