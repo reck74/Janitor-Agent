@@ -72,7 +72,9 @@ jobs:
         shell: bash
         run: |
           node apps/desktop-janitor/scripts/build.mjs --check | tee "$RUNNER_TEMP/brand-check.log"
-          if grep -q '^skip transpile' "$RUNNER_TEMP/brand-check.log"; then
+          # Files that are not TypeScript (a .json registry, a plugin .js) are
+          # reported as skipped by design; only a missing transpiler is an error.
+          if grep '^skip transpile' "$RUNNER_TEMP/brand-check.log" | grep -qv 'not TypeScript'; then
             echo "::error::build.mjs --check skipped transpilation (esbuild missing)"
             exit 1
           fi
