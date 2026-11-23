@@ -136,5 +136,5 @@ curl -s -H "X-N8N-API-KEY: $K" http://127.0.0.1:5678/api/v1/workflows
 ## Verification
 
 - `python3 $S verify` → `ok: true`, `health.status: 200`.
-- `janitor services status n8n` → `running: responde`.
+- `janitor services status n8n` → `n8n: en marcha, responde`.
 - Tests: `scripts/run_tests.sh tests/janitor/test_janitor_guided_services.py`.

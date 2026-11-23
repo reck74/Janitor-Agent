@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shutil
 
 import pytest
 import yaml
@@ -21,6 +23,7 @@ from tests.janitor.install_sh_harness import (
     run_stage,
     stage_frame,
     tree_snapshot,
+    write_fakes,
 )
 
 pytestmark = pytest.mark.linux_only
@@ -182,3 +185,106 @@ def test_stage_without_the_terminal_install_is_not_refused(tmp_path):
         result.stdout + result.stderr
     )
     assert "janitor-core" not in result.stdout + result.stderr
+
+
+# ── optional installs: the base installs nothing it was not asked for (F1-26) ──
+
+# Only the system dirs: the developer's ~/.local/bin may hold a real cua-driver,
+# which the node-deps stage would otherwise find and run (`--version`, `manifest`).
+_SYSTEM_PATH = "/usr/bin:/bin"
+
+
+def _node_deps_run(tmp_path, *extra):
+    """The node-deps stage with fake node/npm/uv/curl: each records its argv; curl fails."""
+    install = fake_install_dir(tmp_path)  # no package.json, no ui-tui: npm installs nothing
+    home = tmp_path / ".janitor"
+    calls = tmp_path / "calls.log"
+    record = f'#!/bin/sh\necho "$(basename "$0") $*" >> "{calls}"\n'
+    bin_dir = tmp_path / "fakebin"
+    write_fakes(bin_dir, {
+        "node": record + 'echo v26.12.0\n',
+        "npm": record + 'echo 10.9.0\n',
+        "curl": record + "exit 22\n",
+    })
+    write_fakes(home / "bin", {"uv": record + 'echo "uv 0.0.0"\n'})
+    path = f"{bin_dir}{os.pathsep}{_SYSTEM_PATH}"
+    assert shutil.which("cua-driver", path=path) is None, "a cua-driver on the system PATH skews this test"
+    before = set(os.listdir(tmp_path))
+    result = run_stage(tmp_path, "node-deps", install, home, *extra, path=path)
+    seen = calls.read_text(encoding="utf-8") if calls.exists() else ""
+    return result, seen, set(os.listdir(tmp_path)) - before - {"calls.log"}
+
+
+def test_node_deps_stage_does_not_install_computer_use_by_default(tmp_path):
+    """cua-driver writes ~/.cua-driver (telemetry id), ~/.cursor and ~/.agents: never unasked."""
+    result, seen, new_entries = _node_deps_run(tmp_path)
+
+    assert stage_frame(result.stdout) == {"ok": True, "stage": "node-deps", "skipped": False}, (
+        result.stdout + result.stderr
+    )
+    assert "curl" not in seen and "cua" not in seen, seen
+    assert not new_entries, new_entries  # nothing new in HOME: no .cua-driver, .cursor, .agents
+    assert "cua-driver" in result.stdout  # the user is told it was left out, in Spanish
+    assert "Skipping" not in result.stdout
+
+
+def test_with_computer_use_flag_runs_the_cua_driver_installer(tmp_path):
+    result, seen, _ = _node_deps_run(tmp_path, "--with-computer-use")
+
+    assert any(line.startswith("curl ") and "cua-driver" in line for line in seen.splitlines()), seen
+    # A failed download stays non-fatal, as upstream designed it.
+    assert stage_frame(result.stdout)["ok"] is True, result.stdout + result.stderr
+
+
+# ── what the app shows under «Mostrar salida del instalador» ──────────────────
+
+# Words of upstream's English messages and summary; none may survive in a stage
+# the app runs. Paths are removed first (they may legitimately say anything).
+_ENGLISH = re.compile(
+    r"\b(Created|Setting up|ready|already|Skipping|Could not|found|installed|Installation|"
+    r"Commands|Your files|Reload your shell|Start chatting|Update to latest|Note:)\b"
+)
+_PATHISH = re.compile(r"(~|/)[^\s:]*")
+
+
+def _visible(stdout: str) -> list[str]:
+    """Lines the installer itself prints: everything except the JSON frame and the
+    `janitor.seed` lines (Python output, not part of install.sh)."""
+    return [
+        line for line in stdout.splitlines()
+        if line.strip() and not line.startswith("{") and not line.lower().startswith("janitor ")
+    ]
+
+
+@pytest.mark.parametrize("stage", ["config", "path", "complete"])
+def test_stage_output_is_spanish_and_never_says_hermes(tmp_path, stage):
+    install = fake_install_dir(tmp_path)
+    home = tmp_path / ".janitor"
+
+    result = run_stage(tmp_path, stage, install, home)
+
+    assert stage_frame(result.stdout)["ok"] is True, result.stdout + result.stderr
+    lines = _visible(result.stdout + result.stderr)
+    assert lines, result.stdout
+    words = [_PATHISH.sub("", line) for line in lines]
+    leaks = [w for w in words if "hermes" in w.lower() or _ENGLISH.search(w)]
+    assert not leaks, leaks
+
+
+def test_complete_stage_suggests_janitor_commands(tmp_path):
+    install = fake_install_dir(tmp_path)
+    result = run_stage(tmp_path, "complete", install, tmp_path / ".janitor")
+
+    text = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout)
+    commands = re.findall(r"^\s+(janitor|hermes)\b", text, re.MULTILINE)
+    assert commands and set(commands) == {"janitor"}, text
+    assert "source ~/" not in text
+
+
+def test_failed_stage_reason_is_spanish(tmp_path):
+    """The app shows the frame's reason under a failed stage."""
+    result = run_stage(tmp_path, "no-such-stage", fake_install_dir(tmp_path), tmp_path / ".janitor")
+
+    frame = stage_frame(result.stdout)
+    assert frame["ok"] is False and not re.search(r"\bexit code\b", frame["reason"]), frame
+    assert str(frame["reason"]).split()[-1].isdigit(), frame

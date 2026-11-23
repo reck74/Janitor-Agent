@@ -147,5 +147,5 @@ curl -s -H "xc-token: $T" "$B/api/v2/tables/<TABLE_ID>/records?limit=25"        
 ## Verification
 
 - `python3 $S verify` → `ok: true`, `health.status` 2xx/3xx.
-- `janitor services status nocodb` → `running: responde`.
+- `janitor services status nocodb` → `nocodb: en marcha, responde`.
 - Tests: `scripts/run_tests.sh tests/janitor/test_janitor_guided_services.py`.

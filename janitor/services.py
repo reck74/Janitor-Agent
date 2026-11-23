@@ -72,16 +72,16 @@ class Service:
 def _parse_manifest(path: Path) -> Service:
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     if not isinstance(data, dict):
-        raise ServiceError(f"{path}: manifest must be a mapping")
+        raise ServiceError(f"{path}: el manifiesto debe ser un mapa")
     missing = [k for k in ("name", "deploy", "containers") if not data.get(k)]
     if missing:
-        raise ServiceError(f"{path}: missing {', '.join(missing)}")
+        raise ServiceError(f"{path}: faltan {', '.join(missing)}")
     containers = data["containers"]
     if not isinstance(containers, list) or not all(isinstance(c, str) for c in containers):
-        raise ServiceError(f"{path}: containers must be a list of names")
+        raise ServiceError(f"{path}: containers debe ser una lista de nombres")
     bad = [c for c in containers if not c.startswith(CONTAINER_PREFIX)]
     if bad:
-        raise ServiceError(f"{path}: containers must use the {CONTAINER_PREFIX!r} prefix: {bad}")
+        raise ServiceError(f"{path}: los contenedores deben llevar el prefijo {CONTAINER_PREFIX!r}: {bad}")
     return Service(
         name=str(data["name"]),
         description=str(data.get("description", "")),
@@ -109,15 +109,15 @@ def get_service(name: str, root: Path = SERVICES_ROOT) -> Service:
     for service in discover_services(root):
         if service.name == wanted:
             return service
-    known = ", ".join(s.name for s in discover_services(root)) or "none"
-    raise ServiceError(f"Unknown service {name!r} (available: {known})")
+    known = ", ".join(s.name for s in discover_services(root)) or "ninguno"
+    raise ServiceError(f"No existe el servicio {name!r} (disponibles: {known})")
 
 
 def _run(runner: Runner, argv: Sequence[str], **kwargs) -> subprocess.CompletedProcess:
     try:
         return runner(list(argv), **kwargs)
     except FileNotFoundError as exc:
-        raise ServiceError(f"{argv[0]} not found — is Docker installed?") from exc
+        raise ServiceError(f"No encuentro {argv[0]}: ¿está instalado Docker?") from exc
 
 
 def container_states(service: Service, runner: Runner = subprocess.run) -> dict[str, str]:
@@ -259,22 +259,48 @@ def check_health(
     return result
 
 
+# What the CLI shows. ``summarize`` keeps its English codes: the desktop API and
+# the setup scripts compare them; only the text a person reads is Spanish.
+_SUMMARY_TEXT = {
+    "running": "en marcha",
+    "degraded": "en marcha a medias",
+    "stopped": "detenido",
+    "not deployed": "no instalado",
+}
+
+# Health is only known for a service whose containers all run, so each text says so.
 _HEALTH_TEXT = {
-    HEALTH_RESPONDING: "responde",
+    HEALTH_RESPONDING: "en marcha, responde",
     HEALTH_NOT_RESPONDING: "contenedor en marcha, el servicio no responde (todavía)",
     HEALTH_UNCHECKED: "contenedor en marcha",
 }
 
+# Docker's per-container states (``docker inspect``), plus ``absent`` from container_states.
+_CONTAINER_TEXT = {
+    "running": "en marcha",
+    "exited": "detenido",
+    "created": "creado",
+    "paused": "en pausa",
+    "restarting": "reiniciando",
+    "removing": "eliminándose",
+    "dead": "con error",
+    "absent": "no existe",
+}
+
 
 def state_text(summary: str, health: Optional[str]) -> str:
-    """CLI state cell: the container summary, qualified by health when it is known."""
-    return f"{summary}: {_HEALTH_TEXT[health]}" if health else summary
+    """CLI state cell: the container summary in Spanish, refined by health when it is known."""
+    return _HEALTH_TEXT[health] if health else _SUMMARY_TEXT.get(summary, summary)
+
+
+def container_state_text(state: str) -> str:
+    return _CONTAINER_TEXT.get(state, state)
 
 
 def deploy(service: Service, runner: Runner = subprocess.run) -> int:
     script = service.deploy_script
     if not script.is_file():
-        raise ServiceError(f"Deploy script missing: {script}")
+        raise ServiceError(f"Falta el script de instalación: {script}")
     env = dict(os.environ)
     env.setdefault("JANITOR_SOURCE_DIR", str(REPO_ROOT))
     env.setdefault("JANITOR_HOME", str(janitor_home()))
@@ -290,7 +316,7 @@ def start(service: Service, runner: Runner = subprocess.run) -> int:
     present = _present(service, runner)
     if not present:
         raise ServiceError(
-            f"{service.name} is not deployed. Run: janitor services deploy {service.name}"
+            f"{service.name} no está instalado. Ejecuta: janitor services deploy {service.name}"
         )
     return _run(runner, ["docker", "start", *present], check=False).returncode
 
@@ -315,14 +341,14 @@ def uninstall(service: Service, runner: Runner = subprocess.run) -> int:
 
 def setup_parser(parser) -> None:
     sub = parser.add_subparsers(dest="services_action")
-    sub.add_parser("list", help="List available services and their state")
-    status = sub.add_parser("status", help="Show container state for one or all services")
+    sub.add_parser("list", help="Lista los aplicativos opcionales y su estado")
+    status = sub.add_parser("status", help="Muestra el estado de los contenedores de uno o de todos")
     status.add_argument("name", nargs="?")
     for action, text in (
-        ("deploy", "Install or repair a service (idempotent)"),
-        ("start", "Start the containers of a deployed service"),
-        ("stop", "Stop the containers of a service"),
-        ("uninstall", "Remove the containers of a service (keeps volumes/data)"),
+        ("deploy", "Instala o repara un aplicativo (se puede repetir)"),
+        ("start", "Arranca los contenedores de un aplicativo instalado"),
+        ("stop", "Detiene los contenedores de un aplicativo"),
+        ("uninstall", "Quita los contenedores de un aplicativo (conserva volúmenes y datos)"),
     ):
         p = sub.add_parser(action, help=text)
         p.add_argument("name")
@@ -341,11 +367,11 @@ def handle(args, runner: Runner = subprocess.run, out=print) -> int:
             for service, states in rows:
                 state = state_text(summarize(states), health[service.name])
                 if action == "list":
-                    out(f"{service.name:<10} {state:<13} {service.url:<24} {service.description}")
+                    out(f"{service.name:<10} {state:<20} {service.url:<24} {service.description}")
                     continue
                 out(f"{service.name}: {state}")
                 for container, container_state in states.items():
-                    out(f"  {container:<32} {container_state}")
+                    out(f"  {container:<32} {container_state_text(container_state)}")
             return 0
         service = get_service(args.name)
         if action == "deploy":
@@ -357,12 +383,12 @@ def handle(args, runner: Runner = subprocess.run, out=print) -> int:
         if action == "uninstall":
             code = uninstall(service, runner)
             if code == 0:
-                out(f"{service.name}: containers removed; Docker volumes and ~/.janitor/docker kept.")
+                out(f"{service.name}: contenedores quitados; los volúmenes de Docker y ~/.janitor/docker se conservan.")
             return code
     except ServiceError as exc:
         out(f"error: {exc}")
         return 1
-    out(f"error: unknown action {action!r}")
+    out(f"error: acción desconocida {action!r}")
     return 2
 
 

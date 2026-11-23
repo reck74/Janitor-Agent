@@ -123,6 +123,7 @@ touchpoints:
       - hermes_cli/commands.py
       - hermes_cli/commands_platforms.py
       - hermes_cli/web_server_messaging.py
+      - hermes_cli/_startup_fast.py
     why: >-
       English literals the engine sends to a user with no key in upstream's
       en.yaml ask the i18n catalog first: `agent.i18n.t_default(key,
@@ -133,7 +134,8 @@ touchpoints:
       in gateway /help, /commands and the Telegram command menu
       (`commands.localized_description`), and the Telegram QR pairing errors
       (web_server_messaging; expired/claimed stay English because the app
-      matches those words in the 410 body). Keys live under `runtime_copy.*`
+      matches those words in the 410 body), and the `--version` lines after the
+      banner (_startup_fast, also in touchpoint banner). Keys live under `runtime_copy.*`
       in janitor/locales/es.yaml. Every changed line carries `# JANITOR:`.
     verify: test:runtime-copy
     merge: reapply
@@ -188,8 +190,13 @@ touchpoints:
       is refused in every --stage, in --ensure and in the monolithic run before anything
       is written, with a Spanish message (and the {ok:false} JSON frame's
       reason) telling the user to uninstall the old one first: the app is a clean
-      start and adopts nothing (plan decision 2.9, F1-22). Every changed hunk carries
-      a `# JANITOR:` comment.
+      start and adopts nothing (plan decision 2.9, F1-22). cua-driver (Computer
+      Use) is opt-in (`--with-computer-use`): it writes outside the home and seeds
+      a telemetry id (F1-26). One fork block after `print_success` redefines the
+      banner, the final summary and the log helpers so what the app shows reads in
+      Spanish with `janitor` commands (a message the table does not list prints
+      upstream's English); a failed stage's JSON reason is Spanish. Every changed
+      hunk carries a `# JANITOR:` comment.
     verify: test:install-sh
     merge: reapply
 

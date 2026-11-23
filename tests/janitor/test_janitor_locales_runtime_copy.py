@@ -228,3 +228,39 @@ def test_update_prompt_without_buttons_is_spanish(janitor_spanish):
     (text,), _ = target.send.call_args
     assert text.startswith("☤ **La actualización necesita una respuesta:**"), text
     assert "¿Migrar config? (por defecto: y)" in text and "`/approve` (sí)" in text, text
+
+
+# ── `janitor --version` ──────────────────────────────────────────────────────
+
+# The English labels upstream prints after the banner line.
+_VERSION_ENGLISH = ("Install directory", "Install method", "OpenAI SDK", "Not installed",
+                    "Update available", "Up to date", "behind")
+
+
+def _version_output(capsys, monkeypatch, behind):
+    import hermes_cli.banner as banner
+    from hermes_cli._startup_fast import print_fast_version_info
+
+    monkeypatch.setattr(banner, "check_for_updates", lambda passive=True: behind)
+    print_fast_version_info(check_updates=True)
+    return capsys.readouterr().out.splitlines()
+
+
+@pytest.mark.parametrize("behind", [0, 3, "no-count"])
+def test_version_output_is_spanish(janitor_spanish, capsys, monkeypatch, behind):
+    """Every line after the banner comes from the catalog: no English label, no `hermes` command."""
+    import hermes_cli.banner as banner
+
+    behind = banner.UPDATE_AVAILABLE_NO_COUNT if behind == "no-count" else behind
+    lines = _version_output(capsys, monkeypatch, behind)
+    assert lines[0].startswith("THE JANITOR v"), lines
+    rest = "\n".join(lines[1:])
+    assert not [w for w in _VERSION_ENGLISH if w in rest], rest
+    assert not _hermes(rest.replace(str(Path(__file__).resolve().parents[2]), "")), rest
+    assert len(lines) >= 4, lines  # directory, (method,) Python, SDK, update status
+
+
+def test_version_output_keeps_upstream_english_without_the_janitor_catalog(upstream_spanish, capsys, monkeypatch):
+    """Upstream's catalogs carry no `runtime_copy.version.*`: the inline English prints as before."""
+    rest = "\n".join(_version_output(capsys, monkeypatch, 0)[1:])
+    assert "Install directory: " in rest and rest.endswith("Up to date")

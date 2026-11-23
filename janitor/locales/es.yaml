@@ -153,6 +153,15 @@ runtime_copy:
     unavailable: "El servicio de configuración de Telegram no responde. Prueba en un momento."
     invalid: "El servicio de configuración de Telegram devolvió una respuesta inválida."
   # Descriptions in /help, /commands and the Telegram command menu, by command name.
+  # `janitor --version` (hermes_cli/_startup_fast.py::print_fast_version_info).
+  version:
+    install_dir: "Directorio de instalación: {path}"
+    install_method: "Método de instalación: {method}"
+    openai_sdk: "SDK de OpenAI: {version}"
+    openai_sdk_missing: "SDK de OpenAI: no instalado"
+    update_available: "Hay una actualización: ejecuta `janitor update`"
+    update_behind: "Hay una actualización: vas {behind} cambio(s) por detrás. Ejecuta `janitor update`"
+    up_to_date: "Al día"
   commands:
     start: "Confirma el /start de la plataforma sin responder"
     new: "Empieza una sesión nueva (ID e historial limpios)"

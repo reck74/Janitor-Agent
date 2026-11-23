@@ -1,5 +1,5 @@
 name: honcho
-description: Long-term memory backend (Honcho API, deriver, Postgres, Redis).
+description: Memoria avanzada que recuerda conversaciones y preferencias entre sesiones (Honcho local).
 deploy: scripts/deploy.sh
 compose: scripts/honcho-compose.yml
 url: http://127.0.0.1:1973

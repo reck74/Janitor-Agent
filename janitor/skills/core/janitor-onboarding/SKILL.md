@@ -105,4 +105,4 @@ messaging tokens) and starts with empty memory.
 ## Verification
 
 - `janitor -p <perfil> skills list --enabled-only` shows the selected ids plus `hermes-agent`.
-- `janitor services status <name>` reports `running` after a deploy.
+- `janitor services status <name>` reports `en marcha, responde` after a deploy.

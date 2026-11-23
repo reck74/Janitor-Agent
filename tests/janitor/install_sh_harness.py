@@ -35,9 +35,15 @@ def fake_install_dir(root: Path) -> Path:
     return install
 
 
-def run_install_sh(root: Path, *args: str, path_prefix: Optional[Path] = None) -> subprocess.CompletedProcess:
+def run_install_sh(
+    root: Path, *args: str, path_prefix: Optional[Path] = None, path: Optional[str] = None
+) -> subprocess.CompletedProcess:
+    """``path`` replaces PATH outright: a stage that probes for a tool (``cua-driver``)
+    must not find, and run, the developer's own copy."""
     env = {k: v for k, v in os.environ.items() if not k.startswith("HERMES_")}
     env.update({"HOME": str(root), "PYTHONPATH": str(REPO_ROOT), "SHELL": "/bin/bash"})
+    if path is not None:
+        env["PATH"] = path
     if path_prefix is not None:
         env["PATH"] = f"{path_prefix}{os.pathsep}{env.get('PATH', '')}"
     return subprocess.run(
@@ -77,7 +83,7 @@ def tree_snapshot(root: Path) -> dict:
     return snap
 
 
-def run_stage(root: Path, stage: str, install: Path, home: Path, **kw) -> subprocess.CompletedProcess:
+def run_stage(root: Path, stage: str, install: Path, home: Path, *extra: str, **kw) -> subprocess.CompletedProcess:
     return run_install_sh(
         root,
         "--stage",
@@ -88,5 +94,13 @@ def run_stage(root: Path, stage: str, install: Path, home: Path, **kw) -> subpro
         str(install),
         "--hermes-home",
         str(home),
+        *extra,
         **kw,
     )
+
+
+def write_fakes(bin_dir: Path, fakes: dict) -> None:
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    for name, body in fakes.items():
+        (bin_dir / name).write_text(body, encoding="utf-8")
+        (bin_dir / name).chmod(0o755)

@@ -154,5 +154,5 @@ curl -s -X POST -H "X-API-Key: $K" -H "Content-Type: application/json" \
 ## Verification
 
 - `python3 $S verify` → `ok: true`, `health.status: 200`.
-- `janitor services status lightrag` → `running: responde`.
+- `janitor services status lightrag` → `lightrag: en marcha, responde`.
 - Tests: `scripts/run_tests.sh tests/janitor/test_janitor_guided_services.py`.

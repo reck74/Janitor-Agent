@@ -72,7 +72,7 @@ def test_manifest_rejects_unprefixed_containers(tmp_path):
 
 def test_get_service_accepts_prefixed_name():
     assert services.get_service("janitor-honcho").name == "honcho"
-    with pytest.raises(services.ServiceError, match="available"):
+    with pytest.raises(services.ServiceError, match="honcho"):
         services.get_service("nope")
 
 
@@ -106,9 +106,44 @@ def test_status_reports_each_container():
     docker = FakeDocker({honcho.containers[0]: "running", honcho.containers[1]: "exited"})
     lines: list[str] = []
     assert services.handle(_args("status", "honcho"), runner=docker, out=lines.append) == 0
-    assert lines[0] == "honcho: degraded"
-    assert any(honcho.containers[0] in l and "running" in l for l in lines)
-    assert any(honcho.containers[-1] in l and "absent" in l for l in lines)
+    assert lines[0] == f"honcho: {services.state_text('degraded', None)}"
+    assert any(honcho.containers[0] in l and services.container_state_text("running") in l for l in lines)
+    assert any(honcho.containers[-1] in l and services.container_state_text("absent") in l for l in lines)
+
+
+# English the CLI must not show: the codes ``summarize`` / ``docker inspect`` return.
+_ENGLISH_STATES = ("running", "stopped", "degraded", "not deployed", "exited", "absent")
+
+
+@pytest.mark.parametrize("summary", ["running", "degraded", "stopped", "not deployed"])
+def test_cli_state_text_is_spanish_and_distinct(summary):
+    """The CLI shows each summary in Spanish; the codes themselves stay for the API."""
+    texts = {s: services.state_text(s, None) for s in ("running", "degraded", "stopped", "not deployed")}
+    assert len(set(texts.values())) == len(texts)
+    assert not any(word in texts[summary] for word in _ENGLISH_STATES), texts[summary]
+    for health in (services.HEALTH_RESPONDING, services.HEALTH_NOT_RESPONDING, services.HEALTH_UNCHECKED):
+        assert not any(word in services.state_text("running", health) for word in _ENGLISH_STATES)
+
+
+def test_list_shows_spanish_states_and_descriptions():
+    """`janitor services list`: no English state word, and every description is the manifest's."""
+    docker = FakeDocker({})
+    lines: list[str] = []
+    assert services.handle(_args("list"), runner=docker, out=lines.append) == 0
+    assert len(lines) == len(ALL_SERVICES)
+    for line, service in zip(lines, ALL_SERVICES):
+        assert line.startswith(service.name)
+        assert services.state_text("not deployed", None) in line
+        assert line.endswith(service.description)
+        assert not any(f" {word}" in line.lower() for word in _ENGLISH_STATES), line
+
+
+@pytest.mark.parametrize("service", ALL_SERVICES, ids=lambda s: s.name)
+def test_service_descriptions_are_spanish(service):
+    """Descriptions reach `services list`: Spanish, so at least one Spanish function word."""
+    words = set(service.description.lower().replace("(", " ").replace(",", " ").split())
+    assert words & {"de", "con", "que", "tu", "en", "y", "para", "entre"}, service.description
+    assert not words & {"the", "and", "for", "with", "backend", "memory"}, service.description
 
 
 @pytest.mark.parametrize(
@@ -199,9 +234,13 @@ def test_status_tells_a_running_container_from_a_service_that_answers(tmp_path, 
         server.server_close()
 
     heads = {l.split(":", 1)[0]: l for l in lines if not l.startswith(" ")}
-    assert heads["up"] == "up: running: responde"
-    assert heads["booting"] == "booting: running: contenedor en marcha, el servicio no responde (todavía)"
-    assert heads["nourl"] == "nourl: running: contenedor en marcha"
+    texts = {
+        name: services.state_text("running", health)
+        for name, health in (("up", services.HEALTH_RESPONDING), ("booting", services.HEALTH_NOT_RESPONDING),
+                             ("nourl", services.HEALTH_UNCHECKED))
+    }
+    assert len(set(texts.values())) == 3
+    assert {name: line.split(": ", 1)[1] for name, line in heads.items()} == texts
     assert docker.mutating() == []
 
 
@@ -281,7 +320,7 @@ def test_services_status_end_to_end_with_fake_docker(fresh_home):
     assert result.returncode == 0, result.stderr
     # Containers reported stopped: a running one would make `status` call the
     # honcho url, which on a developer machine is the real local service.
-    assert "honcho: stopped" in result.stdout
+    assert f"honcho: {services.state_text('stopped', None)}" in result.stdout
 
     result = _janitor(fresh_home, "services", "stop", "honcho", env=env)
     assert result.returncode == 0, result.stderr
