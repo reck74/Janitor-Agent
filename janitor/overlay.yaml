@@ -103,6 +103,22 @@ touchpoints:
     merge: reapply
     upstream_candidate: true
 
+  - id: update-single-flight
+    files:
+      - gateway/slash_commands.py
+    why: >-
+      The messaging /update handler rewrote .update_pending.json and removed
+      .update_exit_code before spawning, so a second /update (or one sent
+      while the app or a terminal held the update lock) made the first
+      update's watcher announce a failure with the real update still running.
+      `_update_already_running` answers "already running" before any marker
+      is touched: the shared lock is held, or a pending marker younger than
+      the watcher's 30-minute ceiling has no exit code yet. The defect is
+      upstream's. Every changed line carries `# JANITOR:`.
+    verify: test:update-single-flight
+    merge: reapply
+    upstream_candidate: true
+
   - id: runtime-copy
     files:
       - agent/i18n.py

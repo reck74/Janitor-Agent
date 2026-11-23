@@ -128,6 +128,23 @@ def _restart_notify_payload(event: MessageEvent) -> dict:
     return data
 
 
+# JANITOR: (touchpoint update-single-flight) a second /update must not rewrite the markers of the one
+# in flight: its watcher would report the newcomer's lock refusal as the real update's failure.
+_UPDATE_PENDING_FRESH_SECONDS = 30 * 60  # JANITOR: the watcher's own ceiling for one update
+
+
+def _update_already_running(pending_path, exit_code_path, lock_path=None) -> bool:  # JANITOR: update-single-flight
+    """An update holds the shared lock (any entry point), or a /update was spawned and has not finished."""
+    from hermes_cli.update_lock import read_live_update
+    if read_live_update(path=lock_path) is not None:
+        return True
+    try:
+        age = time.time() - pending_path.stat().st_mtime
+    except OSError:
+        return False
+    return not exit_code_path.exists() and age < _UPDATE_PENDING_FRESH_SECONDS
+
+
 def _spawn_detached_update(hermes_cmd, output_path, exit_code_path) -> None:
     """Spawn ``hermes update --gateway`` detached so it survives the gateway restart it may trigger.
     setsid is portable (works where ``systemd-run --user`` lacks a D-Bus session); ``--gateway``
@@ -1287,6 +1304,10 @@ class GatewaySlashCommandsMixin(
         pending_path = _hermes_home / ".update_pending.json"
         output_path = _hermes_home / ".update_output.txt"
         exit_code_path = _hermes_home / ".update_exit_code"
+        if _update_already_running(pending_path, exit_code_path):  # JANITOR: touchpoint update-single-flight
+            from agent.i18n import t_default  # JANITOR: update-single-flight
+            return t_default("runtime_copy.gateway.update_already_running",  # JANITOR: update-single-flight
+                             "⏳ An update is already running. Wait for it to finish.")  # JANITOR: update-single-flight
         pending = {
             "platform": src.platform.value, "chat_id": src.chat_id, "chat_type": src.chat_type,
             "user_id": src.user_id, "session_key": self._session_key_for_source(src),

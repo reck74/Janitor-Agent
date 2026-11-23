@@ -137,6 +137,7 @@ runtime_copy:
     update_finished_successfully: "✅ Actualización de Janitor terminada sin errores."
     update_failed: "❌ La actualización de Janitor falló; sigue corriendo la versión anterior. Ejecuta `janitor update` en el equipo para ver el error completo, o vuelve a intentar /update más tarde."
     update_last_lines: "Últimas líneas:"
+    update_already_running: "⏳ Ya hay una actualización en marcha. Espera a que termine; no voy a lanzar otra encima."
     update_timed_out: "❌ La actualización de Janitor no terminó en 30 minutos. Se cortó."
     update_prompt: "☤ **La actualización necesita una respuesta:**\n\n{prompt}{default_hint}\n\nResponde `{p}approve` (sí) o `{p}deny` (no), o escribe la respuesta directamente."
     update_prompt_default: " (por defecto: {default})"

@@ -1197,6 +1197,28 @@ def _read_persisted_marker_raw(marker_path: Path) -> Optional[str]:
     return stash_ref if isinstance(stash_ref, (str, type(None))) else None
 
 
+def _deps_pending_marker(project_root: Path) -> Path:
+    """Per-checkout flag: code was pulled, dependencies not yet installed.
+
+    Lives inside ``.git`` so it is tied to the checkout and can never be
+    tracked or show up in ``git status``.
+    """
+    return project_root / ".git" / "janitor-update-deps-pending"
+
+
+def _set_deps_pending(project_root: Path, pending: bool) -> None:
+    """Best effort: an unwritable ``.git`` (a worktree's ``.git`` file) only
+    loses the resume-after-interruption guarantee, never the update."""
+    marker = _deps_pending_marker(project_root)
+    try:
+        if pending:
+            marker.write_text(datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ\n"), encoding="utf-8")
+        else:
+            marker.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def _clear_incomplete_marker() -> bool:
     """Remove ``update-incomplete.json`` if present.
 
@@ -1509,6 +1531,10 @@ def run_janitor_update(args) -> int:
         update_lock, refusal = _acquire_update_lock()
         if refusal is not None:
             print(refusal)
+            # The exit-code marker belongs to the update that holds the lock:
+            # writing "failed" here would make its watcher announce a failure
+            # while the real update is still running.
+            gateway_exit_code_written = True
             return _UPDATE_EXIT_CONCURRENT
 
         print("⚕ Updating Janitor Agent from fork...")
@@ -1611,6 +1637,10 @@ def run_janitor_update(args) -> int:
                     print("  Restore manually with: git stash apply")
                 return 1
 
+            # From here until dependencies and the catalog are done, a killed
+            # run must not be mistaken for "already up to date" next time.
+            _set_deps_pending(project_root, True)
+
             _call("_invalidate_update_cache", fallback=lambda: None)
 
             removed = _call(
@@ -1629,7 +1659,9 @@ def run_janitor_update(args) -> int:
         # modules. Runs BEFORE the Node / config phase.
         _reload_helper_modules_after_pull()
 
-        if not already_current:
+        if not already_current or _deps_pending_marker(project_root).exists():
+            if already_current:
+                print("→ La actualización anterior se cortó antes de instalar dependencias: se retoma.")
             _install_python_dependencies(project_root)
 
             _call(
@@ -1638,6 +1670,7 @@ def run_janitor_update(args) -> int:
             )
 
             _reapply_skill_catalog()
+            _set_deps_pending(project_root, False)
 
         # Node repair — fail-loud. Non-empty failure list writes the
         # incomplete marker, prints NO receipt, NO success banner, and does

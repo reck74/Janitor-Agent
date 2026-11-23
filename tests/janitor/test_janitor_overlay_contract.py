@@ -159,9 +159,32 @@ def check_runtime_copy(tmp_path):
         reset_language_cache()
 
 
+def check_update_single_flight(tmp_path):
+    """A /update in flight, from any entry point, makes the next one stand down; leftovers never block."""
+    import os
+    import time
+
+    from gateway.slash_commands import _update_already_running
+
+    pending, code, lock = tmp_path / ".update_pending.json", tmp_path / ".update_exit_code", tmp_path / "lock"
+    assert not _update_already_running(pending, code, lock_path=lock)
+    pending.write_text("{}", encoding="utf-8")
+    assert _update_already_running(pending, code, lock_path=lock)  # spawned, lock not taken yet
+    code.write_text("0", encoding="utf-8")
+    assert not _update_already_running(pending, code, lock_path=lock)  # finished, notice still to send
+    code.unlink()
+    an_hour_ago = time.time() - 3600
+    os.utime(pending, (an_hour_ago, an_hour_ago))
+    assert not _update_already_running(pending, code, lock_path=lock)  # a crashed run's leftover
+    pending.unlink()
+    lock.write_text(f"{os.getpid()}\n{time.time()}\n", encoding="utf-8")
+    assert _update_already_running(pending, code, lock_path=lock)  # the app or a terminal is updating
+
+
 CHECKS = {
     "backend-user-copy": check_backend_user_copy,
     "runtime-copy": check_runtime_copy,
+    "update-single-flight": check_update_single_flight,
     "version": check_version,
     "packaging": check_packaging,
     "banner": check_banner,
