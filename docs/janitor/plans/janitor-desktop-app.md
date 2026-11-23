@@ -143,6 +143,9 @@ Decisión del dueño (2026-11-22). La app es el **nuevo punto de partida**:
   retira (F5-02).
 - A partir de aquí lo que importa es que **esta** app se actualice de forma práctica y
   sencilla, sin que el usuario tenga que lidiar con Git (F1-21).
+- **Git oculto (decisión del dueño, 2026-11-22):** el motor sigue siendo un checkout que
+  se actualiza con Git por debajo; el usuario solo pulsa un botón o escribe `/update` y
+  nunca ve Git ni resuelve nada a mano. No se rediseña la entrega como paquete.
 
 ## 3. Hechos verificados en el código
 
@@ -499,6 +502,7 @@ Windows y macOS (firma de código). WhatsApp como canal.
 | 2026-11-22 | Subagentes Opus, auditado por el orquestador | F5-02 (retiro: 3 instaladores, 6 scripts de migración, migraciones v1/v2, alias raíz pre-1.0, 5 archivos de prueba; queda el mecanismo de `.layout_version` con base v2 y la guarda del instalador), F4-03 (n8n, NocoDB, LightRAG con motor común `janitor/skills/services/_shared/compose_service.py`; Firecrawl; Open Design), F4-04 y F4-05 (pantallas «Skills» y «Agentes» del plugin de escritorio; `catalog.set_selection`; creación de agentes en proceso hijo). Evidencia del orquestador, una corrida con registro: `scripts/run_tests.sh tests/janitor/` → 38 archivos, 640 pasan, **9 fallan, todas en `test_janitor_lightrag_skill.py`** (prueba de la skill antigua de LightRAG, pendiente de borrar); overlay check limpio; catálogo 42/42; `node --test apps/desktop-janitor/scripts/*.test.mjs` → 153/153; anclas 177/177. Error del orquestador corregido antes de terminar: un `git add -A` metió en el commit de F5-02 los enlaces de `.claude/worktrees/`; se enmendó el commit local y la carpeta quedó excluida en `.git/info/exclude` |
 | 2026-11-22 | Subagente Opus (compilación y capturas), revisado por el orquestador | App recompilada (`build.mjs --linux --dir`, `apps/desktop` limpio después) y abierta sin pantalla con HOME temporal: «Servicios», «Skills» y «Agentes» se ven, en español, sin «Hermes», consola sin errores. Creado un especialista `prueba-inv` (Investigador): `memories/` vacío, `janitor.skills` de su plantilla; cambiada una skill en el principal y en el especialista, reflejado en cada `config.yaml`. Dos defectos vistos por el orquestador en las capturas y corregidos en `plugin.js` (comprobado repitiendo la captura): la barra de guardado de «Skills» era transparente y tapaba la última fila; la descripción de Firecrawl decía «totalmente local». Observación sin resolver: `janitor.catalog_seen` no incluye la skill recién activada |
 | 2026-11-22 | Claude (orquestador), con autorización del dueño | Borrada `tests/janitor/test_janitor_lightrag_skill.py` (prueba de la skill antigua de LightRAG, leía el código como texto). `scripts/run_tests.sh tests/janitor/` → 37 archivos, 627 pruebas, 0 fallos |
+| 2026-11-22 | Dueño del proyecto | Actualizaciones: **Git oculto**. Se mantiene el mecanismo actual (checkout + `janitor update`), sin Git a la vista del usuario. Se desbloquean F1-21a a F1-21e |
 
 ## 9. Decisiones pendientes del dueño
 
@@ -516,5 +520,4 @@ No bloquean el trabajo en curso; cada una tiene un valor provisional ya aplicado
 | Tras actualizar el motor desde la app (F1-21) | Con AppImage la app no se relanza: el usuario la reabre a mano | Si la app se reabre sola |
 | Botón de descarga del AppImage nuevo (F1-21) | Sin implementar | Abrir la página del release o descargar el archivo directamente |
 | `forget` de WAHA (F4-07) | Borra los resúmenes en vez de enviarlos a la papelera | Confirmar la excepción a la directiva 19 o pasar a papelera |
-| Actualización «sin Git» (F1-21) | El motor es un clon git que se actualiza con `git pull`, invisible para el usuario | Si basta con que Git quede oculto, o el motor debe entregarse como paquete versionado sin Git (rediseño de instalador y actualizador) |
 | Valor rescatable de skills retiradas | Nada rescatado | `janitor-config-audit` (diff de config frente a la semilla) puede servir para adoptar instalaciones viejas (F5-01) |
