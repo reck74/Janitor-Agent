@@ -148,6 +148,9 @@ def _stub_helpers(monkeypatch, tmp_path, *, syntax_break_in: str | None = None):
     monkeypatch.setattr(juc, "_build_web_ui", lambda *a, **kw: True)
     monkeypatch.setattr(juc, "_gateways_in_update_scope", lambda: [])
     monkeypatch.setattr(juc, "_fleet_runs_stale_code", lambda: False)
+    monkeypatch.setattr(juc, "_stale_gateways_after_restart", lambda outcome: [])
+    # Every base dependency present in the target interpreter.
+    monkeypatch.setattr(juc, "_missing_required_dependencies", lambda root: [])
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +173,6 @@ def test_ff_only_failure_falls_back_to_reset_hard_origin_main(monkeypatch, tmp_p
     # without pinning platform-specific `-c` config flags.
     argv = reset_calls[0]
     assert argv[argv.index("reset") :] == ["reset", "--hard", "origin/main"]
-    assert "Fast-forward not possible" in capsys.readouterr().out
     assert rc == 0  # fallback succeeded
 
 
@@ -187,7 +189,7 @@ def test_ff_only_succeeds_does_not_run_reset_hard(monkeypatch, tmp_path):
 
 
 def test_already_up_to_date_skips_pull(monkeypatch, tmp_path, capsys):
-    """When rev-list returns 0, print 'Already up to date' and return 0."""
+    """When rev-list returns 0, print the up-to-date message and return 0."""
     _stub_helpers(monkeypatch, tmp_path)
     side_effect, recorded = _make_side_effect(commit_count="0")
     monkeypatch.setattr(juc.subprocess, "run", side_effect)
@@ -196,7 +198,7 @@ def test_already_up_to_date_skips_pull(monkeypatch, tmp_path, capsys):
 
     pull_calls = [c for c in recorded if "--ff-only" in c]
     assert pull_calls == []
-    assert "Already up to date" in capsys.readouterr().out
+    assert juc._UP_TO_DATE_MESSAGE in capsys.readouterr().out
     assert rc == 0
 
 
@@ -229,7 +231,8 @@ def test_fetch_failure_dns_shows_friendly_message(monkeypatch, tmp_path, capsys)
     rc = juc.run_janitor_update(SimpleNamespace())
 
     out = capsys.readouterr().out
-    assert "Network error" in out
+    assert "Could not resolve host" not in out, "git's raw stderr is not the message"
+    assert "`janitor update`" in out, "the message says what to do next"
     assert rc == 1
 
 
@@ -245,7 +248,8 @@ def test_fetch_failure_auth_shows_friendly_message(monkeypatch, tmp_path, capsys
     rc = juc.run_janitor_update(SimpleNamespace())
 
     out = capsys.readouterr().out
-    assert "Authentication failed" in out
+    assert "Authentication failed" not in out, "git's raw stderr is not the message"
+    assert any(line.startswith("✗") for line in out.splitlines())
     assert rc == 1
 
 
@@ -258,8 +262,8 @@ def test_reset_fallback_failure_exits_1(monkeypatch, tmp_path, capsys):
     rc = juc.run_janitor_update(SimpleNamespace())
 
     out = capsys.readouterr().out
-    assert "Failed to reset" in out
-    assert "git fetch origin && git reset --hard origin/main" in out
+    assert "git reset" not in out, "git stays hidden: the fix is to run the update again"
+    assert "`janitor update`" in out
     assert rc == 1
 
 
@@ -272,7 +276,7 @@ def test_check_only_mode_does_not_pull(monkeypatch, tmp_path, capsys):
     rc = juc.run_janitor_update(SimpleNamespace(check=True))
 
     out = capsys.readouterr().out
-    assert "5 update(s) available" in out
+    assert any(line.startswith("⚕") and "5" in line for line in out.splitlines())
     pull_calls = [c for c in recorded if "--ff-only" in c]
     assert pull_calls == []
     assert rc == 0
@@ -360,7 +364,7 @@ def test_lazy_helper_import_falls_back_gracefully(monkeypatch, tmp_path, capsys)
     # Should NOT crash; should print a warning and continue
     rc = juc.run_janitor_update(SimpleNamespace())
     out = capsys.readouterr().out
-    assert "syntax check" in out.lower() or "skipped" in out.lower()
+    assert "⚠" in out
     assert rc == 0
 
 
@@ -398,7 +402,7 @@ def test_detached_head_switches_to_main_before_pull(monkeypatch, tmp_path, capsy
     checkout_calls = [c for c in recorded if "checkout" in c and "main" in c]
     assert len(checkout_calls) == 1
     out = capsys.readouterr().out
-    assert "detached HEAD" in out
+    assert any(line.lstrip().startswith("⚠") and "'main'" in line for line in out.splitlines())
 
 
 def test_feature_branch_switches_to_main_before_pull(monkeypatch, tmp_path, capsys):
@@ -615,7 +619,7 @@ def test_success_order_python_deps_lazy_node_repair_migration_receipt_stash(
         "config_check",
         "config_migrate",
         "config_check",
-        "receipt:✓ Update complete!",
+        f"receipt:{juc._COMPLETION_MESSAGE}",
     ]
     # Stash restore is the LAST post-receipt action before the success banner.
     assert restore_calls == [stash_ref]
@@ -843,7 +847,7 @@ def test_marker_cleanup_returns_bool_and_failure_returns_1_no_success_banner(
 
     out = capsys.readouterr().out
     assert rc == 1
-    assert "✓ Janitor Agent updated successfully!" not in out
+    assert juc._SUCCESS_LINE not in out
 
 
 def test_stash_restore_failure_returns_1_no_success_banner(monkeypatch, tmp_path, capsys):
@@ -868,7 +872,7 @@ def test_stash_restore_failure_returns_1_no_success_banner(monkeypatch, tmp_path
 
     out = capsys.readouterr().out
     assert rc == 1
-    assert "✓ Janitor Agent updated successfully!" not in out
+    assert juc._SUCCESS_LINE not in out
 
 
 def test_shared_event_log_receipt_marker_cleanup_stash_restore_banner_ordering(
@@ -912,8 +916,8 @@ def test_shared_event_log_receipt_marker_cleanup_stash_restore_banner_ordering(
 
     assert rc == 0
     assert events == ["receipt", "marker_cleanup", "stash_restore"]
-    assert "✓ Janitor Agent updated successfully!" in out
-    banner_idx = out.index("✓ Janitor Agent updated successfully!")
+    assert juc._SUCCESS_LINE in out
+    banner_idx = out.index(juc._SUCCESS_LINE)
     receipt_idx = out.index("receipt")
     marker_idx = out.index("marker_cleanup")
     stash_idx = out.index("stash_restore")
@@ -1257,7 +1261,7 @@ def test_missing_fresh_check_writes_marker_no_banner_config_migration_step(
     # Initial-check invalid (no wrapper): warn + no-op → rc=0, no marker,
     # the success path runs (Node repair, receipt, cleanup, stash restore).
     assert rc == 0
-    assert receipt_calls == ["✓ Update complete!"]
+    assert receipt_calls == [juc._COMPLETION_MESSAGE]
     marker = tmp_path / "update-incomplete.json"
     assert not marker.exists()
 
@@ -1292,7 +1296,7 @@ def test_initial_check_exception_writes_marker_no_banner_config_migration_step(
     # success path still runs (Node repair, receipt, marker cleanup,
     # stash restore).
     assert rc == 0
-    assert receipt_calls == ["✓ Update complete!"]
+    assert receipt_calls == [juc._COMPLETION_MESSAGE]
     marker = tmp_path / "update-incomplete.json"
     assert not marker.exists()
 
@@ -1400,7 +1404,7 @@ def test_post_check_still_behind_with_support_floor_warnings_is_allowed(
     rc = juc.run_janitor_update(SimpleNamespace())
 
     assert rc == 0
-    assert receipt_calls == ["✓ Update complete!"]
+    assert receipt_calls == [juc._COMPLETION_MESSAGE]
     assert not (tmp_path / "update-incomplete.json").exists()
 
 
@@ -1772,7 +1776,7 @@ def test_dirty_worktree_with_persisted_stash_aborts_before_second_stash(
     assert marker.read_bytes() == marker_before
     assert persisted_ref in output
     assert "git stash apply" in output
-    assert "✓ Janitor Agent updated successfully!" not in output
+    assert juc._SUCCESS_LINE not in output
 
 
 def test_initial_check_invalid_versions_warn_and_no_op(
@@ -2103,7 +2107,9 @@ def test_live_foreign_update_lock_refuses_without_touching_git(
     from hermes_cli.update_lock import UPDATE_EXIT_CONCURRENT
 
     assert rc == UPDATE_EXIT_CONCURRENT
-    assert f"process {holder_pid}" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert str(holder_pid) in out
+    assert "hermes" not in out.lower(), "the refusal names the user's command, not upstream's"
     assert recorded == []
     assert len(finalized) == 1
     assert marker.read_text(encoding="utf-8").splitlines()[0] == str(holder_pid)
@@ -2179,7 +2185,7 @@ def test_read_only_upstream_modes_are_refused_not_run_as_an_update(
 
     assert rc == 2
     assert recorded == []
-    assert "does not support" in capsys.readouterr().out
+    assert f"--{attr.replace('_', '-')}" in capsys.readouterr().out
 
 
 def _fake_uv(path: Path) -> Path:

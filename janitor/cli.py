@@ -69,7 +69,7 @@ if len(sys.argv) > 1 and sys.argv[1] == "update":
         from janitor.update_bootstrap import run_update
         sys.exit(run_update())
     except Exception as e:
-        print(f"⚠ Bootstrap update failed: {e}", file=sys.stderr)
+        print(f"✗ La actualización no pudo arrancar: {e}\n  Vuelve a ejecutar `janitor update`.", file=sys.stderr)
         sys.exit(1)
 
 import argparse

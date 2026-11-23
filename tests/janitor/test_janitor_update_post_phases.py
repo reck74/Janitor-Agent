@@ -155,7 +155,7 @@ def test_unimportable_restart_helper_is_a_warning_not_a_failed_update(
     rc, _ = update.run()
 
     assert rc == 0
-    assert "Gateway restart helper unavailable" in capsys.readouterr().out
+    assert "`janitor gateway restart`" in capsys.readouterr().out
 
 
 def test_unimportable_gateway_discovery_is_a_warning_not_a_failed_update(
@@ -169,7 +169,7 @@ def test_unimportable_gateway_discovery_is_a_warning_not_a_failed_update(
 
     assert rc == 0
     assert _restarts(update.events) == []
-    assert "Could not list running gateways" in capsys.readouterr().out
+    assert "`janitor gateway restart`" in capsys.readouterr().out
 
 
 def test_without_the_upstream_writer_the_exit_code_still_reaches_the_gateway(
@@ -219,7 +219,7 @@ def test_web_build_helper_missing_or_failing_never_fails_the_update(
     rc, _ = update.run()
 
     assert rc == 0
-    assert "Web UI not rebuilt: npm exploded" in capsys.readouterr().out
+    assert "npm exploded" in capsys.readouterr().out
     assert _restarts(update.events), "a broken web build must not skip the gateway restart"
 
 
