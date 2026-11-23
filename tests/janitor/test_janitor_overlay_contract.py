@@ -30,13 +30,8 @@ def check_packaging():
     plugins = {ep.name: ep.value for ep in importlib.metadata.entry_points(group="hermes_agent.plugins")}
     assert plugins.get("janitor") == "janitor.plugin"
     assert callable(importlib.import_module("janitor.plugin").register)
-    for alias, target in (
-        ("janitor_cli", "janitor.cli"),
-        ("janitor_update_core", "janitor.update_core"),
-        ("janitor_update_bootstrap", "janitor.update_bootstrap"),
-        ("janitor_version", "janitor.version"),
-    ):
-        assert importlib.import_module(alias) is importlib.import_module(target), alias
+    # The banner touchpoints import the version helper by its root name.
+    assert importlib.import_module("janitor_version") is importlib.import_module("janitor.version")
 
 
 def check_banner(capsys=None):
@@ -255,7 +250,7 @@ def test_touchpoints_never_claim_fork_owned_paths(overlay):
         ("janitor/cli.py", "janitor/**", True),
         ("janitor/plugin/telegram.py", "janitor/**", True),
         ("janitorx/cli.py", "janitor/**", False),
-        ("scripts/janitor-install.sh", "scripts/*janitor*", True),
+        ("scripts/janitor-sync-verify.sh", "scripts/*janitor*", True),
         ("scripts/sub/janitor.sh", "scripts/*janitor*", False),
         (".github/workflows/tests.yml", ".github/workflows/*.yml", True),
         ("skills/janitor-core/SKILL.md", "skills/janitor-*/**", True),

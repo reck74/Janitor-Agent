@@ -1,11 +1,11 @@
 """Regression tests for janitor/cli.py monkey-patch signature compatibility.
 
 CONTEXT
-    janitor_cli.py monkey-patches several upstream functions at import time.
+    janitor/cli.py monkey-patches several upstream functions at import time.
     When upstream changes a function's signature (adds/removes parameters),
     the Janitor wrapper can silently diverge. The `-X theirs` merge strategy
     adopts upstream's caller AND callee changes, but never touches
-    janitor_cli.py (fork-only file), so the wrapper keeps its old signature
+    janitor/cli.py (fork-only file), so the wrapper keeps its old signature
     and crashes at runtime.
 
     This happened in the v2026.7.7.2 sync: upstream PR #47846 added a
@@ -59,7 +59,7 @@ class TestSoulMdServedByUpstream:
     """SOUL.md must come from upstream's loader reading the Janitor home."""
 
     def test_load_soul_md_is_not_patched(self):
-        import janitor_cli  # noqa: F401
+        import janitor.cli  # noqa: F401
         from agent import prompt_builder
 
         assert prompt_builder.load_soul_md.__module__ == "agent.prompt_builder"
@@ -78,7 +78,7 @@ class TestCmdUpdateSignature:
 
     def test_wrapper_signature_covers_original(self):
         import hermes_cli.main as hermes_main
-        import janitor_cli
+        from janitor import cli as janitor_cli
 
         assert hermes_main.cmd_update is not janitor_cli._janitor_cmd_update
         missing = _missing_params(hermes_main.cmd_update, janitor_cli._janitor_cmd_update)

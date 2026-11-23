@@ -17,7 +17,6 @@ import yaml
 
 from janitor import catalog, migrations, seed
 from janitor.home import ASSETS_ROOT, LAYOUT_VERSION, REPO_ROOT, SKILLS_ROOT, read_layout_version
-from janitor.migrations import v1
 from tests.janitor.legacy_home import launcher_env
 from tests.janitor.skill_index import ESSENTIAL, skill_index
 
@@ -73,18 +72,10 @@ def test_marker_name_matches_the_skills_sync_contract():
     assert seed.NO_BUNDLED_SKILLS_MARKER == NO_BUNDLED_SKILLS_MARKER
 
 
-def test_seeded_home_needs_no_layout_migration(home):
+def test_seeded_home_is_stamped_with_the_current_layout(home):
     seed.ensure_home(home)
-    config_before = (home / "config.yaml").read_bytes()
     assert read_layout_version(home) == LAYOUT_VERSION
     assert not migrations.pending(home)
-    # v1's skill/skin steps have nothing to do; its config step (whole-root
-    # external_dirs) never runs on a stamped home, which is catalog-managed.
-    plan = v1.build_plan(home)
-    assert not (plan.remove or plan.keep or plan.drop_manifest or plan.refresh_skin)
-    migrations.auto_migrate(home)
-    assert not (home / ".backup").exists()
-    assert (home / "config.yaml").read_bytes() == config_before
 
 
 def test_second_run_is_a_noop(home):
@@ -109,18 +100,6 @@ def test_upstream_default_soul_is_replaced(home, variant):
     assert (home / "SOUL.md").read_bytes() == (ASSETS_ROOT / "SOUL.md").read_bytes()
     config = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
     assert "janitor" in config["plugins"]["enabled"]
-
-
-def test_raw_asset_copied_by_the_terminal_installer_gets_the_seed_additions(home, monkeypatch):
-    from hermes_cli.config import DEFAULT_CONFIG
-
-    home.mkdir()
-    (home / "config.yaml").write_bytes((ASSETS_ROOT / "config.yaml").read_bytes())
-    seed.ensure_home(home)
-    config = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
-    assert config["_config_version"] == DEFAULT_CONFIG["_config_version"]
-    assert config["janitor"]["template"] == "main"
-    assert skill_index(home, monkeypatch) == set(catalog.skills_for_template("main")) | {ESSENTIAL}
 
 
 # ── F2-01: the main agent's skills come from the catalog ─────────────────
@@ -194,19 +173,6 @@ def test_env_is_never_modified_on_a_fresh_home(home):
     assert (home / ".env").read_bytes() == b"MINIMAX_API_KEY=sk-test\n# keep me\n"
 
 
-def test_pre_1_0_home_keeps_its_config_and_is_left_to_the_migration(tmp_path):
-    from tests.janitor.legacy_home import build_legacy_home
-
-    legacy = build_legacy_home(tmp_path)
-    config_before = (legacy.home / "config.yaml").read_bytes()
-
-    seed.ensure_home(legacy.home)
-
-    assert (legacy.home / "config.yaml").read_bytes() == config_before
-    assert read_layout_version(legacy.home) == 0
-    assert migrations.pending(legacy.home)
-
-
 # ── janitor command on PATH ────────────────────────────────────────────────
 
 
@@ -228,21 +194,8 @@ def test_command_link_is_created_and_idempotent(tmp_path, venv_script):
 
 
 @pytest.mark.linux_only
-def test_command_link_replaces_a_pre_1_0_janitor_core_link(tmp_path, venv_script):
-    old = tmp_path / ".janitor" / "janitor-core" / ".venv" / "bin" / "janitor"
-    old.parent.mkdir(parents=True)
-    old.write_text("#!/bin/sh\n", encoding="utf-8")
-    link_dir = tmp_path / "bin"
-    link_dir.mkdir()
-    (link_dir / "janitor").symlink_to(old)
-
-    assert seed.ensure_command_link(link_dir, venv_script) == "updated"
-    assert os.readlink(link_dir / "janitor") == str(venv_script)
-
-
-@pytest.mark.linux_only
 def test_command_link_keeps_the_old_link_without_a_new_target(tmp_path):
-    old = tmp_path / ".janitor" / "janitor-core" / ".venv" / "bin" / "janitor"
+    old = tmp_path / "old-venv" / "bin" / "janitor"
     old.parent.mkdir(parents=True)
     old.write_text("#!/bin/sh\n", encoding="utf-8")
     link_dir = tmp_path / "bin"

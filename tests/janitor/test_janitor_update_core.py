@@ -1,4 +1,4 @@
-"""Tests for ``janitor_update_core.run_janitor_update``.
+"""Tests for ``janitor.update_core.run_janitor_update``.
 
 Mirrors the structure of ``tests/hermes_cli/test_update_autostash.py`` so
 the Janitor update path is held to the same standard as the official one.
@@ -19,7 +19,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import janitor_update_core as juc
+import janitor.update_core as juc
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +202,7 @@ def test_already_up_to_date_skips_pull(monkeypatch, tmp_path, capsys):
 
 def test_post_pull_syntax_break_triggers_rollback(monkeypatch, tmp_path, capsys):
     """When pulled code has a syntax error, auto-rollback to pre-pull SHA."""
-    _stub_helpers(monkeypatch, tmp_path, syntax_break_in="janitor_cli.py")
+    _stub_helpers(monkeypatch, tmp_path, syntax_break_in="janitor/cli.py")
     side_effect, recorded = _make_side_effect()
     monkeypatch.setattr(juc.subprocess, "run", side_effect)
 
@@ -481,7 +481,7 @@ def test_post_pull_syntax_check_occurs_before_python_dependency_install(
     the pull helper) before ``_install_python_dependencies``. When syntax
     breaks, the install helpers must not be invoked.
     """
-    _stub_helpers(monkeypatch, tmp_path, syntax_break_in="janitor_cli.py")
+    _stub_helpers(monkeypatch, tmp_path, syntax_break_in="janitor/cli.py")
     side_effect, _ = _make_side_effect()
     monkeypatch.setattr(juc.subprocess, "run", side_effect)
 
@@ -707,7 +707,7 @@ def test_pre_dependency_syntax_failure_rolls_back_to_captured_sha(
     monkeypatch, tmp_path, capsys
 ):
     """Syntax failure before deps rolls back to the captured pre-pull SHA."""
-    _stub_helpers(monkeypatch, tmp_path, syntax_break_in="janitor_cli.py")
+    _stub_helpers(monkeypatch, tmp_path, syntax_break_in="janitor/cli.py")
     side_effect, recorded = _make_side_effect(commit_count="3")
     monkeypatch.setattr(juc.subprocess, "run", side_effect)
 

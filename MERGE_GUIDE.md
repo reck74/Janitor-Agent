@@ -107,7 +107,7 @@ scripts/janitor-sync-verify.sh
 |------|---------------|---------|
 | Marcadores de conflicto | quedan `<<<<<<<` / `>>>>>>>` en archivos que difieren de upstream | resolver |
 | `python -m janitor.overlay check` | un archivo difiere de upstream sin estar declarado | volver a upstream, o declararlo como touchpoint con su `why` |
-| `tests/janitor/` | contrato de touchpoints (versión `+janitor.N`, banner, packaging, cache refresh, endpoints MCP), firmas de monkey-patch (#14), definiciones duplicadas (#15), preservación de `~/.janitor`, plugin, servicios, skills, skin | actualizar el código Janitor, **nunca** debilitar el test |
+| `tests/janitor/` | contrato de touchpoints (versión `+janitor.N`, banner, packaging, cache refresh, endpoints MCP), firmas de monkey-patch (#14), definiciones duplicadas (#15), sello de layout de `~/.janitor`, plugin, servicios, skills, skin | actualizar el código Janitor, **nunca** debilitar el test |
 | Overlay desktop | un asset destino ya no existe upstream, o el `productName` empaquetado deja de coincidir (rompería el `userData` de los usuarios) | ajustar `apps/desktop-janitor/` |
 | Parches de marca (`node apps/desktop-janitor/scripts/build.mjs --check`, directiva #17) | upstream movió o cambió el texto ancla de un parche en `apps/desktop/` (la salida nombra el parche con `FAIL <id>`), o un archivo parcheado deja de transpilar | rehacer el ancla de ese parche en `apps/desktop-janitor/brand/`; nunca editar `apps/desktop/`. Sin `node_modules` los `.tsx` no se transpilan (`skip transpile`); el job `desktop-overlay` de `janitor-ci.yml` sí los cubre |
 | `tests/janitor/` → touchpoint `desktop-update-posix` | upstream cambió `scripts/desktop-update/posix.sh` y la actualización desde la app vuelve a llamar a `hermes update` | re-aplicar el bloque `# JANITOR:` tras la elección de `UPDATE_INVOKE` (directiva #13) |
@@ -124,10 +124,11 @@ conservar la definición correcta (normalmente la del fork) y borrar la otra.
 ## 5. Usuarios existentes
 
 `janitor update` trae el código nuevo. En el siguiente arranque, `janitor`
-migra `~/.janitor` al layout vigente (`~/.janitor/.layout_version`), con
-backup previo en `~/.janitor/.backup/`. Manual: `bash scripts/migrate-janitor-v1.sh [--dry-run]`.
-Cada reestructuración nueva añade una migración en `janitor/migrations/`
-(directiva #10).
+lleva `~/.janitor` al layout vigente (`~/.janitor/.layout_version`, hoy v2:
+solo sella el marcador). Las instalaciones antiguas por terminal
+(`~/.janitor/janitor-core`) no se migran: se desinstalan
+(`docs/janitor/desinstalar-instalacion-antigua.md`). Cada reestructuración
+nueva añade una migración en `janitor/migrations/` (directiva #10).
 
 ---
 

@@ -31,16 +31,16 @@ class TestJanitorCLIExists:
     """Test that JanitorCLI is properly defined and importable."""
 
     def test_janitorcli_class_exists(self):
-        """JanitorCLI must be importable from janitor_cli module."""
-        import janitor_cli
+        """JanitorCLI must be importable from the janitor.cli module."""
+        from janitor import cli as janitor_cli
 
         assert hasattr(janitor_cli, "JanitorCLI"), (
-            "JanitorCLI class not found in janitor_cli module"
+            "JanitorCLI class not found in janitor.cli"
         )
 
     def test_janitorcli_inherits_from_hermescli(self):
         """JanitorCLI must inherit from HermesCLI per CLI WRAPPER directive."""
-        import janitor_cli
+        from janitor import cli as janitor_cli
         from cli import HermesCLI
 
         assert issubclass(janitor_cli.JanitorCLI, HermesCLI), (
@@ -49,7 +49,7 @@ class TestJanitorCLIExists:
 
     def test_janitorcli_has_skin_force_property(self):
         """JanitorCLI must expose a mechanism to force the Janitor skin."""
-        import janitor_cli
+        from janitor import cli as janitor_cli
 
         assert (
             hasattr(janitor_cli.JanitorCLI, "force_skin")
@@ -58,10 +58,10 @@ class TestJanitorCLIExists:
         ), "JanitorCLI must have skin forcing capability"
 
     def test_janitor_module_has_main_function(self):
-        """janitor_cli must expose a main() function for pyproject entry point."""
-        import janitor_cli
+        """janitor.cli must expose a main() function for pyproject entry point."""
+        from janitor import cli as janitor_cli
 
-        assert hasattr(janitor_cli, "main"), "janitor_cli must expose a main() function"
+        assert hasattr(janitor_cli, "main"), "janitor.cli must expose a main() function"
 
 
 class TestJanitorCommand:
@@ -72,7 +72,7 @@ class TestJanitorCommand:
 
         Given the package is installed, When console_scripts entry points are
         read, Then `janitor` is present and dispatches to `janitor.cli:main`.
-        scripts/janitor-install.sh relies on this to put `janitor` on PATH;
+        scripts/install.sh links this script onto PATH;
         importing janitor.cli.main directly does not prove registration.
         """
         console_scripts = entry_points(group="console_scripts")
@@ -86,15 +86,6 @@ class TestJanitorCommand:
             f"`janitor` must dispatch to janitor.cli:main, got {janitor!r}"
         )
 
-    def test_pre_1_0_console_script_target_still_runs(self):
-        """Installs from before 1.0 keep a script that imports janitor_cli:main
-        until their venv is reinstalled; the alias must be the real module."""
-        import janitor.cli
-        import janitor_cli
-
-        assert janitor_cli is janitor.cli
-        assert janitor_cli.main is janitor.cli.main
-
     def test_hermes_home_is_overridden_to_janitor(self, tmp_path):
         """HERMES_HOME must be set to ~/.janitor before any hermes imports.
 
@@ -104,7 +95,7 @@ class TestJanitorCommand:
         """
         result = subprocess.run(
             [sys.executable, "-c",
-             "import os; import janitor_cli; "
+             "import os; import janitor.cli; "
              "assert os.environ['HERMES_HOME'].endswith('.janitor'), "
              "f\"HERMES_HOME was not set to ~/.janitor: {os.environ['HERMES_HOME']}\""],
             capture_output=True,
@@ -122,7 +113,7 @@ class TestJanitorCommand:
         result = subprocess.run(
             [python_exec, "-c",
              "import sys; sys.argv = ['janitor', '--version']; "
-             "from janitor_cli import main; main()"],
+             "from janitor.cli import main; main()"],
             capture_output=True,
             text=True,
             env={
@@ -147,7 +138,7 @@ class TestJanitorCommand:
         result = subprocess.run(
             [python_exec, "-c",
              "import sys; sys.argv = ['janitor', '--help']; "
-             "from janitor_cli import main; main()"],
+             "from janitor.cli import main; main()"],
             capture_output=True,
             text=True,
             env={
@@ -172,7 +163,7 @@ class TestJanitorCLIBranding:
 
     def test_janitorcli_returns_janitor_skin_name(self):
         """JanitorCLI.get_skin_name() must return 'sentry-janitor'."""
-        import janitor_cli
+        from janitor import cli as janitor_cli
 
         jcli = janitor_cli.JanitorCLI.__new__(janitor_cli.JanitorCLI)
         assert jcli.get_skin_name() == "sentry-janitor", (
@@ -181,7 +172,7 @@ class TestJanitorCLIBranding:
 
     def test_janitorcli_force_skin_is_true(self):
         """JanitorCLI.force_skin property must be True."""
-        import janitor_cli
+        from janitor import cli as janitor_cli
 
         jcli = janitor_cli.JanitorCLI.__new__(janitor_cli.JanitorCLI)
         assert jcli.force_skin is True, "JanitorCLI.force_skin must be True"
@@ -206,7 +197,7 @@ class TestOWASPFailSafe:
 
     @staticmethod
     def _refusal(cfg):
-        import janitor_cli
+        from janitor import cli as janitor_cli
 
         return janitor_cli._honcho_failsafe_refusal(cfg)
 
@@ -268,7 +259,7 @@ class TestOWASPFailSafe:
         (["--version"], False), (["-h"], False),
     ])
     def test_recovery_commands_are_exempt(self, args, applies):
-        import janitor_cli
+        from janitor import cli as janitor_cli
 
         assert janitor_cli._failsafe_applies(["janitor", *args]) is applies
 
@@ -349,7 +340,7 @@ class TestJanitorVersionDisplay:
         import sys
 
         result = subprocess.run(
-            [sys.executable, "-m", "janitor_cli", "--version"],
+            [sys.executable, "-m", "janitor.cli", "--version"],
             capture_output=True,
             text=True,
             env={

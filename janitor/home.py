@@ -12,8 +12,10 @@ import os
 from pathlib import Path
 
 # Bumped when the on-disk layout of ~/.janitor changes in a way that needs a
-# migration (see janitor/migrations/). 0 = every pre-1.0 install;
-# 1 = skills read in place (1.0); 2 = agent system and obsolete skills retired.
+# migration (see janitor/migrations/). 2 is the baseline: every home the
+# desktop app / scripts/install.sh seeds is stamped with it. Lower numbers
+# belonged to the old terminal installs, which are uninstalled, not migrated
+# (plan decision 2.9).
 LAYOUT_VERSION = 2
 LAYOUT_MARKER = ".layout_version"
 

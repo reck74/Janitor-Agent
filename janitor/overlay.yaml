@@ -33,14 +33,9 @@ fork_paths:
   - apps/desktop-janitor/**
   - docs/janitor/**
   - scripts/*janitor*
-  - scripts/setup-honcho.sh
   - scripts/verify-firecrawl-pgcron.sh
-  # Pre-1.0 import aliases kept for old console scripts.
-  - janitor_cli.py
-  - janitor_update_core.py
-  - janitor_update_bootstrap.py
+  # Root name the banner touchpoints import janitor.version by.
   - janitor_version.py
-  - janitor_ext/**
   - janitor-tui.png
   # Fork automation.
   - .github/workflows/janitor-ci.yml
@@ -60,7 +55,7 @@ touchpoints:
     files: [pyproject.toml, uv.lock]
     why: >-
       `janitor` console script, `hermes_agent.plugins` entry point for the
-      Janitor plugin, `janitor` package + data, pre-1.0 alias py-modules.
+      Janitor plugin, `janitor` package + data.
     verify: test:packaging
     merge: reapply
 
@@ -172,8 +167,12 @@ touchpoints:
     upstream_candidate: true
 
   - id: installers
-    files: [scripts/bootstrap.sh, scripts/install.ps1]
-    why: Install from the Janitor fork into ~/.janitor and check Docker/Honcho (directive #8).
+    files: [scripts/install.ps1]
+    why: >-
+      The only fork hunk left after bootstrap.sh was retired: a second, older
+      autostash-restore block after upstream's in Install-Repository. Upstream's
+      block clears $autostashRef first, so this one never runs (sync residue,
+      kept until a task with install.ps1 in scope drops it).
     verify: ci:janitor-ci
     merge: ours
 

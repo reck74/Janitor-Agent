@@ -1,9 +1,9 @@
 """Tests for the thin Janitor update bootstrap shell.
 
-Per JANITOR FORK DIRECTIVE #13, ``janitor_update_bootstrap`` may ONLY print
+Per JANITOR FORK DIRECTIVE #13, ``janitor.update_bootstrap`` may ONLY print
 its branding banner, parse its flags through the core, and delegate to
-``janitor_update_core.run_janitor_update``. All update flow logic lives in
-``janitor_update_core``. The git/stash/bytecode helpers previously defined
+``janitor.update_core.run_janitor_update``. All update flow logic lives in
+``janitor.update_core``. The git/stash/bytecode helpers previously defined
 here have been removed and now live (and are tested) in
 ``tests/janitor/test_janitor_update_core.py``.
 """
@@ -16,14 +16,13 @@ from unittest.mock import patch
 
 
 def test_bootstrap_module_is_packaged_for_janitor_entrypoint(tmp_path):
-    """The installed distribution exposes the root alias module.
+    """The installed distribution exposes the bootstrap the ``janitor`` script reaches.
 
-    Root single-file modules are derived by upstream's ``setup.py`` since
-    v2026.9.24, so this imports it from outside the checkout instead of
-    reading pyproject's (removed) ``py-modules`` list.
+    Imported from outside the checkout, so it proves the ``janitor`` package is
+    installed rather than found through the current directory.
     """
     result = subprocess.run(
-        [sys.executable, "-c", "import janitor_update_bootstrap as m; print(callable(m.run_update))"],
+        [sys.executable, "-c", "import janitor.update_bootstrap as m; print(callable(m.run_update))"],
         cwd=tmp_path,
         capture_output=True,
         text=True,
@@ -35,10 +34,10 @@ def test_bootstrap_module_is_packaged_for_janitor_entrypoint(tmp_path):
 
 def test_update_intercept_runs_before_hermes_imports():
     """The early ``update`` intercept fires BEFORE the module-level
-    ``from hermes_cli.config import DEFAULT_CONFIG`` line in ``janitor_cli``.
+    ``from hermes_cli.config import DEFAULT_CONFIG`` line in ``janitor.cli``.
 
     Behavioral probe (no source reads): when ``sys.argv == ["janitor", "update"]``,
-    importing ``janitor_cli`` must short-circuit to ``janitor_update_bootstrap.run_update``
+    importing ``janitor.cli`` must short-circuit to ``janitor.update_bootstrap.run_update``
     and ``sys.exit`` BEFORE control reaches the Hermes-import line. We verify
     by patching ``hermes_cli.config.DEFAULT_CONFIG`` so any attribute access
     raises; the intercept firing early means we observe ``SystemExit`` (not
@@ -63,10 +62,10 @@ def test_update_intercept_runs_before_hermes_imports():
         "# Stub run_update to sys.exit(42) so we can distinguish exit-via-intercept\n"
         "# from any other outcome.\n"
         "import sys as _sys\n"
-        "import janitor_update_bootstrap as _jub\n"
+        "import janitor.update_bootstrap as _jub\n"
         "_jub.run_update = lambda: _sys.exit(42)\n"
         "try:\n"
-        "    import janitor_cli\n"
+        "    import janitor.cli\n"
         "except SystemExit as exc:\n"
         "    print('SYSTEMEXIT_CODE=' + str(exc.code))\n"
         "except RuntimeError as exc:\n"
@@ -90,7 +89,7 @@ def test_update_intercept_runs_before_hermes_imports():
 
 def test_bootstrap_run_update_prints_branding(capsys):
     """``run_update()`` prints the Janitor branding banner before delegating."""
-    import janitor_update_bootstrap as jub
+    from janitor import update_bootstrap as jub
 
     with patch.object(jub.janitor_update_core, "run_janitor_update",
                       return_value=0) as mock_delegate:
@@ -106,7 +105,7 @@ def test_bootstrap_run_update_builds_default_namespace():
     """Without flags the bootstrap passes the core's contract keys with their
     defaults to ``run_janitor_update``.
     """
-    import janitor_update_bootstrap as jub
+    from janitor import update_bootstrap as jub
 
     captured: dict = {}
 
@@ -128,8 +127,8 @@ def test_bootstrap_run_update_builds_default_namespace():
 
 
 def test_bootstrap_run_update_delegates_to_janitor_update_core():
-    """``run_update()`` delegates exactly once to ``janitor_update_core.run_janitor_update``."""
-    import janitor_update_bootstrap as jub
+    """``run_update()`` delegates exactly once to ``janitor.update_core.run_janitor_update``."""
+    from janitor import update_bootstrap as jub
 
     with patch.object(jub.janitor_update_core, "run_janitor_update",
                       return_value=0) as mock_delegate:
@@ -141,9 +140,9 @@ def test_bootstrap_run_update_delegates_to_janitor_update_core():
 
 def test_bootstrap_does_not_define_obsolete_helpers():
     """The bootstrap file no longer carries _git_cmd, _stash_local_changes_if_needed,
-    _restore_stash, _clear_bytecode_cache. Those moved to janitor_update_core.
+    _restore_stash, _clear_bytecode_cache. Those moved to janitor.update_core.
     """
-    import janitor_update_bootstrap as jub
+    from janitor import update_bootstrap as jub
 
     for name in (
         "_git_cmd",
@@ -153,8 +152,8 @@ def test_bootstrap_does_not_define_obsolete_helpers():
         "_stash_selector_for_ref",
     ):
         assert not hasattr(jub, name), (
-            f"janitor_update_bootstrap must not define {name!r}; "
-            f"that helper belongs in janitor_update_core"
+            f"janitor.update_bootstrap must not define {name!r}; "
+            f"that helper belongs in janitor.update_core"
         )
 
 

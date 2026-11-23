@@ -1,20 +1,20 @@
 """Task 16 A.7 fix: post-pull syntax guard must cover Janitor-fork files.
 
 Upstream's ``_UPDATE_CRITICAL_FILES`` (hermes_cli/update_cmd.py) lists only
-Hermes core files. The Janitor entry chain (janitor_cli -> janitor_update_
-bootstrap -> janitor_update_core, plus janitor_version and the janitor_ext
-package imported at startup) is equally boot-critical for the ``janitor``
-command: a syntax error there bricks the CLI exactly like a broken
+Hermes core files. The Janitor entry chain (janitor.cli -> janitor.update_
+bootstrap -> janitor.update_core, plus janitor.version, janitor.tips_es and
+the root ``janitor_version`` module the banner touchpoints import) is equally
+boot-critical for the ``janitor`` command: a syntax error there bricks the CLI exactly like a broken
 ``hermes_cli/main.py``. The fork therefore wraps the upstream validator so
 fork files are also py_compiled post-pull, with auto-rollback on failure.
 
 These tests lock that invariant WITHOUT touching Hermes core: the wrapper
-lives in ``janitor_update_core`` (JANITOR FORK DIRECTIVE #13) and is bound
+lives in ``janitor.update_core`` (JANITOR FORK DIRECTIVE #13) and is bound
 into the module's lazy-helper seam.
 """
 from pathlib import Path
 
-import janitor_update_core as juc
+import janitor.update_core as juc
 
 
 def _write_clean_fork_files(root: Path) -> None:
@@ -27,26 +27,27 @@ def _write_clean_fork_files(root: Path) -> None:
 def test_janitor_critical_files_cover_the_entry_chain():
     """Every fork module on the `janitor` boot path is in the guard list."""
     required = {
-        "janitor_cli.py",
-        "janitor_update_core.py",
-        "janitor_update_bootstrap.py",
+        "janitor/cli.py",
+        "janitor/update_core.py",
+        "janitor/update_bootstrap.py",
+        "janitor/version.py",
+        "janitor/tips_es.py",
         "janitor_version.py",
-        "janitor_ext/__init__.py",
-        "janitor_ext/tips_es.py",
     }
     assert required.issubset(set(juc._JANITOR_CRITICAL_FILES))
 
 
 def test_fork_validator_catches_syntax_error_in_janitor_cli(tmp_path):
-    """A.7 regression: broken janitor_cli.py must fail validation even when
+    """A.7 regression: broken janitor/cli.py must fail validation even when
     the upstream helper (which only knows Hermes files) reports success."""
-    (tmp_path / "janitor_cli.py").write_text("def broken(: pass\n", encoding="utf-8")
+    (tmp_path / "janitor").mkdir()
+    (tmp_path / "janitor" / "cli.py").write_text("def broken(: pass\n", encoding="utf-8")
     validator = juc._make_fork_syntax_validator(lambda root: (True, None, None))
 
     ok, failing_path, error = validator(tmp_path)
 
     assert ok is False
-    assert failing_path == str(tmp_path / "janitor_cli.py")
+    assert failing_path == str(tmp_path / "janitor" / "cli.py")
     assert "SyntaxError" in (error or "")
 
 

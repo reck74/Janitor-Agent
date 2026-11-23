@@ -83,13 +83,8 @@ _JANITOR_CRITICAL_FILES = (
     "janitor/update_bootstrap.py",
     "janitor/version.py",
     "janitor/tips_es.py",
-    # Pre-1.0 import paths kept as aliases for old console scripts.
-    "janitor_cli.py",
-    "janitor_update_core.py",
-    "janitor_update_bootstrap.py",
+    # Root module the banner touchpoints import the version helper by.
     "janitor_version.py",
-    "janitor_ext/__init__.py",
-    "janitor_ext/tips_es.py",
 )
 
 
@@ -425,14 +420,11 @@ def _project_venv(project_root: Path) -> Path:
     """The virtualenv this update installs into.
 
     The checkout's ``venv`` (desktop app / ``install.sh`` layout,
-    ``~/.janitor/hermes-agent/venv``) or ``.venv`` (pre-1.0 ``bootstrap.sh``
-    layout, ``~/.janitor/janitor-core/.venv``); ``venv`` wins when both exist,
-    like upstream's ``project_venv_dir``. Otherwise the running interpreter's.
+    ``~/.janitor/hermes-agent/venv``), otherwise the running interpreter's.
     """
-    for name in ("venv", ".venv"):
-        candidate = Path(project_root) / name
-        if candidate.is_dir():
-            return candidate
+    candidate = Path(project_root) / "venv"
+    if candidate.is_dir():
+        return candidate
     return Path(sys.prefix)
 
 
@@ -1727,11 +1719,7 @@ def run_janitor_update(args) -> int:
             _run_fresh_config_migration_phase()
         except Exception as mig_exc:
             print(f"  ⚠ Config migration failed: {mig_exc}")
-            print(
-                "  Manual recovery: re-run `janitor update` or run the\n"
-                "  bundled migration script directly:\n"
-                "    bash scripts/migrate-janitor-v0.20.1.sh"
-            )
+            print("  Manual recovery: re-run `janitor update`.")
             _write_incomplete_marker("config_migration", auto_stash_ref)
             return 1
 

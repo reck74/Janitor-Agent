@@ -6,8 +6,7 @@ the installed checkout, which invokes ``<venv>/bin/<cli> update --yes
 ``janitor update`` (``janitor/update_core.py``), not upstream's ``hermes
 update``. These tests pin the hand-off, the flags the core must accept, the
 ``--keep-stash`` contract on a real git checkout, and the venv the core
-installs into for both install layouts (``hermes-agent/venv`` from the app,
-``janitor-core/.venv`` from the pre-1.0 installer).
+installs into (``hermes-agent/venv``, the app's layout).
 """
 
 from __future__ import annotations
@@ -170,7 +169,6 @@ def test_without_keep_stash_local_edits_are_restored(checkout, tmp_path, monkeyp
     "dirs, expected",
     [
         (("venv",), "venv"),  # desktop app / install.sh: ~/.janitor/hermes-agent/venv
-        ((".venv",), ".venv"),  # pre-1.0 bootstrap.sh: ~/.janitor/janitor-core/.venv
         (("venv", ".venv"), "venv"),
     ],
 )
@@ -192,5 +190,8 @@ def test_uv_install_targets_the_checkouts_own_venv(tmp_path, monkeypatch, dirs, 
     assert seen["venv"] == str(tmp_path / expected)
 
 
-def test_out_of_tree_venv_falls_back_to_the_running_interpreter(tmp_path):
+@pytest.mark.parametrize("dirs", [(), (".venv",)])
+def test_out_of_tree_venv_falls_back_to_the_running_interpreter(tmp_path, dirs):
+    for name in dirs:
+        (tmp_path / name).mkdir()
     assert juc._project_venv(tmp_path) == Path(sys.prefix)

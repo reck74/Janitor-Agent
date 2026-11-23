@@ -7,9 +7,8 @@ machine ends up with a working Janitor home whichever entry point ran first.
 Idempotent, and it never overwrites what the user wrote:
 
 * ``config.yaml`` is written only when missing or byte-equal to upstream's
-  ``cli-config.yaml.example`` (what ``install.sh`` copies in before this runs)
-  or to the raw ``assets/janitor/config.yaml`` (what ``janitor-install.sh``
-  copies). Any other file — including a pre-1.0 Janitor config — is the user's.
+  ``cli-config.yaml.example`` (what ``install.sh`` copies in before this runs).
+  Any other file is the user's.
 * ``SOUL.md`` is written when missing or still an upstream auto-seeded default
   (``DEFAULT_SOUL_MD`` or one of the legacy templates upstream itself treats
   as carrying zero user intent).
@@ -121,11 +120,9 @@ def _config_is_replaceable(path: Path) -> bool:
         return True
     try:
         data = path.read_bytes()
-        # Upstream's template (install.sh's config stage) or Janitor's own raw
-        # asset (copied verbatim by scripts/janitor-install.sh): neither carries
-        # user intent, and both lack the seed-time additions.
-        templates = (UPSTREAM_CONFIG_EXAMPLE, ASSETS_ROOT / CONFIG_FILE)
-        return any(t.is_file() and data == t.read_bytes() for t in templates)
+        # Upstream's template, copied in by install.sh's config stage: it
+        # carries no user intent and lacks the seed-time additions.
+        return UPSTREAM_CONFIG_EXAMPLE.is_file() and data == UPSTREAM_CONFIG_EXAMPLE.read_bytes()
     except OSError:
         return False
 
@@ -144,18 +141,6 @@ def _soul_is_replaceable(path: Path) -> bool:
     except (OSError, UnicodeDecodeError):
         return False
     return _normalize(text) == _normalize(DEFAULT_SOUL_MD) or is_legacy_template_soul(text)
-
-
-def _needs_layout_migration(home: Path) -> bool:
-    """True when ``home`` still holds old Janitor skill copies or skin."""
-    from janitor.migrations import v1, v2
-
-    plan = v1.Plan(home=home)
-    v1._plan_skills(plan, v1.shipped_skills())
-    v1._plan_skin(plan)
-    legacy = v2.Plan(home=home)
-    v2._plan_skills(legacy)
-    return not (plan.empty and legacy.empty)
 
 
 def ensure_home(home: Optional[Path] = None) -> List[str]:
@@ -195,7 +180,7 @@ def ensure_home(home: Optional[Path] = None) -> List[str]:
                 encoding="utf-8",
             )
             changes.append(marker.name)
-        if read_layout_version(home) < LAYOUT_VERSION and not _needs_layout_migration(home):
+        if read_layout_version(home) < LAYOUT_VERSION:
             write_layout_version(LAYOUT_VERSION, home)
             changes.append(f".layout_version={LAYOUT_VERSION}")
 
@@ -209,9 +194,9 @@ def ensure_command_link(link_dir: Path, target: Optional[Path] = None) -> str:
     """Put ``janitor`` in ``link_dir`` as a symlink to this venv's console script.
 
     Returns ``created``, ``updated``, ``unchanged`` or ``kept: <reason>``.
-    A ``janitor`` this installer did not create is left alone, except a link
-    into a pre-1.0 ``janitor-core`` venv or a dangling link, which are replaced
-    (the new target exists, so the command keeps working).
+    A ``janitor`` this installer did not create is left alone, except a
+    dangling link, which is replaced (the new target exists, so the command
+    keeps working).
     """
     target = Path(target or Path(sys.prefix) / "bin" / COMMAND_NAME)
     if not target.is_file():
@@ -225,7 +210,7 @@ def ensure_command_link(link_dir: Path, target: Optional[Path] = None) -> str:
             current = link_dir / current
         if current == target or (current.exists() and current.resolve() == target.resolve()):
             return "unchanged"
-        if current.exists() and "janitor-core" not in current.parts:
+        if current.exists():
             return f"kept: {link} points to {current}"
         link.unlink()
         link.symlink_to(target)

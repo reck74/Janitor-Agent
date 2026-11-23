@@ -19,7 +19,7 @@ CONTEXT
     favor of the generic error message (91 chars).
 
     Directive #14's monkey-patch signature test does NOT cover this bug
-    class — it only checks ``janitor_cli.py`` wrappers, not merge artifacts
+    class — it only checks ``janitor/cli.py`` wrappers, not merge artifacts
     inside core files. This test fills that gap.
 
 INVARIANT

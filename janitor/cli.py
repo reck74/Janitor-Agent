@@ -355,9 +355,8 @@ def main():
     We do NOT run HermesCLI here directly — we configure the environment
     first so that when HermesCLI initializes, it picks up the Janitor identity.
     """
-    # Must run before Hermes starts: its bundled-skills sync drops manifest
-    # entries for skills that left the bundled tree, which is the evidence the
-    # layout migration uses to tell pristine copies from user edits.
+    # Before Hermes starts: a future layout step may need the home as the
+    # previous release left it (directive #10).
     from janitor.migrations import auto_migrate
 
     auto_migrate()
