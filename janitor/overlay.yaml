@@ -188,8 +188,8 @@ touchpoints:
       home that already holds the legacy terminal install (`janitor-core/`)
       is refused in every --stage, in --ensure and in the monolithic run before anything
       is written, with a Spanish message (and the {ok:false} JSON frame's
-      reason) telling the user to keep using `janitor` from the terminal
-      until adoption exists (plan F1-22 / F5-01). Every changed hunk carries
+      reason) telling the user to uninstall the old one first: the app is a clean
+      start and adopts nothing (plan decision 2.9, F1-22). Every changed hunk carries
       a `# JANITOR:` comment.
     verify: test:install-sh
     merge: reapply

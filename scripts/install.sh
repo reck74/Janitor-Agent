@@ -244,9 +244,9 @@ log_error() {
 }
 
 # JANITOR: a home holding the pre-app terminal install (janitor-core) is
-# refused before anything is written; adopting it is plan task F5-01.
+# refused before anything is written: the app is a clean start (plan decision 2.9).
 janitor_legacy_home_message() {
-    printf '%s' "Alto ahí: en $HERMES_HOME ya vive una instalación de Janitor por terminal (janitor-core). Esta app todavía no sabe adoptarla y no pienso plantarte un segundo motor encima, así que no toqué nada: ni el home, ni el comando janitor. Por ahora sigue usando 'janitor' desde el terminal, como hasta hoy."
+    printf '%s' "Alto ahí: en $HERMES_HOME hay una instalación antigua de Janitor por terminal (janitor-core). Esta versión parte de cero y no adopta nada viejo, así que no toqué nada. Desinstala lo antiguo primero (docs/janitor/desinstalar-instalacion-antigua.md en el repositorio) y vuelve a abrir la app."
 }
 
 janitor_refuse_legacy_home() {  # JANITOR: legacy-home guard

@@ -1,5 +1,11 @@
 # Fase 5 — Diseño: adopción de instalaciones antiguas y limpieza
 
+> **Sin efecto en lo que toca a F5-01 (2026-11-22).** El dueño decidió que la app es un
+> punto cero: las instalaciones antiguas no se adoptan, se desinstalan (decisión 2.9 del
+> plan). Este documento se conserva por los hechos del layout antiguo (sección 1) y por el
+> análisis de F5-02 y F5-03; las secciones 2 a 4 ya no se implementan.
+
+
 Complementa `janitor-desktop-app.md` (secciones 3.2, 4.3–4.5; filas F1-22, F5-01,
 F5-02, F5-03). Diseño producido el 2026-11-22 por un subagente, **solo lectura**: no
 se ejecutó ninguna prueba, compilación ni instalador. Etiquetas: **[leído]** = se

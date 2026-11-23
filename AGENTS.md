@@ -6,6 +6,10 @@
 > entre agentes). Todo agente (Claude, Codex u otro) lee ese archivo primero y actualiza su tablero al terminar una
 > tarea. Estas directivas describen las **reglas vigentes**; donde el código heredado todavía no las cumple, el plan
 > lista ese código como pendiente de retiro — no lo tomes como modelo ni lo extiendas.
+>
+> **PUNTO CERO (decisión del dueño, 2026-11-22).** La app es el nuevo punto de partida: las instalaciones
+> antiguas por terminal **no se adoptan ni se migran**; se desinstalan (`docs/janitor/desinstalar-instalacion-antigua.md`)
+> y se empieza de cero. No se escribe código nuevo para homes antiguos; el que existe se retira (tarea F5-02).
 
 1. **ZERO-RENAMING POLICY**: Nunca hagas buscar-y-reemplazar de la palabra 'hermes' en el core. El motor subyacente se mantiene intacto para garantizar que el merge de cada release upstream funcione sin conflictos destructivos.
 2. **CLI WRAPPER**: Las extensiones de Janitor heredan de `HermesCLI` en el paquete `janitor/` (lanzador: `janitor/cli.py`). No se modifica `cli.py` original. Los módulos raíz `janitor_cli.py`, `janitor_update_core.py`, `janitor_update_bootstrap.py`, `janitor_version.py` y `janitor_ext/` son alias de compatibilidad para instalaciones pre-1.0 (su console script apunta a `janitor_cli:main`); no se les añade lógica.

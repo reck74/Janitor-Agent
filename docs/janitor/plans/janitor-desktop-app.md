@@ -131,6 +131,19 @@ guiada conversacional + pantalla de servicios; se conserva `service.yaml` y
 - Se acepta que queden rutas, variables `HERMES_*`, registros y nombres de servicios
   de terceros («Hermes Cloud», «Nous Portal»).
 
+### 2.9 Punto cero: sin adopción de instalaciones antiguas
+Decisión del dueño (2026-11-22). La app es el **nuevo punto de partida**:
+- No se adopta, migra ni actualiza ninguna instalación anterior por terminal. Quien
+  tenga un Janitor antiguo lo desinstala entero y empieza de cero con la app; el dueño
+  avisa directamente a los usuarios (≤10). Guía:
+  [`../desinstalar-instalacion-antigua.md`](../desinstalar-instalacion-antigua.md).
+- La guarda de F1-22 se conserva solo como protección: si encuentra `janitor-core`, se
+  niega y manda a desinstalar.
+- **F5-01 queda cancelada.** El código que solo existía para instalaciones antiguas se
+  retira (F5-02).
+- A partir de aquí lo que importa es que **esta** app se actualice de forma práctica y
+  sencilla, sin que el usuario tenga que lidiar con Git (F1-21).
+
 ## 3. Hechos verificados en el código
 
 Verificado el 2026-11-22 por lectura de código (tres subagentes de investigación).
@@ -253,8 +266,8 @@ compilación **falla** con un mensaje que nombra el parche; nunca se salta en si
 Se pueden revisar; ninguna es decisión de producto.
 - `install.sh` pasa a ser touchpoint en el árbol en vez de generarse al compilar: el
   instalador de un fork debe instalar el fork por cualquier vía de respaldo.
-- No se reutiliza `~/.janitor/janitor-core` en la fase 1. La app instala su propia
-  copia en `hermes-agent/`; la adopción de instalaciones viejas es la fase 5.
+- No se reutiliza `~/.janitor/janitor-core`. La app instala su propia copia en
+  `hermes-agent/`; las instalaciones viejas no se adoptan (decisión 2.9).
 - `extraMetadata.productName` pasa a `Janitor`. Con ≤10 usuarios pesa más no
   compartir estado con un Hermes Desktop real que conservar ajustes de ventanas.
 - «Hermes Cloud» no se renombra (servicio de terceros); se intenta ocultar en F1-08.
@@ -281,8 +294,8 @@ Lo que se sabe hoy por lectura de código; cada punto abierto tiene su tarea.
   Abierta sobre un home con `janitor-core`, la app instalaría un segundo motor en
   `hermes-agent/`, la migración de layout correría sobre ese home y
   `janitor/seed.py::ensure_command_link` reapuntaría el comando `janitor` al motor
-  nuevo. Es una adopción parcial sin diseñar. Decidido: una guarda lo impide (F1-22)
-  y la adopción completa (F5-01) se hace después de la primera instalación real.
+  nuevo. Decidido (2.9): una guarda lo impide (F1-22) y no hay adopción: lo antiguo se
+  desinstala antes.
 - **Dónde actúan los servicios.** La pantalla Servicios opera sobre el equipo donde
   corre el motor, no sobre el equipo que muestra la app si la conexión es remota.
 
@@ -388,12 +401,12 @@ Diseño, alcances y verificaciones: [`fase-2-diseno.md`](fase-2-diseno.md).
 
 ### Fase 5 — Migración y limpieza
 
-Diseño, alcances y pruebas: [`fase-5-diseno.md`](fase-5-diseno.md). Sin implementar.
+[`fase-5-diseno.md`](fase-5-diseno.md) conserva los hechos del layout antiguo y el análisis de F5-02 y F5-03; su diseño de adopción (F5-01) quedó **sin efecto** por la decisión 2.9.
 
 | ID | Tarea | Estado |
 |---|---|---|
-| F5-01 | Adopción de un `~/.janitor` existente (`janitor-core`) con respaldo. **Requisito previo a entregar la app a un usuario existente** (hasta entonces, F1-22). Define: convivencia o sustitución de los dos motores, comando y entorno resultantes, conservación de configuración, credenciales, memoria, sesiones y perfiles, respaldo consistente de SQLite con recorrido de restauración probado, qué preferencias de ventana se reinician al pasar a `~/.config/Janitor`, y qué se hace con el paquete de skills de Hermes, que el home antiguo sí tiene copiado (`.bundled_manifest`, sin `.no-bundled-skills`; decisión del dueño). Límites de la directiva 10 | pendiente |
-| F5-02 | Retiro de `bootstrap.sh`, `janitor-install.sh`, `setup-honcho.sh`. Antes: comprobar que nada los ejecuta (hoy solo los mencionan comentarios de `deploy.sh` de Firecrawl y WAHA, y `janitor/seed.py` / `update_core.py` por compatibilidad) | pendiente |
+| F5-01 | ~~Adopción de un `~/.janitor` existente~~ | **cancelada** por la decisión 2.9: lo antiguo se desinstala (guía en `docs/janitor/desinstalar-instalacion-antigua.md`) |
+| F5-02 | Retiro de todo lo que solo servía a instalaciones antiguas: `bootstrap.sh`, `janitor-install.sh`, `setup-honcho.sh`, los `migrate-janitor-*.sh` y migraciones de layout de homes antiguos, alias raíz pre-1.0 (`janitor_cli.py`, `janitor_update_*.py`, `janitor_version.py`, `janitor_ext/`), ramas `janitor-core` / `.venv` de `update_core.py` y `seed.py`, el job de CI que ejecuta `janitor-install.sh`, y las secciones de `AGENTS.md` que los describen. Ya no espera a nada (decisión 2.9) | pendiente |
 | F5-03 | Revisar si `janitor/update_core.py` se puede reducir. No antes de F1-21: primero se fija qué responsabilidades se conservan y dónde | pendiente |
 
 ### Después
@@ -481,6 +494,8 @@ Windows y macOS (firma de código). WhatsApp como canal.
 | 2026-11-22 | Subagentes Opus (solo lectura, sin pruebas), contrastado por muestreo por el orquestador | Dos diseños, sin implementar. **`actualizacion-diseno.md` (F1-21):** contrato de compatibilidad app↔motor por un entero (`janitor/desktop-compat.json`) que la app compara al arrancar; siete tareas. Defectos hallados y comprobados por el orquestador en el código: (1) si `janitor update --gateway` se rechaza por el bloqueo, el `finally` de `run_janitor_update` escribe «falló» en `.update_exit_code` y el chat anuncia un fallo con la actualización real en curso; (2) los botones «Obtener el instalador» / «Abrir la página de descarga» de la app Janitor apuntan a `hermes-agent.nousresearch.com` (`about-settings.tsx:27`, `updates-overlay.tsx:46`), declarados por error como excepción de marca; (3) una actualización cortada entre el pull y la instalación de dependencias se da por «al día» en la corrida siguiente. **`fase-5-diseno.md` (F5-01 a F5-03):** motor nuevo junto al antiguo en el mismo commit, entrada por terminal (`janitor adopt`) y reintento en la app, migración v3 para no ver cada skill desde dos árboles, respaldo de todos los SQLite, vuelta atrás que aparta el estado nuevo en vez de destruirlo. Se aparta de la opinión de Codex en la entrada (terminal, no app) y en exigir el mismo commit. Sin determinar: el nombre de la unidad del gateway que crearía `janitor gateway install` (posible segunda unidad junto a la antigua; afecta también a F1-24) |
 | 2026-11-22 | Claude (orquestador) — **hecho, sin revisor distinto y sin correr la suite** (equipo de desarrollo bloqueado) | Tres defectos del diseño de F1-21 corregidos. (1) `/update` repetido: `janitor/update_core.py` ya no escribe el código de salida cuando se le rechaza por el bloqueo, y touchpoint nuevo `update-single-flight` en `gateway/slash_commands.py` (`_update_already_running`): si hay bloqueo vivo o un `/update` lanzado sin terminar, responde «ya hay una actualización en marcha» sin tocar los marcadores. (2) Actualización cortada: bandera por checkout `.git/janitor-update-deps-pending`, puesta tras un pull correcto y quitada tras dependencias y catálogo; la corrida siguiente la retoma aunque el árbol esté «al día». (3) `INSTALLER_URL` de `updates-overlay.tsx` y `about-settings.tsx` → releases del fork (dos literales nuevos). Evidencia, toda de un solo proceso: `python -m janitor.overlay check` limpio; `build.mjs --check` → 176/176 anclas; la comprobación de contrato `check_update_single_flight` y los ayudantes de la bandera ejecutados a mano en un directorio temporal, correctos. **Debe:** correr `scripts/run_tests.sh tests/janitor/` y las pruebas de upstream de `gateway/` (`test_update_command.py`, `test_update_streaming.py`); prueba de comportamiento para la reanudación (no escrita); revisión por un agente distinto. Estas correcciones adelantan parte de F1-21b, F1-21d y F1-21e |
 | 2026-11-22 | Codex (modelo solicitado `gpt-6.2-astra`, solo lectura, sin ejecutar nada), verificado por el orquestador | Revisión del commit `0698ef4478`. **Confirmado y corregido** (sin correr la suite): la marca de dependencias pendientes se ponía después de que el pull moviera `HEAD` → ahora se pone antes y se quita si el pull falla y `HEAD` volvió a su sitio; en un worktree enlazado `.git` es un archivo → la marca usa `git rev-parse --absolute-git-dir` y un fallo al guardarla se avisa; un segundo `/update` podía pisar los marcadores mientras el observador aún entregaba el resultado → la guarda reserva también `.update_pending.claimed.json` y ya no mira el código de salida; «Notas de versión» abría los releases de Hermes → releases del fork (177/177 anclas). Evidencia de un solo proceso: contrato `check_update_single_flight` ejecutado a mano; marca probada en un repo y un worktree temporales (no ensucia `git status`); overlay check limpio. **Confirmado, sin corregir (→ F1-21d/e):** `_install_python_dependencies` puede volver sin error con dependencias base ausentes (tolerancia de upstream) y entonces se quita la marca y se da el recibo; entre la guarda y el bloqueo del hijo otro proceso puede tomar el bloqueo, y el código 2 que escribe el envoltorio bash se anuncia como fallo. **Hallazgo nuevo, sin corregir:** la instrucción de instalación por SSH (`settings.gateway.sshErrNotInstalled`, `electron/remote-lifecycle.ts:240`) manda a instalar Hermes desde la web de Nous; no se cambió el texto porque el modo SSH busca un ejecutable `hermes` en el host remoto y el instalador del fork solo crea `janitor`: **el modo de conexión remota por SSH no está verificado con Janitor**. Quedan unas veinte referencias a `nousresearch` en `apps/desktop/src` sin inventariar una a una |
+| 2026-11-22 | Dueño del proyecto | **Punto cero** (decisión 2.9): no se adoptan instalaciones antiguas; se desinstalan y se empieza de cero con la app. F5-01 cancelada; F5-02 desbloqueada y ampliada. Las actualizaciones de la app nueva deben ser prácticas y sencillas, sin Git a la vista |
+| 2026-11-22 | Claude (orquestador) | Equipo de desarrollo sano de nuevo. Suite debida, una corrida con registro guardado: `scripts/run_tests.sh tests/janitor/` → 39 archivos, 657 pruebas, 0 fallos (tras corregir un fallo propio: la comprobación `update-single-flight` no recibía su directorio temporal); `tests/gateway/test_update_command.py` + `test_update_streaming.py` → 24 pasan; `node --test apps/desktop-janitor/scripts/*.test.mjs` → 137/137; overlay check limpio. Las correcciones del flujo de actualización pasan a «código y pruebas»; siguen sin prueba propia la reanudación tras un corte y sin revisor distinto las del orquestador (Codex las revisó en solo lectura). Guarda de F1-22 reescrita para mandar a desinstalar; guía `docs/janitor/desinstalar-instalacion-antigua.md` escrita a partir de los instaladores antiguos, **sin ensayar en una máquina real** |
 
 ## 9. Decisiones pendientes del dueño
 
@@ -497,9 +512,5 @@ No bloquean el trabajo en curso; cada una tiene un valor provisional ya aplicado
 | Canal del motor (F1-21) | `main`: cada merge llega a todos los usuarios | Seguir en `main` o actualizar solo a versiones etiquetadas |
 | Tras actualizar el motor desde la app (F1-21) | Con AppImage la app no se relanza: el usuario la reabre a mano | Si la app se reabre sola |
 | Botón de descarga del AppImage nuevo (F1-21) | Sin implementar | Abrir la página del release o descargar el archivo directamente |
-| Entrada de la adopción (F5-01) | Diseñada por terminal: `janitor update` + `janitor adopt`, y «Reintentar» en la app | Si basta, o hace falta un botón «Adoptar» dentro de la app (exige un parche de interfaz nuevo) |
-| Paquete de skills de Hermes en homes adoptados (F5-01) | Sin tocar | Seguir sincronizándolo, congelarlo u ofrecer retirarlo |
-| Gateway en la adopción (F5-01) | El servicio antiguo lo detiene y reconfigura el usuario | Si la adopción solo cuenta como completa cuando el servicio del gateway ya usa el motor nuevo |
-| Retiro del motor antiguo y del respaldo (F5-01, F5-02) | Se conservan indefinidamente | Cuándo se retiran, y cuándo puede empezar F5-02 |
 | `forget` de WAHA (F4-07) | Borra los resúmenes en vez de enviarlos a la papelera | Confirmar la excepción a la directiva 19 o pasar a papelera |
 | Valor rescatable de skills retiradas | Nada rescatado | `janitor-config-audit` (diff de config frente a la semilla) puede servir para adoptar instalaciones viejas (F5-01) |
