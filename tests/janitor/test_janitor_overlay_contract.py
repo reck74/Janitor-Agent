@@ -217,7 +217,8 @@ def test_touchpoint_contract(check_id, capsys, tmp_path):
     check = CHECKS[check_id]
     if check is check_banner:
         check(capsys)
-    elif check in (check_install_sh, check_desktop_update_posix, check_backend_user_copy, check_runtime_copy):
+    elif check in (check_install_sh, check_desktop_update_posix, check_backend_user_copy, check_runtime_copy,
+                   check_update_single_flight):
         check(tmp_path)
     else:
         check()
