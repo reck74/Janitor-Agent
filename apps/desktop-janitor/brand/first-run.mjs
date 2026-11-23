@@ -182,18 +182,58 @@ export const FIRST_RUN_PATCHES = [
   },
   {
     id: 'P9-cloud-mode-grid',
-    purpose: 'Gateway settings: three mode cards fill the wide grid (local, remote, SSH)',
+    purpose: 'Gateway settings: the two offered mode cards (local, remote) fill the grid; Cloud/SSH only add a card when already active',
     file: 'src/app/settings/gateway-settings.tsx',
     find: '<div className="grid auto-rows-fr grid-cols-1 gap-2 sm:grid-cols-2 min-[72rem]:grid-cols-4">',
-    replace: '<div className="grid auto-rows-fr grid-cols-1 gap-2 sm:grid-cols-2 min-[72rem]:grid-cols-3">',
+    replace: '<div className="grid auto-rows-fr grid-cols-1 gap-2 sm:grid-cols-2">',
     count: 1
   },
   {
     id: 'P9-cloud-connection-kind',
-    purpose: 'Connections: a new connection is local, remote or SSH; existing cloud entries still list and edit',
+    purpose: 'Connections: a new connection is local or remote (no Cloud, no SSH); existing cloud/SSH entries still list and edit',
     file: 'src/app/settings/connections-registry.tsx',
     find: "(['local', 'cloud', 'remote', 'ssh'] as const)",
-    replace: "(['local', 'remote', 'ssh'] as const)",
+    replace: "(['local', 'remote'] as const)",
+    count: 1
+  },
+
+  // ---- SSH mode not offered ------------------------------------------------
+  // electron/remote-lifecycle.ts looks for a `hermes` executable on the remote
+  // (`command -v hermes`, ~/.local/bin/hermes, /usr/local/bin/hermes,
+  // ~/.hermes/hermes-agent/venv/bin/hermes), runs `env HERMES_DESKTOP=1 <hermes>
+  // [--profile p] serve --isolated …` and keeps its lock, update marker and
+  // profiles under the remote ${HERMES_HOME:-$HOME/.hermes}. The fork's
+  // installer only creates `janitor` (~/.janitor). So against a Janitor host it
+  // cannot start, and against an upstream install it would connect to Hermes,
+  // not Janitor. Not verified with Janitor: not offered (settings.gateway.
+  // sshErrNotInstalled says so for an existing SSH setup).
+  {
+    id: 'P9-ssh-mode-card',
+    purpose: 'Gateway settings: the SSH mode card only shows while an SSH connection is already active',
+    file: 'src/app/settings/gateway-settings.tsx',
+    find:
+      '          <ModeCard\n' +
+      "            active={state.mode === 'ssh'}\n" +
+      '            description={g.sshDesc}\n' +
+      '            disabled={state.envOverride}\n' +
+      '            hint={g.sshTrustHint}\n' +
+      '            icon={Terminal}\n' +
+      "            onSelect={() => setState(current => ({ ...current, mode: 'ssh' }))}\n" +
+      '            title={g.sshTitle}\n' +
+      '          />\n',
+    replace:
+      '          {/* Janitor build: SSH mode starts an upstream `hermes` on the remote; not supported yet. */}\n' +
+      "          {state.mode === 'ssh' ? (\n" +
+      '            <ModeCard\n' +
+      "              active={state.mode === 'ssh'}\n" +
+      '              description={g.sshDesc}\n' +
+      '              disabled={state.envOverride}\n' +
+      '              hint={g.sshTrustHint}\n' +
+      '              icon={Terminal}\n' +
+      "              onSelect={() => setState(current => ({ ...current, mode: 'ssh' }))}\n" +
+      '              title={g.sshTitle}\n' +
+      '            />\n' +
+      '          ) : null}\n',
     count: 1
   },
 

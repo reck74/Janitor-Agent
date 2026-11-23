@@ -70,6 +70,15 @@ export const LITERALS = {
       "'Hay una actualización terminando; Janitor se iniciará automáticamente cuando acabe…'"
     ],
     ["'Restarting Hermes to load the updated app…'", "'Reiniciando Janitor para cargar la app actualizada…'"],
+    // — update hand-off progress (F1-21b; shown by the updates overlay before the app quits) —
+    [
+      "'Updating Hermes — this window will close and the updater will open. Don’t reopen Hermes yourself; it restarts automatically when the update finishes.',",
+      "'Actualizando Janitor: esta ventana se cerrará y se abrirá el actualizador. No vuelvas a abrir Janitor; se abre solo cuando termina la actualización.',"
+    ],
+    [
+      "'Updating Hermes — this window will close. Don’t reopen Hermes yourself; it restarts automatically when the update finishes.',",
+      "'Actualizando Janitor: esta ventana se cerrará. No vuelvas a abrir Janitor; se abre solo cuando termina la actualización.',"
+    ],
     ["advanceBootProgress('runtime.external', `Using ${backend.label}`", "advanceBootProgress('runtime.external', `Usando ${backend.label}`"],
     ["message: 'Hermes runtime is ready',", "message: 'El entorno de ejecución de Janitor está listo',"],
     ["message: 'Restarting desktop connection',", "message: 'Reiniciando la conexión de escritorio',"],
@@ -240,6 +249,28 @@ export const LITERALS = {
   // fork's releases, never from upstream's site (which installs Hermes).
   'src/app/updates-overlay.tsx': [["const INSTALLER_URL = 'https://hermes-agent.nousresearch.com/'", "const INSTALLER_URL = 'https://github.com/reck74/Janitor-Agent/releases/latest'"]],
   'src/app/settings/about-settings.tsx': [["const RELEASE_NOTES_URL = 'https://github.com/NousResearch/hermes-agent/releases'", "const RELEASE_NOTES_URL = 'https://github.com/reck74/Janitor-Agent/releases'"], ["const INSTALLER_URL = 'https://hermes-agent.nousresearch.com/'", "const INSTALLER_URL = 'https://github.com/reck74/Janitor-Agent/releases/latest'"]],
+  // F1-21b / Nous links (brand/inventory/nous-urls.tsv, decisions a and b).
+  // «Obtener clave» of the custom-endpoint option pointed at a section of upstream's README; no link.
+  'src/components/onboarding/index.tsx': [
+    [
+      "    docsUrl: 'https://github.com/NousResearch/hermes-agent#bring-your-own-endpoint',",
+      "    docsUrl: '', // Janitor build: upstream's README is not Janitor documentation"
+    ]
+  ],
+  // Corrupt state.db notice: the command shown to the user is `janitor`.
+  'src/app/chat/sidebar/section-states.tsx': [
+    ['hermes sessions recover --source &lt;state.db&gt; --inspect-only', 'janitor sessions recover --source &lt;state.db&gt; --inspect-only']
+  ],
+  // Telegram QR: without a name the backend creates the bot as "Hermes Agent"
+  // (hermes_cli/web_routers/messaging.py, start_telegram_onboarding).
+  'src/app/messaging/telegram-qr-setup.tsx': [
+    ['startTelegramOnboarding(undefined, scopeProfile)', "startTelegramOnboarding('Janitor', scopeProfile)"]
+  ],
+  // /topup (Nous balance and billing) leaves the slash palette and /help, like
+  // /login already does (plan 2.2: Nous account flows hidden). The offline
+  // registry row decides, because a non-null row is never overridden by the
+  // live catalog (desktop-slash-commands.ts, REGISTRY_OFFERED_NAMES).
+  'src/lib/desktop-slash-registry.json': [['"/topup": null,', '"/topup": "settings",']],
   'src/components/assistant-ui/thread/status.tsx': [["label={hint || 'Hermes is working'}", "label={hint || 'Janitor está trabajando'}"]],
   'src/components/assistant-ui/thread/message-reactions.tsx': [['title="Reacted by Hermes"', 'title="Reacción de Janitor"']],
   'src/main.tsx': [["document.title = 'Hermes HUD'", "document.title = 'Janitor HUD'"]],

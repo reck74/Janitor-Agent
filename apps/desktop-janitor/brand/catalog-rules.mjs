@@ -13,10 +13,14 @@ export const CATALOG_FILES = ['src/i18n/es.ts']
 // rules run, restored afterwards, and ignored by the guard test.
 export const ALLOWLIST = [
   {
+    // Only the example URLs es.ts really keeps. A new URL with "hermes" in it
+    // (an upstream install or docs link) is no longer masked, so the guard
+    // names it; Nous links without "hermes" are caught by
+    // scripts/nous-urls.test.mjs (brand/inventory/nous-urls.tsv).
     id: 'url',
-    pattern: /https?:\/\/[^\s'"`<>)]*hermes[^\s'"`<>)]*/gi,
+    pattern: /https:\/\/(?:hermes\.example\.com|gateway\.example\.com\/hermes)\b[^\s'"`<>)]*/g,
     reason:
-      'Real or example URLs (install script on hermes-agent.nousresearch.com, https://hermes.example.com placeholders); rewriting them would point at hosts that do not exist.'
+      'Placeholder URLs of the remote-gateway form (https://hermes.example.com, https://gateway.example.com/hermes): example values the user replaces, not the product name.'
   },
   {
     id: 'matrix-id-placeholder',

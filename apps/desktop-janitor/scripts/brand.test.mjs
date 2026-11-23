@@ -21,12 +21,15 @@ import {
   catalogViolations,
   identicalToEnglish
 } from './catalog-brand.mjs'
+import { applyCatalogOverrides } from './catalog-overrides.mjs'
 import { checkPatches, computePatchedFiles } from './patch-engine.mjs'
 import { checkTranspiles } from './transpile-check.mjs'
 import { classifyLiterals, literalText, skeleton } from './ts-literals.mjs'
 
 const read = file => fs.readFileSync(path.join(APP_DIR, file), 'utf8')
 const ES = 'src/i18n/es.ts'
+// es.ts as P6 sees it in the build: P10 overrides already applied.
+const overridden = () => applyCatalogOverrides(read(ES), read('src/i18n/en.ts'))
 
 // ---- drift detector -------------------------------------------------------
 
@@ -88,7 +91,7 @@ test('catalog transform: only literal text changes, keys are untouched', () => {
 })
 
 test('catalog guard: no Hermes left in Spanish values outside the allowlist', () => {
-  const { output, stats } = brandCatalog(read(ES))
+  const { output, stats } = brandCatalog(overridden())
   const violations = catalogViolations(output)
 
   assert.deepEqual(violations, [], violations.map(v => `${v.path} = ${v.value}`).join('\n'))
@@ -101,19 +104,22 @@ test('catalog guard: no Hermes left in Spanish values outside the allowlist', ()
 })
 
 test('a new upstream "Hermes" string the rules miss fails the guard with its key path', () => {
-  const planted = read(ES).replace(
+  const base = overridden()
+  const planted = base.replace(
     'connectors: {\n',
-    "connectors: {\n    plantedNew: 'Instala HERMES-CLI para continuar',\n    plantedFn: (n: string) => `Hola ${n}, soy HERMES`,\n"
+    "connectors: {\n    plantedNew: 'Instala HERMES-CLI para continuar',\n    plantedFn: (n: string) => `Hola ${n}, soy HERMES`,\n    plantedUrl: 'Guía: https://hermes-agent.nousresearch.com/docs/nueva',\n"
   )
 
-  assert.notEqual(planted, read(ES), 'plant anchor moved')
+  assert.notEqual(planted, base, 'plant anchor moved')
 
   const { output } = brandCatalog(planted)
   const violations = catalogViolations(output)
 
+  // The url allowlist only masks the example URLs es.ts keeps, so a new
+  // upstream link with "hermes" in it is named too.
   assert.deepEqual(
     violations.map(v => v.path),
-    ['connectors.plantedNew', 'connectors.plantedFn']
+    ['connectors.plantedNew', 'connectors.plantedFn', 'connectors.plantedUrl']
   )
   assert.throws(() => catalogTransform(ES)(planted), /connectors\.plantedNew = "Instala HERMES-CLI para continuar"/)
 })

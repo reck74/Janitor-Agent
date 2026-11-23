@@ -95,18 +95,38 @@ test('the raw "No usable credentials" backend error becomes a Spanish prompt', (
   assert.ok(text('src/components/onboarding/index.tsx').includes(`? '${MISSING_KEY_NOTICE}'`))
 })
 
-test('Hermes Cloud is not offered for a new connection; local, remote and SSH still are', () => {
+test('neither Hermes Cloud nor SSH is offered for a new connection; local and remote are', () => {
   const kinds = text('src/app/settings/connections-registry.tsx').match(/\(\[('local'[^\]]*)\] as const\)/)[1]
 
-  assert.deepEqual(kinds.split(',').map(s => s.trim().replace(/'/g, '')), ['local', 'remote', 'ssh'])
+  assert.deepEqual(kinds.split(',').map(s => s.trim().replace(/'/g, '')), ['local', 'remote'])
 
   const gateway = text('src/app/settings/gateway-settings.tsx')
   const cards = [...gateway.matchAll(/<ModeCard\s+active=\{state\.mode === '(\w+)'\}/g)].map(m => m[1])
 
   assert.deepEqual(cards, ['local', 'cloud', 'remote', 'ssh'])
-  assert.match(gateway, /\{state\.mode === 'cloud' \? \(\s*<ModeCard\s+active=\{state\.mode === 'cloud'\}/)
-  // The cloud panel and the saved-connection logic stay intact for existing setups.
+
+  // Cloud and SSH cards render only while that mode is already the active one.
+  for (const mode of ['cloud', 'ssh']) {
+    assert.match(gateway, new RegExp(`\\{state\\.mode === '${mode}' \\? \\(\\s*<ModeCard\\s+active=\\{state\\.mode === '${mode}'\\}`), mode)
+  }
+
+  // Local and remote stay unconditional.
+  for (const mode of ['local', 'remote']) {
+    assert.doesNotMatch(gateway, new RegExp(`\\? \\(\\s*<ModeCard\\s+active=\\{state\\.mode === '${mode}'\\}`), mode)
+  }
+
+  // The cloud and SSH panels and the saved-connection logic stay intact for existing setups.
   assert.match(gateway, /\{state\.mode === 'cloud' && !state\.envOverride \? \(/)
+  assert.match(gateway, /\{state\.mode === 'ssh' && !state\.envOverride \? \(/)
+})
+
+test('an existing SSH setup that finds no engine reads an honest Spanish message, without a Hermes install link', () => {
+  const es = text('src/i18n/es.ts')
+  const value = classifyLiterals(es).values.find(v => v.path === 'settings.gateway.sshErrNotInstalled')
+
+  assert.ok(value, 'settings.gateway.sshErrNotInstalled missing from es.ts')
+  assert.match(literalText(es, value), /no está soportada todavía en Janitor/)
+  assert.doesNotMatch(literalText(es, value), /hermes|nousresearch|install\.sh/i)
 })
 
 test('no surface offers to upload diagnostics to Nous', () => {

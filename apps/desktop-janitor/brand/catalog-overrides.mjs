@@ -64,6 +64,18 @@ export const ES_OVERRIDES = [
     en: 'One subscription, 300+ frontier models — the recommended way to run Hermes',
     from: 'Una suscripción, más de 300 modelos frontier: la forma recomendada de usar Hermes',
     es: 'Inicia sesión con una cuenta de Nous Portal para usar sus modelos.'
+  },
+  {
+    // SSH mode looks for an upstream `hermes` executable on the remote and
+    // runs it with the remote's ~/.hermes (electron/remote-lifecycle.ts,
+    // locateHermes / buildSpawnCommand); the fork's installer only creates
+    // `janitor`. New SSH connections are not offered (P9-ssh-mode-card); this
+    // is what an existing SSH setup reads instead of "install Hermes from
+    // hermes-agent.nousresearch.com".
+    path: 'settings.gateway.sshErrNotInstalled',
+    en: 'Hermes is not installed on the remote host. Install it there (curl -fsSL https://hermes-agent.nousresearch.com/install.sh | sh) or set the Hermes path.',
+    from: 'Hermes no está instalado en el host remoto. Instálalo allí (curl -fsSL https://hermes-agent.nousresearch.com/install.sh | sh) o indica la ruta de Hermes.',
+    es: 'La conexión por SSH no está soportada todavía en Janitor: no hay en el host remoto un motor que la app sepa arrancar. Usa la conexión local.'
   }
 ]
 
