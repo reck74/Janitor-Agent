@@ -1,4 +1,5 @@
-"""Backend of the Janitor desktop plugin's "Servicios" screen.
+"""Backend of the Janitor desktop plugin: the "Servicios" screen, plus the
+"Skills" and "Agentes" routes of :mod:`janitor.desktop_plugin.perfiles`.
 
 Mounted by Hermes at ``/api/plugins/janitor/`` through the shim
 ``assets/plugins/janitor/dashboard/plugin_api.py`` (seeded into the home by
@@ -105,7 +106,6 @@ def _service_view(service: services.Service, docker: str, states: Optional[dict]
     return {
         "name": service.name,
         "skill": service.skill_dir.name,
-        "skill_md": str(service.skill_dir / "SKILL.md"),
         "description": service.description,
         "url": service.url,
         "state": state,
@@ -145,7 +145,7 @@ def unmanaged_apps(managed_skills: set) -> list[dict]:
         path = cat.resolve(entry)
         if path is None or not (path / "SKILL.md").is_file():
             continue
-        apps.append({"skill": entry.id, "skill_md": str(path / "SKILL.md")})
+        apps.append({"skill": entry.id})
     return apps
 
 
@@ -213,7 +213,9 @@ def act(name: str, action: str, runner: Runner = subprocess.run,
 
 
 def build_router(runner: Runner = subprocess.run, root: Path = services.SERVICES_ROOT):
-    from fastapi import APIRouter, HTTPException
+    from fastapi import APIRouter, Body, HTTPException
+
+    from janitor.desktop_plugin import perfiles
 
     router = APIRouter()
 
@@ -236,5 +238,35 @@ def build_router(runner: Runner = subprocess.run, root: Path = services.SERVICES
     @router.post("/servicios/{name}/stop")
     def stop_service(name: str) -> dict:
         return _action(name, "stop")
+
+    # --- Skills of one agent (F4-04) and specialists (F4-05) ---------------
+
+    def _profile_call(fn, *args) -> dict:
+        try:
+            return fn(*args)
+        except perfiles.UnknownProfile:
+            raise HTTPException(status_code=404, detail="unknown profile") from None
+        except perfiles.InvalidSkills:
+            raise HTTPException(status_code=400, detail="invalid skills") from None
+
+    @router.get("/perfiles/{perfil}/skills")
+    def get_skills(perfil: str) -> dict:
+        return _profile_call(perfiles.skills_view, perfil)
+
+    @router.put("/perfiles/{perfil}/skills")
+    def put_skills(perfil: str, payload: dict = Body(...)) -> dict:
+        return _profile_call(perfiles.set_skills, perfil, payload.get("skills"))
+
+    @router.post("/perfiles/{perfil}/skills/{skill}")
+    def activate_skill(perfil: str, skill: str) -> dict:
+        return _profile_call(perfiles.activate_skill, perfil, skill)
+
+    @router.get("/agentes")
+    def get_agents() -> dict:
+        return perfiles.templates_view()
+
+    @router.post("/agentes")
+    def create_agent(payload: dict = Body(...)) -> dict:
+        return perfiles.create_agent(payload.get("plantilla"), payload.get("nombre"))
 
     return router

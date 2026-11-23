@@ -1,18 +1,25 @@
 /**
- * Janitor desktop plugin — the "Servicios" screen.
+ * Janitor desktop plugin — the "Servicios", "Skills" and "Agentes" screens.
  *
  * Seeded into `<home>/desktop-plugins/janitor/plugin.js` by
  * `janitor.desktop_plugin.sync` (source: janitor/desktop_plugin/assets/ in the
  * Janitor fork). Plain ESM loaded uncompiled by the desktop runtime loader:
  * no JSX, and only `@hermes/plugin-sdk`, `react` and `react/jsx-runtime` imports.
  *
- * The backend half is `/api/plugins/janitor/` (janitor/desktop_plugin/api.py).
- * The screen shows state and starts/stops installed applications; installing
- * one is handed to the agent, which runs the application's guided skill and
- * asks before changing anything. Uninstalling stays in the terminal.
+ * The backend half is `/api/plugins/janitor/` (janitor/desktop_plugin/api.py
+ * and perfiles.py).
+ * - Servicios shows state and starts/stops installed applications; installing
+ *   one activates its guided skill in the active agent and hands the request
+ *   to a new chat, where the agent asks before changing anything.
+ * - Skills chooses which catalog skills an agent (profile) uses. The change is
+ *   written to that profile's config and applies from its next conversation;
+ *   an open conversation keeps its prompt (prompt caching).
+ * - Agentes creates specialists from templates (empty memory, Janitor's
+ *   persona plus the role, the template's skills). It never deletes a profile.
  *
  * The pure helpers are named exports so they can be tested outside the app
- * (apps/desktop-janitor/scripts/servicios-plugin.test.mjs).
+ * (apps/desktop-janitor/scripts/servicios-plugin.test.mjs and
+ * perfiles-plugin.test.mjs).
  */
 
 import {
@@ -20,17 +27,22 @@ import {
   Button,
   ErrorState,
   host,
+  Input,
   ROUTES_AREA,
   SIDEBAR_NAV_AREA,
   PALETTE_AREA,
+  Switch,
   useQuery,
-  useQueryClient
+  useQueryClient,
+  useValue
 } from '@hermes/plugin-sdk'
 import { jsx, jsxs } from 'react/jsx-runtime'
 import { useState } from 'react'
 
 export const PLUGIN_ID = 'janitor'
 export const PAGE_PATH = '/servicios'
+export const SKILLS_PATH = '/skills'
+export const AGENTS_PATH = '/agentes'
 export const REFRESH_MS = 10_000
 const LIST_TIMEOUT_MS = 45_000
 const ACTION_TIMEOUT_MS = 130_000
@@ -169,6 +181,7 @@ const ERRORS = {
   timeout: 'Docker tardó demasiado en responder. Revisa el estado y vuelve a intentarlo.',
   docker_failed: 'Docker devolvió un error. Revisa el estado del aplicativo.',
   unknown_service: 'Este aplicativo ya no existe en esta instalación.',
+  activation_failed: 'No se pudo activar la skill de instalación en este agente. Revisa la pantalla Skills.',
   unreachable: 'No se pudo contactar con el motor de Janitor.'
 }
 
@@ -177,12 +190,11 @@ export function errorText(code) {
 }
 
 /** The request the agent receives for "Instalar con Janitor": it names the guided
- *  skill and where its instructions are, and asks for confirmation before changes. */
-export function installRequest({ label, skill, skillMd }) {
-  const where = skillMd ? ` (si no la tienes cargada, sus instrucciones están en ${skillMd})` : ''
-
+ *  skill by its catalog id (activated in the agent first) and asks for
+ *  confirmation before changes. No path travels in the request. */
+export function installRequest({ label, skill }) {
   return (
-    `Quiero instalar ${label}. Usa la skill ${skill}${where} y guíame paso a paso: ` +
+    `Quiero instalar ${label}. Usa la skill ${skill} y guíame paso a paso: ` +
     'dime qué vas a hacer y pídeme confirmación antes de cambiar nada.'
   )
 }
@@ -201,7 +213,6 @@ export function entriesFrom(payload) {
       key: s.skill,
       name: s.name,
       skill: s.skill,
-      skillMd: s.skill_md,
       url: s.url,
       state: s.state,
       health: s.health ?? null,
@@ -213,7 +224,6 @@ export function entriesFrom(payload) {
       key: a.skill,
       name: a.skill,
       skill: a.skill,
-      skillMd: a.skill_md,
       url: '',
       state: 'unknown',
       health: null,
@@ -222,6 +232,194 @@ export function entriesFrom(payload) {
       ...appInfo(a.skill, a.skill)
     }))
   ]
+}
+
+// ---------------------------------------------------------------------------
+// Skills and Agentes: pure helpers.
+// ---------------------------------------------------------------------------
+
+/** Mirror of hermes_constants.PROFILE_ID_RE (the backend checks it again). */
+const PROFILE_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
+/** Catalog ids are skill names: lower case, digits and dashes. */
+const SKILL_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/
+/** hermes_cli.profiles._RESERVED_NAMES, plus `default` (the main agent). */
+const RESERVED_NAMES = new Set(['hermes', 'default', 'test', 'tmp', 'root', 'sudo'])
+export const MAIN_PROFILE = 'default'
+
+export function isValidProfileName(name) {
+  return typeof name === 'string' && PROFILE_RE.test(name)
+}
+
+export function isValidSkillId(id) {
+  return typeof id === 'string' && SKILL_ID_RE.test(id)
+}
+
+/** REST path of one agent's skills. Throws on a name that could leave the namespace. */
+export function skillsPath(profile) {
+  if (!isValidProfileName(profile)) {
+    throw new Error('perfil no válido')
+  }
+
+  return `/perfiles/${profile}/skills`
+}
+
+/** The app's active profile as a backend profile name (`default` when unknown). */
+function activeProfile() {
+  const current = host.state?.profile?.get?.()
+
+  return isValidProfileName(current) ? current : MAIN_PROFILE
+}
+
+/** Spanish name and description per catalog id (upstream's SKILL.md text is in English
+ *  and is never shown). An id missing here gets a neutral fallback. */
+export const SKILLS = {
+  'janitor-onboarding': { label: 'Guía de Janitor', description: 'Explica qué agentes, skills y aplicativos tienes y dónde está cada cosa.' },
+  'janitor-system-health': { label: 'Salud del sistema', description: 'Revisa el equipo sin tocar nada y te dice qué está mal, por prioridad.' },
+  'janitor-maintenance': { label: 'Mantenimiento programado', description: 'Repite la revisión del equipo cada cierto tiempo y te cuenta qué cambió.' },
+  'janitor-cleanup': { label: 'Limpieza del equipo', description: 'Libera disco con un plan que apruebas tú; lo borrado va a la papelera.' },
+  'janitor-file-organizer': { label: 'Organizar archivos', description: 'Ordena una carpeta por tipo o fecha, y se puede deshacer.' },
+  pdf: { label: 'PDF', description: 'Crea, lee, une, rellena y edita PDF, con reconocimiento de texto.' },
+  docx: { label: 'Documentos de Word', description: 'Crea, lee, edita y revisa archivos .docx.' },
+  xlsx: { label: 'Hojas de cálculo', description: 'Crea, lee y edita libros .xlsx y archivos CSV.' },
+  powerpoint: { label: 'Presentaciones', description: 'Crea, lee y edita presentaciones .pptx.' },
+  'document-to-action-items': { label: 'Tareas desde documentos', description: 'Saca obligaciones, plazos y tareas de un documento, citando dónde está cada una.' },
+  'weekly-review-planning': { label: 'Revisión semanal', description: 'Repasa compromisos y trabajo parado y arma el plan de la semana.' },
+  'grounded-citations': { label: 'Respuestas con fuentes', description: 'Respalda respuestas y documentos con fuentes citadas y comprobables.' },
+  'blocked-page-recovery': { label: 'Páginas bloqueadas', description: 'Qué hacer cuando una web no deja leerla: errores 403/429, muros de pago, bloqueos.' },
+  arxiv: { label: 'arXiv', description: 'Busca artículos científicos por tema, autor, categoría o identificador.' },
+  'llm-wiki': { label: 'Wiki de conocimiento', description: 'Construye y consulta una base de notas enlazadas en markdown.' },
+  'competitor-news-monitor': { label: 'Vigilancia de competidores', description: 'Sigue noticias relevantes de empresas concretas, con resúmenes citados.' },
+  'youtube-content': { label: 'Contenido de YouTube', description: 'Convierte transcripciones de vídeos en resúmenes, hilos o artículos.' },
+  'janitor-repo-research': { label: 'Investigar repositorios', description: 'Analiza un repositorio de GitHub de principio a fin.' },
+  'janitor-project-create': { label: 'Crear proyectos', description: 'Monta un proyecto nuevo que compila y pasa sus pruebas.' },
+  github: { label: 'GitHub', description: 'Pull requests, issues, revisiones y repositorios con la CLI gh.' },
+  spike: { label: 'Prototipos de prueba', description: 'Experimentos desechables para validar una idea antes de construirla.' },
+  'systematic-debugging': { label: 'Depuración sistemática', description: 'Encuentra la causa real de un fallo antes de tocar el código.' },
+  'test-driven-development': { label: 'Desarrollo guiado por pruebas', description: 'Primero la prueba que falla, luego el código, luego la limpieza.' },
+  'claude-code': { label: 'Claude Code', description: 'Delega trabajo de programación en la CLI de Claude Code.' },
+  codex: { label: 'Codex', description: 'Delega trabajo de programación en la CLI de Codex.' },
+  opencode: { label: 'OpenCode', description: 'Delega programación y revisiones en la CLI de OpenCode.' },
+  'google-workspace': { label: 'Google Workspace', description: 'Gmail, Calendar, Drive, Docs y Sheets.' },
+  'email-inbox-triage': { label: 'Ordenar el correo', description: 'Prioriza la bandeja de entrada y prepara borradores sin enviar nada solo.' },
+  notion: { label: 'Notion', description: 'Páginas y bases de datos de Notion.' },
+  obsidian: { label: 'Obsidian', description: 'Lee, busca, crea y edita notas de tu bóveda de Obsidian.' },
+  'computer-use': { label: 'Manejar el escritorio', description: 'Controla aplicaciones del escritorio cuando no hay otra forma.' },
+  'apple-notes': { label: 'Notas de Apple', description: 'Crea, busca y edita Notas de Apple.' },
+  'apple-reminders': { label: 'Recordatorios de Apple', description: 'Añade, lista y completa Recordatorios.' },
+  findmy: { label: 'Buscar (Apple)', description: 'Localiza tus dispositivos Apple y AirTags.' },
+  imessage: { label: 'iMessage', description: 'Envía y recibe iMessage y SMS.' }
+}
+
+export function skillInfo(id) {
+  if (SKILLS[id]) {
+    return SKILLS[id]
+  }
+
+  if (APPS[id]) {
+    return { label: APPS[id].label, description: `${APPS[id].description} Guía su instalación.` }
+  }
+
+  return { label: id, description: 'Skill del catálogo de Janitor.' }
+}
+
+const PLATFORM_NAMES = { linux: 'Linux', macos: 'macOS', windows: 'Windows' }
+
+export function platformNote(platforms) {
+  const names = (Array.isArray(platforms) ? platforms : []).map(p => PLATFORM_NAMES[p] ?? p)
+
+  return names.length ? `Solo en ${names.join(' y ')}.` : ''
+}
+
+/** `ids` with `id` switched on or off, order kept (new ids go last). */
+export function toggleSkill(ids, id, on) {
+  const without = ids.filter(x => x !== id)
+
+  return on ? [...without, id] : without
+}
+
+export function sameSelection(a, b) {
+  return a.length === b.length && [...a].sort().join('\n') === [...b].sort().join('\n')
+}
+
+/** Purpose groups for the screen, each skill with its Spanish copy and switch state. */
+export function skillGroups(payload, selection) {
+  const chosen = new Set(selection)
+  const groups = Array.isArray(payload?.propositos) ? payload.propositos : []
+
+  return groups.map(group => ({
+    id: group.id,
+    label: group.nombre || group.id,
+    skills: (Array.isArray(group.skills) ? group.skills : []).map(skill => ({
+      id: skill.id,
+      ...skillInfo(skill.id),
+      on: chosen.has(skill.id),
+      // A skill of another OS can be switched off but never on.
+      locked: !skill.disponible && !chosen.has(skill.id),
+      note: skill.otra_plataforma ? platformNote(skill.plataformas) : skill.disponible ? '' : 'No está en esta instalación.'
+    }))
+  }))
+}
+
+const TEMPLATE_NAMES = { investigador: 'Investigador', 'creador-proyectos': 'Creador de proyectos', main: 'Janitor' }
+
+/** How an agent (profile) reads in selectors and lists. */
+export function profileLabel(profile) {
+  if (!profile) {
+    return ''
+  }
+
+  if (profile.principal || profile.nombre === MAIN_PROFILE) {
+    return 'Janitor (principal)'
+  }
+
+  const template = profile.plantilla ? TEMPLATE_NAMES[profile.plantilla] ?? profile.plantilla : null
+
+  return template ? `${profile.nombre} · ${template}` : profile.nombre
+}
+
+/** Client-side check of a new agent name, same rules as the backend. Returns an error code or null. */
+export function newAgentNameError(name, existing = []) {
+  if (!isValidProfileName(name) || RESERVED_NAMES.has(name)) {
+    return 'nombre_invalido'
+  }
+
+  return existing.includes(name) ? 'existe' : null
+}
+
+const SKILLS_ERRORS = {
+  400: 'El servidor rechazó la lista: solo se aceptan skills del catálogo. Recarga la pantalla.',
+  404: 'Ese agente ya no existe. Elige otro.',
+  unreachable: 'No se pudo contactar con el motor de Janitor. No se guardó nada.'
+}
+
+export function skillsErrorText(error) {
+  const status = restStatus(error)
+
+  return SKILLS_ERRORS[status] ?? SKILLS_ERRORS.unreachable
+}
+
+const AGENT_ERRORS = {
+  nombre_invalido:
+    'Nombre no válido: minúsculas, números, «-» o «_», empezando por letra o número, hasta 64 caracteres. ' +
+    'Algunos nombres de sistema, como «default», «root» o «test», están reservados.',
+  existe: 'Ya hay un agente con ese nombre. No se sobrescribe nada: elige otro.',
+  plantilla_desconocida: 'Esa plantilla ya no existe en esta instalación. Recarga la pantalla.',
+  tiempo_agotado: 'Crear el agente tardó demasiado. Revisa la lista antes de reintentar.',
+  fallo: 'No se pudo crear el agente. Prueba en la terminal: janitor plantillas crear <plantilla> --nombre <nombre>.',
+  unreachable: 'No se pudo contactar con el motor de Janitor.'
+}
+
+export function agentErrorText(code) {
+  return AGENT_ERRORS[code] ?? AGENT_ERRORS.fallo
+}
+
+/** The line shown after creating a specialist. */
+export function createdText(agent) {
+  const credentials = agent?.credenciales
+    ? 'Usa las mismas credenciales del proveedor que el principal.'
+    : 'No había credenciales del proveedor que copiar: configúralas en ese agente antes de usarlo.'
+
+  return `Listo: «${agent?.nombre}» existe, con memoria vacía y sus propias skills. ${credentials}`
 }
 
 // ---------------------------------------------------------------------------
@@ -276,7 +474,39 @@ const S = {
   },
   error: { color: 'var(--ui-red)', fontSize: '0.75rem', lineHeight: 1.5, margin: 0 },
   actions: { alignItems: 'center', display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' },
-  spacer: { flex: 1 }
+  spacer: { flex: 1 },
+  ok: { color: 'var(--ui-text-secondary)', fontSize: '0.75rem', lineHeight: 1.5, margin: 0 },
+  field: { alignItems: 'center', display: 'flex', flexWrap: 'wrap', gap: '8px' },
+  label: { color: 'var(--ui-text-secondary)', fontSize: '0.8125rem' },
+  select: {
+    background: 'transparent',
+    border: '1px solid var(--ui-stroke-secondary)',
+    borderRadius: '6px',
+    color: 'var(--ui-text-primary)',
+    fontSize: '0.8125rem',
+    padding: '4px 8px'
+  },
+  group: { color: 'var(--ui-text-primary)', fontSize: '0.9375rem', fontWeight: 600, margin: '12px 0 0' },
+  skill: {
+    alignItems: 'flex-start',
+    borderBottom: '1px solid var(--ui-stroke-tertiary)',
+    display: 'flex',
+    gap: '12px',
+    padding: '10px 0'
+  },
+  skillText: { display: 'flex', flex: 1, flexDirection: 'column', gap: '2px' },
+  sticky: {
+    alignItems: 'center',
+    background: 'var(--ui-bg-primary, transparent)',
+    borderTop: '1px solid var(--ui-stroke-tertiary)',
+    bottom: 0,
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+    padding: '10px 0',
+    position: 'sticky'
+  },
+  input: { maxWidth: '240px' }
 }
 
 function sleep(ctx, ms) {
@@ -313,11 +543,16 @@ async function handOffToAgent(ctx, text) {
   return false
 }
 
-/** Error code for a failed REST call: the transport's message starts with the HTTP status. */
-export function restErrorCode(error) {
-  const message = String(error?.message ?? error ?? '')
+/** HTTP status of a failed REST call (the transport's message starts with it), or null. */
+export function restStatus(error) {
+  const match = /^(\d{3})\b/.exec(String(error?.message ?? error ?? '').trim())
 
-  return /^404\b/.test(message.trim()) ? 'unknown_service' : 'unreachable'
+  return match ? Number(match[1]) : null
+}
+
+/** Error code for a failed Servicios REST call. */
+export function restErrorCode(error) {
+  return restStatus(error) === 404 ? 'unknown_service' : 'unreachable'
 }
 
 function ServiceRow({ ctx, entry, onChanged }) {
@@ -352,8 +587,31 @@ function ServiceRow({ ctx, entry, onChanged }) {
     }
   }
 
+  // The guided skill is activated in the active agent first (it is not in any
+  // template), so the new chat — a new conversation — sees it by its id.
   const install = async () => {
     setError(null)
+
+    if (!isValidSkillId(entry.skill)) {
+      setError(errorText('activation_failed'))
+
+      return
+    }
+
+    try {
+      const result = await ctx.rest(`${skillsPath(activeProfile())}/${entry.skill}`, { method: 'POST' })
+
+      if (!result?.ok) {
+        setError(errorText('activation_failed'))
+
+        return
+      }
+    } catch (failure) {
+      setError(errorText(restStatus(failure) === null ? 'unreachable' : 'activation_failed'))
+
+      return
+    }
+
     await handOffToAgent(ctx, installRequest(entry))
   }
 
@@ -486,12 +744,385 @@ function makeServiciosPage(ctx) {
   }
 }
 
+// --- Skills (F4-04) ----------------------------------------------------------
+
+const SKILLS_QUERY = ['plugin:janitor', 'skills']
+const AGENTS_QUERY = ['plugin:janitor', 'agentes']
+
+function ProfileSelect({ profiles, value, onChange, locked }) {
+  return jsxs('label', {
+    style: S.field,
+    children: [
+      jsx('span', { style: S.label, children: 'Agente' }),
+      jsx('select', {
+        'aria-label': 'Agente',
+        disabled: locked,
+        onChange: event => onChange(event.target.value),
+        style: S.select,
+        value,
+        children: profiles.map(p => jsx('option', { value: p.nombre, children: profileLabel(p) }, p.nombre))
+      }),
+      locked ? jsx('span', { style: S.meta, children: 'Guarda o descarta los cambios antes de cambiar de agente.' }) : null
+    ]
+  })
+}
+
+function SkillRow({ skill, onToggle, disabled }) {
+  return jsxs('div', {
+    style: S.skill,
+    children: [
+      jsxs('div', {
+        style: S.skillText,
+        children: [
+          jsx('span', { style: S.name, children: skill.label }),
+          jsx('p', { style: S.text, children: skill.description }),
+          skill.note ? jsx('p', { style: S.meta, children: skill.note }) : null
+        ]
+      }),
+      jsx(Switch, {
+        'aria-label': skill.label,
+        checked: skill.on,
+        disabled: disabled || skill.locked,
+        onCheckedChange: on => onToggle(skill.id, on === true)
+      })
+    ]
+  })
+}
+
+function makeSkillsPage(ctx) {
+  return function SkillsPage() {
+    const queryClient = useQueryClient()
+    const appProfile = useValue(host.state.profile)
+    const [chosenProfile, setChosenProfile] = useState(null)
+    const [draft, setDraft] = useState(null) // { profile, ids } while there are unsaved changes
+    const [saving, setSaving] = useState(false)
+    const [status, setStatus] = useState(null) // { kind: 'ok' | 'error', text }
+    const profile = chosenProfile ?? (isValidProfileName(appProfile) ? appProfile : MAIN_PROFILE)
+
+    const query = useQuery({
+      queryKey: [...SKILLS_QUERY, profile],
+      queryFn: () => ctx.rest(skillsPath(profile)),
+      retry: false
+    })
+
+    const payload = query.data
+    const saved = Array.isArray(payload?.activas) ? payload.activas : []
+    const selection = draft && draft.profile === profile ? draft.ids : saved
+    const dirty = !sameSelection(selection, saved)
+    const profiles = Array.isArray(payload?.perfiles) ? payload.perfiles : [{ nombre: profile, principal: profile === MAIN_PROFILE }]
+
+    const pickProfile = name => {
+      setDraft(null)
+      setStatus(null)
+      setChosenProfile(name)
+    }
+
+    const toggle = (id, on) => {
+      setStatus(null)
+      setDraft({ profile, ids: toggleSkill(selection, id, on) })
+    }
+
+    const save = async () => {
+      setSaving(true)
+      setStatus(null)
+
+      try {
+        const result = await ctx.rest(skillsPath(profile), { method: 'PUT', body: { skills: selection } })
+        queryClient.setQueryData([...SKILLS_QUERY, profile], result)
+        setDraft(null)
+        setStatus({
+          kind: 'ok',
+          text: 'Guardado. Se aplica en la próxima conversación de este agente; la que tengas abierta sigue igual.'
+        })
+      } catch (failure) {
+        setStatus({ kind: 'error', text: skillsErrorText(failure) })
+      } finally {
+        setSaving(false)
+      }
+    }
+
+    let body
+
+    if (query.isPending) {
+      body = jsx('p', { style: S.help, children: 'Leyendo las skills de este agente…' })
+    } else if (query.isError) {
+      body = jsx(ErrorState, {
+        title: 'No se pudieron leer las skills',
+        description: skillsErrorText(query.error),
+        children: jsx(Button, {
+          onClick: () => {
+            setChosenProfile(MAIN_PROFILE)
+            void queryClient.invalidateQueries({ queryKey: SKILLS_QUERY })
+          },
+          size: 'sm',
+          variant: 'secondary',
+          children: 'Volver al principal'
+        })
+      })
+    } else {
+      const groups = skillGroups(payload, selection)
+      const legacy = payload?.gestionado === false
+      const outside = Array.isArray(payload?.fuera_del_catalogo) ? payload.fuera_del_catalogo : []
+
+      body = jsxs('div', {
+        style: S.list,
+        children: [
+          legacy
+            ? jsx('p', {
+                style: S.note,
+                children:
+                  'Este agente todavía no usa el catálogo. Al guardar, verá solo las skills que marques aquí.'
+              })
+            : null,
+          outside.length
+            ? jsx('p', {
+                style: S.note,
+                children: `Tiene skills que ya no están en el catálogo y se quitarán al guardar: ${outside.join(', ')}.`
+              })
+            : null,
+          ...groups.flatMap(group => [
+            jsx('h2', { style: S.group, children: group.label }, `${group.id}-title`),
+            ...group.skills.map(skill => jsx(SkillRow, { disabled: saving, onToggle: toggle, skill }, skill.id))
+          ]),
+          jsxs('div', {
+            style: S.sticky,
+            children: [
+              jsx(Button, {
+                disabled: !dirty || saving,
+                loading: saving,
+                onClick: () => void save(),
+                size: 'sm',
+                variant: 'default',
+                children: 'Guardar'
+              }),
+              jsx(Button, {
+                disabled: !dirty || saving,
+                onClick: () => {
+                  setDraft(null)
+                  setStatus(null)
+                },
+                size: 'sm',
+                variant: 'ghost',
+                children: 'Descartar cambios'
+              }),
+              dirty ? jsx('span', { style: S.meta, children: 'Cambios sin guardar.' }) : null,
+              status
+                ? jsx('p', {
+                    role: status.kind === 'error' ? 'alert' : 'status',
+                    style: status.kind === 'error' ? S.error : S.ok,
+                    children: status.text
+                  })
+                : null
+            ]
+          })
+        ]
+      })
+    }
+
+    return jsx('div', {
+      style: S.scroll,
+      children: jsxs('div', {
+        style: S.page,
+        children: [
+          jsx('h1', { style: S.title, children: 'Skills' }),
+          jsx('p', {
+            style: S.lead,
+            children:
+              'Qué sabe hacer cada agente. Solo aparecen las skills del catálogo de Janitor: lo que no marques aquí, ' +
+              'ese agente no lo ve. Los cambios se aplican en la próxima conversación; la que tienes abierta no se toca.'
+          }),
+          jsx(ProfileSelect, { locked: dirty || saving, onChange: pickProfile, profiles, value: profile }),
+          body
+        ]
+      })
+    })
+  }
+}
+
+// --- Agentes (F4-05) ---------------------------------------------------------
+
+function TemplateCard({ ctx, template, existing, onCreated }) {
+  const [name, setName] = useState(template.id)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState(null)
+  const [created, setCreated] = useState(null)
+  const skills = (Array.isArray(template.skills) ? template.skills : []).map(id => skillInfo(id).label)
+
+  const create = async () => {
+    const problem = newAgentNameError(name, existing)
+    setCreated(null)
+
+    if (problem) {
+      setError(agentErrorText(problem))
+
+      return
+    }
+
+    setPending(true)
+    setError(null)
+
+    try {
+      const result = await ctx.rest('/agentes', {
+        method: 'POST',
+        body: { plantilla: template.id, nombre: name },
+        timeoutMs: 150_000
+      })
+
+      if (result?.ok) {
+        setCreated(result.agente)
+        onCreated()
+      } else {
+        setError(agentErrorText(result?.error))
+      }
+    } catch {
+      setError(agentErrorText('unreachable'))
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return jsxs('section', {
+    style: S.row,
+    'aria-label': template.nombre,
+    children: [
+      jsx('span', { style: S.name, children: template.nombre }),
+      jsx('p', { style: S.text, children: template.descripcion }),
+      skills.length ? jsx('p', { style: S.meta, children: `Skills: ${skills.join(', ')}.` }) : null,
+      jsxs('div', {
+        style: S.actions,
+        children: [
+          jsx('span', { style: S.label, children: 'Nombre' }),
+          jsx(Input, {
+            'aria-label': `Nombre del agente ${template.nombre}`,
+            disabled: pending,
+            onChange: event => {
+              setName(event.target.value)
+              setError(null)
+            },
+            style: S.input,
+            value: name
+          }),
+          jsx(Button, {
+            disabled: pending,
+            loading: pending,
+            onClick: () => void create(),
+            size: 'sm',
+            variant: 'default',
+            children: 'Crear'
+          })
+        ]
+      }),
+      pending ? jsx('p', { role: 'status', style: S.meta, children: 'Creando el agente…' }) : null,
+      error ? jsx('p', { role: 'alert', style: S.error, children: error }) : null,
+      created
+        ? jsxs('div', {
+            style: S.actions,
+            children: [
+              jsx('p', { role: 'status', style: S.ok, children: createdText(created) }),
+              jsx(Button, {
+                onClick: () => host.newChat(created.nombre),
+                size: 'sm',
+                variant: 'secondary',
+                children: 'Abrir un chat con él'
+              })
+            ]
+          })
+        : null
+    ]
+  })
+}
+
+function makeAgentsPage(ctx) {
+  return function AgentsPage() {
+    const queryClient = useQueryClient()
+
+    const query = useQuery({
+      queryKey: AGENTS_QUERY,
+      queryFn: () => ctx.rest('/agentes'),
+      retry: false
+    })
+
+    const refresh = () => {
+      void queryClient.invalidateQueries({ queryKey: AGENTS_QUERY })
+      void queryClient.invalidateQueries({ queryKey: SKILLS_QUERY })
+    }
+
+    const payload = query.data
+    const templates = Array.isArray(payload?.plantillas) ? payload.plantillas : []
+    const profiles = Array.isArray(payload?.perfiles) ? payload.perfiles : []
+    const existing = profiles.map(p => p.nombre)
+
+    let body
+
+    if (query.isPending) {
+      body = jsx('p', { style: S.help, children: 'Leyendo plantillas y agentes…' })
+    } else if (query.isError && !payload) {
+      body = jsx(ErrorState, {
+        title: 'No se pudieron leer los agentes',
+        description: agentErrorText('unreachable'),
+        children: jsx(Button, { onClick: refresh, size: 'sm', variant: 'secondary', children: 'Reintentar' })
+      })
+    } else {
+      body = jsxs('div', {
+        style: S.list,
+        children: [
+          jsx('h2', { style: S.group, children: 'Plantillas' }),
+          ...templates.map(template =>
+            jsx(TemplateCard, { ctx, existing, onCreated: refresh, template }, template.id)
+          ),
+          jsx('h2', { style: S.group, children: 'Agentes que ya tienes' }),
+          ...profiles.map(p =>
+            jsxs(
+              'div',
+              {
+                style: S.skill,
+                children: [
+                  jsx('span', { style: { ...S.name, flex: 1 }, children: profileLabel(p) }),
+                  typeof p.skills === 'number'
+                    ? jsx('span', { style: S.meta, children: `${p.skills} skills` })
+                    : jsx('span', { style: S.meta, children: 'sin catálogo' })
+                ]
+              },
+              p.nombre
+            )
+          )
+        ]
+      })
+    }
+
+    return jsx('div', {
+      style: S.scroll,
+      children: jsxs('div', {
+        style: S.page,
+        children: [
+          jsx('h1', { style: S.title, children: 'Agentes' }),
+          jsx('p', {
+            style: S.lead,
+            children:
+              'Especialistas creados desde una plantilla. Cada uno nace con la personalidad de Janitor, su rol, ' +
+              'sus skills y la memoria vacía: no comparte memoria con el principal, que es quien te conoce.'
+          }),
+          body,
+          jsx('p', {
+            style: S.help,
+            children:
+              'Sus skills se cambian en la pantalla Skills. Esta pantalla no borra agentes: eso se hace desde los ' +
+              'perfiles de la app, a propósito.'
+          })
+        ]
+      })
+    })
+  }
+}
+
 export default {
   id: PLUGIN_ID,
   name: 'Janitor',
-  description: 'Pantalla Servicios: estado de los aplicativos opcionales de Janitor.',
+  description: 'Pantallas Servicios, Skills y Agentes de Janitor.',
   register(ctx) {
     const ServiciosPage = makeServiciosPage(ctx)
+    const SkillsPage = makeSkillsPage(ctx)
+    const AgentsPage = makeAgentsPage(ctx)
 
     ctx.registerMany([
       {
@@ -514,6 +1145,50 @@ export default {
           label: 'Abrir Servicios',
           keywords: ['servicios', 'aplicativos', 'docker', 'honcho', 'n8n', 'whatsapp', 'waha'],
           run: () => host.navigate(PAGE_PATH)
+        }
+      },
+      {
+        id: 'skills-page',
+        area: ROUTES_AREA,
+        data: { path: SKILLS_PATH },
+        render: () => jsx(SkillsPage, {})
+      },
+      {
+        id: 'skills-nav',
+        area: SIDEBAR_NAV_AREA,
+        order: 61,
+        data: { codicon: 'extensions', label: 'Skills', path: SKILLS_PATH }
+      },
+      {
+        id: 'skills-open',
+        area: PALETTE_AREA,
+        data: {
+          id: 'janitor.skills.open',
+          label: 'Abrir Skills',
+          keywords: ['skills', 'habilidades', 'catálogo', 'agente'],
+          run: () => host.navigate(SKILLS_PATH)
+        }
+      },
+      {
+        id: 'agentes-page',
+        area: ROUTES_AREA,
+        data: { path: AGENTS_PATH },
+        render: () => jsx(AgentsPage, {})
+      },
+      {
+        id: 'agentes-nav',
+        area: SIDEBAR_NAV_AREA,
+        order: 62,
+        data: { codicon: 'organization', label: 'Agentes', path: AGENTS_PATH }
+      },
+      {
+        id: 'agentes-open',
+        area: PALETTE_AREA,
+        data: {
+          id: 'janitor.agentes.open',
+          label: 'Abrir Agentes',
+          keywords: ['agentes', 'plantillas', 'especialista', 'investigador', 'perfil'],
+          run: () => host.navigate(AGENTS_PATH)
         }
       }
     ])

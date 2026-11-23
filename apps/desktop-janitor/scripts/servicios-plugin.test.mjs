@@ -1,4 +1,5 @@
-// F4-02: the Janitor desktop plugin (Servicios screen). The plugin ships as a
+// F4-02, F4-04, F4-05: the Janitor desktop plugin (Servicios, Skills and
+// Agentes screens). The plugin ships as a
 // runtime disk plugin seeded by janitor/desktop_plugin; it is not part of the
 // build layer, but its pure logic is tested here so the desktop-overlay CI job
 // (which runs build.test.mjs) covers it.
@@ -23,6 +24,7 @@ const STUBS = {
   '@hermes/plugin-sdk': dataUrl(`
     export const calls = { navigate: [], newChat: 0 }
     export const host = {
+      state: { profile: { get: () => 'default' } },
       navigate: p => calls.navigate.push(p),
       newChat: () => { calls.newChat += 1 },
       notify: () => {},
@@ -34,8 +36,11 @@ const STUBS = {
     export const Badge = () => null
     export const Button = () => null
     export const ErrorState = () => null
+    export const Input = () => null
+    export const Switch = () => null
     export const useQuery = () => ({})
     export const useQueryClient = () => ({})
+    export const useValue = atom => atom.get()
   `),
   react: dataUrl('export const useState = v => [v, () => {}]; export default {}'),
   'react/jsx-runtime': dataUrl('export const jsx = (t, p) => ({ t, p }); export const jsxs = (t, p) => ({ t, p })')
@@ -71,7 +76,7 @@ test('plugin.js imports only what the desktop runtime loader provides', () => {
   assert.deepEqual([...new Set(requested)].filter(s => !(s in STUBS)), [])
 })
 
-test('the plugin registers the Servicios page, its sidebar entry and a palette command on one path', () => {
+test('the plugin registers each page with its sidebar entry and palette command on one path', () => {
   const contributions = []
   const ctx = {
     register: c => contributions.push(c),
@@ -85,16 +90,24 @@ test('the plugin registers the Servicios page, its sidebar entry and a palette c
   assert.notEqual(plugin.default.defaultEnabled, false)
   plugin.default.register(ctx)
 
-  const byArea = Object.fromEntries(contributions.map(c => [c.area, c]))
-  const route = byArea[sdk.ROUTES_AREA]
-  const nav = byArea[sdk.SIDEBAR_NAV_AREA]
-  const palette = byArea[sdk.PALETTE_AREA]
+  const routes = contributions.filter(c => c.area === sdk.ROUTES_AREA)
+  const navs = contributions.filter(c => c.area === sdk.SIDEBAR_NAV_AREA)
+  const palette = contributions.filter(c => c.area === sdk.PALETTE_AREA)
 
-  assert.equal(typeof route.render, 'function')
-  assert.equal(nav.data.path, route.data.path)
-  assert.equal(nav.data.label, 'Servicios')
-  palette.data.run()
-  assert.deepEqual(sdk.calls.navigate, [route.data.path])
+  assert.deepEqual(navs.map(n => n.data.label), ['Servicios', 'Skills', 'Agentes'])
+  assert.equal(new Set(routes.map(r => r.data.path)).size, 3)
+
+  for (const nav of navs) {
+    const route = routes.find(r => r.data.path === nav.data.path)
+    assert.equal(typeof route?.render, 'function', nav.data.label)
+  }
+
+  for (const command of palette) {
+    command.data.run()
+  }
+
+  assert.deepEqual(sdk.calls.navigate, navs.map(n => n.data.path))
+  assert.equal(new Set(contributions.map(c => c.id)).size, contributions.length)
 })
 
 test('each state maps to a badge and only the buttons that make sense for it', () => {
@@ -134,16 +147,12 @@ test('a running container is not a working service: health decides the badge and
   assert.equal(entry.health, 'not_responding')
 })
 
-test('the install hand-off names the guided skill and asks for confirmation, without sending anything', () => {
-  const text = plugin.installRequest({
-    label: 'Honcho',
-    skill: 'janitor-honcho',
-    skillMd: '/opt/janitor/skills/services/janitor-honcho/SKILL.md'
-  })
+test('the install hand-off names the guided skill by id, carries no path and asks for confirmation', () => {
+  const text = plugin.installRequest({ label: 'Honcho', skill: 'janitor-honcho' })
 
   assert.match(text, /Honcho/)
   assert.match(text, /janitor-honcho/)
-  assert.match(text, /\/opt\/janitor\/skills\/services\/janitor-honcho\/SKILL\.md/)
+  assert.doesNotMatch(text, /\//)
   assert.match(text, /confirmación antes de cambiar nada/)
   assert.doesNotMatch(text, /hermes/i)
 })
@@ -162,10 +171,10 @@ test('entries keep backend services and stateless applications, with the WAHA pr
   const entries = plugin.entriesFrom({
     docker: { available: true, status: 'ok' },
     services: [
-      { name: 'waha', skill: 'janitor-waha', skill_md: '/x/SKILL.md', url: 'http://127.0.0.1:3000', state: 'running', containers: [{ name: 'janitor-waha', state: 'running' }] },
-      { name: 'future', skill: 'janitor-future', skill_md: '', url: '', state: 'stopped', containers: [] }
+      { name: 'waha', skill: 'janitor-waha', url: 'http://127.0.0.1:3000', state: 'running', containers: [{ name: 'janitor-waha', state: 'running' }] },
+      { name: 'future', skill: 'janitor-future', url: '', state: 'stopped', containers: [] }
     ],
-    unmanaged: [{ skill: 'janitor-opendesign', skill_md: '/y/SKILL.md' }]
+    unmanaged: [{ skill: 'janitor-opendesign' }]
   })
 
   const [waha, future, design] = entries
@@ -201,4 +210,122 @@ test('REST failures map to an inline error code', () => {
   assert.equal(plugin.restErrorCode(new Error('fetch failed')), 'unreachable')
   assert.equal(plugin.isOpenableUrl('http://127.0.0.1:1973'), true)
   assert.equal(plugin.isOpenableUrl('file:///etc/passwd'), false)
+})
+
+// --- Skills (F4-04) and Agentes (F4-05) ---------------------------------------
+
+const CATALOG_FILE = path.resolve(HERE, '..', '..', '..', 'janitor', 'catalog.yaml')
+const { readFileSync } = await import('node:fs')
+const catalogIds = [...readFileSync(CATALOG_FILE, 'utf8').matchAll(/^ {2}- id: (\S+)\s*$/gm)].map(m => m[1])
+
+test('every catalog skill has Spanish copy: the English SKILL.md text is never needed', () => {
+  assert.ok(catalogIds.length > 10)
+
+  for (const id of catalogIds) {
+    const info = plugin.skillInfo(id)
+    assert.ok(info.label, id)
+    assert.notEqual(info.description, 'Skill del catálogo de Janitor.', `${id} has no Spanish description`)
+  }
+
+  assert.equal(plugin.skillInfo('nueva-de-upstream').description, 'Skill del catálogo de Janitor.')
+})
+
+test('the skills screen shows the backend groups with the local selection; another OS can only be switched off', () => {
+  const payload = {
+    propositos: [
+      {
+        id: 'documentos',
+        nombre: 'Documentos y oficina',
+        skills: [
+          { id: 'pdf', disponible: true, otra_plataforma: false, plataformas: [], descripcion: 'PDF files: create, read' },
+          { id: 'docx', disponible: true, otra_plataforma: false, plataformas: [] }
+        ]
+      },
+      {
+        id: 'opcional',
+        nombre: 'Opcionales',
+        skills: [
+          { id: 'apple-notes', disponible: false, otra_plataforma: true, plataformas: ['macos'] },
+          { id: 'findmy', disponible: false, otra_plataforma: true, plataformas: ['macos'] }
+        ]
+      }
+    ]
+  }
+
+  const [docs, optional] = plugin.skillGroups(payload, ['docx', 'findmy'])
+
+  assert.equal(docs.label, 'Documentos y oficina')
+  assert.deepEqual(docs.skills.map(s => [s.id, s.on]), [['pdf', false], ['docx', true]])
+  assert.doesNotMatch(docs.skills[0].description, /create, read/)
+  assert.deepEqual(optional.skills.map(s => [s.id, s.locked]), [['apple-notes', true], ['findmy', false]])
+  assert.equal(optional.skills[0].note, 'Solo en macOS.')
+})
+
+test('toggling keeps order and a selection compares as a set', () => {
+  assert.deepEqual(plugin.toggleSkill(['a', 'b'], 'c', true), ['a', 'b', 'c'])
+  assert.deepEqual(plugin.toggleSkill(['a', 'b', 'c'], 'b', false), ['a', 'c'])
+  assert.deepEqual(plugin.toggleSkill(['a'], 'a', true), ['a'])
+  assert.equal(plugin.sameSelection(['a', 'b'], ['b', 'a']), true)
+  assert.equal(plugin.sameSelection(['a'], ['a', 'b']), false)
+})
+
+test('profile names and skill ids never leave the plugin namespace', () => {
+  assert.equal(plugin.skillsPath('default'), '/perfiles/default/skills')
+  assert.equal(plugin.skillsPath('lupa_2'), '/perfiles/lupa_2/skills')
+
+  for (const bad of ['', '..', '../x', 'a/b', 'A', '-x', 'x'.repeat(65), null, 'a b', 'a?b']) {
+    assert.throws(() => plugin.skillsPath(bad), String(bad))
+  }
+
+  for (const id of catalogIds) {
+    assert.equal(plugin.isValidSkillId(id), true, id)
+  }
+
+  for (const bad of ['', '..', '../pdf', 'a/b', 'PDF', '/etc']) {
+    assert.equal(plugin.isValidSkillId(bad), false, bad)
+  }
+})
+
+test('new agent names follow the backend rules', () => {
+  for (const ok of ['lupa', 'lupa-2', 'mi_agente', 'x'.repeat(64)]) {
+    assert.equal(plugin.newAgentNameError(ok, ['default']), null, ok)
+  }
+
+  for (const bad of ['', 'Lupa', '../lupa', 'lupa/x', 'default', 'hermes', '-x', 'a b', null, 7, 'x'.repeat(65)]) {
+    assert.equal(plugin.newAgentNameError(bad, []), 'nombre_invalido', String(bad))
+  }
+
+  assert.equal(plugin.newAgentNameError('lupa', ['default', 'lupa']), 'existe')
+})
+
+test('agents read as people: the main one is Janitor, specialists carry their template', () => {
+  assert.equal(plugin.profileLabel({ nombre: 'default', principal: true }), 'Janitor (principal)')
+  assert.equal(plugin.profileLabel({ nombre: 'lupa', plantilla: 'investigador' }), 'lupa · Investigador')
+  assert.equal(plugin.profileLabel({ nombre: 'suelto', plantilla: null }), 'suelto')
+})
+
+test('save and create failures read as Spanish lines, and the created line mentions credentials without values', () => {
+  assert.equal(plugin.restStatus(new Error('400: invalid skills')), 400)
+  assert.equal(plugin.restStatus(new Error('fetch failed')), null)
+  assert.match(plugin.skillsErrorText(new Error('404: unknown profile')), /ya no existe/)
+  assert.match(plugin.skillsErrorText(new Error('boom')), /No se guardó nada/)
+  assert.match(plugin.agentErrorText('existe'), /No se sobrescribe/)
+  assert.equal(plugin.agentErrorText('algo-nuevo'), plugin.agentErrorText('fallo'))
+  assert.match(plugin.createdText({ nombre: 'lupa', credenciales: true }), /memoria vacía/)
+  assert.match(plugin.createdText({ nombre: 'lupa', credenciales: false }), /configúralas/)
+})
+
+test('Skills and Agentes copy never says Hermes', () => {
+  const texts = [
+    ...catalogIds.flatMap(id => Object.values(plugin.skillInfo(id))),
+    ...['nombre_invalido', 'existe', 'plantilla_desconocida', 'tiempo_agotado', 'fallo', 'unreachable'].map(plugin.agentErrorText),
+    ...['400: x', '404: x', 'x'].map(m => plugin.skillsErrorText(new Error(m))),
+    plugin.createdText({ nombre: 'a', credenciales: true }),
+    plugin.createdText({ nombre: 'a', credenciales: false }),
+    plugin.errorText('activation_failed')
+  ]
+
+  for (const text of texts) {
+    assert.doesNotMatch(text, /hermes/i, text)
+  }
 })

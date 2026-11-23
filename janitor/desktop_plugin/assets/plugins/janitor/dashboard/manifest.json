@@ -1,7 +1,7 @@
 {
   "name": "janitor",
   "label": "Janitor",
-  "description": "Backend de la pantalla Servicios de la app de escritorio de Janitor.",
+  "description": "Backend de las pantallas Servicios, Skills y Agentes de la app de escritorio de Janitor.",
   "version": "1.0.0",
   "tab": { "path": "/janitor", "hidden": true },
   "entry": "dist/index.js",

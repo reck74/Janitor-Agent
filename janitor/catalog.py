@@ -14,7 +14,7 @@ Janitor home) run the same reconciliation.
 
 Import-light on purpose (stdlib + PyYAML): the launcher and the seed call it
 before Hermes is configured, and ``hermes_cli.config`` is imported only inside
-:func:`apply`, the same way ``janitor.migrations.v1`` does.
+:func:`apply`.
 
     python -m janitor.catalog list
     python -m janitor.catalog check
@@ -481,6 +481,53 @@ def apply(home: Path, *, catalog: Optional[Catalog] = None, platform: Optional[s
     header = _leading_comments(path.read_text(encoding="utf-8"))
     _atomic_write(path, dump_config(new, header))
     result.changed = True
+    return result
+
+
+def read_selection(home: Path) -> Optional[List[str]]:
+    """``janitor.skills`` of ``home/config.yaml``; None when the profile does not use the catalog."""
+    path = Path(home).expanduser() / "config.yaml"
+    if not path.is_file():
+        return None
+    config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    janitor_cfg = config.get("janitor") if isinstance(config, dict) else None
+    if not isinstance(janitor_cfg, dict) or SKILLS_KEY not in janitor_cfg:
+        return None
+    return _id_list(janitor_cfg.get(SKILLS_KEY))
+
+
+def set_selection(home: Path, ids: Sequence[str], *, catalog: Optional[Catalog] = None,
+                  platform: Optional[str] = None) -> ApplyResult:
+    """Make ``ids`` the ``janitor.skills`` of ``home`` and regenerate ``external_dirs``, in one write.
+
+    The same result as writing the list and running :func:`apply`. Every id
+    must be a catalog id (``KeyError`` otherwise, nothing written); the profile
+    needs a readable ``config.yaml`` (``FileNotFoundError`` otherwise). A
+    profile that did not use the catalog yet becomes catalog-managed.
+    """
+    home = Path(home).expanduser()
+    path = home / "config.yaml"
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    catalog = catalog or load_catalog()
+    selected = _id_list(list(ids))
+    unknown = [sid for sid in selected if sid not in catalog.by_id()]
+    if unknown:
+        raise KeyError(", ".join(unknown))
+    from hermes_cli.config import require_readable_config_before_write
+
+    config = require_readable_config_before_write(path)
+    wanted = copy.deepcopy(config)
+    janitor_cfg = wanted.get("janitor")
+    if not isinstance(janitor_cfg, dict):
+        janitor_cfg = wanted["janitor"] = {}
+    janitor_cfg[SKILLS_KEY] = selected
+    new, result = reconcile_config(wanted, home, catalog=catalog, platform=platform)
+    _log_result(result, path)
+    if new != config:
+        header = _leading_comments(path.read_text(encoding="utf-8"))
+        _atomic_write(path, dump_config(new, header))
+        result.changed = True
     return result
 
 

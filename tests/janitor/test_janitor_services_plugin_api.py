@@ -147,7 +147,8 @@ def test_lists_exactly_the_discovered_services(docker, services_root):
     assert sorted(_by_name(view)) == [s.name for s in services.discover_services(services_root)]
     beta = _by_name(view)["beta"]
     assert beta["skill"] == "janitor-beta"
-    assert beta["skill_md"] == str(services_root / "janitor-beta" / "SKILL.md")
+    # The screen gets the catalog id of the guided skill, never a path (F4-04).
+    assert not any("/" in str(v) for k, v in beta.items() if k != "url" and isinstance(v, str))
     assert [c["name"] for c in beta["containers"]] == ["janitor-beta-api", "janitor-beta-db"]
 
 
@@ -156,6 +157,10 @@ def test_shipped_services_are_all_listed(docker):
     assert sorted(_by_name(view)) == sorted(s.name for s in services.discover_services())
     managed = {s["skill"] for s in view["services"]}
     assert not managed & {a["skill"] for a in view["unmanaged"]}
+    # «Instalar con Janitor» activates the guided skill by catalog id.
+    from janitor import catalog as cat
+
+    assert managed | {a["skill"] for a in view["unmanaged"]} <= set(cat.load_catalog().by_id())
 
 
 @pytest.mark.parametrize(
@@ -488,4 +493,5 @@ def test_seed_delivers_a_plugin_hermes_mounts_and_loads(tmp_path, monkeypatch):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     paths = {route.path for route in module.router.routes}
-    assert paths == {"/servicios", "/servicios/{name}/start", "/servicios/{name}/stop"}
+    assert {"/servicios", "/servicios/{name}/start", "/servicios/{name}/stop",
+            "/perfiles/{perfil}/skills", "/perfiles/{perfil}/skills/{skill}", "/agentes"} == paths
