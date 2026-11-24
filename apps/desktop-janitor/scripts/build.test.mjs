@@ -80,6 +80,17 @@ test('every overlay source exists; a target is either still shipped upstream or 
   }
 })
 
+// F1-21f: the release page links one file name for every version
+// (…/releases/latest/download/<name>), so the name cannot carry a version.
+test('the packaged artifact name is the same for every version', () => {
+  const name = janitorBuilderConfig().artifactName
+
+  assert.ok(name.startsWith('Janitor-'), name)
+  assert.doesNotMatch(name, /\$\{(version|buildVersion|buildNumber)\}/)
+  assert.match(name, /\$\{os\}/)
+  assert.match(name, /\$\{arch\}/)
+})
+
 test('applyOverlay restores every touched file', () => {
   const appDir = fs.mkdtempSync(path.join(os.tmpdir(), 'janitor-overlay-app-'))
 

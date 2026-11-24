@@ -2,7 +2,7 @@
   "appId": "ai.janitor.desktop",
   "productName": "Janitor",
   "executableName": "Janitor",
-  "artifactName": "Janitor-${version}-${os}-${arch}.${ext}",
+  "artifactName": "Janitor-${os}-${arch}.${ext}",
   "icon": "assets/janitor-icon.png",
   "extraMetadata": {
     "productName": "Janitor",

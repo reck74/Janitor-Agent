@@ -41,6 +41,11 @@ jobs:
         with:
           node-version: '26'
           cache: npm
+      # A release is found by its tag (`v` + the version the user sees): refuse a
+      # tag that disagrees with pyproject.toml before building anything.
+      - name: Tag matches the version
+        if: github.ref_type == 'tag'
+        run: python3 -m janitor.release_channel --check-tag "$GITHUB_REF_NAME"
       - name: Install npm 12
         run: npm install --global npm@12.2.2
       - name: Install dependencies
