@@ -12,9 +12,11 @@
 
 ## 0. Estado al cierre del 2026-11-23 y cómo retomar
 
-**Dónde está todo.** `janitor-app/fase-1` está **fusionada en `main`** desde el 2026-11-24:
-[reck74/Janitor-Agent#91](https://github.com/reck74/Janitor-Agent/pull/91), commit de merge
-`50212e2832`. El árbol de `main` es idéntico al de la rama. El trabajo siguiente parte de `main`.
+**Dónde está todo.** `janitor-app/fase-1` está **fusionada en `main`** desde el 2026-11-24
+([#91](https://github.com/reck74/Janitor-Agent/pull/91), merge `50212e2832`). El trabajo
+posterior (canal `stable`, base sin navegador, páginas de Hermes ocultas, línea gráfica) está
+en la rama `janitor-app/plan-tras-merge`, con PR abierto y **sin fusionar**:
+[reck74/Janitor-Agent#92](https://github.com/reck74/Janitor-Agent/pull/92).
 
 **Qué está hecho.** Fases 1 a 4 y el retiro de lo antiguo (F5-02), en código y pruebas. La
 instalación real de punta a punta funciona desde un home vacío con la app compilada en
@@ -31,7 +33,7 @@ todo aceptación en uso real. Los bloques C y D corren en paralelo al camino cr�
 | A1 | ~~Revisar y fusionar el PR #91~~ **Hecho el 2026-11-24** (`50212e2832`). `main` ya contiene la app; el aviso falso de actualización de F1-27 queda por ver en la instalación de A4 | F1-27 (falta aceptación) | — |
 | A2 | ~~Decisiones que cambian lo que se publica~~ **Tomadas el 2026-11-24** ([2.10](#210-qué-lleva-la-primera-versión-publicada-decidido-el-2026-11-24)): canal por versiones etiquetadas, base sin navegador, páginas de Hermes ocultas. El color quedó resuelto con la línea gráfica (F1-18) | sección 9 | — |
 | A2b | ~~Implementar esas tres decisiones~~ **Hechas el 2026-11-24** (F1-28, F1-29, F1-30), en código y pruebas | — | — |
-| A3 | Workflow de release (nombre estable del AppImage, etiqueta = versión) y **primera etiqueta `v…`**, que publica el AppImage por primera vez y crea la rama `stable`. Antes: integrar la rama `janitor-app/plan-tras-merge` en `main` (la etiqueta debe ser un commit de `main`). La etiqueta la ordena el dueño | F1-21f, F1-11 | PR de `janitor-app/plan-tras-merge` |
+| A3 | Workflow de release (nombre estable del AppImage, etiqueta = versión) y **primera etiqueta `v…`**, que publica el AppImage por primera vez y crea la rama `stable`. Antes: fusionar [reck74/Janitor-Agent#92](https://github.com/reck74/Janitor-Agent/pull/92) (rama `janitor-app/plan-tras-merge`; la etiqueta debe ser un commit de `main`). La etiqueta la ordena el dueño | F1-21f, F1-11 | PR #92, el dueño |
 | A4 | Una sola sesión **con escritorio** y una clave, sobre el AppImage publicado: elegir proveedor y chatear, abrir el TUI con `janitor`, ver el aviso de app vieja (el diálogo nativo no se pudo ver sin pantalla), los fallos (sin red, corte a medias, reparación), la memoria con MiniMax en sus cuatro casos, y chatear con un especialista y con una skill recién activada | F1-15, F1-25, restos de F4-04 y F4-05 | A3 y una clave del dueño |
 | A5 | Segunda etiqueta y actualización real de una versión publicada a la siguiente con un gateway en marcha, desde la app, el terminal y Telegram | F1-21g (y la aceptación de F1-09, F1-12, F1-17, F1-20) | A3 |
 
@@ -74,8 +76,9 @@ todo aceptación en uso real. Los bloques C y D corren en paralelo al camino cr�
   (un archivo de pruebas sale «CRASHED» y a solas pasa). No es memoria. Causa sin
   identificar; pista sin comprobar: `scripts/run_tests_parallel.py::_kill_tree` hace
   `os.killpg(…, SIGKILL)` al terminar cada archivo.
-- `gh` solo está autenticado en el terminal del dueño (variable `GH_TOKEN`), no en el
-  shell de los agentes: los registros de CI y el PR se manejaron desde ese terminal.
+- `gh` está autenticado también en el shell de los agentes desde el 2026-11-24 (cuenta
+  `reck74`, permisos `repo` y `workflow`). Fusionar a `main`, etiquetar y tocar `stable`
+  siguen siendo órdenes del dueño.
 - En el equipo hay un `~/.janitor` real de la instalación antigua, con un gateway y
   contenedores `janitor-*` en marcha. Ninguna prueba lo toca.
 
@@ -635,6 +638,7 @@ Windows y macOS (firma de código). WhatsApp como canal.
 | 2026-11-24 | Claude (orquestador), aprobado por el dueño | **F1-18: línea gráfica de la app.** Búsqueda en la historia: la app perdió su aspecto en `afdaa0d7a1` (2026-10-21), que devolvió `apps/desktop/` a upstream y solo llevó a la capa de construcción el icono y el fondo; el banner `janitor-logo-banner.png` se recuperó de `afdaa0d7a1^`. Cambio, solo en `apps/desktop-janitor/`: `brand/theme.mjs` (el preset usa `completion_menu_bg` como fondo y `ui_primary` como principal; parches `P12-look-banner-import` y `P12-look-banner` sobre `intro.tsx`), `scripts/build.mjs` (el banner como archivo copiado; `FORK_ONLY_TARGETS`) y el asset. Evidencia: `node apps/desktop-janitor/scripts/build.mjs --check` → 224/224; `node --test apps/desktop-janitor/scripts/*.test.mjs` → 243/243 tras reescribir dos pruebas que describían el aspecto anterior (tema = salida exacta del conversor; todo destino existe en upstream); `python -m janitor.overlay check` limpio; `build.mjs --linux --dir` compiló y dejó `apps/desktop/` sin cambios; app abierta sin pantalla con `HERMES_DESKTOP_HERMES_ROOT` y un home temporal, cinco capturas. Sin revisor distinto. Sin ver: chat con mensajes, diálogos, errores. Quedan dos decisiones nuevas en la sección 9 (nombre visible y frase bajo el banner) |
 | 2026-11-24 | Claude (orquestador) | **F1-29 y F1-30.** F1-29: `SKIP_BROWSER=true` por defecto y `--with-browser` en `scripts/install.sh`, cuatro avisos traducidos, touchpoint actualizado, dos pruebas nuevas. F1-30: cuatro parches P18. Evidencia: `scripts/run_tests.sh tests/janitor/` → 39 archivos, 676 pasan, 0 fallan, y `test_janitor_backend_i18n.py` salió CRASHED (el SIGKILL externo ya conocido); a solas, 16/16. `node --test apps/desktop-janitor/scripts/*.test.mjs` → 243/243; `build.mjs --check` → 228/228; overlay check limpio; `build.mjs --linux --dir` compila y deja `apps/desktop/` sin cambios; app abierta sin pantalla, capturas de Capacidades. Sin revisor distinto. **F1-28 sin empezar**, con un hallazgo de lectura: el canal no es un solo punto. Siguen `main` por separado `janitor/update_core.py` (por defecto), la sonda del banner (`hermes_cli/banner.py::_check_via_local_git`, `"main"` fijo, por la API de GitHub), la app (`electron/main.ts`: `DEFAULT_UPDATE_BRANCH` y `resolveHealedBranch`, que vuelve a `main`) y el sello de compilación (el workflow pone `GITHUB_REF_NAME=main` en una etiqueta porque «a tag is not a branch the installer or the updater can track»). Además `_github_compare` consulta `nousresearch/hermes-agent` fijo para listar los cambios pendientes |
 | 2026-11-24 | Dos subagentes Opus (alcances disjuntos), auditado por el orquestador | **F1-28: canal por versiones etiquetadas, con la rama `stable`** (commit `388eef255c`). El orquestador dejó la base en `janitor/release_channel.py` y `update_core.py`; un subagente hizo el motor (touchpoint `update-channel`, lanzador, plugin, pruebas) y otro la app (P19), el workflow y `install.sh`. Auditoría: diffs leídos y verificaciones repetidas por el orquestador con todo junto: `scripts/run_tests.sh tests/janitor/` → 39 archivos, 696 pasan, 0 fallan; `tests/hermes_cli/test_banner*.py` + `test_update_check.py` (upstream) → 13 pasan; `node --test apps/desktop-janitor/scripts/*.test.mjs` → 246/246; `build.mjs --check` → 235/235; overlay check y catalog check limpios; `build.mjs --linux --dir` compila, deja `apps/desktop/` sin cambios y la app arranca sin pantalla. El subagente del motor hizo una prueba de mutación (volver el valor por defecto a `main` hace fallar 6 pruebas). Pruebas nuevas con repos git reales: un merge a `main` no se anuncia; una versión publicada se anuncia y se instala; sin `stable` en origin el motor se queda como está. **No verificado:** el workflow (necesita una etiqueta) y todo lo que el estado de F1-28 lista como riesgo |
+| 2026-11-24 | Claude (orquestador), a petición del dueño | PR abierto para integrar `janitor-app/plan-tras-merge` en `main`: `reck74/Janitor-Agent#92`, seis commits, fusionable según GitHub. Su descripción lista lo verificado y lo que no. El dueño inició sesión de `gh` para los agentes (`env -u GH_TOKEN gh auth login -s workflow`) |
 
 ## 9. Decisiones pendientes del dueño
 
