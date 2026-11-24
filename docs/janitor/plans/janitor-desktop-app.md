@@ -12,30 +12,46 @@
 
 ## 0. Estado al cierre del 2026-11-23 y cómo retomar
 
-**Dónde está todo.** Rama `janitor-app/fase-1`, publicada en `origin` y con PR abierto
-contra `main`: [reck74/Janitor-Agent#91](https://github.com/reck74/Janitor-Agent/pull/91),
-listo para revisión y **sin fusionar**. `Janitor CI` pasó en todos los jobs (Python,
-instalación mínima, TUI, web, capa de construcción, macOS y Windows) antes de abrir el PR.
+**Dónde está todo.** `janitor-app/fase-1` está **fusionada en `main`** desde el 2026-11-24:
+[reck74/Janitor-Agent#91](https://github.com/reck74/Janitor-Agent/pull/91), commit de merge
+`50212e2832`. El árbol de `main` es idéntico al de la rama. El trabajo siguiente parte de `main`.
 
 **Qué está hecho.** Fases 1 a 4 y el retiro de lo antiguo (F5-02), en código y pruebas. La
 instalación real de punta a punta funciona desde un home vacío con la app compilada en
 local. El detalle por tarea está en el [tablero](#5-tablero-de-tareas); la evidencia, en la
 [bitácora](#8-bitácora).
 
-**Qué sigue, en orden.**
+**Qué sigue, por prioridad** (reordenado el 2026-11-24 con el dueño). Lo pendiente es casi
+todo aceptación en uso real. Los bloques C y D corren en paralelo al camino crítico.
 
-| # | Paso | Depende de |
-|---|---|---|
-| 1 | Revisar y fusionar el PR #91. Resuelve F1-27: hoy una instalación hecha desde la rama se actualiza contra `main`, que es más antiguo | el dueño |
-| 2 | F1-21f: workflow de release (nombre estable del AppImage, etiqueta = versión) y **primera etiqueta `v…`**, que publica el AppImage por primera vez | paso 1 y decisión del dueño |
-| 3 | Repetir F1-15 con el AppImage publicado, en una sesión **con escritorio**: elegir proveedor y chatear, abrir el TUI con `janitor`, ver el aviso de app vieja (el diálogo nativo no se pudo ver sin pantalla), y los fallos (sin red, corte a medias, reparación) | paso 2 y una clave del dueño |
-| 4 | F1-21g: actualizar de una versión publicada a la siguiente con un gateway en marcha, desde la app, el terminal y Telegram | paso 2 |
-| 5 | F1-23 y F1-24: bot de Telegram real (QR, nombre, `/start`, avatar) y segundo plano (gateway como servicio; posible segunda unidad systemd) | paso 3 |
-| 6 | F1-25: memoria integrada con MiniMax en cuatro casos observables | una clave del dueño |
-| 7 | Despliegue real de cada aplicativo (F4-01, F4-03, F4-07): imágenes, puertos y variables salen de las skills antiguas y no se han probado; LightRAG y la API de WAHA son los más dudosos | un equipo de prueba con Docker |
-| 8 | Restos de F1-19 (textos del motor en inglés fuera de la app), F5-03 (reducir `update_core.py`), residuo en `scripts/install.ps1` | — |
+*A. Camino crítico hacia la primera versión publicada (secuencial).*
 
-Las decisiones del dueño que siguen abiertas están en la [sección 9](#9-decisiones-pendientes-del-dueño).
+| # | Paso | Cierra | Depende de |
+|---|---|---|---|
+| A1 | ~~Revisar y fusionar el PR #91~~ **Hecho el 2026-11-24** (`50212e2832`). `main` ya contiene la app; el aviso falso de actualización de F1-27 queda por ver en la instalación de A4 | F1-27 (falta aceptación) | — |
+| A2 | Decisiones que cambian lo que se publica, **antes** de etiquetar ([sección 9](#9-decisiones-pendientes-del-dueño)): canal del motor (`main` o solo versiones etiquetadas), navegador en la instalación base, páginas incrustadas de Hermes (Skills Hub y catálogo de plugins), color de acento (F1-18) | sección 9 | el dueño |
+| A3 | Workflow de release (nombre estable del AppImage, etiqueta = versión) y **primera etiqueta `v…`**, que publica el AppImage por primera vez | F1-21f, F1-11 | A1, A2 |
+| A4 | Una sola sesión **con escritorio** y una clave, sobre el AppImage publicado: elegir proveedor y chatear, abrir el TUI con `janitor`, ver el aviso de app vieja (el diálogo nativo no se pudo ver sin pantalla), los fallos (sin red, corte a medias, reparación), la memoria con MiniMax en sus cuatro casos, y chatear con un especialista y con una skill recién activada | F1-15, F1-25, restos de F4-04 y F4-05 | A3 y una clave del dueño |
+| A5 | Segunda etiqueta y actualización real de una versión publicada a la siguiente con un gateway en marcha, desde la app, el terminal y Telegram | F1-21g (y la aceptación de F1-09, F1-12, F1-17, F1-20) | A3 |
+
+*B. Operación cotidiana (después de A4).*
+
+- F1-23: Telegram con un bot real (QR, nombre, `/start`, avatar).
+- F1-24: gateway como servicio (posible segunda unidad systemd), cerrar, Salir, reinicio, app y TUI a la vez sin gateways duplicados. Su alcance sigue «por definir»: se diseña en el bloque D.
+- F3-04: un disparo real del mantenimiento programado.
+
+*C. Aplicativos opcionales (en paralelo; necesita un equipo de prueba con Docker).*
+
+- Despliegue real de cada aplicativo (F4-01, F4-03, F4-07): imágenes, puertos y variables salen de las skills antiguas y no se han probado; LightRAG y la API de WAHA son los más dudosos.
+- Iniciar, detener y el estado «no responde» en la pantalla Servicios (F4-02, F4-06), con un servicio de prueba, nunca con los contenedores del dueño.
+
+*D. Sin dependencias (se puede empezar ya).*
+
+- Diseño de F1-24, para que no frene el bloque B.
+- Restos de F1-19 (textos del motor en inglés fuera de la app) y de F5-02 (`scripts/install.ps1`, `.env.example`).
+- Riesgos sin verificar de la [sección 7](#7-riesgos-y-puntos-sin-verificar): perfiles con `HERMES_HOME` forzado, modo SSH con Janitor, marca en `@nous-research/ui`.
+- Ensayar `docs/janitor/desinstalar-instalacion-antigua.md` en una máquina real.
+- F5-03 (reducir `update_core.py`): después de A5.
 
 **Cómo verificar (lo que funcionó en esta rama).**
 - Pruebas: `scripts/run_tests.sh tests/janitor/` (668), `node --test apps/desktop-janitor/scripts/*.test.mjs` (243),
@@ -408,7 +424,7 @@ funcional en español, con su identidad, sin «Hermes» en el uso normal y con
 | F1-24 | Operación cotidiana (sección 4.5): al configurar Telegram la app ofrece instalar el gateway como servicio (el usuario confirma; nunca se instala solo); cerrar ventana, Salir, inicio de sesión, reinicio, app y TUI a la vez, sin gateways duplicados; entrada en el menú de aplicaciones, diagnóstico, reparación y desinstalación conservando datos | por definir | recorrido en la instalación de F1-15 | pendiente. **Decidido:** ofrecer el gateway como servicio al configurar Telegram |
 | F1-25 | Memoria integrada con MiniMax, en casos observables: guardar una preferencia, recuperarla tras reiniciar, corregirla, y que otro perfil no la vea; qué pasa con lo guardado al cambiar de proveedor de memoria | — | los cuatro casos, con evidencia | pendiente (necesita una clave real: la introduce el dueño) |
 | F1-26 | Defectos de la primera instalación real (bitácora 2026-11-23): (a) pantalla «Janitor no pudo iniciarse» durante la instalación, que no se recupera sola al terminar; (b) la app crea `~/.hermes` con un `SOUL.md` de Hermes (sonda `canImportHermesCli` sin `HERMES_HOME`); (c) el instalador instala `cua-driver` (Computer Use) sin preguntar, con identificador de telemetría y archivos en `~/.cursor` y `~/.agents`; (d) inglés y «Hermes» en las etapas y la salida del instalador, en `janitor --version` y en `janitor services list`; (e) la comprobación de contrato no se repite al terminar la instalación | `apps/desktop-janitor/`, `scripts/install.sh` (touchpoint), `janitor/services.py`, `janitor/skills/services/*/service.yaml` | repetir la instalación real en un home limpio: sin pantalla de fallo, sin `~/.hermes`, sin `cua-driver`, recorrido en español | auditado: código, pruebas y **aceptación en instalación real** (los cinco defectos no reaparecen). Restos en inglés en la salida desplegada del instalador: líneas `[bootstrap]` de la app, títulos del manifiesto (`Download Hermes Agent`), salida de uv, git y Playwright, y dos líneas de `janitor/seed.py` |
-| F1-27 | La comprobación de actualizaciones y `janitor update` siguen la rama `main`, no la rama con la que se compiló la app: una instalación hecha desde `janitor-app/fase-1` muestra «Hay una actualización» (`.update_check`: `target` = `origin/main`, `behind: -1`) y `janitor update` la llevaría a `main`, que hoy es **más antiguo**. Se resuelve al integrar la rama en `main` antes de entregar la app, o haciendo que el motor siga la rama de su compilación (decisión «canal del motor») | `janitor/update_core.py`, la sonda de actualizaciones de upstream | instalación real desde la rama: sin aviso falso | pendiente — **bloquea la entrega a usuarios** |
+| F1-27 | La comprobación de actualizaciones y `janitor update` siguen la rama `main`, no la rama con la que se compiló la app: una instalación hecha desde `janitor-app/fase-1` muestra «Hay una actualización» (`.update_check`: `target` = `origin/main`, `behind: -1`) y `janitor update` la llevaría a `main`, que hoy es **más antiguo**. Se resuelve al integrar la rama en `main` antes de entregar la app, o haciendo que el motor siga la rama de su compilación (decisión «canal del motor») | `janitor/update_core.py`, la sonda de actualizaciones de upstream | instalación real desde la rama: sin aviso falso | resuelto por integración: PR #91 fusionado en `main` (`50212e2832`, 2026-11-24), que ya no es más antiguo que la rama. Aceptación pendiente (ninguna instalación real desde `main` ha mostrado la comprobación sin aviso falso) → F1-15. La decisión «canal del motor» sigue abierta |
 
 **Checklist de F1-15.** Con el AppImage publicado, en un Linux limpio, **sin**
 `HERMES_DESKTOP_HERMES_ROOT` y sin Docker ni herramientas de desarrollo preparadas:
@@ -569,6 +585,8 @@ Windows y macOS (firma de código). WhatsApp como canal.
 | 2026-11-23 | Subagente Opus (verificación), evidencias comprobadas por el orquestador en `/var/tmp/janitor-e2e/` | **Instalación real repetida** con la app recompilada en `60434274ff`, dos corridas desde un home vacío (3a con cachés, 3b sin cachés: 3 min 15 s del clic al backend listo; ventana abierta 4 min 37 s, con 70 s de espera antes de pulsar). (a) sin «Janitor no pudo iniciarse» en ninguna captura ni en el texto, y la app pasa sola a la pantalla de proveedor; (b) sin `~/.hermes` tras instalar, tras el primer arranque y tras reabrir; (c) sin `cua-driver` ni `~/.cursor` ni `~/.agents`; fuera de `.janitor`, `.local`, `.config` y `.cache` solo existe `.pki` (Chromium de Electron); (d) etapas «Requisitos del sistema, Descarga de Janitor, Entorno de Python, Dependencias de Python, Herramientas del navegador, Comando janitor, Configuración y skills, Claves y ajustes, Servicio de mensajería, Finalizar»; banner «THE JANITOR · instalador»; `janitor --version` y `janitor services list` en español; (e) `[janitor-compat] app 1, engine 1: compatible` después de instalar y antes de `HERMES_BACKEND_READY`. `~/.janitor`: 1,5 GB. **Defecto nuevo → F1-27** (aviso de actualización falso contra `main`). Observaciones: el sello de la compilación dice `dirty: true` con el árbol limpio; la barra de progreso de Playwright llena la salida desplegada; la etapa de navegador sigue siendo la larga (144 s sin cachés) |
 | 2026-11-23 | Claude (orquestador), a petición del dueño | PR abierto para integrar `janitor-app/fase-1` en `main`: `reck74/Janitor-Agent#91` (listo para revisión, sin fusionar). Su descripción lista lo verificado y lo que no. Integrarlo resuelve F1-27 |
 | 2026-11-23 | Claude (orquestador) | **Cierre de sesión.** Sección 0 añadida con el estado, los siguientes pasos en orden, el método de verificación y los avisos del equipo. Eliminados los artefactos temporales de la sesión (homes y cachés de las instalaciones de prueba en `/var/tmp/janitor-e2e/`, registros de CI descargados, ejecuciones de `.bridge/`); se conservan en `/var/tmp/janitor-e2e/` los guiones (`scripts/`) y las capturas (`capturas/`, `capturas3/`), que no están en el repositorio y pueden desaparecer con una limpieza del sistema |
+| 2026-11-24 | Claude (orquestador), a petición del dueño | Sección 0: «Qué sigue» reordenado por prioridad en cuatro bloques (A camino crítico, B operación cotidiana, C aplicativos, D sin dependencias). Cambios frente al orden anterior: las decisiones que afectan a lo publicado van antes de la primera etiqueta; F1-25 se junta con la sesión de F1-15 (misma clave); C y D corren en paralelo; F5-03 pasa a después de F1-21g. Solo documentación: ningún estado del tablero cambió. `recomendaciones-codex-para-claude.md` (ya contrastado el 2026-11-22) sigue sin commitear |
+| 2026-11-24 | Claude (orquestador) | **PR #91 fusionado por el dueño**, revisado: commit de merge `50212e2832` (padres `8f7573c60e` y `d35689d7a4`); `git diff origin/main origin/janitor-app/fase-1` vacío, o sea que `main` es idéntico a la rama auditada y no se repitió la suite. Sobre ese árbol: `python -m janitor.overlay check` limpio (317 rutas, todas declaradas) y `python -m janitor.catalog check` 42/42. CI del commit de merge, leído de la API pública de GitHub: en verde `test`, `python-tests`, `Janitor minimal-install smoke`, `react-tests`, `web-tests`, `desktop-overlay` y Windows; **macOS seguía en cola** al consultar; `e2e` y `upstream-sync-verify` se saltaron (solo corren en sincronizaciones). F1-27 pasa a resuelto por integración, con la aceptación pendiente en F1-15 |
 
 ## 9. Decisiones pendientes del dueño
 
