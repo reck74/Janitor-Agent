@@ -29,8 +29,9 @@ todo aceptación en uso real. Los bloques C y D corren en paralelo al camino cr�
 | # | Paso | Cierra | Depende de |
 |---|---|---|---|
 | A1 | ~~Revisar y fusionar el PR #91~~ **Hecho el 2026-11-24** (`50212e2832`). `main` ya contiene la app; el aviso falso de actualización de F1-27 queda por ver en la instalación de A4 | F1-27 (falta aceptación) | — |
-| A2 | Decisiones que cambian lo que se publica, **antes** de etiquetar ([sección 9](#9-decisiones-pendientes-del-dueño)): canal del motor (`main` o solo versiones etiquetadas), navegador en la instalación base, páginas incrustadas de Hermes (Skills Hub y catálogo de plugins), color de acento (F1-18) | sección 9 | el dueño |
-| A3 | Workflow de release (nombre estable del AppImage, etiqueta = versión) y **primera etiqueta `v…`**, que publica el AppImage por primera vez | F1-21f, F1-11 | A1, A2 |
+| A2 | ~~Decisiones que cambian lo que se publica~~ **Tomadas el 2026-11-24** ([2.10](#210-qué-lleva-la-primera-versión-publicada-decidido-el-2026-11-24)): canal por versiones etiquetadas, base sin navegador, páginas de Hermes ocultas. Sigue abierto el color de acento (F1-18), que no frena la etiqueta | sección 9 | — |
+| A2b | Implementar esas tres decisiones | F1-28, F1-29, F1-30 | — |
+| A3 | Workflow de release (nombre estable del AppImage, etiqueta = versión) y **primera etiqueta `v…`**, que publica el AppImage por primera vez. La etiqueta la ordena el dueño | F1-21f, F1-11 | A2b |
 | A4 | Una sola sesión **con escritorio** y una clave, sobre el AppImage publicado: elegir proveedor y chatear, abrir el TUI con `janitor`, ver el aviso de app vieja (el diálogo nativo no se pudo ver sin pantalla), los fallos (sin red, corte a medias, reparación), la memoria con MiniMax en sus cuatro casos, y chatear con un especialista y con una skill recién activada | F1-15, F1-25, restos de F4-04 y F4-05 | A3 y una clave del dueño |
 | A5 | Segunda etiqueta y actualización real de una versión publicada a la siguiente con un gateway en marcha, desde la app, el terminal y Telegram | F1-21g (y la aceptación de F1-09, F1-12, F1-17, F1-20) | A3 |
 
@@ -214,6 +215,33 @@ Decisión del dueño (2026-11-22). La app es el **nuevo punto de partida**:
 - **Git oculto (decisión del dueño, 2026-11-22):** el motor sigue siendo un checkout que
   se actualiza con Git por debajo; el usuario solo pulsa un botón o escribe `/update` y
   nunca ve Git ni resuelve nada a mano. No se rediseña la entrega como paquete.
+
+### 2.10 Qué lleva la primera versión publicada (decidido el 2026-11-24)
+
+Tres decisiones del dueño, tomadas antes de la primera etiqueta. Son reglas vigentes
+(directivas 8, 13 y 19); el código todavía no las cumple y cada una tiene su tarea.
+
+- **Canal del motor: solo versiones etiquetadas.** Un usuario recibe una versión nueva
+  del motor únicamente cuando existe una etiqueta `v…` publicada en el fork; un merge a
+  `main` **no** llega a nadie por sí solo. La comprobación de actualizaciones y
+  `janitor update` (app, terminal y `/update` de Telegram: un solo flujo, directiva 13)
+  comparan contra la última etiqueta, no contra `origin/main`. La etiqueta es la misma
+  que publica el AppImage, de modo que app y motor salen juntos y con la misma versión.
+  Consecuencias para quien trabaja en el repo: `main` puede recibir merges y
+  sincronizaciones con upstream sin que eso sea una entrega; **etiquetar es entregar**
+  y lo decide el dueño; ningún agente crea ni mueve una etiqueta `v…` sin su orden.
+  Motivo: con `main` como canal, un merge a medio probar llegaba a todos los usuarios.
+  Tarea: F1-28.
+- **El navegador no va en la instalación base.** La instalación omite Chromium de
+  Playwright (~700 MB) y `browser-use` (122 MB), que eran 144 s de unos 195. Se
+  descargan la primera vez que el agente necesita navegar, con un aviso en español de
+  que está descargando. Coherente con la directiva 8: la base lleva lo mínimo.
+  Tarea: F1-29.
+- **Las páginas incrustadas de Hermes se ocultan.** El catálogo de plugins y el Skills
+  Hub (`plugin-catalog.ts`, `embedded-hub-picker.tsx`) son páginas externas que no se
+  pueden renombrar al compilar: muestran «Hermes» (directiva 17) y el Skills Hub deja
+  instalar skills fuera del catálogo Janitor (directiva 19). La app Janitor no las
+  ofrece; las skills se eligen solo en la pantalla Skills. Tarea: F1-30.
 
 ## 3. Hechos verificados en el código
 
@@ -425,6 +453,9 @@ funcional en español, con su identidad, sin «Hermes» en el uso normal y con
 | F1-25 | Memoria integrada con MiniMax, en casos observables: guardar una preferencia, recuperarla tras reiniciar, corregirla, y que otro perfil no la vea; qué pasa con lo guardado al cambiar de proveedor de memoria | — | los cuatro casos, con evidencia | pendiente (necesita una clave real: la introduce el dueño) |
 | F1-26 | Defectos de la primera instalación real (bitácora 2026-11-23): (a) pantalla «Janitor no pudo iniciarse» durante la instalación, que no se recupera sola al terminar; (b) la app crea `~/.hermes` con un `SOUL.md` de Hermes (sonda `canImportHermesCli` sin `HERMES_HOME`); (c) el instalador instala `cua-driver` (Computer Use) sin preguntar, con identificador de telemetría y archivos en `~/.cursor` y `~/.agents`; (d) inglés y «Hermes» en las etapas y la salida del instalador, en `janitor --version` y en `janitor services list`; (e) la comprobación de contrato no se repite al terminar la instalación | `apps/desktop-janitor/`, `scripts/install.sh` (touchpoint), `janitor/services.py`, `janitor/skills/services/*/service.yaml` | repetir la instalación real en un home limpio: sin pantalla de fallo, sin `~/.hermes`, sin `cua-driver`, recorrido en español | auditado: código, pruebas y **aceptación en instalación real** (los cinco defectos no reaparecen). Restos en inglés en la salida desplegada del instalador: líneas `[bootstrap]` de la app, títulos del manifiesto (`Download Hermes Agent`), salida de uv, git y Playwright, y dos líneas de `janitor/seed.py` |
 | F1-27 | La comprobación de actualizaciones y `janitor update` siguen la rama `main`, no la rama con la que se compiló la app: una instalación hecha desde `janitor-app/fase-1` muestra «Hay una actualización» (`.update_check`: `target` = `origin/main`, `behind: -1`) y `janitor update` la llevaría a `main`, que hoy es **más antiguo**. Se resuelve al integrar la rama en `main` antes de entregar la app, o haciendo que el motor siga la rama de su compilación (decisión «canal del motor») | `janitor/update_core.py`, la sonda de actualizaciones de upstream | instalación real desde la rama: sin aviso falso | resuelto por integración: PR #91 fusionado en `main` (`50212e2832`, 2026-11-24), que ya no es más antiguo que la rama. Aceptación pendiente (ninguna instalación real desde `main` ha mostrado la comprobación sin aviso falso) → F1-15. La decisión «canal del motor» sigue abierta |
+| F1-28 | Canal del motor por versiones etiquetadas (decisión 2.10): la sonda de actualizaciones y `janitor update` siguen la última etiqueta `v…` del fork, no `origin/main`; cubre app, terminal y `/update` de Telegram; un `main` más nuevo que la última etiqueta no produce aviso ni actualización; sin etiquetas publicadas, no hay nada que actualizar. Va junto con F1-21f (etiqueta = versión) | `janitor/update_core.py`, la sonda de actualizaciones de upstream (touchpoint si hace falta, declarado en `janitor/overlay.yaml`), `tests/janitor/`, `actualizacion-diseno.md` | prueba de comportamiento con un repo temporal (main por delante de la etiqueta: sin aviso; etiqueta nueva: aviso y actualización a esa etiqueta); aceptación en F1-21g | pendiente — **antes de la primera etiqueta** |
+| F1-29 | Instalación base sin navegador (decisión 2.10): la app instala sin Chromium de Playwright ni `browser-use`; se descargan al primer uso de las herramientas de navegación, con aviso en español; si la descarga falla, el error dice cómo reintentar | por definir: los argumentos con que la app invoca `scripts/install.sh` (`--skip-browser` ya existe) en `apps/desktop-janitor/`, y el camino de descarga al primer uso | instalación real en home limpio: sin Chromium ni `browser-use`, tiempo anotado; primer uso de navegación descarga y funciona | pendiente — **antes de la primera etiqueta**. Sin verificar: si el motor ya descarga el navegador solo al primer uso o hay que añadirlo |
+| F1-30 | Ocultar en la app el catálogo de plugins y el Skills Hub de Hermes (decisión 2.10) | `apps/desktop-janitor/` (parches de construcción sobre `plugin-catalog.ts`, `embedded-hub-picker.tsx` y sus entradas de menú) | anclas + recorrido en la app compilada: ninguna entrada lleva a esas páginas | pendiente — **antes de la primera etiqueta** |
 
 **Checklist de F1-15.** Con el AppImage publicado, en un Linux limpio, **sin**
 `HERMES_DESKTOP_HERMES_ROOT` y sin Docker ni herramientas de desarrollo preparadas:
@@ -587,6 +618,7 @@ Windows y macOS (firma de código). WhatsApp como canal.
 | 2026-11-23 | Claude (orquestador) | **Cierre de sesión.** Sección 0 añadida con el estado, los siguientes pasos en orden, el método de verificación y los avisos del equipo. Eliminados los artefactos temporales de la sesión (homes y cachés de las instalaciones de prueba en `/var/tmp/janitor-e2e/`, registros de CI descargados, ejecuciones de `.bridge/`); se conservan en `/var/tmp/janitor-e2e/` los guiones (`scripts/`) y las capturas (`capturas/`, `capturas3/`), que no están en el repositorio y pueden desaparecer con una limpieza del sistema |
 | 2026-11-24 | Claude (orquestador), a petición del dueño | Sección 0: «Qué sigue» reordenado por prioridad en cuatro bloques (A camino crítico, B operación cotidiana, C aplicativos, D sin dependencias). Cambios frente al orden anterior: las decisiones que afectan a lo publicado van antes de la primera etiqueta; F1-25 se junta con la sesión de F1-15 (misma clave); C y D corren en paralelo; F5-03 pasa a después de F1-21g. Solo documentación: ningún estado del tablero cambió. `recomendaciones-codex-para-claude.md` (ya contrastado el 2026-11-22) sigue sin commitear |
 | 2026-11-24 | Claude (orquestador) | **PR #91 fusionado por el dueño**, revisado: commit de merge `50212e2832` (padres `8f7573c60e` y `d35689d7a4`); `git diff origin/main origin/janitor-app/fase-1` vacío, o sea que `main` es idéntico a la rama auditada y no se repitió la suite. Sobre ese árbol: `python -m janitor.overlay check` limpio (317 rutas, todas declaradas) y `python -m janitor.catalog check` 42/42. CI del commit de merge, leído de la API pública de GitHub: en verde `test`, `python-tests`, `Janitor minimal-install smoke`, `react-tests`, `web-tests`, `desktop-overlay` y Windows; **macOS seguía en cola** al consultar; `e2e` y `upstream-sync-verify` se saltaron (solo corren en sincronizaciones). F1-27 pasa a resuelto por integración, con la aceptación pendiente en F1-15 |
+| 2026-11-24 | Claude (orquestador), decisiones del dueño | Tres decisiones registradas en la sección 2.10 y en `AGENTS.md` (directivas 8, 13 y 19): **canal del motor por versiones etiquetadas** (un merge a `main` no es una entrega; etiquetar lo ordena el dueño), **instalación base sin navegador** (Chromium y `browser-use` al primer uso) y **páginas incrustadas de Hermes ocultas** (catálogo de plugins y Skills Hub). Tareas nuevas F1-28, F1-29 y F1-30, las tres antes de la primera etiqueta; salen de la sección 9. Solo documentación: ningún código cambió, así que hoy el motor sigue `main`, la base instala el navegador y las páginas siguen visibles. Color de acento (F1-18) sin decidir: el dueño pidió ver la app; se le enviaron dos capturas de la instalación real del 2026-11-23 (`60434274ff`) |
 
 ## 9. Decisiones pendientes del dueño
 
@@ -595,16 +627,13 @@ No bloquean el trabajo en curso; cada una tiene un valor provisional ya aplicado
 | Tema | Valor provisional | Qué decidir |
 |---|---|---|
 | `approvals.mode` en la semilla | `manual` (como antes) | Upstream pasó su valor por defecto a `smart`. Mantener `manual` o seguir a upstream |
-| Verde lima en la app (F1-18) | La app usa el morado del skin | Si el lima `#c2ef4e` debe ser el color de acento de la app |
+| Verde lima en la app (F1-18) | La app usa el morado del skin | Si el lima `#c2ef4e` debe ser el color de acento de la app. El dueño pidió ver la app actual antes de decidir (capturas enviadas el 2026-11-24) |
 | Frases nuevas de «pensando» | No aplicadas | Diez frases propuestas sobre equipos, redes y seguridad (bitácora de F1-06); el dueño dijo que las frases del terminal se conservan |
 | `.claude/agents/janitor-dev-boss-autonomous.md` | Sin tocar | Importa `OpenCodeOrchestrator`, que ya no existe. Borrarlo o reescribirlo |
-| Release | Rama publicada; sin etiqueta ni AppImage publicado | Cuándo etiquetar la primera versión (`v…`) para que el workflow publique el AppImage |
+| Release | `main` integrado; sin etiqueta ni AppImage publicado | Cuándo etiquetar la primera versión (`v…`) para que el workflow publique el AppImage |
 | Prueba de memoria con MiniMax (F1-25) | Sin probar | Necesita una clave real; ningún agente introduce claves: la corre el dueño o indica cómo |
-| Canal del motor (F1-21) | `main`: cada merge llega a todos los usuarios | Seguir en `main` o actualizar solo a versiones etiquetadas |
 | `forget` de WAHA (F4-07) | Borra los resúmenes en vez de enviarlos a la papelera | Confirmar la excepción a la directiva 19 o pasar a papelera |
 | Tras actualizar el motor desde la app (F1-21) | Aplicado provisionalmente: la app se reabre sola | Confirmar o volver a «la reabre el usuario» |
 | Botón de descarga del AppImage nuevo (F1-21) | Aplicado provisionalmente: abre la página del release | Confirmar o descargar el archivo directamente |
-| Páginas incrustadas de Hermes en la app | Visibles con marca Hermes: catálogo de plugins y Skills Hub (`plugin-catalog.ts`, `embedded-hub-picker.tsx`); son páginas externas, no se pueden renombrar al compilar | Ocultarlas o dejarlas. El Skills Hub permite instalar skills fuera del catálogo Janitor (choca con la directiva 19) |
 | `/debug` en el chat de la app | Oculto (sube registros con texto de conversaciones a un servicio público sin confirmar); sigue en la terminal como `janitor debug share --local` | Confirmar o volver a ofrecerlo |
-| Navegador en la instalación base | Se instalan Chromium de Playwright (~700 MB en disco) y `browser-use` (122 MB, fuera de `~/.janitor`); son 144 s de la instalación | Dejarlos, u omitirlos (`--skip-browser`) y que se descarguen la primera vez que el agente navegue |
 | Valor rescatable de skills retiradas | Nada rescatado | `janitor-config-audit` (diff de config frente a la semilla) puede servir para adoptar instalaciones viejas (F5-01) |
