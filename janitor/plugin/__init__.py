@@ -43,6 +43,15 @@ def _use_janitor_tips() -> None:
     tips.get_random_tip = get_janitor_tip
 
 
+def _follow_release_channel() -> None:
+    """The passive update probe compares against the release channel in every process
+    the plugin runs in (a gateway or dashboard the launcher did not start), not only the
+    launcher's. Same call as ``janitor.cli.main()``."""
+    from janitor.release_channel import apply_to_engine
+
+    apply_to_engine()
+
+
 def _route_gateway_update() -> None:
     """``/update`` from a messaging platform runs ``janitor update`` (directive #13)."""
     try:
@@ -56,6 +65,7 @@ def _route_gateway_update() -> None:
 def register(ctx: Any) -> None:
     _export_message_catalogs()
     _use_janitor_tips()
+    _follow_release_channel()
     _route_gateway_update()
 
     from janitor import profile_templates, services

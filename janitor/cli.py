@@ -382,6 +382,11 @@ def main():
     _hermes_tips_mod.TIPS = JANITOR_TIPS
     _hermes_tips_mod.get_random_tip = get_janitor_tip
 
+    # The passive update probe (banner, TUI badge) follows the release channel, not main.
+    from janitor.release_channel import apply_to_engine
+
+    apply_to_engine()
+
     # Monkey-patch ``hermes update`` so it pulls from the Janitor fork only.
     import hermes_cli.main as _hermes_main_mod
 

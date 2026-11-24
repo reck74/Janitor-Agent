@@ -72,6 +72,21 @@ touchpoints:
     merge: reapply
     upstream_candidate: true
 
+  - id: update-channel
+    files: [hermes_cli/banner.py]
+    why: >-
+      The passive update probe of a local checkout (`_check_via_local_git`,
+      `_compute_git_banner_state`) compares against the module constant
+      `_UPDATE_BRANCH` instead of a fixed `main`. Upstream's value stays
+      `"main"`, so upstream behaviour is unchanged; Janitor's launcher and
+      plugin set it to the release channel (`janitor/release_channel.py`,
+      branch `stable`) so the banner and the TUI badge announce tagged
+      releases only. The nix embedded-revision path (`_upstream_main_sha`,
+      `_check_via_rev`) is untouched. Every changed line carries `# JANITOR:`.
+    verify: test:update-channel
+    merge: reapply
+    upstream_candidate: true
+
   - id: mcp-dashboard-endpoints
     files:
       - hermes_cli/mcp_config.py
@@ -194,7 +209,9 @@ touchpoints:
       Use) is opt-in (`--with-computer-use`): it writes outside the home and seeds
       a telemetry id (F1-26). The browser (Playwright Chromium, Browser Use CLI)
       is opt-in too (`--with-browser`): the base ships none and the engine
-      downloads it on first use (plan decision 2.10, F1-29). One fork block after `print_success` redefines the
+      downloads it on first use (plan decision 2.10, F1-29). The default branch
+      is the release channel (`stable`, `janitor/release_channel.py`): without
+      `--branch` it installs the latest tagged version, never `main` (F1-28). One fork block after `print_success` redefines the
       banner, the final summary and the log helpers so what the app shows reads in
       Spanish with `janitor` commands (a message the table does not list prints
       upstream's English); a failed stage's JSON reason is Spanish. Every changed

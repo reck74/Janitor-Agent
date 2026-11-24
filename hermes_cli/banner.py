@@ -146,6 +146,9 @@ UPDATE_AVAILABLE_NO_COUNT = -1
 
 _UPSTREAM_REPO_URL = "https://github.com/NousResearch/hermes-agent.git"
 _OFFICIAL_REPO_CANONICAL = "github.com/nousresearch/hermes-agent"
+# JANITOR: branch the passive probe of a local checkout compares against; the fork's
+# JANITOR: launcher and plugin point it at the release channel (janitor/release_channel.py).
+_UPDATE_BRANCH = "main"  # JANITOR: update-channel touchpoint
 
 
 def _canonical_github_remote(url: str | None) -> str:
@@ -358,10 +361,10 @@ def _check_via_local_git(repo_dir: Path) -> Optional[int]:
         return None
     canonical = _canonical_github_remote(origin_url)
     if canonical.startswith("github.com/"):
-        target_rev = _github_branch_tip(canonical.removeprefix("github.com/"), "main")
+        target_rev = _github_branch_tip(canonical.removeprefix("github.com/"), _UPDATE_BRANCH)  # JANITOR: update-channel
     else:
         # Non-GitHub origin: one ls-remote for the tip (ref advertisement only, no pack transfer).
-        result = _git_run(["ls-remote", "origin", "refs/heads/main"], cwd=repo_dir, timeout=10, network=True)
+        result = _git_run(["ls-remote", "origin", f"refs/heads/{_UPDATE_BRANCH}"], cwd=repo_dir, timeout=10, network=True)  # JANITOR: update-channel
         target_rev = result.stdout.split()[0] if result is not None and result.returncode == 0 and result.stdout else None
     global _last_target_rev
     _last_target_rev = target_rev
@@ -461,11 +464,11 @@ def _compute_git_banner_state(repo_dir: Optional[Path] = None) -> Optional[dict]
     repo_dir = repo_dir or _resolve_repo_dir()
     if repo_dir is None:
         return _baked_banner_state()
-    upstream, local = (_git_stdout(["rev-parse", "--short=8", rev], cwd=repo_dir) for rev in ("origin/main", "HEAD"))
+    upstream, local = (_git_stdout(["rev-parse", "--short=8", rev], cwd=repo_dir) for rev in (f"origin/{_UPDATE_BRANCH}", "HEAD"))  # JANITOR: update-channel
     if not upstream or not local:
         # Live-git lookup failed (e.g. shallow clone without origin/main).
         return _baked_banner_state()
-    ahead = _git_count(["rev-list", "--count", "origin/main..HEAD"], cwd=repo_dir) or 0
+    ahead = _git_count(["rev-list", "--count", f"origin/{_UPDATE_BRANCH}..HEAD"], cwd=repo_dir) or 0  # JANITOR: update-channel
     return {"upstream": upstream, "local": local, "ahead": max(ahead, 0)}
 
 

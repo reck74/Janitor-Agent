@@ -47,6 +47,23 @@ def check_banner(capsys=None):
         assert capsys.readouterr().out.startswith(expected)
 
 
+def check_update_channel(monkeypatch, tmp_path):
+    """Once the channel is applied, the passive probe of a local checkout asks
+    for the release branch's tip, not main's."""
+    from hermes_cli import banner
+    from janitor.release_channel import RELEASE_BRANCH, apply_to_engine
+
+    monkeypatch.setattr(banner, "_UPDATE_BRANCH", banner._UPDATE_BRANCH)
+    apply_to_engine()
+    asked: list[str] = []
+    monkeypatch.setattr(banner, "_git_stdout", lambda args, **kw: (
+        "https://github.com/example/janitor.git" if args[:2] == ["remote", "get-url"] else "a" * 40))
+    monkeypatch.setattr(banner, "_github_branch_tip", lambda slug, branch: asked.append(branch) or "a" * 40)
+
+    assert banner._check_via_local_git(tmp_path) == 0
+    assert asked == [RELEASE_BRANCH]
+
+
 def check_mcp_dashboard_endpoints():
     from hermes_cli.web_routers.mcp import router
 
@@ -243,6 +260,7 @@ CHECKS = {
     "version": check_version,
     "packaging": check_packaging,
     "banner": check_banner,
+    "update-channel": check_update_channel,
     "mcp-dashboard-endpoints": check_mcp_dashboard_endpoints,
     "install-sh": check_install_sh,
     "desktop-update-posix": check_desktop_update_posix,
@@ -269,10 +287,12 @@ def test_every_test_touchpoint_has_a_check_and_vice_versa(overlay):
         for cid in sorted(CHECKS)
     ],
 )
-def test_touchpoint_contract(check_id, capsys, tmp_path):
+def test_touchpoint_contract(check_id, capsys, tmp_path, monkeypatch):
     check = CHECKS[check_id]
     if check is check_banner:
         check(capsys)
+    elif check is check_update_channel:
+        check(monkeypatch, tmp_path)
     elif check in (check_install_sh, check_desktop_update_posix, check_desktop_update_ui, check_backend_user_copy,
                    check_runtime_copy, check_update_single_flight):
         check(tmp_path)

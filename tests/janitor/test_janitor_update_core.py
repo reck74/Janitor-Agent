@@ -20,6 +20,7 @@ from unittest.mock import MagicMock
 import pytest
 
 import janitor.update_core as juc
+from janitor.release_channel import RELEASE_BRANCH
 
 
 # ---------------------------------------------------------------------------
@@ -34,7 +35,7 @@ def _make_side_effect(
     fetch_fails: bool = False,
     fetch_stderr: str = "",
     commit_count: str = "3",
-    current_branch: str = "main",
+    current_branch: str = RELEASE_BRANCH,
     syntax_break_in: str | None = None,
 ):
     """Build a subprocess.run side_effect for run_janitor_update tests.
@@ -158,8 +159,8 @@ def _stub_helpers(monkeypatch, tmp_path, *, syntax_break_in: str | None = None):
 # ---------------------------------------------------------------------------
 
 
-def test_ff_only_failure_falls_back_to_reset_hard_origin_main(monkeypatch, tmp_path, capsys):
-    """When ff-only fails (diverged branches), reset to origin/main."""
+def test_ff_only_failure_falls_back_to_reset_hard_on_the_channel(monkeypatch, tmp_path, capsys):
+    """When ff-only fails (diverged branches), reset to the release channel's origin tip."""
     _stub_helpers(monkeypatch, tmp_path)
     side_effect, recorded = _make_side_effect(ff_only_fails=True)
     monkeypatch.setattr(juc.subprocess, "run", side_effect)
@@ -169,10 +170,10 @@ def test_ff_only_failure_falls_back_to_reset_hard_origin_main(monkeypatch, tmp_p
     reset_calls = [c for c in recorded if "reset" in c and "--hard" in c]
     assert len(reset_calls) == 1
     # Windows prepends `-c windows.appendAtomically=false` before the
-    # subcommand; assert the invariant (a hard reset to origin/main)
+    # subcommand; assert the invariant (a hard reset to origin/<channel>)
     # without pinning platform-specific `-c` config flags.
     argv = reset_calls[0]
-    assert argv[argv.index("reset") :] == ["reset", "--hard", "origin/main"]
+    assert argv[argv.index("reset") :] == ["reset", "--hard", f"origin/{RELEASE_BRANCH}"]
     assert rc == 0  # fallback succeeded
 
 
@@ -389,8 +390,8 @@ def test_lazy_helper_import_failure_logs_only(monkeypatch, tmp_path):
     assert rc == 0
 
 
-def test_detached_head_switches_to_main_before_pull(monkeypatch, tmp_path, capsys):
-    """Detached HEAD (rev-parse returns 'HEAD') auto-switches to main."""
+def test_detached_head_switches_to_the_channel_before_pull(monkeypatch, tmp_path, capsys):
+    """Detached HEAD (rev-parse returns 'HEAD') auto-switches to the release channel."""
     _stub_helpers(monkeypatch, tmp_path)
     side_effect, recorded = _make_side_effect(
         current_branch="HEAD", commit_count="3",
@@ -399,14 +400,14 @@ def test_detached_head_switches_to_main_before_pull(monkeypatch, tmp_path, capsy
 
     juc.run_janitor_update(SimpleNamespace())
 
-    checkout_calls = [c for c in recorded if "checkout" in c and "main" in c]
-    assert len(checkout_calls) == 1
+    checkout_calls = [c[c.index("checkout"):] for c in recorded if "checkout" in c]
+    assert checkout_calls == [["checkout", RELEASE_BRANCH]]
     out = capsys.readouterr().out
-    assert any(line.lstrip().startswith("⚠") and "'main'" in line for line in out.splitlines())
+    assert any(line.lstrip().startswith("⚠") and f"'{RELEASE_BRANCH}'" in line for line in out.splitlines())
 
 
-def test_feature_branch_switches_to_main_before_pull(monkeypatch, tmp_path, capsys):
-    """On a non-main branch, auto-switches to main before pulling."""
+def test_feature_branch_switches_to_the_channel_before_pull(monkeypatch, tmp_path, capsys):
+    """On a branch other than the release channel (``main`` included), auto-switches to it."""
     _stub_helpers(monkeypatch, tmp_path)
     side_effect, recorded = _make_side_effect(
         current_branch="experiment/audio-check", commit_count="3",
@@ -415,8 +416,8 @@ def test_feature_branch_switches_to_main_before_pull(monkeypatch, tmp_path, caps
 
     juc.run_janitor_update(SimpleNamespace())
 
-    checkout_calls = [c for c in recorded if "checkout" in c and "main" in c]
-    assert len(checkout_calls) == 1
+    checkout_calls = [c[c.index("checkout"):] for c in recorded if "checkout" in c]
+    assert checkout_calls == [["checkout", RELEASE_BRANCH]]
     out = capsys.readouterr().out
     assert "experiment/audio-check" in out
 
@@ -628,7 +629,7 @@ def test_success_order_python_deps_lazy_node_repair_migration_receipt_stash(
 def test_already_current_checkout_runs_node_repair_and_config_migration(
     monkeypatch, tmp_path
 ):
-    """When HEAD already matches origin/main, Node repair and config migration still run."""
+    """When HEAD already matches the channel's origin tip, Node repair and config migration still run."""
     _stub_pipeline_helpers(monkeypatch, tmp_path)
     side_effect, recorded = _make_side_effect(commit_count="0")
     monkeypatch.setattr(juc.subprocess, "run", side_effect)
@@ -2252,7 +2253,7 @@ def test_npm_lockfile_churn_never_reaches_the_autostash(monkeypatch, tmp_path):
 
     repo = tmp_path / "repo"
     repo.mkdir()
-    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "init", "-q", "-b", RELEASE_BRANCH)
     (repo / "package.json").write_text('{"name": "x", "workspaces": ["ui-tui"]}\n')
     lock = '{"name": "x", "lockfileVersion": 3, "packages": {}}\n'
     (repo / "package-lock.json").write_text(lock)
@@ -2261,7 +2262,7 @@ def test_npm_lockfile_churn_never_reaches_the_autostash(monkeypatch, tmp_path):
     _git(tmp_path, "clone", "-q", "--bare", str(repo), "origin.git")
     _git(repo, "remote", "add", "origin", str(tmp_path / "origin.git"))
     _git(repo, "fetch", "-q", "origin")
-    _git(repo, "branch", "-q", "--set-upstream-to=origin/main")
+    _git(repo, "branch", "-q", f"--set-upstream-to=origin/{RELEASE_BRANCH}")
 
     (repo / "package-lock.json").write_text(lock.replace("{}", '{"": {"name": "x"}}'))
 
@@ -2279,6 +2280,83 @@ def test_npm_lockfile_churn_never_reaches_the_autostash(monkeypatch, tmp_path):
     assert _git(repo, "stash", "list") == ""
     assert _git(repo, "status", "--porcelain") == ""
     assert (repo / "package-lock.json").read_text() == lock
+
+
+# ---------------------------------------------------------------------------
+# Release channel: users follow tagged versions only (janitor/release_channel.py)
+# ---------------------------------------------------------------------------
+
+
+def _commit(repo: Path, name: str) -> str:
+    (repo / name).write_text(name + "\n")
+    _git(repo, "add", name)
+    _git(repo, "commit", "-q", "-m", name)
+    return _git(repo, "rev-parse", "HEAD").strip()
+
+
+def _published_engine(tmp_path: Path, *, channel: bool) -> tuple[Path, Path]:
+    """An origin whose ``main`` exists (and the release channel when
+    ``channel``), plus an engine checkout cloned from it the way the installer
+    does: one branch, the channel when there is one. Returns (seed, engine);
+    commit in ``seed`` and push to move origin."""
+    origin = tmp_path / "origin.git"
+    _git(tmp_path, "init", "-q", "--bare", str(origin))
+    seed = tmp_path / "seed"
+    seed.mkdir()
+    _git(seed, "init", "-q", "-b", "main")
+    _commit(seed, "base")
+    _git(seed, "remote", "add", "origin", str(origin))
+    _git(seed, "push", "-q", "origin", "main")
+    if channel:
+        _git(seed, "push", "-q", "origin", f"main:{RELEASE_BRANCH}")
+    engine = tmp_path / "engine"
+    _git(tmp_path, "clone", "-q", "--single-branch", "-b",
+         RELEASE_BRANCH if channel else "main", str(origin), str(engine))
+    return seed, engine
+
+
+def test_a_merge_to_main_is_not_a_release(monkeypatch, tmp_path, capsys):
+    seed, engine = _published_engine(tmp_path, channel=True)
+    _commit(seed, "unreleased")
+    _git(seed, "push", "-q", "origin", "main")
+    _stub_helpers(monkeypatch, engine)
+
+    assert juc.run_janitor_update(SimpleNamespace(check=True)) == 0
+    assert juc._UP_TO_DATE_MESSAGE in capsys.readouterr().out
+
+
+def test_a_published_release_is_announced_and_installed(monkeypatch, tmp_path, capsys):
+    seed, engine = _published_engine(tmp_path, channel=True)
+    _commit(seed, "unreleased")
+    _git(seed, "push", "-q", "origin", "main")
+    released = _commit(seed, "release")
+    _git(seed, "push", "-q", "origin", f"HEAD:{RELEASE_BRANCH}")
+    _stub_pipeline_helpers(monkeypatch, engine)
+
+    assert juc.run_janitor_update(SimpleNamespace(check=True)) == 0
+    assert "Hay una versión nueva" in capsys.readouterr().out
+    assert _git(engine, "rev-parse", "HEAD").strip() != released
+
+    assert juc.run_janitor_update(SimpleNamespace()) == 0
+    assert _git(engine, "rev-parse", "HEAD").strip() == released
+
+
+def test_without_a_published_release_the_engine_stays_put(monkeypatch, tmp_path, capsys):
+    seed, engine = _published_engine(tmp_path, channel=False)
+    _commit(seed, "unreleased")
+    _git(seed, "push", "-q", "origin", "main")
+    head = _git(engine, "rev-parse", "HEAD").strip()
+    _stub_pipeline_helpers(monkeypatch, engine)
+    written: list[bool] = []
+    monkeypatch.setattr(juc, "_write_gateway_update_exit_code", written.append)
+
+    assert juc.run_janitor_update(SimpleNamespace(check=True)) == 0
+    assert juc._NO_RELEASE_MESSAGE in capsys.readouterr().out
+    assert juc.run_janitor_update(SimpleNamespace(gateway=True)) == 0
+    assert juc._NO_RELEASE_MESSAGE in capsys.readouterr().out
+    assert written == [True]
+    assert _git(engine, "rev-parse", "HEAD").strip() == head
+    assert _git(engine, "rev-parse", "--abbrev-ref", "HEAD").strip() == "main"
 
 
 def _tui_tree(tmp_path: Path) -> Path:

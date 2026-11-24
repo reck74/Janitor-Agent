@@ -74,7 +74,7 @@ RUN_SETUP=true
 SKIP_BROWSER=true  # JANITOR: the base ships no browser (~800 MB); it downloads on first use (--with-browser)
 SKIP_COMPUTER_USE=true  # JANITOR: optional; cua-driver writes outside the home and seeds telemetry (--with-computer-use)
 NO_SKILLS=true  # JANITOR: homes start without upstream's bundled skills (.no-bundled-skills)
-BRANCH="main"
+BRANCH="stable"  # JANITOR: the release channel (janitor/release_channel.py); users get tagged versions only
 INSTALL_COMMIT=""
 FORCE_COMMIT=false
 ENSURE_DEPS=""
@@ -186,7 +186,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --no-skills    Start with a blank slate — seed no bundled skills, and"
             echo "                   write \$HERMES_HOME/.no-bundled-skills so future"
             echo "                   'hermes update' runs never inject bundled skills either"
-            echo "  --branch NAME  Git branch to install (default: main)"
+            echo "  --branch NAME  Git branch to install (default: stable, the release channel)"  # JANITOR: release channel
             echo "  --commit SHA   Pin checkout to a specific commit after clone/update"
             echo "                   (ignored when it would roll an existing install back)"
             echo "  --force-commit Apply --commit even if it rolls the install backwards"

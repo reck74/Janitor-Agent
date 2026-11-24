@@ -17,6 +17,7 @@ import pytest
 import yaml
 
 from janitor.home import ASSETS_ROOT
+from janitor.release_channel import RELEASE_BRANCH
 from tests.janitor.install_sh_harness import (
     fake_install_dir,
     run_install_sh,
@@ -41,7 +42,10 @@ def test_manifest_is_json_and_installs_nothing(tmp_path):
 
 
 def test_repository_stage_clones_the_fork(tmp_path):
-    """A fake ``git`` records every clone and fails it; fake ``sleep`` skips backoff."""
+    """A fake ``git`` records every clone and fails it; fake ``sleep`` skips backoff.
+
+    With no ``--branch`` every clone targets the release channel, never ``main``.
+    """
     bin_dir = tmp_path / "fakebin"
     bin_dir.mkdir()
     log = tmp_path / "git.log"
@@ -68,6 +72,8 @@ def test_repository_stage_clones_the_fork(tmp_path):
     assert {"git@github.com:reck74/Janitor-Agent.git", "https://github.com/reck74/Janitor-Agent.git"} <= {
         word for line in clones for word in line.split()
     }
+    branches = {line.split()[line.split().index("--branch") + 1] for line in clones}
+    assert branches == {RELEASE_BRANCH}, clones
 
 
 def test_config_stage_leaves_a_seeded_janitor_home(tmp_path):

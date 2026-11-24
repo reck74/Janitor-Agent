@@ -77,6 +77,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from janitor.release_channel import RELEASE_BRANCH
+
 
 # Janitor-fork critical files validated by the post-pull syntax guard.
 # Upstream's ``_UPDATE_CRITICAL_FILES`` (hermes_cli/update_cmd.py) only lists
@@ -93,6 +95,7 @@ _JANITOR_CRITICAL_FILES = (
     "janitor/update_bootstrap.py",
     "janitor/version.py",
     "janitor/tips_es.py",
+    "janitor/release_channel.py",
     # Root module the banner touchpoints import the version helper by.
     "janitor_version.py",
 )
@@ -501,6 +504,10 @@ def _check_only(branch: str) -> int:
         _report_fetch_failure(fetch_result.stderr.strip())
         return 1
 
+    if not _channel_published(git_cmd, project_root, branch):
+        print(_NO_RELEASE_MESSAGE)
+        return 0
+
     result = subprocess.run(
         git_cmd + ["rev-list", f"HEAD..origin/{branch}", "--count"],
         cwd=project_root,
@@ -523,6 +530,11 @@ _BROKEN_INSTALL_MESSAGE = (
     "  Reinstala Janitor desde la app."
 )
 _UP_TO_DATE_MESSAGE = "✓ Ya tienes la última versión."
+# The channel branch is not on the server: nothing has been released yet.
+_NO_RELEASE_MESSAGE = (
+    "✓ Todavía no hay ninguna versión publicada a la que actualizar.\n"
+    "  Tu instalación se queda como está."
+)
 # Marks a line quoted verbatim from git (English, for diagnosis only).
 _DETAIL_PREFIX = "Detalle técnico: "
 
@@ -557,6 +569,30 @@ def _fetch(git_cmd: list[str], cwd: Path) -> bool:
 
     _report_fetch_failure(fetch_result.stderr.strip())
     return False
+
+
+def _channel_published(git_cmd: list[str], cwd: Path, branch: str) -> bool:
+    """Whether ``origin/<branch>`` exists after the fetch.
+
+    The installer clones a single branch, so a checkout that tracks another one
+    never receives the channel from a plain ``git fetch origin``: ask for it by
+    name once before concluding nothing was released.
+    """
+    ref = f"refs/remotes/origin/{branch}"
+
+    def known() -> bool:
+        return subprocess.run(
+            git_cmd + ["rev-parse", "--verify", "--quiet", ref],
+            cwd=cwd, capture_output=True, text=True,
+        ).returncode == 0
+
+    if known():
+        return True
+    subprocess.run(
+        git_cmd + ["fetch", "origin", f"+refs/heads/{branch}:{ref}"],
+        cwd=cwd, capture_output=True, text=True,
+    )
+    return known()
 
 
 def _current_branch(git_cmd: list[str], cwd: Path) -> str:
@@ -1730,7 +1766,8 @@ def run_janitor_update(args) -> int:
             gateway (bool): suppresses interactive prompts.
             backup (bool): forces a pre-update backup for this run.
             no_backup (bool): skips pre-update backup even if config has it on.
-            branch (str|None): target branch (default ``"main"``).
+            branch (str|None): target branch (default: the release channel,
+                ``janitor.release_channel.RELEASE_BRANCH``).
             keep_stash (bool): leave the autostash parked instead of
                 re-applying it (the desktop updater's mode).
             no_gateway_restart (bool): leave running gateways on the old code.
@@ -1761,7 +1798,7 @@ def run_janitor_update(args) -> int:
     _ensure_loaded()
 
     gateway_mode = bool(getattr(args, "gateway", False))
-    branch = getattr(args, "branch", None) or "main"
+    branch = getattr(args, "branch", None) or RELEASE_BRANCH
     keep_stash = bool(getattr(args, "keep_stash", False))
     check_only = bool(getattr(args, "check", False))
     gateway_exit_code_written = False
@@ -1816,6 +1853,14 @@ def run_janitor_update(args) -> int:
 
         if not _fetch(git_cmd, project_root):
             return 1
+
+        if not _channel_published(git_cmd, project_root, branch):
+            # Nothing released yet: not a failure, and nothing to switch to.
+            print(_NO_RELEASE_MESSAGE)
+            if gateway_mode:
+                _write_gateway_exit_code(True)
+                gateway_exit_code_written = True
+            return 0
 
         current_branch = _current_branch(git_cmd, project_root)
 
