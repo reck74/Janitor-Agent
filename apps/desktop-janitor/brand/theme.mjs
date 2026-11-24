@@ -16,6 +16,13 @@
 // the backend pushes: a built-in name is never re-registered from the backend
 // (backend-sync.ts), and `skin.changed` to it resolves to this preset. Dark is
 // the default mode (renderer + native window) when the user has not chosen.
+//
+// Línea gráfica (F1-18, owner decision 2026-11-24). Upstream's converter is
+// terminal-first: it never reads `ui_primary`, and takes the app background from
+// `status_bar_bg`. The preset therefore routes two skin colours by hand — the
+// skin's `completion_menu_bg` as the background and `ui_primary` (lime) as the
+// primary — and the empty chat shows the J4NITOR-AGENT banner
+// (assets/janitor-logo-banner.png) instead of the text wordmark.
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -24,7 +31,7 @@ import { fileURLToPath } from 'node:url'
 export const SKIN_FILE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'assets', 'janitor', 'sentry-janitor.yaml')
 
 export const JANITOR_THEME_LABEL = 'Janitor'
-export const JANITOR_THEME_DESCRIPTION = 'Paleta del skin sentry-janitor: fondo casi negro, morado Sentry y rosa para errores'
+export const JANITOR_THEME_DESCRIPTION = 'Paleta del skin sentry-janitor: fondo morado profundo, verde lima, morado Sentry y rosa para errores'
 
 const COLOR_LINE = /^ {2}([a-z][a-z0-9_]*):\s*(?:"([^"]*)"|'([^']*)'|([^\s#]+))\s*(?:#.*)?$/
 const TOP_LEVEL = /^([a-z][a-z0-9_]*):\s*(.*?)\s*(?:#.*)?$/
@@ -82,6 +89,17 @@ export function readJanitorSkin(file = SKIN_FILE) {
 // Single-quoted TS string literal (the desktop's code style).
 const tsString = value => `'${String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
 
+/** A skin colour the look depends on; a skin without it fails the build. */
+function lookColor(skin, key) {
+  const value = skin.colors[key]
+
+  if (!value) throw new Error(`skin YAML: the desktop look needs colors.${key}`)
+
+  return value
+}
+
+export const BANNER_ASSET = 'janitor-logo-banner.png'
+
 /** TypeScript source of the preset injected into presets.ts. */
 export function janitorPresetSource(skin) {
   const colors = Object.entries(skin.colors)
@@ -94,8 +112,24 @@ export function janitorPresetSource(skin) {
     '// backend skin goes through. A built-in name is never re-registered from the\n' +
     '// backend, so this IS the skin theme, not a look-alike.\n' +
     `const JANITOR_SKIN_COLORS: Record<string, string> = {\n${colors}\n}\n\n` +
+    '// Línea gráfica (F1-18). Upstream\'s converter reads neither `ui_primary` nor a\n' +
+    '// GUI background from a terminal skin, so two skin colours are routed by hand:\n' +
+    '// `completion_menu_bg` (the skin\'s "Background") seeds the app background, and\n' +
+    '// `ui_primary` becomes the primary (buttons, switches). The accent, rings and\n' +
+    '// links stay on `ui_accent`, as in the TUI.\n' +
+    'const janitorBase = skinToDesktopTheme({\n' +
+    `  name: ${tsString(skin.name)},\n` +
+    `  colors: { ...JANITOR_SKIN_COLORS, background: ${tsString(lookColor(skin, 'completion_menu_bg'))} }\n` +
+    '}) as DesktopTheme\n\n' +
+    'const janitorColors: DesktopTheme[\'colors\'] = {\n' +
+    '  ...janitorBase.colors,\n' +
+    `  primary: ${tsString(lookColor(skin, 'ui_primary'))},\n` +
+    `  primaryForeground: ${tsString(lookColor(skin, 'completion_menu_bg'))}\n` +
+    '}\n\n' +
     'export const janitorTheme: DesktopTheme = {\n' +
-    `  ...(skinToDesktopTheme({ name: ${tsString(skin.name)}, colors: JANITOR_SKIN_COLORS }) as DesktopTheme),\n` +
+    '  ...janitorBase,\n' +
+    '  colors: janitorColors,\n' +
+    '  darkColors: janitorColors,\n' +
     `  label: ${tsString(JANITOR_THEME_LABEL)},\n` +
     `  description: ${tsString(JANITOR_THEME_DESCRIPTION)}\n` +
     '}\n\n'
@@ -144,6 +178,29 @@ export function themePatches(skin = readJanitorSkin()) {
       file: 'electron/main.ts',
       find: "    // Missing / malformed → follow the OS like a fresh install.\n  }\n\n  return 'system'\n}\n",
       replace: "    // Missing / malformed → follow the OS like a fresh install.\n  }\n\n  return 'dark' // Janitor build: the renderer defaults to dark too\n}\n",
+      count: 1
+    },
+    {
+      id: 'P12-look-banner-import',
+      purpose: 'intro.tsx: the banner image replaces the text wordmark, so its now-unused import goes',
+      file: 'src/components/chat/intro.tsx',
+      find: "import introCopyJsonl from './intro-copy.jsonl?raw'\nimport { Wordmark } from './wordmark'\n",
+      replace: "import introCopyJsonl from './intro-copy.jsonl?raw'\n",
+      count: 1
+    },
+    {
+      id: 'P12-look-banner',
+      purpose: 'Empty chat: the J4NITOR-AGENT banner (línea gráfica) instead of the fitted text wordmark; additive blend drops its black backing',
+      file: 'src/components/chat/intro.tsx',
+      find: '        <Wordmark className="mb-1" text={WORDMARK} />\n',
+      replace:
+        '        <img\n' +
+        '          alt={WORDMARK}\n' +
+        '          className="mx-auto mb-3 h-auto w-full max-w-3xl mix-blend-plus-lighter"\n' +
+        '          height={809}\n' +
+        '          src={`${import.meta.env.BASE_URL}' + BANNER_ASSET + '`}\n' +
+        '          width={1942}\n' +
+        '        />\n',
       count: 1
     }
   ]
