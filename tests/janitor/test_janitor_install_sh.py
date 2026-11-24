@@ -17,6 +17,7 @@ import pytest
 import yaml
 
 from janitor.home import ASSETS_ROOT
+from janitor.release_channel import RELEASE_BRANCH
 from tests.janitor.install_sh_harness import (
     fake_install_dir,
     run_install_sh,
@@ -41,7 +42,10 @@ def test_manifest_is_json_and_installs_nothing(tmp_path):
 
 
 def test_repository_stage_clones_the_fork(tmp_path):
-    """A fake ``git`` records every clone and fails it; fake ``sleep`` skips backoff."""
+    """A fake ``git`` records every clone and fails it; fake ``sleep`` skips backoff.
+
+    With no ``--branch`` every clone targets the release channel, never ``main``.
+    """
     bin_dir = tmp_path / "fakebin"
     bin_dir.mkdir()
     log = tmp_path / "git.log"
@@ -68,6 +72,8 @@ def test_repository_stage_clones_the_fork(tmp_path):
     assert {"git@github.com:reck74/Janitor-Agent.git", "https://github.com/reck74/Janitor-Agent.git"} <= {
         word for line in clones for word in line.split()
     }
+    branches = {line.split()[line.split().index("--branch") + 1] for line in clones}
+    assert branches == {RELEASE_BRANCH}, clones
 
 
 def test_config_stage_leaves_a_seeded_janitor_home(tmp_path):
@@ -226,6 +232,23 @@ def test_node_deps_stage_does_not_install_computer_use_by_default(tmp_path):
     assert not new_entries, new_entries  # nothing new in HOME: no .cua-driver, .cursor, .agents
     assert "cua-driver" in result.stdout  # the user is told it was left out, in Spanish
     assert "Skipping" not in result.stdout
+
+
+def test_node_deps_stage_does_not_install_the_browser_by_default(tmp_path):
+    """The base ships no browser (decision 2.10): no Playwright, no Browser Use, and the user is told."""
+    result, seen, _ = _node_deps_run(tmp_path)
+
+    assert stage_frame(result.stdout)["ok"] is True, result.stdout + result.stderr
+    assert "playwright" not in seen and "browser-use" not in seen, seen
+    assert "la primera vez que Janitor navegue" in result.stdout
+    assert "Browser tools will be unavailable" not in result.stdout
+
+
+def test_with_browser_flag_installs_the_browser_use_cli(tmp_path):
+    result, seen, _ = _node_deps_run(tmp_path, "--with-browser")
+
+    assert any(line.startswith("uv ") and "browser-use" in line for line in seen.splitlines()), seen
+    assert stage_frame(result.stdout)["ok"] is True, result.stdout + result.stderr
 
 
 def test_with_computer_use_flag_runs_the_cua_driver_installer(tmp_path):

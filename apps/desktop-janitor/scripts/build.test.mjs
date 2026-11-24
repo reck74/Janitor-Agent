@@ -6,6 +6,7 @@ import { test } from 'node:test'
 
 import {
   APP_DIR,
+  FORK_ONLY_TARGETS,
   OVERLAY_DIR,
   OVERLAY_FILES,
   applyOverlay,
@@ -63,22 +64,39 @@ test('arrays are replaced, nested objects merged', () => {
   assert.deepEqual(merged, { a: { b: 1, c: 3 }, list: [9] })
 })
 
-test('every overlay source exists and every target still exists upstream', () => {
+test('every overlay source exists; a target is either still shipped upstream or declared fork-only', () => {
   for (const [source, target] of OVERLAY_FILES) {
     assert.ok(fs.existsSync(path.join(OVERLAY_DIR, source)), `missing overlay asset ${source}`)
 
-    if (target !== 'assets/janitor-icon.png') {
+    if (FORK_ONLY_TARGETS.has(target)) {
+      assert.equal(fs.existsSync(path.join(APP_DIR, target)), false, `${target} is declared fork-only but exists in apps/desktop`)
+    } else {
       assert.ok(fs.existsSync(path.join(APP_DIR, target)), `upstream no longer ships ${target}`)
     }
   }
+
+  for (const target of FORK_ONLY_TARGETS) {
+    assert.ok(OVERLAY_FILES.some(([, t]) => t === target), `${target} is fork-only but nothing writes it`)
+  }
+})
+
+// F1-21f: the release page links one file name for every version
+// (…/releases/latest/download/<name>), so the name cannot carry a version.
+test('the packaged artifact name is the same for every version', () => {
+  const name = janitorBuilderConfig().artifactName
+
+  assert.ok(name.startsWith('Janitor-'), name)
+  assert.doesNotMatch(name, /\$\{(version|buildVersion|buildNumber)\}/)
+  assert.match(name, /\$\{os\}/)
+  assert.match(name, /\$\{arch\}/)
 })
 
 test('applyOverlay restores every touched file', () => {
   const appDir = fs.mkdtempSync(path.join(os.tmpdir(), 'janitor-overlay-app-'))
 
   for (const [, target] of OVERLAY_FILES) {
-    if (target === 'assets/janitor-icon.png') continue
     fs.mkdirSync(path.dirname(path.join(appDir, target)), { recursive: true })
+    if (FORK_ONLY_TARGETS.has(target)) continue
     fs.writeFileSync(path.join(appDir, target), `upstream:${target}`)
   }
 
@@ -92,11 +110,14 @@ test('applyOverlay restores every touched file', () => {
 
   restore()
 
-  assert.equal(fs.existsSync(path.join(appDir, 'assets/janitor-icon.png')), false)
   assert.equal(fs.existsSync(path.join(appDir, '.janitor-build-journal')), false)
 
   for (const [, target] of OVERLAY_FILES) {
-    if (target === 'assets/janitor-icon.png') continue
+    if (FORK_ONLY_TARGETS.has(target)) {
+      assert.equal(fs.existsSync(path.join(appDir, target)), false, `${target} left behind`)
+      continue
+    }
+
     assert.equal(fs.readFileSync(path.join(appDir, target), 'utf8'), `upstream:${target}`)
   }
 })

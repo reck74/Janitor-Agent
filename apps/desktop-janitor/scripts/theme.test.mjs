@@ -113,10 +113,22 @@ test('the skin parser reads name + colors and refuses a colour line it does not 
   assert.throws(() => parseSkinYaml('colors:\n  a: "#000"\n'), /no name/)
 })
 
-test('the shipped default theme IS skinToDesktopTheme(sentry-janitor.yaml)', async () => {
-  const { presets, skinModule } = await loadPatchedThemes()
-  const expected = skinModule.skinToDesktopTheme(skin)
+// Línea gráfica (F1-18): the converter's output with two skin colours routed by
+// hand — `completion_menu_bg` as the app background, `ui_primary` as the primary.
+test('the shipped default theme is the converted skin on its own background, with ui_primary as primary', async () => {
+  const { presets, skinModule, color } = await loadPatchedThemes()
+  const background = skin.colors.completion_menu_bg
+  const converted = skinModule.skinToDesktopTheme({ ...skin, colors: { ...skin.colors, background } })
   const shipped = presets.BUILTIN_THEMES[skin.name]
+
+  assert.ok(converted, 'upstream converter rejected the skin')
+
+  const look = { ...converted.colors, primary: skin.colors.ui_primary, primaryForeground: background }
+  const expected = { ...converted, colors: look, darkColors: look }
+
+  assert.equal(shipped.colors.background, background.toLowerCase())
+  assert.notEqual(shipped.colors.primary, converted.colors.primary, 'ui_primary and ui_accent are the same colour: the override proves nothing')
+  assert.ok(color.contrastRatio(shipped.colors.primaryForeground, shipped.colors.primary) >= 4.5, 'text on a primary button below AA')
 
   assert.ok(expected, 'upstream converter rejected the skin')
   assert.ok(shipped, `no built-in theme named ${skin.name}`)

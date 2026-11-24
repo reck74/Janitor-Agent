@@ -34,13 +34,18 @@ import { checkTranspiles } from './transpile-check.mjs'
 export const OVERLAY_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 export const APP_DIR = path.resolve(OVERLAY_DIR, '..', 'desktop')
 
-// [overlay source, apps/desktop target]
+// [overlay source, apps/desktop target]. The banner is the J4NITOR-AGENT lettering of the
+// empty chat (F1-18, brand/theme.mjs P12-look-banner).
 export const OVERLAY_FILES = [
   ['assets/janitor-mark.png', 'assets/janitor-icon.png'],
   ['assets/janitor-mark.png', 'public/apple-touch-icon.png'],
   ['assets/janitor-mark.png', 'public/nous-girl.jpg'],
-  ['assets/filler-bg0.jpg', 'public/ds-assets/filler-bg0.jpg']
+  ['assets/filler-bg0.jpg', 'public/ds-assets/filler-bg0.jpg'],
+  ['assets/janitor-logo-banner.png', 'public/janitor-logo-banner.png']
 ]
+
+// Targets upstream does not ship: the build creates them and restore() removes them.
+export const FORK_ONLY_TARGETS = new Set(['assets/janitor-icon.png', 'public/janitor-logo-banner.png'])
 
 const isPlainObject = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 

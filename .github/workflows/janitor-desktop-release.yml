@@ -1,8 +1,9 @@
 name: Janitor Desktop release
 
 # Builds the Janitor Desktop AppImage from the upstream apps/desktop plus the
-# apps/desktop-janitor build overlay (directive #17) and, for a `v*` tag,
-# attaches it to the fork's GitHub release, where users download it.
+# apps/desktop-janitor build overlay (directive #17) and, for a `v*` tag, moves
+# the release channel branch (`stable`, janitor/release_channel.py) to the tag
+# and attaches the AppImage to the fork's GitHub release, where users download it.
 #
 # The build is always of the commit this run was triggered for (tag push, a
 # manual run from a branch or tag, or a PR head), never of another ref: the app
@@ -40,6 +41,11 @@ jobs:
         with:
           node-version: '26'
           cache: npm
+      # A release is found by its tag (`v` + the version the user sees): refuse a
+      # tag that disagrees with pyproject.toml before building anything.
+      - name: Tag matches the version
+        if: github.ref_type == 'tag'
+        run: python3 -m janitor.release_channel --check-tag "$GITHUB_REF_NAME"
       - name: Install npm 12
         run: npm install --global npm@12.2.2
       - name: Install dependencies
@@ -50,10 +56,17 @@ jobs:
         run: node apps/desktop-janitor/scripts/build.mjs --check
       - name: Build AppImage
         run: |
-          # A tag build pins install-stamp.json to the tag's commit but follows
-          # `main` afterwards: a tag is not a branch the installer or the
-          # updater can track. Other runs keep GITHUB_REF_NAME (the branch).
-          if [ "$GITHUB_REF_TYPE" = tag ]; then export GITHUB_REF_NAME=main; fi
+          # A tag build pins install-stamp.json to the tag's commit and follows
+          # the release channel afterwards (RELEASE_BRANCH in
+          # janitor/release_channel.py, `stable`): a tag is not a branch the
+          # installer or the updater can track, and users only get tagged
+          # versions. The `release` job moves that branch to this commit.
+          # Other runs keep GITHUB_REF_NAME (the branch).
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            channel=$(python3 -I -c 'import runpy, sys; print(runpy.run_path(sys.argv[1])["RELEASE_BRANCH"])' janitor/release_channel.py)
+            test -n "$channel"
+            export GITHUB_REF_NAME="$channel"
+          fi
           node apps/desktop-janitor/scripts/build.mjs --linux AppImage --publish never
       - name: Verify AppImage and install stamp
         run: |
@@ -63,6 +76,11 @@ jobs:
           stamp=apps/desktop/build/install-stamp.json
           cat "$stamp"
           test "$(jq -r .commit "$stamp")" = "$GITHUB_SHA"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            # The installer and the updater of a released app follow the channel.
+            channel=$(python3 -I -c 'import runpy, sys; print(runpy.run_path(sys.argv[1])["RELEASE_BRANCH"])' janitor/release_channel.py)
+            test "$(jq -r .branch "$stamp")" = "$channel"
+          fi
           test -z "$(git status --porcelain --untracked-files=no -- apps/desktop)"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
@@ -81,6 +99,29 @@ jobs:
       contents: write
       actions: read
     steps:
+      # Full history: the reachability check below needs origin/main and the tag's ancestry.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      # Order matters: first the channel branch, then the AppImage. The app
+      # downloads scripts/install.sh at the commit it was built from and the
+      # installer clones the branch in install-stamp.json (the channel), so by
+      # the time anyone can download this AppImage the channel must already
+      # contain that commit. A failure here publishes nothing.
+      - name: Move the release channel to the tag
+        run: |
+          channel=$(python3 -I -c 'import runpy, sys; print(runpy.run_path(sys.argv[1])["RELEASE_BRANCH"])' janitor/release_channel.py)
+          test -n "$channel"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          # Only a commit already merged to main is released.
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::The tag $GITHUB_REF_NAME ($GITHUB_SHA) is not reachable from origin/main. Merge it to main and tag a commit of main."
+            exit 1
+          fi
+          # Not forced: creates the branch the first time and refuses a
+          # non-fast-forward (an older tag than the channel's tip, or a
+          # channel moved by hand), so a release never rewinds users.
+          git push origin "$GITHUB_SHA:refs/heads/$channel"
       - name: Attach AppImage to the release
         env:
           GH_TOKEN: ${{ github.token }}
