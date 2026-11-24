@@ -1,0 +1,16 @@
+# AGENTS.md — {{NAME}}
+
+{{PROBLEM}} Usuarios: {{USERS}}
+
+## Build y pruebas
+
+- Instalar: `uv sync` (usa `uv.lock`; no instales con pip).
+- Lint: `uv run ruff check .` y `uv run ruff format --check .`
+- Pruebas: `uv run pytest`
+- Nada está terminado hasta que los tres pasan.
+
+## Reglas
+
+- Código en `src/{{PY_PACKAGE}}/`, pruebas en `tests/` con el mismo nombre de módulo.
+- Toda dependencia nueva con techo de versión (`>=X.Y,<X+1`), añadida con `uv add`, y `uv.lock` en el mismo commit.
+- Nunca se commitean secretos: van en `.env` (ignorado por git).

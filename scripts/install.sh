@@ -43,9 +43,10 @@ NC='\033[0m' # No Color
 BOLD='\033[1m'
 
 # Configuration
-REPO_URL_SSH="git@github.com:NousResearch/hermes-agent.git"
-REPO_URL_HTTPS="https://github.com/NousResearch/hermes-agent.git"
-HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+# JANITOR: the fork's installer installs the fork, into ~/.janitor by default.
+REPO_URL_SSH="git@github.com:reck74/Janitor-Agent.git"
+REPO_URL_HTTPS="https://github.com/reck74/Janitor-Agent.git"
+HERMES_HOME="${HERMES_HOME:-$HOME/.janitor}"
 # INSTALL_DIR is resolved AFTER arg parsing and OS detection so we can pick an
 # FHS-style layout for root installs.  Track whether the user gave us an
 # explicit directory — if so we never override it.
@@ -71,8 +72,8 @@ DETECTED_BROWSER_EXECUTABLE=""
 USE_VENV=true
 RUN_SETUP=true
 SKIP_BROWSER=false
-SKIP_COMPUTER_USE=false
-NO_SKILLS=false
+SKIP_COMPUTER_USE=true  # JANITOR: optional; cua-driver writes outside the home and seeds telemetry (--with-computer-use)
+NO_SKILLS=true  # JANITOR: homes start without upstream's bundled skills (.no-bundled-skills)
 BRANCH="main"
 INSTALL_COMMIT=""
 FORCE_COMMIT=false
@@ -112,6 +113,10 @@ while [[ $# -gt 0 ]]; do
             SKIP_COMPUTER_USE=true
             shift
             ;;
+        --with-computer-use)  # JANITOR: opt in to the cua-driver install
+            SKIP_COMPUTER_USE=false  # JANITOR: opt in to the cua-driver install
+            shift  # JANITOR: opt in to the cua-driver install
+            ;;  # JANITOR: opt in to the cua-driver install
         --no-skills)
             NO_SKILLS=true
             shift
@@ -172,6 +177,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --skip-setup   Skip interactive setup wizard"
             echo "  --skip-browser Skip Playwright/Chromium install (browser tools won't work)"
             echo "  --skip-computer-use  Skip the cua-driver (Computer Use) install"
+            echo "  --with-computer-use  Install cua-driver (Computer Use); Janitor skips it by default"  # JANITOR: opt-in flag
             echo "  --no-skills    Start with a blank slate — seed no bundled skills, and"
             echo "                   write \$HERMES_HOME/.no-bundled-skills so future"
             echo "                   'hermes update' runs never inject bundled skills either"
@@ -240,6 +246,18 @@ log_warn() {
 
 log_error() {
     echo -e "${RED}✗${NC} $1"
+}
+
+# JANITOR: a home holding the pre-app terminal install (janitor-core) is
+# refused before anything is written: the app is a clean start (plan decision 2.9).
+janitor_legacy_home_message() {
+    printf '%s' "Alto ahí: en $HERMES_HOME hay una instalación antigua de Janitor por terminal (janitor-core). Esta versión parte de cero y no adopta nada viejo, así que no toqué nada. Desinstala lo antiguo primero (docs/janitor/desinstalar-instalacion-antigua.md en el repositorio) y vuelve a abrir la app."
+}
+
+janitor_refuse_legacy_home() {  # JANITOR: legacy-home guard
+    [ -d "$HERMES_HOME/janitor-core" ] || return 0
+    echo -e "${RED}✗${NC} $(janitor_legacy_home_message)" >&2
+    return 1
 }
 
 json_escape() {
@@ -526,6 +544,8 @@ configure_managed_node_npm_prefix() {
 get_hermes_command_path() {
     local link_dir
     link_dir="$(get_command_link_dir)"
+    # JANITOR: drive this install through `janitor`, never a foreign `hermes`.
+    if [ -x "$link_dir/janitor" ]; then echo "$link_dir/janitor"; return 0; fi
     if [ -x "$link_dir/hermes" ]; then
         echo "$link_dir/hermes"
     else
@@ -2150,6 +2170,10 @@ setup_path() {
     # We intentionally clear PYTHONPATH/PYTHONHOME here so inherited env vars
     # can't make this launcher import modules from another checkout.
     mkdir -p "$command_link_dir"
+    # JANITOR: install `janitor` (-> venv/bin/janitor) and skip the hermes /
+    # hermes-agent / hermes-acp launchers, which belong to a real Hermes install.
+    "$HERMES_BIN" -m janitor.seed --link-command "$command_link_dir" || log_warn "Could not install the janitor command"
+    if false; then
     # Older installs created this path as a symlink to $HERMES_BIN. Without
     # the rm, `cat >` follows the symlink and overwrites the venv pip entry
     # point with this shim — making `exec "$HERMES_BIN"` self-recurse. (#21454)
@@ -2223,6 +2247,7 @@ EOF
     fi
     chmod +x "$command_link_dir/hermes-acp"
     log_success "Installed hermes-acp launcher → $command_link_display_dir/hermes-acp"
+    fi  # JANITOR: end of the skipped hermes launchers
 
     if [ "$DISTRO" = "termux" ]; then
         export PATH="$command_link_dir:$PATH"
@@ -2385,6 +2410,10 @@ SOUL_EOF
     fi
 
     log_success "Configuration directory ready: ~/.hermes/"
+
+    # JANITOR: seed the Janitor home (minimal config.yaml, SOUL.md, skin,
+    # .no-bundled-skills) before any skills sync. Never touches .env.
+    "$INSTALL_DIR/venv/bin/python" -m janitor.seed --home "$HERMES_HOME" || log_warn "janitor.seed failed; the janitor launcher retries on first start"
 
     # Seed bundled skills into ~/.hermes/skills/ (manifest-based, one-time per skill)
     if [ "$NO_SKILLS" = true ]; then
@@ -3256,6 +3285,193 @@ print_success() {
     fi
 }
 
+# JANITOR: begin — Spanish, Janitor-branded output for what the desktop app shows
+# ("Mostrar salida del instalador"). Bash keeps the last definition of a function,
+# so the helpers below replace upstream's banner, summary and log helpers without
+# editing them: no upstream line changes here. janitor_tr maps the messages of the
+# Linux install the app runs; a message it does not list (another OS, a branch
+# upstream adds or rewords) prints in English as before. Paths, commands and
+# third-party output pass through untouched.
+janitor_display_home() {
+    case "$HERMES_HOME" in
+        "$HOME"/*) printf '~/%s' "${HERMES_HOME#"$HOME"/}" ;;
+        *) printf '%s' "$HERMES_HOME" ;;
+    esac
+}
+
+janitor_tr() {
+    local m="$1" h x
+    h="$(janitor_display_home)"
+    case "$m" in
+        # Every stage
+        "Detected: "*) m="Sistema detectado: ${m#Detected: }" ;;
+        "Install directory: "*" (explicit)") x="${m#Install directory: }"; m="Directorio de instalación: ${x% (explicit)}" ;;
+        "Install directory not found: "*) m="No existe el directorio de instalación: ${m#Install directory not found: }" ;;
+        "The 'repository' stage must run before this one.") m="Antes tiene que correr la etapa 'repository'." ;;
+        "Unknown stage: "*) m="Etapa desconocida: ${m#Unknown stage: }" ;;
+        "Skipping "*" (non-interactive bootstrap)") x="${m#Skipping }"; m="Etapa ${x% (non-interactive bootstrap)} omitida: la app se encarga de ella" ;;
+        # prerequisites
+        "Installing managed uv into "*) x="${m#Installing managed uv into }"; m="Instalando uv propio en ${x% ...}..." ;;
+        "Managed uv found ("*) m="uv propio encontrado (${m#Managed uv found (}" ;;
+        "Managed uv installed ("*) m="uv propio instalado (${m#Managed uv installed (}" ;;
+        "Failed to download uv installer from "*) m="No se pudo descargar el instalador de uv desde ${m#Failed to download uv installer from }" ;;
+        "Failed to install uv") m="No se pudo instalar uv" ;;
+        "Checking Python "*"...") x="${m#Checking Python }"; m="Comprobando Python ${x%...}..." ;;
+        "Python "*" not found, installing via uv...") x="${m#Python }"; m="No hay Python ${x% not found, installing via uv...}: lo instalo con uv..." ;;
+        "Python found: "*) m="Python encontrado: ${m#Python found: }" ;;
+        "Python installed: "*) m="Python instalado: ${m#Python installed: }" ;;
+        "Failed to install Python "*) m="No se pudo instalar Python ${m#Failed to install Python }" ;;
+        "Checking Git...") m="Comprobando Git..." ;;
+        "Git not found") m="No encuentro Git" ;;
+        "Checking Node.js (for browser tools)...") m="Comprobando Node.js (herramientas de navegador)..." ;;
+        "Node.js "*" found (Hermes-managed)") x="${m#Node.js }"; m="Node.js ${x% found (Hermes-managed)} encontrado (gestionado por Janitor)" ;;
+        "Node.js not found — installing Node.js "*" LTS...") x="${m#Node.js not found — installing Node.js }"; m="No hay Node.js: instalando Node.js ${x% LTS...} LTS..." ;;
+        "Node.js "*" installed to ~/.hermes/node/") x="${m#Node.js }"; m="Node.js ${x% installed to ~/.hermes/node/} instalado en $h/node/" ;;
+        "Checking for a C++ compiler (needed to build native Node modules like node-pty)...") m="Comprobando el compilador de C++ (para módulos nativos de Node como node-pty)..." ;;
+        "C++ compiler found") m="Compilador de C++ encontrado" ;;
+        "C++ compiler installed") m="Compilador de C++ instalado" ;;
+        "Checking internet connectivity for package install and web tools...") m="Comprobando la conexión a Internet (paquetes y herramientas web)..." ;;
+        "Internet connectivity looks good") m="La conexión a Internet funciona" ;;
+        "Checking ripgrep (fast file search)...") m="Comprobando ripgrep (búsqueda rápida de archivos)..." ;;
+        "Checking ffmpeg (TTS voice messages)...") m="Comprobando ffmpeg (mensajes de voz)..." ;;
+        "ripgrep not installed (file search will use grep fallback)") m="ripgrep no está instalado: la búsqueda de archivos usará grep" ;;
+        "ffmpeg not installed (TTS voice messages will be limited)") m="ffmpeg no está instalado: los mensajes de voz quedarán limitados" ;;
+        # repository
+        "Installing to "*"...") x="${m#Installing to }"; m="Instalando en ${x%...}..." ;;
+        "Trying SSH clone...") m="Probando a clonar por SSH..." ;;
+        "SSH failed, trying HTTPS...") m="SSH no funcionó; pruebo por HTTPS..." ;;
+        "Cloned via "*) m="Clonado por ${m#Cloned via }" ;;
+        "Failed to clone repository") m="No se pudo clonar el repositorio" ;;
+        "Pinning checkout to commit "*"...") x="${m#Pinning checkout to commit }"; m="Fijando el código en el commit ${x%...}..." ;;
+        "Repository ready") m="Repositorio listo" ;;
+        # venv
+        "Creating virtual environment with Python "*"...") x="${m#Creating virtual environment with Python }"; m="Creando el entorno virtual con Python ${x%...}..." ;;
+        "Virtual environment already exists, recreating...") m="El entorno virtual ya existe; lo vuelvo a crear..." ;;
+        "Virtual environment ready ("*) m="Entorno virtual listo (${m#Virtual environment ready (}" ;;
+        "Failed to create the virtual environment with Python "*) m="No se pudo crear el entorno virtual con Python ${m#Failed to create the virtual environment with Python }" ;;
+        # python-deps
+        "Installing dependencies...") m="Instalando dependencias de Python..." ;;
+        "Trying tier: "*" ...") x="${m#Trying tier: }"; m="Probando el modo de instalación: ${x% ...}..." ;;
+        "(this resolves + downloads the curated [all] set — first run on a") m="(resuelve y descarga el conjunto [all]; la primera vez, en un entorno" ;;
+        " fresh venv can take 1-5 minutes; uv prints progress below)") m=" nuevo, tarda de 1 a 5 minutos; uv muestra el progreso abajo)" ;;
+        "Main package installed") m="Paquete principal instalado" ;;
+        "Main package installed (hash-verified via uv.lock)") m="Paquete principal instalado (verificado por hash con uv.lock)" ;;
+        "Main package installed ("*) m="Paquete principal instalado (${m#Main package installed (}" ;;
+        "All dependencies installed") m="Todas las dependencias instaladas" ;;
+        "Package installation failed even with no extras.") m="La instalación de paquetes falló incluso sin extras." ;;
+        # node-deps
+        "Installing Node.js dependencies (browser tools)...") m="Instalando dependencias de Node.js (herramientas de navegador)..." ;;
+        "Node.js dependencies installed") m="Dependencias de Node.js instaladas" ;;
+        "npm install failed or timed out; Node.js dependencies were not installed") m="npm install falló o tardó demasiado: no se instalaron las dependencias de Node.js" ;;
+        "npm output:") m="Salida de npm:" ;;
+        "Installing browser engine (Playwright Chromium)...") m="Instalando el motor de navegador (Chromium de Playwright)..." ;;
+        "Playwright does not support automatic dependency installation on "*".") x="${m#Playwright does not support automatic dependency installation on }"; m="Playwright no instala por su cuenta las dependencias del sistema en ${x%.}." ;;
+        "Install Chromium/browser system dependencies for your distribution, then run:") m="Instala las dependencias de Chromium de tu distribución y después ejecuta:" ;;
+        "Browser tools will not work until dependencies are installed.") m="Las herramientas de navegador no funcionarán hasta que estén instaladas." ;;
+        "Playwright browser installation failed — browser tools will not work.") m="Falló la instalación del navegador de Playwright: las herramientas de navegador no funcionarán." ;;
+        "Browser engine setup complete") m="Motor de navegador preparado" ;;
+        "Installing TUI dependencies...") m="Instalando dependencias del TUI..." ;;
+        "TUI dependencies installed") m="Dependencias del TUI instaladas" ;;
+        "TUI npm install failed or timed out; TUI dependencies were not installed") m="npm install del TUI falló o tardó demasiado: no se instalaron sus dependencias" ;;
+        "Installing Browser Use CLI (default browser backend)...") m="Instalando Browser Use CLI (motor de navegador por defecto)..." ;;
+        "Browser Use CLI installed") m="Browser Use CLI instalado" ;;
+        "Browser Use CLI already installed") m="Browser Use CLI ya estaba instalado" ;;
+        "Browser Use CLI install failed — browser automation falls back to built-in tools.") m="Falló la instalación de Browser Use CLI: el navegador usará las herramientas integradas." ;;
+        "Skipping Computer Use (cua-driver) install (--skip-computer-use)") m="Control del escritorio (cua-driver) no instalado: es opcional y se instala cuando lo activas" ;;
+        "Installing Computer Use driver (cua-driver)...") m="Instalando el control del escritorio (cua-driver)..." ;;
+        "Computer Use driver installed (enable via 'hermes tools' → Computer Use)") m="Control del escritorio instalado (actívalo con 'janitor tools' → Computer Use)" ;;
+        "Computer Use driver install failed — it will install on demand when you enable the tool.") m="Falló la instalación del control del escritorio: se instalará cuando actives la herramienta." ;;
+        "Install later with: hermes computer-use install") m="Instálalo más tarde con: janitor computer-use install" ;;
+        # path
+        "Setting up hermes command...") m="Preparando el comando janitor..." ;;
+        "~/.local/bin already on PATH") m="~/.local/bin ya está en el PATH" ;;
+        "Added ~/.local/bin to PATH in "*) m="Añadido ~/.local/bin al PATH en ${m#Added ~/.local/bin to PATH in }" ;;
+        "Could not detect shell config file to add ~/.local/bin to PATH") m="No encontré el archivo de configuración de tu shell para añadir ~/.local/bin al PATH" ;;
+        "Add manually: "*) m="Añádelo a mano: ${m#Add manually: }" ;;
+        "hermes command ready") m="Comando janitor listo" ;;
+        # config
+        "Setting up configuration files...") m="Preparando los archivos de configuración..." ;;
+        "Created ~/.hermes/.env from template") m="Creado $h/.env a partir de la plantilla" ;;
+        "Created ~/.hermes/.env") m="Creado $h/.env" ;;
+        "~/.hermes/.env already exists, keeping it") m="$h/.env ya existe; se conserva" ;;
+        "Created ~/.hermes/config.yaml from template") m="Creado $h/config.yaml a partir de la plantilla" ;;
+        "~/.hermes/config.yaml already exists, keeping it") m="$h/config.yaml ya existe; se conserva" ;;
+        "Created ~/.hermes/SOUL.md (edit to customize personality)") m="Creado $h/SOUL.md" ;;
+        "Configuration directory ready: ~/.hermes/") m="Directorio de configuración listo: $h/" ;;
+        "Skipping bundled skills (--no-skills). Wrote "*) m="Sin el paquete de skills de upstream: escrito ${m#Skipping bundled skills (--no-skills). Wrote }" ;;
+        "  Future 'hermes update' runs will not inject bundled skills. Delete the marker to opt back in.") m="  Las actualizaciones tampoco lo añadirán. Borra ese marcador si algún día lo quieres." ;;
+        # complete
+        "Skipping bootstrap marker: could not resolve HEAD in "*) m="Sin marcador de instalación: no pude leer el commit de ${m#Skipping bootstrap marker: could not resolve HEAD in }" ;;
+        "Skipping bootstrap marker: "*" doesn't exist") x="${m#Skipping bootstrap marker: }"; x=${x%" doesn't exist"}; m="Sin marcador de instalación: no existe $x" ;;
+        # Generic tails last: "<tool> <version> found|installed".
+        *" found") m="${m% found} encontrado" ;;
+        *" installed") m="${m% installed} instalado" ;;
+    esac
+    printf '%s' "$m"
+}
+
+log_info() {
+    echo -e "${CYAN}→${NC} $(janitor_tr "$1")"
+}
+
+log_success() {
+    echo -e "${GREEN}✓${NC} $(janitor_tr "$1")"
+}
+
+log_warn() {
+    echo -e "${YELLOW}⚠${NC} $(janitor_tr "$1")"
+}
+
+log_error() {
+    echo -e "${RED}✗${NC} $(janitor_tr "$1")"
+}
+
+print_banner() {
+    echo ""
+    echo -e "${MAGENTA}${BOLD}"
+    echo "┌─────────────────────────────────────────────────────────┐"
+    echo "│  THE JANITOR · instalador                               │"
+    echo "├─────────────────────────────────────────────────────────┤"
+    echo "│  Tu agente para toda la tecnología. Sin filtro.         │"
+    echo "└─────────────────────────────────────────────────────────┘"
+    echo -e "${NC}"
+}
+
+print_success() {
+    local link_dir
+    link_dir="$(get_command_link_dir)"
+    echo ""
+    echo -e "${GREEN}${BOLD}"
+    echo "┌─────────────────────────────────────────────────────────┐"
+    echo "│  ✓ Instalación terminada                                │"
+    echo "└─────────────────────────────────────────────────────────┘"
+    echo -e "${NC}"
+    echo -e "${CYAN}${BOLD}📁 Tus archivos:${NC}"
+    echo -e "   ${YELLOW}Configuración:${NC}  $HERMES_HOME/config.yaml"
+    echo -e "   ${YELLOW}Claves de API:${NC}  $HERMES_HOME/.env"
+    echo -e "   ${YELLOW}Datos:${NC}          $HERMES_HOME/cron/, sessions/, logs/"
+    echo -e "   ${YELLOW}Código:${NC}         $INSTALL_DIR"
+    echo ""
+    echo -e "${CYAN}${BOLD}🚀 En una terminal:${NC}"
+    echo -e "   ${GREEN}janitor${NC}                  Abre el TUI, con las mismas sesiones que la app"
+    echo -e "   ${GREEN}janitor config${NC}           Ver o cambiar la configuración"
+    echo -e "   ${GREEN}janitor services list${NC}    Aplicativos opcionales (necesitan Docker)"
+    echo -e "   ${GREEN}janitor update${NC}           Actualiza a la última versión"
+    echo ""
+    case ":$PATH:" in
+        *":$link_dir:"*) ;;
+        *) echo -e "${YELLOW}⚡ El comando janitor está en $link_dir: abre una terminal nueva para usarlo.${NC}"
+           echo "" ;;
+    esac
+    if [ "$HAS_NODE" = false ]; then
+        echo -e "${YELLOW}Nota: no se pudo instalar Node.js. Las herramientas de navegador lo necesitan: https://nodejs.org/es/download${NC}"
+    fi
+    if [ "$HAS_RIPGREP" = false ]; then
+        echo -e "${YELLOW}Nota: no hay ripgrep (rg); la búsqueda de archivos usará grep, más lenta.${NC}"
+    fi
+}
+# JANITOR: end
+
 ensure_browser() {
     if ! command -v node >/dev/null 2>&1; then
         local node_bin="$HERMES_HOME/node/bin/node"
@@ -3879,6 +4095,13 @@ run_stage_protocol() {
         return 2
     fi
 
+    if ! janitor_refuse_legacy_home; then  # JANITOR: every stage, before any write
+        if [ "$JSON_OUTPUT" = true ]; then
+            emit_stage_json "$stage" false false "$(janitor_legacy_home_message)"
+        fi
+        return 1
+    fi  # JANITOR: end of the legacy-home guard
+
     if [ "$NON_INTERACTIVE" = true ] && stage_needs_user_input "$stage"; then
         log_info "Skipping $stage (non-interactive bootstrap)"
         if [ "$JSON_OUTPUT" = true ]; then
@@ -3902,7 +4125,7 @@ run_stage_protocol() {
         if [ "$code" -eq 0 ]; then
             emit_stage_json "$stage" true false
         else
-            emit_stage_json "$stage" false false "exit code $code"
+            emit_stage_json "$stage" false false "código de salida $code"  # JANITOR: the app shows this reason
         fi
     fi
     return "$code"
@@ -3913,6 +4136,7 @@ run_stage_protocol() {
 # ============================================================================
 
 main() {
+    janitor_refuse_legacy_home || return 1  # JANITOR: before any write
     print_banner
 
     detect_os
@@ -3958,6 +4182,7 @@ if [ "$MANIFEST_MODE" = true ]; then
 elif [ -n "$STAGE_NAME" ]; then
     run_stage_protocol "$STAGE_NAME"
 elif [ -n "$ENSURE_DEPS" ]; then
+    janitor_refuse_legacy_home || exit 1  # JANITOR: --ensure installs packages; same guard
     ensure_mode
 else
     main

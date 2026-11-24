@@ -1,0 +1,11 @@
+# Plantilla de agente especialista (directiva #19). `janitor plantillas crear creador-proyectos`
+# crea un perfil con esta configuración, las skills del catálogo marcadas con
+# `creador-proyectos` y SOUL.md = persona principal + la sección del rol (SOUL.md de aquí).
+name: creador-proyectos
+display_name: Creador de proyectos
+description: Convierte una idea en un proyecto que funciona.
+inherit_soul: true
+config:
+  display: {personality: janitor, skin: sentry-janitor, language: es}
+  plugins: {enabled: [janitor]}
+skills_from_catalog: true

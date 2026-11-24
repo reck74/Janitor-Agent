@@ -7,7 +7,7 @@ Aligned with the official Hermes ``_cmd_update_impl`` in
 ``janitor/cli.py``) and the monkey-patched ``cmd_update`` (also in
 ``janitor/cli.py``) delegate here.
 
-The 11-step pipeline:
+The 12-step pipeline:
 
   1. Hangup protection (captures IO state for restore on exit)
   2. Pre-update backup (optional via ``_run_pre_update_backup``)
@@ -22,19 +22,38 @@ The 11-step pipeline:
      three fresh-wrapper sentinels, rebind the fresh wrappers from the
      freshly-pulled modules. Runs on both the post-pull and the
      already-current paths so a no-pull update also reloads.
-  7. Python dependency install via uv/pip + lazy-feature/bootstrap refresh.
+  7. Python dependency install via uv/pip, then a check that every BASE
+     dependency of the pulled ``pyproject.toml`` is installed in the target
+     interpreter (upstream's installer only warns); a miss writes the
+     marker with ``failed_step="python_deps"``, keeps the deps-pending flag
+     and exits 1. Then lazy-feature/bootstrap refresh and skill catalog.
   8. Node repair (``_update_node_dependencies`` + TUI build). Failures
      write ``update-incomplete.json`` with ``failed_step="node_deps"`` and
-     exit 1 — no success banner, no stash restore.
+     exit 1 — no success banner, no stash restore. Then the ``web/`` build
+     (upstream ``_build_web_ui``, non-fatal).
   9. Fresh-wrapper config migration phase (``_run_config_check_fresh`` +
      conditional ``_run_migrate_config_fresh(interactive=False, quiet=True)``).
      Any failure (missing helpers, exception from check / migrate / post-check,
      or still-behind without an explicit support-floor warning) writes the
      marker with ``failed_step="config_migration"`` and exits 1.
- 10. Desktop receipt via ``_print_update_completion("✓ Update complete!")``.
+ 10. Desktop receipt via ``_print_update_completion("✓ Actualización completa")``.
  11. Marker cleanup, stash restore LAST (using persisted marker stash_ref
      as fallback when the current run did not produce a new stash), success
      banner. Cleanup / restore failures return 1 and skip the banner.
+     ``--keep-stash`` (the desktop updater, ``scripts/desktop-update/posix.sh``)
+     leaves every autostash parked instead of restoring it.
+ 12. Only on success: ``--gateway`` writes ``.update_exit_code``, then the
+     running gateways of THIS checkout are restarted with upstream's
+     ``_restart_gateway_fleet_after_update`` (skipped by
+     ``--no-gateway-restart``; skipped with a notice when a gateway of the
+     same home runs from another checkout). A gateway still on pre-update
+     code once the restart settled fails the run (exit 1). The last line of a
+     pulled update says when the engine raised the app/engine contract
+     (``janitor/desktop-compat.json``). Any other ``--gateway`` exit writes a
+     failing ``.update_exit_code``.
+
+All user-facing output is Spanish: it is read in the terminal and streamed
+into the chat during a messaging ``/update``.
 
 Helpers from ``hermes_cli.update_cmd`` (``_run_config_check_fresh``,
 ``_run_migrate_config_fresh``, ``_print_update_completion``) and from
@@ -52,7 +71,6 @@ from __future__ import annotations
 import importlib
 import json
 import os
-import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -75,13 +93,8 @@ _JANITOR_CRITICAL_FILES = (
     "janitor/update_bootstrap.py",
     "janitor/version.py",
     "janitor/tips_es.py",
-    # Pre-1.0 import paths kept as aliases for old console scripts.
-    "janitor_cli.py",
-    "janitor_update_core.py",
-    "janitor_update_bootstrap.py",
+    # Root module the banner touchpoints import the version helper by.
     "janitor_version.py",
-    "janitor_ext/__init__.py",
-    "janitor_ext/tips_es.py",
 )
 
 
@@ -95,6 +108,7 @@ _discard_lockfile_churn: Optional[Callable] = None
 _normalize_managed_eol: Optional[Callable] = None
 _stash_local_changes_if_needed: Optional[Callable] = None
 _restore_stashed_changes: Optional[Callable] = None
+_park_stashed_changes: Optional[Callable] = None
 _refresh_active_lazy_features: Optional[Callable] = None
 _update_node_dependencies: Optional[Callable] = None
 _resolve_node_runtime_npm: Optional[Callable] = None
@@ -112,6 +126,11 @@ _ensure_uv_for_termux: Optional[Callable] = None
 _run_config_check_fresh: Optional[Callable] = None
 _run_migrate_config_fresh: Optional[Callable] = None
 _print_update_completion: Optional[Callable] = None
+# Post-update phases shared with ``hermes update`` (``_finish_pulled_update``):
+# the web UI build, the gateway's ``.update_exit_code`` and the fleet restart.
+_build_web_ui: Optional[Callable] = None
+_write_gateway_update_exit_code: Optional[Callable] = None
+_restart_gateway_fleet_after_update: Optional[Callable] = None
 
 
 # Lazy-import cache: only try each helper once per process.
@@ -167,7 +186,7 @@ def _validate_janitor_files_syntax(
             except py_compile.PyCompileError as exc:
                 return False, str(path), str(exc)
             except OSError as exc:
-                return False, str(path), f"could not read: {exc}"
+                return False, str(path), f"no se pudo leer: {exc}"
     return True, None, None
 
 
@@ -220,6 +239,7 @@ def _ensure_loaded() -> None:
         "_normalize_managed_eol",
         "_stash_local_changes_if_needed",
         "_restore_stashed_changes",
+        "_park_stashed_changes",
         "_refresh_active_lazy_features",
         "_update_node_dependencies",
         "_resolve_node_runtime_npm",
@@ -233,6 +253,9 @@ def _ensure_loaded() -> None:
         "_is_android_python",
         "_install_psutil_android_compat",
         "_ensure_uv_for_termux",
+        "_build_web_ui",
+        "_write_gateway_update_exit_code",
+        "_restart_gateway_fleet_after_update",
     )
     for name in lazy_helpers:
         if globals().get(name) is None:
@@ -281,7 +304,7 @@ def _call(
     if helper is None:
         if fallback is not None:
             return fallback(*args, **kwargs)
-        print(f" ⚠ Helper {name} unavailable — skipping.")
+        print(f" ⚠ Falta el ayudante {name} en esta instalación: se omite ese paso.")
         return None
     return helper(*args, **kwargs)
 
@@ -310,13 +333,13 @@ def _local_stash(git_cmd: list[str], cwd: Path) -> Optional[str]:
         text=True,
     )
     if unmerged.stdout.strip():
-        print(" → Clearing unmerged index entries from a previous conflict...")
+        print(" → Limpiando restos de un conflicto anterior...")
         subprocess.run(git_cmd + ["reset"], cwd=cwd, capture_output=True)
 
     stash_name = datetime.now(timezone.utc).strftime(
         "janitor-update-autostash-%Y%m%d-%H%M%S"
     )
-    print(" → Local changes detected — stashing before update...")
+    print(" → El motor tiene cambios locales: se apartan antes de actualizar...")
     subprocess.run(
         git_cmd + ["stash", "push", "--include-untracked", "-m", stash_name],
         cwd=cwd,
@@ -354,25 +377,65 @@ def _local_restore_stash(
 
     if not selector:
         print(
-            f" ⚠ Could not find autostash {stash_ref}; "
-            f"run `git stash list` manually."
+            f" ⚠ No aparece la copia apartada de tus cambios locales ({stash_ref}). "
+            f"Búscala con `git stash list`."
         )
         return False
 
-    print(" → Restoring local changes from stash...")
+    print(" → Reaplicando tus cambios locales...")
     apply_result = subprocess.run(
         git_cmd + ["stash", "apply", selector],
         cwd=cwd,
     )
     if apply_result.returncode != 0:
         print(
-            f" ⚠ Failed to apply autostash {selector}; "
-            f"resolve manually with `git stash apply {selector}`."
+            f" ⚠ Tus cambios locales chocan con la versión nueva y siguen guardados. "
+            f"Recupéralos con `git stash apply {selector}`."
         )
         return False
 
     subprocess.run(git_cmd + ["stash", "drop", selector], cwd=cwd, check=True)
     return True
+
+
+def _local_park_stash(stash_ref: str) -> None:
+    """Local fallback for ``_park_stashed_changes``."""
+    print()
+    print(" ℹ Tus cambios locales quedaron apartados y no se reaplicaron (--keep-stash).")
+    print(f"  Referencia: {stash_ref}")
+    print(f"  Para recuperarlos: git stash apply {stash_ref}")
+
+
+def _settle_stash(
+    git_cmd: list[str], cwd: Path, stash_ref: str, keep_stash: bool
+) -> Any:
+    """Restore an autostash, or leave it parked under ``--keep-stash``.
+
+    ``--keep-stash`` is the desktop updater's mode: local source edits stay in
+    ``git stash`` instead of riding along onto the updated code.
+    """
+    if keep_stash:
+        _call("_park_stashed_changes", stash_ref, fallback=_local_park_stash)
+        return True
+    return _call(
+        "_restore_stashed_changes",
+        git_cmd,
+        cwd,
+        stash_ref,
+        fallback=lambda *a, **kw: _local_restore_stash(a[0], a[1], a[2]),
+    )
+
+
+def _project_venv(project_root: Path) -> Path:
+    """The virtualenv this update installs into.
+
+    The checkout's ``venv`` (desktop app / ``install.sh`` layout,
+    ``~/.janitor/hermes-agent/venv``), otherwise the running interpreter's.
+    """
+    candidate = Path(project_root) / "venv"
+    if candidate.is_dir():
+        return candidate
+    return Path(sys.prefix)
 
 
 def _git_cmd() -> list[str]:
@@ -424,10 +487,10 @@ def _check_only(branch: str) -> int:
     project_root = PROJECT_ROOT
     git_dir = project_root / ".git"
     if not git_dir.exists():
-        print("✗ Not a git repository — cannot check for updates.")
+        print(_BROKEN_INSTALL_MESSAGE)
         return 1
 
-    print("→ Fetching from origin...")
+    print("→ Buscando la versión nueva...")
     fetch_result = subprocess.run(
         git_cmd + ["fetch", "origin"],
         cwd=project_root,
@@ -435,15 +498,7 @@ def _check_only(branch: str) -> int:
         text=True,
     )
     if fetch_result.returncode != 0:
-        stderr = fetch_result.stderr.strip()
-        if "Could not resolve host" in stderr or "unable to access" in stderr:
-            print("✗ Network error — cannot reach the remote repository.")
-        elif "Authentication failed" in stderr or "could not read Username" in stderr:
-            print("✗ Authentication failed — check your git credentials or SSH key.")
-        else:
-            print("✗ Failed to fetch.")
-            if stderr:
-                print(f"  {stderr.splitlines()[0]}")
+        _report_fetch_failure(fetch_result.stderr.strip())
         return 1
 
     result = subprocess.run(
@@ -455,16 +510,42 @@ def _check_only(branch: str) -> int:
     )
     behind = int(result.stdout.strip())
     if behind == 0:
-        print("✓ Already up to date.")
+        print(_UP_TO_DATE_MESSAGE)
     else:
-        print(f"⚕ {behind} update(s) available.")
-        print("  Run 'janitor update' to install.")
+        print(f"⚕ Hay una versión nueva ({behind} cambios).")
+        print("  Instálala con `janitor update`.")
     return 0
+
+
+# The checkout's ``.git`` is gone: the engine cannot be updated in place.
+_BROKEN_INSTALL_MESSAGE = (
+    "✗ La instalación del motor está dañada (le falta su historial de versiones).\n"
+    "  Reinstala Janitor desde la app."
+)
+_UP_TO_DATE_MESSAGE = "✓ Ya tienes la última versión."
+# Marks a line quoted verbatim from git (English, for diagnosis only).
+_DETAIL_PREFIX = "Detalle técnico: "
+
+
+def _report_fetch_failure(stderr: str) -> None:
+    """Explain a failed download in the user's terms; git's own stderr
+    (English, technical) is shown only for the unclassified case."""
+    if "Could not resolve host" in stderr or "unable to access" in stderr:
+        print("✗ Sin conexión: no se llega al servidor de actualizaciones.")
+        print("  Revisa la red y vuelve a ejecutar `janitor update`.")
+    elif "Authentication failed" in stderr or "could not read Username" in stderr:
+        print("✗ El servidor de actualizaciones rechazó la descarga (pide credenciales).")
+        print("  El motor apunta a un repositorio privado o equivocado: reinstala Janitor desde la app.")
+    else:
+        print("✗ No se pudo descargar la versión nueva.")
+        if stderr:
+            print(f"  {_DETAIL_PREFIX}{stderr.splitlines()[0]}")
+        print("  Vuelve a ejecutar `janitor update`; si se repite, revisa la conexión.")
 
 
 def _fetch(git_cmd: list[str], cwd: Path) -> bool:
     """git fetch + error classification. Returns False on failure."""
-    print("→ Fetching updates from origin...")
+    print("→ Descargando la versión nueva...")
     fetch_result = subprocess.run(
         git_cmd + ["fetch", "origin"],
         cwd=cwd,
@@ -474,15 +555,7 @@ def _fetch(git_cmd: list[str], cwd: Path) -> bool:
     if fetch_result.returncode == 0:
         return True
 
-    stderr = fetch_result.stderr.strip()
-    if "Could not resolve host" in stderr or "unable to access" in stderr:
-        print("✗ Network error — cannot reach the remote repository.")
-    elif "Authentication failed" in stderr or "could not read Username" in stderr:
-        print("✗ Authentication failed — check your git credentials or SSH key.")
-    else:
-        print("✗ Failed to fetch updates from origin.")
-        if stderr:
-            print(f"  {stderr.splitlines()[0]}")
+    _report_fetch_failure(fetch_result.stderr.strip())
     return False
 
 
@@ -521,7 +594,7 @@ def _pull_with_fallback(git_cmd: list[str], cwd: Path, branch: str) -> bool:
         fallback=lambda *a, **kw: None,
     )
 
-    print(f"→ Pulling updates from origin/{branch}...")
+    print("→ Instalando la versión nueva...")
     pull_result = subprocess.run(
         git_cmd + ["pull", "--ff-only", "origin", branch],
         cwd=cwd,
@@ -531,8 +604,8 @@ def _pull_with_fallback(git_cmd: list[str], cwd: Path, branch: str) -> bool:
 
     if pull_result.returncode != 0:
         print(
-            "  ⚠ Fast-forward not possible (history diverged), "
-            "resetting to match remote..."
+            "  ⚠ La copia local del motor se desvió de la oficial: "
+            "se reemplaza por la versión oficial..."
         )
         reset_result = subprocess.run(
             git_cmd + ["reset", "--hard", f"origin/{branch}"],
@@ -541,31 +614,31 @@ def _pull_with_fallback(git_cmd: list[str], cwd: Path, branch: str) -> bool:
             text=True,
         )
         if reset_result.returncode != 0:
-            print(f"✗ Failed to reset to origin/{branch}.")
+            print("✗ No se pudo reemplazar el código del motor por la versión nueva.")
             if reset_result.stderr.strip():
-                print(f"  {reset_result.stderr.strip()}")
+                print(f"  {_DETAIL_PREFIX}{reset_result.stderr.strip().splitlines()[0]}")
             print(
-                f"  Try manually: git fetch origin && "
-                f"git reset --hard origin/{branch}"
+                f"  Revisa el espacio en disco y los permisos de {cwd} "
+                f"y vuelve a ejecutar `janitor update`."
             )
             return False
 
     # Post-pull syntax guard — auto-rollback if pulled code is broken.
-    print("→ Running post-pull syntax check...")
+    print("→ Comprobando que el código nuevo está sano...")
     syntax_helper = globals().get("_validate_critical_files_syntax")
     if syntax_helper is not None:
         try:
             syntax_ok, failing_path, syntax_error = syntax_helper(cwd)
         except Exception as exc:
-            print(f"  ⚠ Post-pull syntax check skipped: {exc}")
+            print(f"  ⚠ No se pudo comprobar el código nuevo ({exc}); se sigue.")
             syntax_ok = True
     else:
-        print("  ⚠ Post-pull syntax check skipped: helper unavailable")
+        print("  ⚠ No se pudo comprobar el código nuevo (falta el ayudante); se sigue.")
         syntax_ok = True
 
     if not syntax_ok:
         print()
-        print("✗ Pulled code has a syntax error in a critical file:")
+        print("✗ La versión nueva trae un error de sintaxis en un archivo crítico:")
         if failing_path:
             print(f"  {failing_path}")
         if syntax_error:
@@ -573,7 +646,7 @@ def _pull_with_fallback(git_cmd: list[str], cwd: Path, branch: str) -> bool:
                 print(f"    {line}")
         if pre_pull_sha:
             print()
-            print(f"→ Rolling back to {pre_pull_sha[:10]}...")
+            print("→ Volviendo a la versión anterior...")
             rollback_result = subprocess.run(
                 git_cmd + ["reset", "--hard", pre_pull_sha],
                 cwd=cwd,
@@ -581,17 +654,17 @@ def _pull_with_fallback(git_cmd: list[str], cwd: Path, branch: str) -> bool:
                 text=True,
             )
             if rollback_result.returncode == 0:
-                print("  ✓ Rollback complete — your install is unchanged.")
-                print("  Run `janitor update` again later once a fix lands.")
+                print("  ✓ Vuelta atrás hecha: tu instalación queda como estaba.")
+                print("  Vuelve a ejecutar `janitor update` más tarde, cuando publiquen el arreglo.")
             else:
-                print("  ✗ Rollback failed. Recover manually with:")
+                print("  ✗ No se pudo volver atrás. Recupera la versión anterior con:")
                 print(f"    cd {cwd} && git reset --hard {pre_pull_sha}")
                 if rollback_result.stderr.strip():
-                    print(f"    ({rollback_result.stderr.strip().splitlines()[0]})")
+                    print(f"    {_DETAIL_PREFIX}{rollback_result.stderr.strip().splitlines()[0]}")
         else:
             print()
-            print("  Could not capture pre-pull SHA — recover manually with:")
-            print(f"    cd {cwd} && git reflog && git reset --hard <prev-sha>")
+            print("  No se guardó la versión anterior; recupérala con:")
+            print(f"    cd {cwd} && git reflog && git reset --hard <versión-anterior>")
         return False
 
     return True
@@ -617,22 +690,22 @@ def _resolve_uv_bin(pip_cmd: list[str]) -> Optional[str]:
 
 def _install_python_dependencies(project_root: Path) -> None:
     """Install Python deps via uv (preferred) or pip fallback."""
-    print("→ Updating Python dependencies...")
+    print("→ Instalando dependencias de Python...")
     pip_cmd = [sys.executable, "-m", "pip"]
     uv_bin = _resolve_uv_bin(pip_cmd)
     install_group = "all"
 
     if uv_bin:
-        uv_env = {**os.environ, "VIRTUAL_ENV": str(project_root / "venv")}
+        uv_env = {**os.environ, "VIRTUAL_ENV": str(_project_venv(project_root))}
         is_termux = _call("_is_termux_env", uv_env, fallback=lambda env: False)
         is_android = _call("_is_android_python", fallback=lambda: False)
         if is_termux:
             uv_env.pop("PYTHONPATH", None)
             uv_env.pop("PYTHONHOME", None)
             install_group = "termux-all"
-            print("  → Termux detected: using uv + curated termux-all optional profile...")
+            print("  → Termux detectado: se usa uv con el perfil termux-all...")
         if is_termux and is_android:
-            print("  → Termux/Android detected: prebuilding psutil...")
+            print("  → Termux/Android detectado: se precompila psutil...")
             _call(
                 "_install_psutil_android_compat",
                 [uv_bin, "pip"],
@@ -670,11 +743,11 @@ def _install_python_dependencies(project_root: Path) -> None:
             )
         if _call("_is_termux_env", fallback=lambda: False):
             install_group = "termux-all"
-            print("  → Termux detected: using curated termux-all optional profile...")
+            print("  → Termux detectado: se usa el perfil termux-all...")
         if _call("_is_termux_env", fallback=lambda: False) and _call(
             "_is_android_python", fallback=lambda: False
         ):
-            print("  → Termux/Android detected: prebuilding psutil...")
+            print("  → Termux/Android detectado: se precompila psutil...")
             _call(
                 "_install_psutil_android_compat",
                 pip_cmd,
@@ -696,7 +769,108 @@ def _install_python_dependencies(project_root: Path) -> None:
             fallback=_pip_install,
         )
 
-    print("✓ Python dependencies updated")
+
+# Run in the target interpreter: prints every name whose distribution metadata
+# is absent (same probe as upstream's ``_verify_core_dependencies_installed``).
+_MISSING_DISTRIBUTIONS_SCRIPT = (
+    "import importlib.metadata as md, sys\n"
+    "for name in sys.argv[1:]:\n"
+    "    try: md.version(name)\n"
+    "    except md.PackageNotFoundError: print(name)\n"
+)
+
+
+def _required_dependency_names(project_root: Path) -> Optional[list[str]]:
+    """Names of the base ``[project].dependencies`` of the checkout's
+    ``pyproject.toml`` whose markers apply to this host.
+
+    Only the base list: optional extras (``.[all]``) may legitimately fail
+    to install and upstream tolerates that, so they never count here.
+    ``None`` when the file cannot be read (nothing to verify against).
+    """
+    import re
+    import tomllib
+
+    try:
+        with (Path(project_root) / "pyproject.toml").open("rb") as handle:
+            project = tomllib.load(handle).get("project", {})
+    except (OSError, ValueError):
+        return None
+    specs = project.get("dependencies") if isinstance(project, dict) else None
+    if not isinstance(specs, list):
+        return None
+    try:
+        from packaging.requirements import Requirement
+    except ImportError:
+        Requirement = None  # type: ignore[assignment]
+    names: list[str] = []
+    for spec in specs:
+        if Requirement is None:
+            name = re.split(r"[\s<>=!~;\[(@]", str(spec).strip(), maxsplit=1)[0]
+            if name:
+                names.append(name)
+            continue
+        try:
+            req = Requirement(str(spec))
+            if req.marker is not None and not req.marker.evaluate():
+                continue
+        except Exception:  # noqa: BLE001 — unparseable spec: nothing reliable to check
+            continue
+        names.append(req.name)
+    return names
+
+
+def _dependency_target_python(project_root: Path) -> Path:
+    """Interpreter the dependency install targeted: the checkout's ``venv``
+    (``_project_venv``) when it has one, else the running interpreter."""
+    venv = _project_venv(project_root)
+    candidate = venv / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+    return candidate if candidate.exists() else Path(sys.executable)
+
+
+def _missing_required_dependencies(project_root: Path) -> Optional[list[str]]:
+    """Base dependencies absent from the target interpreter after the install.
+
+    ``None`` when ``pyproject.toml`` cannot be read. A probe that cannot run
+    (the interpreter is broken) is itself a failed install and is returned as
+    one missing entry naming the interpreter.
+    """
+    names = _required_dependency_names(project_root)
+    if names is None:
+        return None
+    if not names:
+        return []
+    python = _dependency_target_python(project_root)
+    try:
+        result = subprocess.run(
+            [str(python), "-c", _MISSING_DISTRIBUTIONS_SCRIPT, *names],
+            capture_output=True, text=True, timeout=120,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return [f"(el intérprete {python} no responde: {exc})"]
+    if result.returncode != 0:
+        return [f"(el intérprete {python} falla al comprobarlas)"]
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def _verify_required_dependencies(project_root: Path) -> bool:
+    """True when every base dependency is installed in the target interpreter.
+
+    Upstream's installer only warns when a base dependency is still missing
+    after its repairs, so an install can return cleanly with the engine unable
+    to start. This is the gate before the update is called done.
+    """
+    missing = _missing_required_dependencies(project_root)
+    if missing is None:
+        print("  ⚠ No se pudo leer pyproject.toml: las dependencias de Python quedan sin comprobar.")
+        return True
+    if missing:
+        shown = ", ".join(missing[:8]) + ("..." if len(missing) > 8 else "")
+        print(f"✗ Faltan dependencias obligatorias de Python tras instalarlas: {shown}")
+        print("  El motor no arrancaría así. Revisa la conexión y vuelve a ejecutar `janitor update`.")
+        return False
+    print("✓ Dependencias de Python instaladas")
+    return True
 
 
 def _install_node_dependencies(project_root: Path) -> list[str]:
@@ -718,7 +892,7 @@ def _install_node_dependencies(project_root: Path) -> list[str]:
 
     ui_tui_dir = project_root / "ui-tui"
     if (ui_tui_dir / "package.json").exists():
-        print("→ Compiling TUI components...")
+        print("→ Compilando la interfaz de terminal...")
         failures.extend(_build_tui(ui_tui_dir))
 
     return failures
@@ -737,12 +911,30 @@ def _tui_install_context(ui_tui_dir: Path) -> Optional[tuple[Path, tuple[str, ..
     return ws_root, (() if ws_root == ui_tui_dir else ("--workspace", "ui-tui"))
 
 
+def _find_npm() -> Optional[str]:
+    """Fallback for ``_resolve_node_runtime_npm`` when ``hermes_cli`` cannot be
+    imported: the same lookup it delegates to (``find_node_executable``: Hermes'
+    managed Node first, then PATH), else ``hermes_platform``'s PATH resolver."""
+    try:
+        from hermes_constants import find_node_executable
+    except Exception:
+        find_node_executable = None
+    if find_node_executable is not None:
+        return find_node_executable("npm")
+    try:
+        from hermes_platform.resolver import locate_command
+    except Exception:
+        return None
+    command = locate_command("npm").command
+    return command[0] if command else None
+
+
 def _build_tui(ui_tui_dir: Path) -> list[str]:
     # A plain ``npm install`` here re-resolves the whole workspace and rewrites
     # the root package-lock.json on every update; that churn then blocks the
     # stash restore. Upstream's Node step already installs the ui-tui
     # workspace, so only repair a stale node_modules, and never via ``install``.
-    npm = _call("_resolve_node_runtime_npm", fallback=lambda: shutil.which("npm"))
+    npm = _call("_resolve_node_runtime_npm", fallback=_find_npm)
     if not npm:
         return ["ui-tui npm (npm not found)"]
 
@@ -804,23 +996,23 @@ def _read_config_version_strict(call_check: Callable[[], tuple]) -> tuple:
     check_fn = globals().get("_run_config_check_fresh")
     if check_fn is None:
         raise RuntimeError(
-            "fresh config check wrapper is unavailable; cannot verify schema"
+            "falta el ayudante que lee la versión de la configuración; no se puede verificar"
         )
 
     try:
         version_tuple = call_check()
     except Exception as exc:
-        raise RuntimeError(f"config version check raised: {exc}") from exc
+        raise RuntimeError(f"la lectura de la versión de la configuración falló: {exc}") from exc
 
     if not (isinstance(version_tuple, tuple) and len(version_tuple) == 2):
         raise RuntimeError(
-            f"config version check returned non-tuple: {version_tuple!r}"
+            f"la lectura de la versión de la configuración devolvió algo inválido: {version_tuple!r}"
         )
 
     current_ver, latest_ver = version_tuple
     if not (isinstance(current_ver, int) and isinstance(latest_ver, int)):
         raise RuntimeError(
-            f"config version check returned non-integer values: "
+            f"la versión de la configuración no es un número: "
             f"{current_ver!r}, {latest_ver!r}"
         )
     return current_ver, latest_ver
@@ -839,24 +1031,24 @@ def _read_config_version_initial(check_check: Callable[[], tuple]):
     """
     check_fn = globals().get("_run_config_check_fresh")
     if check_fn is None:
-        print("  ⚠ Initial config check wrapper unavailable; skipping migration.")
+        print("  ⚠ No se puede leer la versión de la configuración (falta el ayudante): se deja como está.")
         return (None, None)
     try:
         version_tuple = check_check()
     except Exception as exc:
-        print(f"  ⚠ Initial config check raised {exc!r}; skipping migration.")
+        print(f"  ⚠ Falló la lectura de la versión de la configuración ({exc!r}): se deja como está.")
         return (None, None)
     if not (isinstance(version_tuple, tuple) and len(version_tuple) == 2):
         print(
-            f"  ⚠ Initial config check returned non-tuple: "
-            f"{version_tuple!r}; skipping migration."
+            f"  ⚠ La lectura de la versión de la configuración devolvió algo inválido "
+            f"({version_tuple!r}): se deja como está."
         )
         return (None, None)
     current_ver, latest_ver = version_tuple
     if not (isinstance(current_ver, int) and isinstance(latest_ver, int)):
         print(
-            f"  ⚠ Initial config check returned non-integer values: "
-            f"{current_ver!r}, {latest_ver!r}; skipping migration."
+            f"  ⚠ La versión de la configuración no es un número "
+            f"({current_ver!r}, {latest_ver!r}): se deja como está."
         )
         return (None, None)
     return (current_ver, latest_ver)
@@ -905,8 +1097,8 @@ def _run_fresh_config_migration_phase() -> dict:
     if current_ver > latest_ver:
         # Initial check — downgrade is a benign no-op.
         print(
-            f"  ⚠ Config version {current_ver} > latest {latest_ver} — "
-            f"leaving config untouched (downgrade detected)."
+            f"  ⚠ La configuración (v{current_ver}) es más nueva que esta versión "
+            f"del motor (v{latest_ver}): se deja como está."
         )
         return {}
 
@@ -916,15 +1108,15 @@ def _run_fresh_config_migration_phase() -> dict:
     migrate_fn = globals().get("_run_migrate_config_fresh")
     if migrate_fn is None:
         raise RuntimeError(
-            "fresh config migrate wrapper is unavailable; cannot run migration"
+            "falta el ayudante que migra la configuración"
         )
 
     print()
-    print(f"  → Migrating config v{current_ver} → v{latest_ver}...")
+    print(f"  → Migrando la configuración de v{current_ver} a v{latest_ver}...")
     try:
         results = migrate_fn(interactive=False, quiet=True)
     except Exception as exc:
-        raise RuntimeError(f"config migration raised: {exc}") from exc
+        raise RuntimeError(f"la migración de la configuración falló: {exc}") from exc
 
     if not isinstance(results, dict):
         results = {}
@@ -952,21 +1144,18 @@ def _run_fresh_config_migration_phase() -> dict:
     if isinstance(post_cur, int) and isinstance(post_lat, int):
         if post_cur > post_lat:
             raise RuntimeError(
-                f"post-migration config version {post_cur} > latest "
-                f"{post_lat}; the migration result exceeded the wrapper's "
-                f"latest version — refusing silently"
+                f"tras migrar, la configuración quedó en v{post_cur}, por encima "
+                f"de la última que conoce el motor (v{post_lat})"
             )
         if post_cur < post_lat:
             if not _support_floor_warning_explains_still_behind(warnings):
                 raise RuntimeError(
-                    f"config still at v{post_cur} (target v{post_lat}) "
-                    f"after migration; warnings did not explain a "
-                    f"support-floor refusal"
+                    f"la configuración sigue en v{post_cur} (objetivo v{post_lat}) "
+                    f"tras migrar, sin un aviso que lo explique"
                 )
             print(
-                f"  ⚠ Config still at v{post_cur} (target v{post_lat}) "
-                f"after migration; support-floor refusal — manual step "
-                f"required."
+                f"  ⚠ La configuración sigue en v{post_cur} (objetivo v{post_lat}): "
+                f"es demasiado antigua para migrarla sola; hay que revisarla a mano."
             )
 
     return results
@@ -1046,7 +1235,7 @@ def _read_persisted_marker() -> Optional[str]:
         return None
     if set(payload.keys()) != {"stash_ref", "failed_step", "timestamp"}:
         return None
-    if payload.get("failed_step") not in {"node_deps", "config_migration"}:
+    if payload.get("failed_step") not in {"python_deps", "node_deps", "config_migration"}:
         return None
     ts = payload.get("timestamp")
     if not isinstance(ts, str) or not ts.endswith("Z"):
@@ -1101,7 +1290,7 @@ def _write_incomplete_marker(failed_step: str, stash_ref: Optional[str]) -> None
     try:
         marker.write_text(json.dumps(payload))
     except OSError as exc:
-        print(f"  ⚠ Could not write incomplete-update marker: {exc}")
+        print(f"  ⚠ No se pudo guardar la marca de actualización incompleta: {exc}")
 
 
 def _read_persisted_marker_raw(marker_path: Path) -> Optional[str]:
@@ -1118,6 +1307,49 @@ def _read_persisted_marker_raw(marker_path: Path) -> Optional[str]:
     return stash_ref if isinstance(stash_ref, (str, type(None))) else None
 
 
+def _deps_pending_marker(project_root: Path, git_cmd: Optional[list[str]] = None) -> Path:
+    """Per-checkout flag: the tree may hold new code whose dependencies are not installed yet.
+
+    Lives in the checkout's own git directory (``git rev-parse
+    --absolute-git-dir``: a linked worktree's ``.git`` is a file), so it is
+    tied to the checkout and can never be tracked or show up in ``git status``.
+    """
+    git_dir = project_root / ".git"
+    if git_cmd is not None:
+        try:
+            out = subprocess.run(
+                git_cmd + ["rev-parse", "--absolute-git-dir"],
+                cwd=project_root, capture_output=True, text=True, timeout=30,
+            )
+            if out.returncode == 0 and out.stdout.strip():
+                git_dir = Path(out.stdout.strip())
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return git_dir / "janitor-update-deps-pending"
+
+
+def _set_deps_pending(project_root: Path, pending: bool, git_cmd: Optional[list[str]] = None) -> None:
+    """A failure to persist only loses the resume-after-interruption guarantee,
+    never the update — but it is said out loud."""
+    marker = _deps_pending_marker(project_root, git_cmd)
+    try:
+        if pending:
+            marker.write_text(datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ\n"), encoding="utf-8")
+        else:
+            marker.unlink(missing_ok=True)
+    except OSError as exc:
+        print(f"  ⚠ No se pudo {'guardar' if pending else 'quitar'} la marca de actualización a medias: {exc}")
+
+
+def _head_sha(git_cmd: list[str], project_root: Path) -> Optional[str]:
+    try:
+        out = subprocess.run(git_cmd + ["rev-parse", "HEAD"], cwd=project_root,
+                             capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.stdout.strip() or None if out.returncode == 0 else None
+
+
 def _clear_incomplete_marker() -> bool:
     """Remove ``update-incomplete.json`` if present.
 
@@ -1131,7 +1363,7 @@ def _clear_incomplete_marker() -> bool:
     except FileNotFoundError:
         return True
     except OSError as exc:
-        print(f"  ⚠ Could not remove incomplete-update marker: {exc}")
+        print(f"  ⚠ No se pudo quitar la marca de actualización incompleta: {exc}")
         return False
     return True
 
@@ -1160,27 +1392,41 @@ def parse_update_args(argv: list[str]):
 
     parser = argparse.ArgumentParser(
         prog="janitor update",
-        description="Update Janitor from the fork's git remote.",
+        description="Actualiza el motor de Janitor a la última versión publicada.",
     )
     parser.add_argument(
         "--check", action="store_true",
-        help="Report whether an update is available without installing anything",
+        help="Solo dice si hay una versión nueva; no instala nada",
     )
     parser.add_argument(
         "--gateway", action="store_true",
-        help="Gateway mode: file-based IPC for prompts (used internally by /update)",
+        help="Modo gateway: deja el resultado en archivos (lo usa /update internamente)",
     )
     parser.add_argument(
         "--backup", action="store_true",
-        help="Force a full pre-update backup for this run",
+        help="Fuerza una copia de seguridad completa antes de actualizar",
     )
     parser.add_argument(
         "--no-backup", action="store_true",
-        help="Skip all pre-update backups for this run",
+        help="No hace ninguna copia de seguridad antes de actualizar",
     )
     parser.add_argument(
         "--branch", default=None, metavar="NAME",
-        help="Update against this branch instead of main",
+        help="Actualiza contra esta rama en vez de main",
+    )
+    # The desktop updater (scripts/desktop-update/posix.sh) always passes
+    # these two; the core never prompts, so --yes changes nothing.
+    parser.add_argument(
+        "--yes", "-y", action="store_true",
+        help="Lo pasa el actualizador de la app; janitor update nunca pregunta",
+    )
+    parser.add_argument(
+        "--keep-stash", action="store_true",
+        help="No reaplica los cambios locales tras actualizar; quedan apartados en git stash",
+    )
+    parser.add_argument(
+        "--no-gateway-restart", action="store_true",
+        help="Actualiza código y dependencias, pero deja los gateways en marcha con el código anterior",
     )
     return parser.parse_args(argv)
 
@@ -1195,18 +1441,284 @@ def _acquire_update_lock():
     update proceeds unlocked rather than being blocked.
     """
     try:
-        from hermes_cli.update_lock import UpdateLock, describe_holder
+        from hermes_cli.update_lock import UpdateLock
     except Exception:
         return None, None
     lock = UpdateLock()
     if not lock.acquire():
-        return None, describe_holder(lock.holder)
+        return None, _describe_update_holder(lock.holder)
     return lock, None
+
+
+def _describe_update_holder(holder) -> str:
+    """Spanish refusal naming the running update by age and PID, in place of
+    upstream's ``describe_holder`` (which sends the user to ``hermes update``).
+    The holder can be the app, a terminal or a ``/update`` from the chat."""
+    pid = getattr(holder, "pid", None)
+    seconds = int(max(getattr(holder, "age_seconds", 0) or 0, 0))
+    minutes = seconds // 60
+    since = f"{minutes} min" if minutes else f"{seconds} s"
+    who = f" (proceso {pid})" if pid else ""
+    return (
+        f"✗ Ya hay una actualización en marcha desde hace {since}{who}.\n"
+        "  Dos a la vez rompen la instalación. Espera a que termine "
+        "y vuelve a ejecutar `janitor update` si hace falta."
+    )
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+
+def _reapply_skill_catalog() -> None:
+    """Regenerate every Janitor home's ``skills.external_dirs`` from the pulled catalog.
+
+    The entries are absolute paths into the install tree, and a release may add
+    a skill to a template; homes without ``janitor.skills`` are left untouched.
+    Imported after the pull so the freshly pulled catalog code and data run;
+    never fails the update (``apply_quietly`` logs per home).
+    """
+    try:
+        from janitor.catalog import apply_quietly, janitor_homes
+
+        for home in janitor_homes(get_hermes_home()):
+            apply_quietly(home)
+    except Exception as exc:  # noqa: BLE001 — a broken catalog must not fail a good pull
+        print(f"  ⚠ No se reaplicó el catálogo de skills: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Post-update phases shared with ``hermes update``
+# ---------------------------------------------------------------------------
+
+
+def _rebuild_web_ui(project_root: Path) -> None:
+    """Rebuild ``web/`` with upstream's ``_build_web_ui`` (non-fatal and
+    staleness-checked, as ``hermes update`` calls it on both the pulled and the
+    already-current path). Never fails the update."""
+    web_dir = Path(project_root) / "web"
+    if not web_dir.is_dir():
+        return
+    if globals().get("_build_web_ui") is None:
+        print("  ⚠ Falta el ayudante que compila el panel web: web/ no se recompiló.")
+        return
+    try:
+        _call("_build_web_ui", web_dir)
+    except Exception as exc:  # noqa: BLE001 — the dashboard build must not fail a good pull
+        print(f"  ⚠ El panel web no se recompiló: {exc}")
+
+
+def _local_write_gateway_exit_code(ok: bool) -> None:
+    """Fallback for upstream's ``_write_gateway_update_exit_code``: the gateway's
+    ``/update`` watcher waits for this file and reports a timeout without it."""
+    try:
+        (get_hermes_home() / ".update_exit_code").write_text(
+            "0" if ok else "1", encoding="utf-8"
+        )
+    except (OSError, RuntimeError) as exc:
+        print(f"  ⚠ No se pudo dejar el resultado de la actualización para el gateway: {exc}")
+
+
+def _write_gateway_exit_code(ok: bool) -> None:
+    """``--gateway`` mode: write ``$HERMES_HOME/.update_exit_code`` like ``hermes update``."""
+    try:
+        _call("_write_gateway_update_exit_code", ok, fallback=_local_write_gateway_exit_code)
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ⚠ No se pudo dejar el resultado de la actualización para el gateway: {exc}")
+
+
+def _fleet_runs_stale_code() -> bool:
+    """Does a gateway of this install still serve pre-update code? Upstream's
+    fleet probe (``collect_fleet_versions``) compares each running gateway's
+    stamped ``code_sha`` with this checkout's HEAD; a gateway of another
+    checkout is ``external``, never ``stale``. False when the probe fails."""
+    try:
+        from hermes_cli.update_receipt import collect_fleet_versions
+
+        return any(row.get("state") == "stale" for row in collect_fleet_versions())
+    except Exception:
+        return False
+
+
+def _gateways_in_update_scope() -> list[tuple[int, Optional[Path]]]:
+    """``(pid, checkout)`` of every running gateway upstream's restart phase
+    would touch, discovered and home-scoped with upstream's own helpers.
+
+    Upstream scopes the restart by home only (``hermes_cli/update_fleet_scope.py``):
+    the homes this update owns, plus every gateway mapped to their profile PID
+    files. The checkout is what ``hermes update``'s fleet probe reads
+    (``_gateway_code_root``: the status record's argv, the process'
+    ``VIRTUAL_ENV``, exe and argv); ``None`` when it cannot be read.
+    """
+    from hermes_cli.dashboard_procs import _hermes_home_for_pid
+    from hermes_cli.gateway import find_gateway_pids, find_profile_gateway_processes
+    from hermes_cli.update_fleet_scope import partition_gateway_pids_by_scope
+    from hermes_cli.update_receipt import _gateway_code_root
+
+    pids = list(find_gateway_pids(all_profiles=True))
+    mapped = {proc.pid for proc in find_profile_gateway_processes() if proc.pid in pids}
+    owned, _other_homes = partition_gateway_pids_by_scope(
+        [pid for pid in pids if pid not in mapped]
+    )
+    rows: list[tuple[int, Optional[Path]]] = []
+    for pid in pids:
+        if pid not in mapped and pid not in owned:
+            continue
+        try:
+            home = _hermes_home_for_pid(pid)
+        except Exception:
+            home = None
+        rows.append((pid, _gateway_code_root(pid, Path(home) if home else get_hermes_home())))
+    return rows
+
+
+def _restart_gateways_after_update(gateway_mode: bool) -> Any:
+    """Restart this install's running gateways onto the updated code.
+
+    Delegates to upstream's ``_restart_gateway_fleet_after_update`` (systemd,
+    launchd and manual gateways; drain first; never raises). Upstream scopes by
+    home, but one Janitor home can be served by two checkouts (the pre-1.0
+    ``janitor-core/.venv`` and the app's ``hermes-agent/venv``), and upstream
+    relaunches a stopped manual gateway with THIS install's interpreter. So when
+    any in-scope gateway runs from another checkout (or one that cannot be
+    read), nothing is restarted. Every failure here is a warning; the caller
+    judges the result with ``_stale_gateways_after_restart``.
+
+    Returns upstream's restart outcome, or ``None`` when no restart ran.
+    """
+    if globals().get("_restart_gateway_fleet_after_update") is None:
+        print("  ⚠ Falta el ayudante que reinicia los gateways: reinícialos con `janitor gateway restart`.")
+        return None
+    try:
+        gateways = _gateways_in_update_scope()
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ⚠ No se pudieron listar los gateways en marcha ({exc}): reinícialos con `janitor gateway restart`.")
+        return None
+    if not gateways:
+        return None
+
+    ours = Path(PROJECT_ROOT).resolve()
+    foreign = [(pid, root) for pid, root in gateways if root is None or Path(root).resolve() != ours]
+    if foreign:
+        print("→ No se reinicia ningún gateway: uno de este home corre desde otra instalación.")
+        for pid, root in foreign:
+            where = root if root is not None else "una instalación que no se pudo identificar"
+            print(f"  ↷ PID {pid}: gateway que corre desde {where}; no se toca.")
+        print(f"  Los gateways de {ours} siguen con el código anterior hasta que los reinicies (`janitor gateway restart`).")
+        return None
+
+    print("→ Reiniciando los gateways con el código nuevo...")
+    try:
+        outcome = _call("_restart_gateway_fleet_after_update", None, gateway_mode)
+    except Exception as exc:  # noqa: BLE001 — upstream never raises; a stale venv might
+        print(f"  ⚠ Falló el reinicio de los gateways ({exc}): ejecuta `janitor gateway restart`.")
+        return None
+    if getattr(outcome, "incomplete", False):
+        print("  ⚠ El reinicio de los gateways quedó a medias: revisa `janitor gateway status`.")
+    return outcome
+
+
+def _stale_gateways_after_restart(outcome) -> list[dict]:
+    """Gateways still serving pre-update code once the restart settled.
+
+    Upstream's own verification (``_collect_fleet_snapshot``: polls while a
+    relaunched gateway has not stamped its ``code_sha`` yet, and marks the
+    gateway this update runs inside as ``restart_pending``, not ``stale``).
+    Only ``stale`` counts here (design 3.5); a probe that cannot run is a
+    warning, never a failure.
+    """
+    try:
+        from hermes_cli.update_cmd_fleet import _collect_fleet_snapshot
+
+        expected = bool(
+            getattr(outcome, "restarted_services", None)
+            or getattr(outcome, "killed_pids", None)
+            or getattr(outcome, "relaunched_profiles", None)
+        )
+        rows = _collect_fleet_snapshot(outcome, expected)
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ⚠ No se pudo comprobar qué código corren los gateways ({exc}).")
+        return []
+    return [row for row in rows or [] if isinstance(row, dict) and row.get("state") == "stale"]
+
+
+def _gateway_restart_command(profile: Any) -> str:
+    """The exact command that restarts one profile's gateway."""
+    if not profile or profile == "default":
+        return "janitor gateway restart"
+    return f"janitor -p {profile} gateway restart"
+
+
+def _report_stale_gateways(stale: list[dict]) -> None:
+    print()
+    print("✗ El motor se actualizó, pero hay gateways que siguen con el código viejo:")
+    for row in stale:
+        print(f"  PID {row.get('pid')} (perfil {row.get('profile') or 'default'}): {_gateway_restart_command(row.get('profile'))}")
+    print("  Ejecuta esa orden; hasta entonces ese gateway puede fallar.")
+
+
+# Where a Janitor app release is published; the only URL the contract notice prints.
+_FORK_RELEASES_URL = "https://github.com/reck74/Janitor-Agent/releases/latest"
+_FORK_URL_PREFIX = "https://github.com/reck74/Janitor-Agent/"
+
+
+def _read_desktop_compat(project_root: Path) -> tuple[Optional[int], str]:
+    """``(contract, release_url)`` from the checkout's ``janitor/desktop-compat.json``.
+
+    ``contract`` is ``None`` when the file is absent (an engine older than the
+    app/engine contract) or malformed. ``release_url`` falls back to the fork's
+    releases page unless the file names a page of the fork itself.
+    """
+    try:
+        payload = json.loads(
+            (Path(project_root) / "janitor" / "desktop-compat.json").read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError):
+        return None, _FORK_RELEASES_URL
+    if not isinstance(payload, dict):
+        return None, _FORK_RELEASES_URL
+    contract = payload.get("contract")
+    if isinstance(contract, bool) or not isinstance(contract, int):
+        contract = None
+    url = payload.get("release_url")
+    if not (isinstance(url, str) and url.startswith(_FORK_URL_PREFIX) and url.isprintable() and " " not in url):
+        url = _FORK_RELEASES_URL
+    return contract, url
+
+
+def _app_update_notice(before: Optional[int], project_root: Path) -> Optional[str]:
+    """The closing line when the pulled engine raised the app/engine contract.
+
+    Only a rise between two known contracts counts: with no contract before the
+    pull the installed app predates the mechanism and nothing can be compared.
+    """
+    after, url = _read_desktop_compat(project_root)
+    if before is None or after is None or after <= before:
+        return None
+    return f"Esta versión necesita la app nueva: {url}"
+
+
+def _installed_version(project_root: Path) -> Optional[str]:
+    """Display version of the checkout (``pyproject.toml``), ``None`` if unreadable."""
+    import tomllib
+
+    try:
+        with (Path(project_root) / "pyproject.toml").open("rb") as handle:
+            raw = tomllib.load(handle).get("project", {}).get("version")
+    except (OSError, ValueError, AttributeError):
+        return None
+    if not isinstance(raw, str) or not raw:
+        return None
+    from janitor.version import display_version
+
+    return display_version(raw)
+
+
+# First line of a successful run; the rest of the line carries the version.
+_SUCCESS_LINE = "✓ Janitor actualizado"
+# Message handed to upstream's receipt printer (it appends branch @ sha).
+_COMPLETION_MESSAGE = "✓ Actualización completa"
 
 
 def run_janitor_update(args) -> int:
@@ -1219,6 +1731,16 @@ def run_janitor_update(args) -> int:
             backup (bool): forces a pre-update backup for this run.
             no_backup (bool): skips pre-update backup even if config has it on.
             branch (str|None): target branch (default ``"main"``).
+            keep_stash (bool): leave the autostash parked instead of
+                re-applying it (the desktop updater's mode).
+            no_gateway_restart (bool): leave running gateways on the old code.
+            yes (bool): accepted and ignored; the flow never prompts.
+
+    After a successful update the running gateways of this install are
+    restarted onto the new code (pulled path, or already-current when one still
+    serves stale code), like ``hermes update``. Under ``--gateway`` the exit
+    code is also written to ``$HERMES_HOME/.update_exit_code`` — before the
+    restart, which can take this process down with the gateway it runs in.
 
     Returns:
         Process exit code: 0 = updated, 1 = failed, 2 = another update holds
@@ -1231,8 +1753,8 @@ def run_janitor_update(args) -> int:
     ]
     if unsupported:
         print(
-            f"✗ janitor update does not support {', '.join(unsupported)}. "
-            "Use `janitor update --check` to see whether an update is available."
+            f"✗ `janitor update` no admite {', '.join(unsupported)}. "
+            "Para ver si hay una versión nueva: `janitor update --check`."
         )
         return 2
 
@@ -1240,6 +1762,9 @@ def run_janitor_update(args) -> int:
 
     gateway_mode = bool(getattr(args, "gateway", False))
     branch = getattr(args, "branch", None) or "main"
+    keep_stash = bool(getattr(args, "keep_stash", False))
+    check_only = bool(getattr(args, "check", False))
+    gateway_exit_code_written = False
 
     _update_io_state = _call(
         "_install_hangup_protection",
@@ -1253,15 +1778,19 @@ def run_janitor_update(args) -> int:
     git_cmd: Optional[list[str]] = None
     update_lock = None
     try:
-        if getattr(args, "check", False):
+        if check_only:
             return _check_only(branch)
 
         update_lock, refusal = _acquire_update_lock()
         if refusal is not None:
             print(refusal)
+            # The exit-code marker belongs to the update that holds the lock:
+            # writing "failed" here would make its watcher announce a failure
+            # while the real update is still running.
+            gateway_exit_code_written = True
             return _UPDATE_EXIT_CONCURRENT
 
-        print("⚕ Updating Janitor Agent from fork...")
+        print("⚕ Actualizando Janitor...")
         print()
 
         # If a previous run left a well-formed marker, surface its stash
@@ -1273,8 +1802,7 @@ def run_janitor_update(args) -> int:
         project_root = PROJECT_ROOT
         git_dir = project_root / ".git"
         if not git_dir.exists():
-            print("✗ Not a git repository. Please reinstall:")
-            print("  git clone https://github.com/reck74/Janitor-Agent.git")
+            print(_BROKEN_INSTALL_MESSAGE)
             return 1
 
         git_cmd = _git_cmd()
@@ -1301,26 +1829,26 @@ def run_janitor_update(args) -> int:
             )
             if worktree_status.stdout.strip():
                 print(
-                    "✗ Update recovery is still unresolved and the "
-                    "worktree has new local changes."
+                    "✗ Quedan cambios locales sin recuperar de una actualización "
+                    "anterior y el motor tiene cambios nuevos."
                 )
-                print(f"  Existing recovery stash: {persisted_stash_ref}")
+                print(f"  Copia pendiente: {persisted_stash_ref}")
                 print(
-                    "  Resolve it before updating again:\n"
+                    "  Recupérala antes de volver a actualizar:\n"
                     "    git stash list\n"
                     f"    git stash apply {persisted_stash_ref}\n"
-                    "  Then commit or stash the current changes and re-run "
-                    "`janitor update`."
+                    "  Luego guarda o aparta los cambios actuales y vuelve a "
+                    "ejecutar `janitor update`."
                 )
                 return 1
 
         if current_branch != branch:
             label = (
-                "detached HEAD"
+                "una versión suelta, sin rama"
                 if current_branch == "HEAD"
-                else f"branch '{current_branch}'"
+                else f"la rama '{current_branch}'"
             )
-            print(f"  ⚠ Currently on {label} — switching to {branch} for update...")
+            print(f"  ⚠ El motor estaba en {label}: se pasa a '{branch}' para actualizar...")
             auto_stash_ref = _call(
                 "_stash_local_changes_if_needed",
                 git_cmd,
@@ -1344,21 +1872,31 @@ def run_janitor_update(args) -> int:
 
         commit_count = _behind_count(git_cmd, project_root, branch)
         already_current = (commit_count == 0)
+        contract_before: Optional[int] = None
 
         if already_current:
             _call("_invalidate_update_cache", fallback=lambda: None)
-            print("✓ Already up to date.")
+            print(_UP_TO_DATE_MESSAGE)
             # Still run the reload seam so wrappers stay current, plus
             # Node repair, fresh-wrapper config migration, Desktop receipt,
             # marker cleanup, and stash restore per the spec.
         else:
+            # Set BEFORE the pull moves HEAD: a run killed anywhere between the
+            # pull and the end of the dependency phase must not be mistaken for
+            # "already up to date" next time.
+            head_before_pull = _head_sha(git_cmd, project_root)
+            contract_before, _url = _read_desktop_compat(project_root)
+            _set_deps_pending(project_root, True, git_cmd)
             update_succeeded = _pull_with_fallback(git_cmd, project_root, branch)
             if not update_succeeded:
+                # Rolled back to where it started: nothing new to install.
+                if head_before_pull and _head_sha(git_cmd, project_root) == head_before_pull:
+                    _set_deps_pending(project_root, False, git_cmd)
                 if auto_stash_ref:
                     print(
-                        f"  ℹ️  Local changes preserved in stash (ref: {auto_stash_ref})"
+                        f"  ℹ Tus cambios locales siguen apartados ({auto_stash_ref}). "
+                        f"Para recuperarlos: git stash apply {auto_stash_ref}"
                     )
-                    print("  Restore manually with: git stash apply")
                 return 1
 
             _call("_invalidate_update_cache", fallback=lambda: None)
@@ -1370,7 +1908,8 @@ def run_janitor_update(args) -> int:
             )
             if removed:
                 print(
-                    f"  ✓ Cleared {removed} stale __pycache__ director{'y' if removed == 1 else 'ies'}"
+                    f"  ✓ Borrada la caché de Python antigua "
+                    f"({removed} carpeta{'' if removed == 1 else 's'})"
                 )
 
         # Post-pull / already-current reload seam: invalidate importlib
@@ -1379,30 +1918,42 @@ def run_janitor_update(args) -> int:
         # modules. Runs BEFORE the Node / config phase.
         _reload_helper_modules_after_pull()
 
-        if not already_current:
+        if not already_current or _deps_pending_marker(project_root, git_cmd).exists():
+            if already_current:
+                print("→ La actualización anterior se cortó antes de instalar dependencias: se retoma.")
             _install_python_dependencies(project_root)
+            if not _verify_required_dependencies(project_root):
+                # The pending flag stays: the next run reinstalls even if git
+                # reports the tree as current.
+                _write_incomplete_marker("python_deps", auto_stash_ref)
+                return 1
 
             _call(
                 "_refresh_active_lazy_features",
                 fallback=lambda: None,
             )
 
+            _reapply_skill_catalog()
+            _set_deps_pending(project_root, False, git_cmd)
+
         # Node repair — fail-loud. Non-empty failure list writes the
         # incomplete marker, prints NO receipt, NO success banner, and does
         # NOT restore the stash.
-        print("→ Repairing Node.js dependencies...")
+        print("→ Revisando las dependencias de Node.js...")
         node_failures = _install_node_dependencies(project_root)
         if node_failures:
             print(
-                f"  ⚠ Node.js dependency refresh failed: "
+                f"✗ Fallaron las dependencias de Node.js: "
                 f"{', '.join(node_failures)}"
             )
             print(
-                "  Stash is preserved for manual recovery — re-run\n"
-                "  `janitor update` after repairing the install."
+                "  Revisa la conexión (npm descarga paquetes) y vuelve a "
+                "ejecutar `janitor update`."
             )
             _write_incomplete_marker("node_deps", auto_stash_ref)
             return 1
+
+        _rebuild_web_ui(project_root)
 
         # Fresh-wrapper config migration phase. Any failure (missing
         # helpers, initial check exception, migration exception, post-check
@@ -1410,30 +1961,26 @@ def run_janitor_update(args) -> int:
         # warning) writes the incomplete marker with
         # failed_step="config_migration" and exits 1 (no success banner,
         # no stash restore).
-        print("→ Running fresh config migration check...")
+        print("→ Revisando la configuración...")
         try:
             _run_fresh_config_migration_phase()
         except Exception as mig_exc:
-            print(f"  ⚠ Config migration failed: {mig_exc}")
-            print(
-                "  Manual recovery: re-run `janitor update` or run the\n"
-                "  bundled migration script directly:\n"
-                "    bash scripts/migrate-janitor-v0.20.1.sh"
-            )
+            print(f"✗ Falló la migración de la configuración: {mig_exc}")
+            print("  Vuelve a ejecutar `janitor update`.")
             _write_incomplete_marker("config_migration", auto_stash_ref)
             return 1
 
         # Desktop receipt (only after Node repair + config migration succeeded).
         _call(
             "_print_update_completion",
-            "✓ Update complete!",
+            _COMPLETION_MESSAGE,
             fallback=lambda _msg: None,
         )
 
         # Marker cleanup. Failure → return 1 and skip the success banner.
         if not _clear_incomplete_marker():
             print(
-                "  ⚠ Could not remove the recovery marker. Manually delete:\n"
+                "  ⚠ No se pudo quitar la marca de recuperación. Bórrala a mano:\n"
                 f"    {get_hermes_home() / 'update-incomplete.json'}"
             )
             return 1
@@ -1457,54 +2004,59 @@ def run_janitor_update(args) -> int:
             restore_sequence.append(persisted_stash_ref)
 
         for stash_to_restore in restore_sequence:
-            restored = _call(
-                "_restore_stashed_changes",
-                git_cmd,
-                project_root,
-                stash_to_restore,
-                fallback=lambda *a, **kw: _local_restore_stash(
-                    a[0], a[1], a[2],
-                ),
+            restored = _settle_stash(
+                git_cmd, project_root, stash_to_restore, keep_stash
             )
             if restored is False:
                 print(
-                    f"  ⚠ Failed to restore stash (ref: {stash_to_restore}). "
-                    f"Resolve manually with: git stash apply {stash_to_restore}"
+                    f"  ⚠ No se pudieron reaplicar tus cambios locales ({stash_to_restore}); "
+                    f"siguen guardados. Recupéralos con: git stash apply {stash_to_restore}"
                 )
                 return 1
 
+        # Exit code before the restart: under --gateway this process can live
+        # in the gateway's service cgroup and die with it.
+        if gateway_mode:
+            _write_gateway_exit_code(True)
+            gateway_exit_code_written = True
+        if getattr(args, "no_gateway_restart", False):
+            print("→ Los gateways no se reinician (--no-gateway-restart).")
+        elif not already_current or _fleet_runs_stale_code():
+            outcome = _restart_gateways_after_update(gateway_mode)
+            stale = _stale_gateways_after_restart(outcome) if outcome is not None else []
+            if stale:
+                # Upstream's rule (hermes_cli/AGENTS.md, "Verify"): a mixed-version
+                # fleet is not a healthy update.
+                _report_stale_gateways(stale)
+                if gateway_mode:
+                    _write_gateway_exit_code(False)
+                return 1
+
+        version = _installed_version(project_root)
         print()
-        print("✓ Janitor Agent updated successfully!")
-        print("  Restart Janitor to use the new version.")
+        print(f"{_SUCCESS_LINE}{f' a la versión {version}' if version else ''}.")
+        print("  Reinicia Janitor para usar la versión nueva.")
+        if not already_current:
+            notice = _app_update_notice(contract_before, project_root)
+            if notice:
+                print(notice)
         return 0
 
     except KeyboardInterrupt:
-        print("\n✗ Update cancelled.")
+        print("\n✗ Actualización cancelada.")
         if auto_stash_ref and git_cmd is not None and project_root is not None:
-            _call(
-                "_restore_stashed_changes",
-                git_cmd,
-                project_root,
-                auto_stash_ref,
-                fallback=lambda *a, **kw: _local_restore_stash(
-                    a[0], a[1], a[2],
-                ),
-            )
+            _settle_stash(git_cmd, project_root, auto_stash_ref, keep_stash)
         return 130
     except subprocess.CalledProcessError as e:
-        print(f"\n❌ Update failed at step: {e.cmd}")
+        cmd = " ".join(str(part) for part in e.cmd) if isinstance(e.cmd, (list, tuple)) else e.cmd
+        print(f"\n✗ La actualización falló en un paso interno ({cmd}).")
+        print("  Vuelve a ejecutar `janitor update`.")
         if auto_stash_ref and git_cmd is not None and project_root is not None:
-            _call(
-                "_restore_stashed_changes",
-                git_cmd,
-                project_root,
-                auto_stash_ref,
-                fallback=lambda *a, **kw: _local_restore_stash(
-                    a[0], a[1], a[2],
-                ),
-            )
+            _settle_stash(git_cmd, project_root, auto_stash_ref, keep_stash)
         return 1
     finally:
+        if gateway_mode and not check_only and not gateway_exit_code_written:
+            _write_gateway_exit_code(False)
         if update_lock is not None:
             update_lock.release()
         _call(

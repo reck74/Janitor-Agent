@@ -1,15 +1,7 @@
 {
-  "peerName": "user_nickname",
   "baseUrl": "http://localhost:1973",
   "hosts": {
-    "opencode": {
-      "workspace": "opencode",
-      "aiPeer": "opencode",
-      "recallMode": "hybrid",
-      "sessionStrategy": "per-directory"
-    },
     "hermes": {
-      "peerName": "user_nickname",
       "aiPeer": "Janitor",
       "workspace": "Janitor-Workspace",
       "observationMode": "directional",

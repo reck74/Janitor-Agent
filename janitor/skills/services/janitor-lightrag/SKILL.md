@@ -1,246 +1,158 @@
 ---
 name: janitor-lightrag
-description: "Deploy and operate LightRAG self-hosted for Janitor."
-version: 1.0.0
+description: "Instalación guiada de LightRAG: base de conocimiento local."
+version: 2.0.0
 author: Janitor Agent
 license: MIT
 platforms: [linux]
 
 metadata:
   hermes:
-    tags: [lightrag, knowledge-graph, rag, docker, self-host, postgresql, pgvector]
+    tags: [lightrag, knowledge-base, rag, knowledge-graph, docker, local-setup]
     category: devops
+    related_skills: [janitor-nocodb, janitor-n8n]
 ---
 
-# janitor-lightrag
+# Janitor LightRAG Skill
 
-Deploy and operate LightRAG as a Janitor knowledge graph service. LightRAG is a
-graph-based RAG system that extracts entities and relationships from documents
-using LLMs, builds a knowledge graph, and enables hybrid retrieval (semantic +
-graph traversal) for querying.
+Installs LightRAG — a knowledge base: it reads the user's documents, extracts entities and
+relations into a graph and answers questions over them — as two local containers on
+`127.0.0.1` only: `janitor-lightrag` (API + web UI) and `janitor-lightrag-db` (Postgres with
+pgvector). The user talks; you run the script. It never runs `sudo`, never removes a
+container or a volume, and never asks for or prints a key or password.
 
-## Architecture
+The data stays on this machine, but **the text of every document indexed and every
+question asked goes to the AI provider** that does the LLM and embeddings work (OpenAI, and
+MiniMax when chosen). Say so before installing.
 
-```
-127.0.0.1:9621 → janitor-lightrag (ghcr.io/hkuds/lightrag:latest)
-                 ├── Storage: PostgreSQL (pgvector/pgvector:pg18)
-                 ├── Graph: NetworkX (in-memory JSON files)
-                 ├── LLM: GLM-5.2 via z.ai coding endpoint
-                 ├── Embeddings: nomic-embed-text via Honcho Ollama
-                 └── Networks: janitor-lightrag-network + janitor-honcho-network
-```
+## When to Use
+
+- "Install / set up LightRAG", "I want a knowledge base", "index my documents and ask them".
+- "Is LightRAG working?", "stop LightRAG".
+- Indexing or querying on a LightRAG that is already installed (see Using LightRAG).
+
+Not for: structured tables (that is `janitor-nocodb`), deleting the knowledge base (give the
+commands in Pitfalls; never run them).
 
 ## Prerequisites
 
-- Docker daemon running (`docker info` must succeed)
-- `docker compose` v2 available
-- **janitor-honcho deployed FIRST** (cross-network Ollama dependency)
-- `z.ai` API key in `${HERMES_HOME:-$HOME/.janitor}/.env` as `ZAI_API_KEY` (or
-  pre-populate `LLM_API_KEY` in `~/.janitor/docker/lightrag.env` after first run)
+- Linux, `python3` on `PATH`, `HERMES_HOME` set (the agent's `terminal` does it).
+- Docker with `docker compose` v2, ~3 GB free, the port free (default 9621).
+- `OPENAI_API_KEY` stored in the profile `.env` (embeddings, and the LLM unless MiniMax is
+  used). With `MINIMAX_API_KEY` also present the LLM part uses MiniMax (`--llm auto`).
+- Network access to pull `ghcr.io/hkuds/lightrag:latest` and `pgvector/pgvector:pg18`.
 
-## Key Design Decisions (Verified)
-
-1. **NetworkX for graph storage (not PGGraphStorage):** PGGraphStorage requires
-   Apache AGE extension which pgvector/pgvector:pg18 does NOT include. NetworkX
-   loads the graph in-memory (persisted as JSON), perfect for research-scale
-   datasets (thousands of nodes). Avoids needing Neo4j or AGE.
-
-2. **Ollama for embeddings (not z.ai):** z.ai coding endpoint only serves GLM
-   chat models, NOT embeddings. Use Honcho's local Ollama with nomic-embed-text
-   (768d). This also stays under pgvector's HNSW 2000-dimension limit.
-
-3. **Cross-network Ollama access:** LightRAG must be connected to
-   `janitor-honcho-network` (external: true) to reach `janitor-honcho-ollama:11434`.
-   `host.docker.internal` is unreliable because Docker uses a dynamic gateway
-   IP (Docker picks the bridge gateway at container start — depends on the
-   host's network namespace and bridge driver), which may not be reachable
-   when the bridge is in NO-CARRIER state. Use cross-network container
-   names instead — Docker's `host-gateway` extra hosts entry in the compose
-   handles dynamic gateway resolution at container start.
-
-4. **z.ai LLM endpoint:** Must use `https://api.z.ai/api/coding/paas/v4` (NOT
-   `/api/paas/v4`). Model is `glm-5.2` (NOT `glm-4-flash` which is unknown).
-
-5. **PostgreSQL 18+ volume mount:** Must mount at `/var/lib/postgresql` (NOT
-   `/var/lib/postgresql/data`). PG 18+ changed data directory structure.
-
-## Files
-
-- Compose: `${HERMES_SKILL_DIR}/scripts/lightrag-compose.yml`
-- Env: `~/.janitor/docker/lightrag.env` (chmod 600 — contains API keys + passwords)
-
-**First-time access:**
-- URL: `http://127.0.0.1:9621`
-- WebUI login: `admin` / password in lightrag.env → AUTH_ACCOUNTS
-- API Key: in lightrag.env → LIGHTRAG_API_KEY (header: `X-API-Key`)
-
-## Deploy
+## How to Run
 
 ```bash
-janitor services deploy lightrag
+S=${HERMES_SKILL_DIR}/scripts/lightrag_setup.py
+python3 $S preflight [--port N]                                  # read-only
+python3 $S deploy [--port N] [--llm auto|openai|minimax]         # prints the plan, changes nothing
+python3 $S deploy [--port N] [--llm ...] --yes                   # only after the user said yes
+python3 $S verify [--port N]                                     # read-only: does it answer?
+python3 $S stop [--yes]                                          # stops the containers, keeps everything
 ```
 
-The deploy script is idempotent: it preserves existing `lightrag.env`
-credentials (won't break existing volumes), copies the compose file from
-`scripts/` into `~/.janitor/docker/`, pulls images, brings up the stack,
-waits for health, and injects `LIGHTRAG_API_URL` + `LIGHTRAG_API_KEY` into
-`~/.janitor/.env`.
+- stdout: one JSON document (`ok`, and `reason` when `ok` is false). stderr: Spanish hints.
+  Exit 0 ok, 1 refused/failed, 2 `HERMES_HOME` unset.
+- The first `deploy --yes` pulls two images (several minutes): run it with
+  `terminal(background=true, notify=true)` and wait with `process(action="wait")`.
+- `janitor services deploy lightrag` runs the same deploy (that command is the confirmation).
+- `--port` is remembered in `lightrag.env`; later commands use it without the flag. The app's
+  services screen checks the default port declared in `service.yaml` (9621).
 
-Manual equivalent:
+## Quick Reference
+
+| Command | Writes | Guarantees |
+|---|---|---|
+| `preflight` | nothing | Docker calls are inspect/info only; credentials reported as present/absent |
+| `deploy` | nothing | returns `plan` + `reason: confirmation_required` |
+| `deploy --yes` | `<root>/docker/{lightrag-compose.yml,lightrag.env}` | loopback port; `compose up -d` only; keeps a compose you edited; `lightrag.env` (0600) holds only LightRAG's own generated secrets plus the one or two provider keys it needs; regenerated each deploy, generated secrets kept |
+| `verify` | nothing | GET `/health` on `127.0.0.1`; `ok` only on HTTP 200 |
+| `stop --yes` | nothing on disk | `docker stop`; volumes `janitor-lightrag-{storage,inputs,pgdata}` and files stay |
+
+Preflight keys you act on: `blockers[]`, `credentials`, `docker.install_hint.command`,
+`docker.fix_hint`, `port`, `service.state`, `health`, `foreign_containers[]`, `files`.
+
+| Blocker | What to tell the user (they run any command themselves) |
+|---|---|
+| `docker_missing` | Show `docker.install_hint.command` |
+| `docker_daemon_down`, `docker_permission_denied` | Show `docker.fix_hint` |
+| `compose_v2_missing` | Arch: `sudo pacman -S docker-compose`; others: the `docker-compose-plugin` package |
+| `embeddings_credential_missing`, `llm_credential_missing` | `OPENAI_API_KEY` must be stored (Procedure step 3) |
+| `port_busy` | Something else listens there: ask for another port, use it as `--port` |
+| `disk_low` | Say how much is free (`disk.free_gb`) and what is needed |
+| `foreign_containers` | Containers from an older install; see Pitfalls |
+
+## Procedure
+
+Talk to the user in Spanish, dry and direct (Janitor's voice). Show what you will change
+before changing it.
+
+1. Run `preflight`. If `service.state` is `running` and `health.responding` is true, say it
+   is already installed, run `verify`, and stop unless they want something else.
+2. Explain in two sentences what it is and the privacy trade-off above (documents and
+   questions go to OpenAI / MiniMax). Ask whether they still want it.
+3. Keys. Never ask the user to paste a key in the chat. They store it themselves: the API
+   keys settings of the app, or `janitor config set OPENAI_API_KEY <clave>` in their own
+   terminal. Wait until they say it is done, re-run `preflight`, check `credentials`. If they
+   paste one anyway: do not repeat it, tell them it is now in this conversation's history
+   and should be rotated, and still have it stored as above.
+4. Resolve the other blockers with the table; re-run `preflight` after each fix.
+5. Run `deploy` (without `--yes`). Show the `plan` in plain Spanish: files under
+   `<root>/docker/`, the two images, containers, volumes, `127.0.0.1:<port>`, which provider
+   gets the text, and that nothing is ever deleted. Ask for a yes.
+6. On yes, run `deploy --yes` (background). On `ok: false`, report `reason`; for
+   `health_timeout` quote each `failing[].container` with its `log_tail`. Volumes are kept;
+   after the fix, re-run `deploy --yes`. Changing keys later: re-run `deploy --yes`.
+7. Run `verify`. Only with `ok: true` say it works. Then tell the user:
+   - web UI at `http://127.0.0.1:<port>`, user `admin`; the password is in `lightrag.env`
+     (`AUTH_ACCOUNTS`, after `admin:`): they read it themselves with
+     `grep '^AUTH_ACCOUNTS=' <root>/docker/lightrag.env` in their own terminal — you never print it;
+   - state / stop / start: `janitor services status|stop|start lightrag`.
+8. Stop (on request): confirm, run `stop --yes`, list `kept`.
+
+## Using LightRAG
+
+Every route except `/health` needs the API key LightRAG generated. It lives in
+`lightrag.env` under `files.deploy_dir` from `preflight` (`<root>/docker`). Read it without
+printing it:
 
 ```bash
-cd ~/.janitor/docker
-docker compose -f lightrag-compose.yml --env-file lightrag.env pull
-docker compose -f lightrag-compose.yml --env-file lightrag.env up -d
+K=$(grep -m1 '^LIGHTRAG_API_KEY=' <root>/docker/lightrag.env | cut -d= -f2-)
+B=http://127.0.0.1:9621
+curl -s -H "X-API-Key: $K" "$B/documents/pipeline_status"                       # indexing progress
+curl -s -X POST -H "X-API-Key: $K" -H "Content-Type: application/json" \
+  "$B/query" -d '{"query": "...", "mode": "hybrid"}'                             # ask
 ```
 
-## API Reference
-
-### Health Check
-
-```bash
-curl http://127.0.0.1:9621/health
-```
-
-### Index a Document
-
-```bash
-curl -X POST "http://127.0.0.1:9621/documents/text" \
-  -H "X-API-Key: $LIGHTRAG_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"text": "...", "file_source": "filename.txt"}'
-```
-
-**IMPORTANT:** `file_source` is REQUIRED for text insertion. Without it you
-get HTTP 400: "A valid file_source is required for text insertion".
-
-Processing runs in background. Poll status:
-
-```bash
-curl -H "X-API-Key: $LIGHTRAG_API_KEY" \
-  "http://127.0.0.1:9621/documents/pipeline_status"
-```
-
-### List Knowledge Graph Entities
-
-```bash
-curl -H "X-API-Key: $LIGHTRAG_API_KEY" \
-  "http://127.0.0.1:9621/graph/label/list"
-```
-
-### Query
-
-```bash
-curl -X POST "http://127.0.0.1:9621/query" \
-  -H "X-API-Key: $LIGHTRAG_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"query": "...", "mode": "hybrid"}'
-```
-
-Query modes: `naive`, `local`, `global`, `hybrid`, `mix`.
-
-**WARNING:** GLM-5.2 is a reasoning model — queries can take 60-120s due to
-chain-of-thought before response generation. For faster queries, consider
-switching LLM_MODEL to a non-reasoning model like glm-4-flash (requires the
-correct endpoint for that model).
-
-## Container Management
-
-```bash
-# Status
-docker ps --filter name=janitor-lightrag
-
-# Logs
-docker logs janitor-lightrag --tail 30
-
-# Restart (MUST use deploy.sh or compose, not docker restart — env_file changes)
-janitor services deploy lightrag
-# or manually:
-cd ~/.janitor/docker
-docker compose -f lightrag-compose.yml --env-file lightrag.env down
-docker compose -f lightrag-compose.yml --env-file lightrag.env up -d
-
-# Update
-docker compose -f lightrag-compose.yml --env-file lightrag.env pull
-docker compose -f lightrag-compose.yml --env-file lightrag.env up -d
-```
-
-## Environment Variables (Critical)
-
-| Variable | Value | Notes |
-|----------|-------|-------|
-| `LIGHTRAG_GRAPH_STORAGE` | `NetworkXStorage` | NOT PGGraphStorage (needs AGE) |
-| `LIGHTRAG_KV_STORAGE` | `PGKVStorage` | PostgreSQL for KV |
-| `LIGHTRAG_VECTOR_STORAGE` | `PGVectorStorage` | PostgreSQL + pgvector |
-| `LIGHTRAG_DOC_STATUS_STORAGE` | `PGDocStatusStorage` | Pipeline state tracking |
-| `LLM_BINDING` | `openai` | OpenAI-compatible endpoint |
-| `LLM_BINDING_HOST` | `https://api.z.ai/api/coding/paas/v4` | Coding endpoint, not /api/paas/v4 |
-| `LLM_MODEL` | `glm-5.2` | Reasoning model, slow but capable |
-| `EMBEDDING_BINDING` | `ollama` | Local embeddings |
-| `EMBEDDING_BINDING_HOST` | `http://janitor-honcho-ollama:11434` | Cross-network |
-| `EMBEDDING_MODEL` | `nomic-embed-text` | 768 dimensions |
-| `EMBEDDING_DIM` | `768` | Under HNSW 2000 limit |
-| `WHITELIST_PATHS` | `/health` | Require auth on all routes including Ollama-compatible |
-| `SUMMARY_LANGUAGE` | `Spanish` | Entity/relation summaries in Spanish |
-| `ENTITY_EXTRACTION_USE_JSON` | `true` | Structured output for reliability |
+- Indexing sends the document's text to the provider: name the files and get a yes first.
+  Text: `POST $B/documents/text` with `{"text": "...", "file_source": "<name>"}`
+  (`file_source` is required). Processing runs in the background: poll `pipeline_status`.
+- Query modes: `naive`, `local`, `global`, `hybrid`, `mix`.
+- Docs and the full variable list: https://github.com/HKUDS/LightRAG
 
 ## Pitfalls
 
-1. **PGGraphStorage + pgvector image:** The pgvector/pgvector:pg18 image does
-   NOT include Apache AGE. If you set `LIGHTRAG_GRAPH_STORAGE=PGGraphStorage`,
-   LightRAG will crash with `function create_graph(unknown) does not exist`.
-   Use `NetworkXStorage` instead.
+- `foreign_containers`: containers named `janitor-lightrag*` that this skill did not create
+  (an older Janitor install, which also depended on Honcho). Deploy refuses rather than fight
+  them. The user decides; they can be removed with `docker rm -f janitor-lightrag janitor-lightrag-db`
+  — the old data stays in the old volumes (`docker volume ls | grep lightrag`), which the new
+  install does not adopt. Never run it yourself.
+- The embeddings model fixes the vector size stored in Postgres. Switching it later means
+  re-indexing into a fresh database: a separate, explicit request.
+- `lightrag.env` holds the Postgres password the `janitor-lightrag-pgdata` volume was
+  initialised with: keep it. A `lightrag.env` without Janitor's first-line marker is used as
+  is if it defines every variable the compose needs (else `env_file_incomplete`).
+- Reasoning models (MiniMax) make indexing and answers slow: minutes per document is normal.
+- Never use `docker compose down`, `--remove-orphans` or `-v`: other Janitor stacks share
+  `<root>/docker`.
+- Deleting the knowledge base is a separate, explicit request. Give the commands, do not run
+  them: `janitor services uninstall lightrag`, then
+  `docker volume rm janitor-lightrag-storage janitor-lightrag-inputs janitor-lightrag-pgdata` (irreversible).
 
-2. **PostgreSQL 18 volume path:** PG 18+ Docker images require mounting at
-   `/var/lib/postgresql`, NOT `/var/lib/postgresql/data`. Otherwise:
-   "in 18+, these Docker images are configured to store database data in a
-   format which is compatible with pg_ctlcluster".
+## Verification
 
-3. **z.ai model names:** Only `glm-5.2` works on the `/api/coding/paas/v4`
-   endpoint. `glm-4-flash`, `glm-4.6-flash` return error 1211 "Unknown Model".
-   z.ai does NOT serve embeddings at all.
-
-4. **host.docker.internal unreachable:** Docker uses a dynamic bridge gateway
-   IP — the bridge driver assigns it at network creation (default bridge uses
-   one range, user-defined bridges another). On hosts where the docker0 bridge
-   is in NO-CARRIER state, the gateway IP may be unreachable. The compose file
-   uses `extra_hosts: host.docker.internal:host-gateway` which Docker resolves
-   at container start (dynamic gateway detection), and the cross-network Ollama
-   access goes through the `janitor-honcho-network` (external: true) instead.
-
-5. **Embedding dimension limit:** pgvector HNSW indexes support max 2000
-   dimensions. Models like embedding-3 (2048d) will fail to create HNSW
-   indexes (WARNING, not fatal — falls back to sequential scan). Use
-   nomic-embed-text (768d) for proper index support.
-
-6. **Orphan containers warning:** Running LightRAG compose shows orphan
-   warnings for NocoDB/Honcho/n8n/Firecrawl containers. This is cosmetic —
-   do NOT use `--remove-orphans` or you'll kill other stacks.
-
-7. **docker restart vs compose down/up:** `docker restart janitor-lightrag`
-   does NOT pick up env_file changes. Must use `docker compose down && up`
-   (or re-run `deploy.sh`) to apply config changes.
-
-8. **GLM-5.2 is a reasoning model:** Entity extraction and queries take
-   60-120s because GLM-5.2 generates reasoning_content before answering.
-   This is normal, not a timeout bug.
-
-## Integration with NocoDB
-
-LightRAG and NocoDB are complementary:
-- **LightRAG:** Unstructured text → automatic entity/relation extraction →
-  knowledge graph → semantic + graph queries
-- **NocoDB:** Structured metadata (investigation status, reviewer, dates,
-  LightRAG document IDs) → relational queries, kanban views, webhooks
-
-Suggested NocoDB schema:
-- Table "Investigaciones" → title, status, team, dates
-- Table "Fuentes" → type, author, DOI, URL, lightrag_doc_id
-- Table "Hallazgos" → description, fuente_id, investigacion_id
-
-## See Also
-
-- Skill `janitor-nocodb` — NocoDB structured metadata integration
-- Skill `janitor-honcho` — Honcho Ollama (embedding model provider)
-- LightRAG docs: https://github.com/HKUDS/LightRAG
-- LightRAG env reference: https://github.com/HKUDS/LightRAG/blob/main/env.example
+- `python3 $S verify` → `ok: true`, `health.status: 200`.
+- `janitor services status lightrag` → `lightrag: en marcha, responde`.
+- Tests: `scripts/run_tests.sh tests/janitor/test_janitor_guided_services.py`.

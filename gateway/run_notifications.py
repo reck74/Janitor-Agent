@@ -33,6 +33,13 @@ _UPDATE_FAILED_NOTICE = (
     "❌ Hermes update failed; the previous version is still running. Run `hermes update` on the "
     "host to see the full error, or try /update again later.")
 
+
+# JANITOR: (touchpoint runtime-copy) the update/restart notices below are catalog keys with the
+# inline English as fallback (agent.i18n.t_default), resolved at send time in the profile's language.
+def _copy(key: str, english: str, **fields) -> str:
+    from agent.i18n import t_default
+    return t_default(f"runtime_copy.gateway.{key}", english, **fields)
+
 # An update's completion notice waits for its target platform adapter to (re)connect before it
 # can be delivered. Nothing bounds that wait, so a marker naming a platform that is not
 # configured at all — no adapter will ever appear — would keep itself on disk and re-log a
@@ -630,11 +637,13 @@ class GatewayNotificationsMixin:
                 )
                 sent_buttons = True
         if not sent_buttons:
-            default_hint = f" (default: {default})" if default else ""
+            default_hint = _copy("update_prompt_default", " (default: {default})", default=default) if default else ""  # JANITOR: touchpoint runtime-copy
             _p = getattr(adapter, "typed_command_prefix", "/")
             await target.send(
-                f"☤ **Update needs your input:**\n\n{prompt_text}{default_hint}\n\n"
-                f"Reply `{_p}approve` (yes) or `{_p}deny` (no), or type your answer directly."
+                _copy("update_prompt",  # JANITOR: touchpoint runtime-copy
+                      "☤ **Update needs your input:**\n\n{prompt}{default_hint}\n\n"  # JANITOR: runtime-copy
+                      "Reply `{p}approve` (yes) or `{p}deny` (no), or type your answer directly.",  # JANITOR: runtime-copy
+                      prompt=prompt_text, default_hint=default_hint, p=_p)  # JANITOR: runtime-copy
             )
         # Keep the prompt marker on disk until answered so a restarted watcher can re-forward it.
         self._session_state(target.session_key).persistent.update_prompt_pending = True
@@ -687,7 +696,8 @@ class GatewayNotificationsMixin:
                 with _log_suppressed(logging.WARNING, "Update final notification failed: %s"):
                     exit_code = self._update_exit_code(paths)
                     await target.send(
-                        "✅ Hermes update finished." if exit_code == 0 else _UPDATE_FAILED_NOTICE
+                        _copy("update_finished", "✅ Hermes update finished.") if exit_code == 0  # JANITOR: touchpoint runtime-copy
+                        else _copy("update_failed", _UPDATE_FAILED_NOTICE)  # JANITOR: touchpoint runtime-copy
                     )
                     logger.info("Update finished (exit=%s), notified %s", exit_code, session_key)
                 self._clear_update_markers(paths, session_key)
@@ -714,7 +724,7 @@ class GatewayNotificationsMixin:
             paths.exit_code.write_text("124", encoding="utf-8")
             await _flush_buffer()
             with suppress(Exception):
-                await target.send("❌ Hermes update timed out after 30 minutes.")
+                await target.send(_copy("update_timed_out", "❌ Hermes update timed out after 30 minutes."))  # JANITOR: touchpoint runtime-copy
             self._clear_update_markers(paths, session_key)
 
     async def _send_update_notification(self) -> bool:
@@ -776,13 +786,13 @@ class GatewayNotificationsMixin:
                 from tools.ansi_strip import strip_ansi
                 output = strip_ansi(output).strip()
                 if exit_code == 0:
-                    msg = "✅ Hermes update finished successfully."
+                    msg = _copy("update_finished_successfully", "✅ Hermes update finished successfully.")  # JANITOR: touchpoint runtime-copy
                     if output:
                         msg = f"{msg}\n\n```\n{_update_output_tail(output, 3500)}\n```"
                 else:
-                    msg = _UPDATE_FAILED_NOTICE
+                    msg = _copy("update_failed", _UPDATE_FAILED_NOTICE)  # JANITOR: touchpoint runtime-copy
                     if output:
-                        msg = f"{msg}\n\nLast lines:\n```\n{_update_output_tail(output, 800)}\n```"
+                        msg = f"{msg}\n\n{_copy('update_last_lines', 'Last lines:')}\n```\n{_update_output_tail(output, 800)}\n```"  # JANITOR: touchpoint runtime-copy
                 await adapter.send(chat_id, msg, metadata=_non_conversational_metadata(metadata, platform=platform))
                 logger.info("Sent post-update notification to %s:%s (exit=%s)", platform_str, chat_id, exit_code)
         except Exception as e:
@@ -828,7 +838,7 @@ class GatewayNotificationsMixin:
                     if data.get(field):
                         metadata[field] = str(data[field])
             result = await transport.send(
-                platform, str(chat_id), "♻ Gateway restarted successfully. Your session continues.",
+                platform, str(chat_id), _copy("restarted", "♻ Gateway restarted successfully. Your session continues."),  # JANITOR: touchpoint runtime-copy
                 metadata=_non_conversational_metadata(metadata, platform=platform),
             )
             # adapter.send() catches provider errors (e.g. "Chat not found") and returns

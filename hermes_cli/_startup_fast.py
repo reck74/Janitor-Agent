@@ -171,6 +171,17 @@ def read_install_method() -> str | None:
     return (method or "").strip().lower() or None
 
 
+# JANITOR: (touchpoint runtime-copy) the --version labels ask the i18n catalog first; without a
+# catalog key (upstream's catalogs) or on any failure the inline English prints unchanged.
+def _version_text(key: str, english: str, **fields: object) -> str:
+    try:
+        from agent.i18n import t_default
+
+        return t_default(f"runtime_copy.version.{key}", english, **fields)
+    except Exception:
+        return english.format(**fields)
+
+
 def print_fast_version_info(*, check_updates: bool = True) -> None:
     """THE canonical ``hermes --version`` output (also used by /version).
 
@@ -188,7 +199,7 @@ def print_fast_version_info(*, check_updates: bool = True) -> None:
         from janitor_version import display_version
 
         print(f"THE JANITOR v{display_version(__version__)} ({__release_date__})")
-    print(f"Install directory: {project_root_str()}")
+    print(_version_text("install_dir", "Install directory: {path}", path=project_root_str()))  # JANITOR: runtime-copy
     # Authoritative resolver first (code-scoped stamp → managed → nix → git → pip; also self-heals
     # poisoned shared-home 'docker' stamps); cheap stdlib stamp probe only if it fails.
     try:
@@ -200,10 +211,11 @@ def print_fast_version_info(*, check_updates: bool = True) -> None:
     except Exception:
         install_method = read_install_method()
     if install_method:
-        print(f"Install method: {install_method}")
+        print(_version_text("install_method", "Install method: {method}", method=install_method))  # JANITOR: runtime-copy
     print(f"Python: {sys.version.split()[0]}")
     openai_version = read_openai_version()
-    print(f"OpenAI SDK: {openai_version}" if openai_version else "OpenAI SDK: Not installed")
+    print(_version_text("openai_sdk", "OpenAI SDK: {version}", version=openai_version) if openai_version  # JANITOR: runtime-copy
+          else _version_text("openai_sdk_missing", "OpenAI SDK: Not installed"))  # JANITOR: runtime-copy
     if not check_updates:
         return
     # Synchronous update status — bounded by check_for_updates' own subprocess/network timeouts
@@ -214,12 +226,14 @@ def print_fast_version_info(*, check_updates: bool = True) -> None:
 
         behind = check_for_updates(passive=True)
         if behind == UPDATE_AVAILABLE_NO_COUNT:
-            print(f"Update available — run '{recommended_update_command()}'")
+            print(_version_text("update_available", "Update available — run '{command}'",  # JANITOR: runtime-copy
+                                command=recommended_update_command()))  # JANITOR: runtime-copy
         elif behind and behind > 0:
             commits_word = "commit" if behind == 1 else "commits"
-            print(f"Update available: {behind} {commits_word} behind — run '{recommended_update_command()}'")
+            print(_version_text("update_behind", "Update available: {behind} {commits_word} behind — run '{command}'",  # JANITOR: runtime-copy
+                                behind=behind, commits_word=commits_word, command=recommended_update_command()))  # JANITOR: runtime-copy
         elif behind == 0:
-            print("Up to date")
+            print(_version_text("up_to_date", "Up to date"))  # JANITOR: runtime-copy
     except Exception:
         pass
 

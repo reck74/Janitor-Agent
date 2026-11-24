@@ -1,0 +1,11 @@
+{
+  "refreshed": "2026-11-22",
+  "rule": "Versiones exactas (save-exact), cada una publicada hace al menos 14 días. Node: la LTS activa.",
+  "pins": {
+    "NODE_MAJOR": "26",
+    "TYPESCRIPT": "7.0.2",
+    "TYPES_NODE": "26.6.5",
+    "BIOME": "2.6.6",
+    "PNPM": "12.18.0"
+  }
+}

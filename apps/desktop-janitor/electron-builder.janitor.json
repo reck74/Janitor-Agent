@@ -5,7 +5,7 @@
   "artifactName": "Janitor-${version}-${os}-${arch}.${ext}",
   "icon": "assets/janitor-icon.png",
   "extraMetadata": {
-    "productName": "Hermes",
+    "productName": "Janitor",
     "description": "Native desktop shell for Janitor Agent."
   },
   "mac": {

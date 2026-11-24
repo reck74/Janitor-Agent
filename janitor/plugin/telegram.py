@@ -21,8 +21,8 @@ AVATAR_PATH = ASSETS_ROOT / "janitor_avatar_telegram.jpg"
 WELCOME_IMAGE_PATH = ASSETS_ROOT / "telegram_welcome.jpg"
 WELCOME_TEXT = (
     "DENEGADO. No hay tiempo para presentaciones. "
-    "Soy The Janitor. Trae tu código roto, tu arquitectura frágil "
-    "y tus secretos hardcodeados. Los limpio. Los audito. "
+    "Soy The Janitor. Trae tu código roto, tus servidores sin parchear, "
+    "tu red plana y tus secretos hardcodeados. Los limpio. Los audito. "
     "Los hago a prueba de balas. Escribe /topic para separar tus conversaciones "
     "en tópicos y mantener el contexto organizado. Comienza."
 )

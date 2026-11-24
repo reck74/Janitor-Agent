@@ -396,18 +396,26 @@ def _telegram_onboarding_base_url() -> str:
 
 
 def _telegram_onboarding_error_message(error: str, fallback: str) -> str:
-    return {
+    english = {  # JANITOR: runtime-copy
         "not_found": "Telegram pairing was not found. Start a new setup.",
         "expired": "Telegram setup expired. Start a new setup.",
         "claimed": "Telegram setup was already claimed. Start a new setup.",
         "unauthorized": "Telegram setup service rejected this request.",
         "telegram_manager_bot_token_not_configured": "Telegram setup service is not configured.",
         "telegram_token_fetch_failed": "Telegram could not finish bot setup. Try again.",
-    }.get(error, fallback)
+    }.get(error)  # JANITOR: runtime-copy
+    # JANITOR: (touchpoint runtime-copy) catalog key with the English as fallback. expired/claimed
+    # have no key on purpose: the desktop app reads "expired"/"claimed" in a 410 body to stop polling.
+    return _telegram_copy(error, english) if english else fallback  # JANITOR: runtime-copy
 
 
 _TELEGRAM_UNAVAILABLE = "Telegram setup service is unavailable. Try again shortly."
 _TELEGRAM_INVALID = "Telegram setup service returned an invalid response."
+
+
+def _telegram_copy(key: str, english: str) -> str:  # JANITOR: touchpoint runtime-copy
+    from agent.i18n import t_default  # JANITOR: runtime-copy
+    return t_default(f"runtime_copy.telegram_onboarding.{key}", english)  # JANITOR: runtime-copy
 
 
 def _telegram_onboarding_request_sync(
@@ -431,19 +439,19 @@ def _telegram_onboarding_request_sync(
         except Exception:
             parsed = {}
         error = str(parsed.get("error") or parsed.get("status") or "")
-        detail = _telegram_onboarding_error_message(error, "Telegram setup service returned an error.")
+        detail = _telegram_onboarding_error_message(error, _telegram_copy("error", "Telegram setup service returned an error."))  # JANITOR: runtime-copy
         if error in {"expired", "claimed"}:
             status_code = 410
         else:
             status_code = 404 if exc.response.status_code == 404 else 502
         raise HTTPException(status_code=status_code, detail=detail) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=_TELEGRAM_UNAVAILABLE) from exc
+        raise HTTPException(status_code=502, detail=_telegram_copy("unavailable", _TELEGRAM_UNAVAILABLE)) from exc  # JANITOR: runtime-copy
 
     try:
         parsed = response.json()
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=_TELEGRAM_INVALID) from exc
+        raise HTTPException(status_code=502, detail=_telegram_copy("invalid", _TELEGRAM_INVALID)) from exc  # JANITOR: runtime-copy
     if not isinstance(parsed, dict):
-        raise HTTPException(status_code=502, detail=_TELEGRAM_INVALID)
+        raise HTTPException(status_code=502, detail=_telegram_copy("invalid", _TELEGRAM_INVALID))  # JANITOR: runtime-copy
     return parsed

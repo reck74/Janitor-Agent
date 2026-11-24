@@ -1,9 +1,8 @@
-"""``janitor services`` / ``janitor agents`` and the ``service.yaml`` contract."""
+"""``janitor services`` and the ``service.yaml`` contract."""
 
 from __future__ import annotations
 
 import os
-import shutil
 import stat
 import subprocess
 import sys
@@ -13,9 +12,9 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from janitor import agents, services
+from janitor import services
 from janitor.home import SKILLS_ROOT
-from tests.janitor.legacy_home import ASSETS, REPO_ROOT, expected_listing_count, launcher_env
+from tests.janitor.legacy_home import REPO_ROOT, launcher_env
 
 ALL_SERVICES = services.discover_services()
 
@@ -73,7 +72,7 @@ def test_manifest_rejects_unprefixed_containers(tmp_path):
 
 def test_get_service_accepts_prefixed_name():
     assert services.get_service("janitor-honcho").name == "honcho"
-    with pytest.raises(services.ServiceError, match="available"):
+    with pytest.raises(services.ServiceError, match="honcho"):
         services.get_service("nope")
 
 
@@ -107,9 +106,44 @@ def test_status_reports_each_container():
     docker = FakeDocker({honcho.containers[0]: "running", honcho.containers[1]: "exited"})
     lines: list[str] = []
     assert services.handle(_args("status", "honcho"), runner=docker, out=lines.append) == 0
-    assert lines[0] == "honcho: degraded"
-    assert any(honcho.containers[0] in l and "running" in l for l in lines)
-    assert any(honcho.containers[-1] in l and "absent" in l for l in lines)
+    assert lines[0] == f"honcho: {services.state_text('degraded', None)}"
+    assert any(honcho.containers[0] in l and services.container_state_text("running") in l for l in lines)
+    assert any(honcho.containers[-1] in l and services.container_state_text("absent") in l for l in lines)
+
+
+# English the CLI must not show: the codes ``summarize`` / ``docker inspect`` return.
+_ENGLISH_STATES = ("running", "stopped", "degraded", "not deployed", "exited", "absent")
+
+
+@pytest.mark.parametrize("summary", ["running", "degraded", "stopped", "not deployed"])
+def test_cli_state_text_is_spanish_and_distinct(summary):
+    """The CLI shows each summary in Spanish; the codes themselves stay for the API."""
+    texts = {s: services.state_text(s, None) for s in ("running", "degraded", "stopped", "not deployed")}
+    assert len(set(texts.values())) == len(texts)
+    assert not any(word in texts[summary] for word in _ENGLISH_STATES), texts[summary]
+    for health in (services.HEALTH_RESPONDING, services.HEALTH_NOT_RESPONDING, services.HEALTH_UNCHECKED):
+        assert not any(word in services.state_text("running", health) for word in _ENGLISH_STATES)
+
+
+def test_list_shows_spanish_states_and_descriptions():
+    """`janitor services list`: no English state word, and every description is the manifest's."""
+    docker = FakeDocker({})
+    lines: list[str] = []
+    assert services.handle(_args("list"), runner=docker, out=lines.append) == 0
+    assert len(lines) == len(ALL_SERVICES)
+    for line, service in zip(lines, ALL_SERVICES):
+        assert line.startswith(service.name)
+        assert services.state_text("not deployed", None) in line
+        assert line.endswith(service.description)
+        assert not any(f" {word}" in line.lower() for word in _ENGLISH_STATES), line
+
+
+@pytest.mark.parametrize("service", ALL_SERVICES, ids=lambda s: s.name)
+def test_service_descriptions_are_spanish(service):
+    """Descriptions reach `services list`: Spanish, so at least one Spanish function word."""
+    words = set(service.description.lower().replace("(", " ").replace(",", " ").split())
+    assert words & {"de", "con", "que", "tu", "en", "y", "para", "entre"}, service.description
+    assert not words & {"the", "and", "for", "with", "backend", "memory"}, service.description
 
 
 @pytest.mark.parametrize(
@@ -164,6 +198,52 @@ def test_deploy_runs_the_skill_script_with_janitor_env(monkeypatch):
     assert seen["env"]["JANITOR_SOURCE_DIR"] == str(REPO_ROOT)
 
 
+def test_status_tells_a_running_container_from_a_service_that_answers(tmp_path, monkeypatch):
+    """`janitor services status` asks the loopback url of a running service (F4-06)."""
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    import socket
+    import threading
+
+    class NotFound(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(404)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), NotFound)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        closed = sock.getsockname()[1]
+
+    def svc(name, url):
+        return services.Service(name, "", tmp_path, "deploy.sh", "", url, (f"janitor-{name}",))
+
+    fleet = [svc("up", f"http://127.0.0.1:{server.server_port}"),
+             svc("booting", f"http://127.0.0.1:{closed}"), svc("nourl", "")]
+    monkeypatch.setattr(services, "discover_services", lambda root=None: fleet)
+    docker = FakeDocker({f"janitor-{s.name}": "running" for s in fleet})
+    lines: list[str] = []
+    try:
+        assert services.handle(_args("status"), runner=docker, out=lines.append) == 0
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    heads = {l.split(":", 1)[0]: l for l in lines if not l.startswith(" ")}
+    texts = {
+        name: services.state_text("running", health)
+        for name, health in (("up", services.HEALTH_RESPONDING), ("booting", services.HEALTH_NOT_RESPONDING),
+                             ("nourl", services.HEALTH_UNCHECKED))
+    }
+    assert len(set(texts.values())) == 3
+    assert {name: line.split(": ", 1)[1] for name, line in heads.items()} == texts
+    assert docker.mutating() == []
+
+
 def test_missing_docker_is_a_clean_error():
     def runner(argv, **kwargs):
         raise FileNotFoundError(argv[0])
@@ -173,30 +253,17 @@ def test_missing_docker_is_a_clean_error():
     assert "Docker" in lines[0]
 
 
-# ── agents ─────────────────────────────────────────────────────────────────
-
-
-def test_agents_are_discovered_from_janitor_skills():
-    found = agents.get_agents()
-    expected = {p for p in (SKILLS_ROOT / "agents").glob("janitor-*-agent")}
-    assert expected and {Path(a["path"]) for a in found} == expected
-    for agent in found:
-        by_name = agents.load_agent_spec(agent["name"])
-        by_dir = agents.load_agent_spec(Path(agent["path"]).name)
-        assert by_name is not None and by_name == by_dir
-
-
 # ── E2E through the real launcher ──────────────────────────────────────────
 
 
 @pytest.fixture
 def fresh_home(tmp_path):
-    """A brand-new 1.0 install: seed files copied verbatim from assets/."""
+    """A brand-new install: the home ``janitor.seed`` leaves (what install.sh's
+    config stage and the launcher's first start produce)."""
+    from janitor.seed import ensure_home
+
     home = tmp_path / ".janitor"
-    (home / "skins").mkdir(parents=True)
-    for name in ("config.yaml", "SOUL.md", "honcho.json"):
-        shutil.copy2(ASSETS / name, home / name)
-    shutil.copy2(ASSETS / "sentry-janitor.yaml", home / "skins" / "sentry-janitor.yaml")
+    ensure_home(home)
     (home / ".env").write_text(
         "MINIMAX_API_KEY=sk-test\nHONCHO_BASE_URL=http://127.0.0.1:1973\n", encoding="utf-8"
     )
@@ -215,23 +282,20 @@ def _janitor(root, *args, env=None):
     )
 
 
-def test_agents_command_is_wired_through_the_plugin(fresh_home):
-    result = _janitor(fresh_home, "agents", "list")
-    assert result.returncode == 0, result.stderr
-    for agent in agents.get_agents():
-        assert agent["name"] in result.stdout
-
-
 def test_skills_resolve_from_the_install_tree(fresh_home):
+    """A fresh home lists its catalog skills (``main``) in place, once each; the
+    other Janitor skills, services included, stay out until chosen (F2-01)."""
+    from janitor import catalog
+
     result = _janitor(fresh_home, "skills", "list")
     assert result.returncode == 0, result.stderr
     rows = [line for line in result.stdout.splitlines() if line.startswith("│")]
     names = [row.split("│")[1].strip() for row in rows]
-    for skill_md in sorted(SKILLS_ROOT.rglob("SKILL.md")):
-        name, expected = skill_md.parent.name, expected_listing_count(skill_md.parent)
-        assert names.count(name) == expected, (
-            f"{name} listed {names.count(name)}x, expected {expected}\n{result.stdout}"
-        )
+    main = catalog.skills_for_template("main")
+    for name in main:
+        assert names.count(name) == 1, f"{name} listed {names.count(name)}x\n{result.stdout}"
+    shipped = {catalog.read_skill_name(md.parent) for md in SKILLS_ROOT.rglob("SKILL.md")}
+    assert not (shipped - set(main)) & set(names), result.stdout
     assert not (fresh_home / ".janitor" / "skills" / "janitor-firecrawl").exists()
 
 
@@ -245,7 +309,7 @@ def test_services_status_end_to_end_with_fake_docker(fresh_home):
         f"#!{sys.executable}\n"
         "import sys\n"
         f"open({str(log)!r}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"
-        "print('running' if sys.argv[1] == 'inspect' else '')\n",
+        "print('exited' if sys.argv[1] == 'inspect' else '')\n",
         encoding="utf-8",
     )
     fake.chmod(0o755)
@@ -254,7 +318,9 @@ def test_services_status_end_to_end_with_fake_docker(fresh_home):
 
     result = _janitor(fresh_home, "services", "status", "honcho", env=env)
     assert result.returncode == 0, result.stderr
-    assert "honcho: running" in result.stdout
+    # Containers reported stopped: a running one would make `status` call the
+    # honcho url, which on a developer machine is the real local service.
+    assert f"honcho: {services.state_text('stopped', None)}" in result.stdout
 
     result = _janitor(fresh_home, "services", "stop", "honcho", env=env)
     assert result.returncode == 0, result.stderr

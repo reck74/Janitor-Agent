@@ -1,10 +1,8 @@
 name: nocodb
-description: Spreadsheet-style database UI and API (NocoDB self-host).
+description: Bases de datos con interfaz web y API (NocoDB local).
 deploy: scripts/deploy.sh
 compose: scripts/nocodb-compose.yml
 url: http://127.0.0.1:1980
 containers:
   - janitor-nocodb
-  - janitor-nocodb-worker
   - janitor-nocodb-db
-  - janitor-nocodb-redis

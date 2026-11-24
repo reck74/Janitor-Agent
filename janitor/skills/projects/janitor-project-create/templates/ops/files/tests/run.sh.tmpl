@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Pruebas de los scripts. Cada prueba es una función test_*; sale con 1 si alguna falla.
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT="$ROOT/scripts/{{NAME}}.sh"
+failures=0
+
+assert_contains() {
+  local haystack="$1" needle="$2"
+  [[ "$haystack" == *"$needle"* ]] || {
+    printf '  esperado: %s\n  obtenido: %s\n' "$needle" "$haystack"
+    return 1
+  }
+}
+
+test_help_exits_zero() {
+  local out
+  out="$(bash "$SCRIPT" --help)" || return 1
+  assert_contains "$out" "Uso:"
+}
+
+test_dry_run_is_default() {
+  local out
+  out="$(bash "$SCRIPT" 2>/dev/null)" || return 1
+  assert_contains "$out" "DRY-RUN:"
+}
+
+test_unknown_option_fails() {
+  if bash "$SCRIPT" --no-existe >/dev/null 2>&1; then
+    printf '  una opción desconocida debería fallar\n'
+    return 1
+  fi
+}
+
+for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
+  if "$t"; then
+    printf 'ok   %s\n' "$t"
+  else
+    printf 'FAIL %s\n' "$t"
+    failures=$((failures + 1))
+  fi
+done
+
+if [[ $failures -gt 0 ]]; then
+  printf '%d prueba(s) fallaron\n' "$failures"
+  exit 1
+fi
+printf 'todas las pruebas pasaron\n'

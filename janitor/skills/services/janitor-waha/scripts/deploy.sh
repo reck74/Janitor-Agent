@@ -1,19 +1,16 @@
 #!/usr/bin/env bash
-# deploy.sh — deploy / repair janitor-waha stack
-# Bundled with the janitor-waha skill (formerly setup-waha.sh).
+# deploy.sh — deploy / repair the janitor-waha container (run by `janitor services deploy waha`).
 #
-# Generates an absolute-path waha-compose.yml at deploy time so that bind
-# mounts resolve against ${HERMES_HOME:-$HOME/.janitor}, regardless of where
-# docker compose is invoked from. Idempotent: re-runs preserve credentials.
-#
-# Pattern: same shape as setup-honcho.sh, setup-nocodb.sh (see skill
-# janitor-docker-selfhost for the family of deploy scripts).
+# Generates an absolute-path waha-compose.yml at deploy time so that bind mounts
+# resolve against the Janitor root home, regardless of where docker compose is
+# invoked from. Idempotent: re-runs preserve credentials and the linked session.
+# Never prints a secret: credentials stay in waha.env / .env (mode 0600).
 
 set -euo pipefail
 
 # ============= CONFIG =============
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-JANITOR_HOME="${HERMES_HOME:-$HOME/.janitor}"
+JANITOR_HOME="${JANITOR_HOME:-${HERMES_HOME:-$HOME/.janitor}}"
 COMPOSE_DIR="$JANITOR_HOME/docker"
 STACK_DIR="$COMPOSE_DIR/waha"
 COMPOSE_FILE="$COMPOSE_DIR/waha-compose.yml"
@@ -114,7 +111,7 @@ write_compose() {
     cat > "$COMPOSE_FILE" <<EOF
 # janitor-waha — WhatsApp HTTP API
 # Generado por janitor-waha/scripts/deploy.sh — no editar a mano; se sobrescribe.
-# Servicio original definido en: janitor/skills/services/janitor-waha/scripts/waha-compose.yml
+# Plantilla: janitor/skills/services/janitor-waha/scripts/waha-compose.yml
 # https://waha.devlike.pro/docs/how-to/install/
 #
 # Decisiones de arquitectura (vs. compose oficial):
@@ -211,14 +208,12 @@ verify_endpoint() {
     local api_key
     api_key=$(grep '^WAHA_API_KEY=' "$ENV_FILE" | cut -d= -f2)
     local code
-    code=$(curl -s -o /tmp/waha-health.json -w '%{http_code}' \
+    code=$(curl -s -o /dev/null -w '%{http_code}' \
         -H "X-Api-Key: ${api_key}" http://127.0.0.1:3000/health)
     if [ "$code" = "200" ]; then
         log_info "GET /health → 200 OK"
-        echo "    $(grep -o '"status":"[^"]*"' /tmp/waha-health.json | head -1)"
     else
         log_err "GET /health → HTTP $code"
-        cat /tmp/waha-health.json >&2
         exit 1
     fi
 }
@@ -249,49 +244,18 @@ inject_env() {
 }
 
 print_summary() {
-    local api_key dash_pass swagger_pass
-    api_key=$(grep '^WAHA_API_KEY=' "$ENV_FILE" | cut -d= -f2)
-    dash_pass=$(grep '^WAHA_DASHBOARD_PASSWORD=' "$ENV_FILE" | cut -d= -f2)
-    swagger_pass=$(grep '^WHATSAPP_SWAGGER_PASSWORD=' "$ENV_FILE" | cut -d= -f2)
-
     echo ""
-    echo -e "${GRN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${GRN}janitor-waha desplegado correctamente${NC}"
-    echo -e "${GRN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GRN}janitor-waha desplegado. Solo escucha en 127.0.0.1:3000.${NC}"
     echo ""
-    echo "  Dashboard web:  http://127.0.0.1:3000/dashboard"
-    echo "  Swagger docs:   http://127.0.0.1:3000/"
+    echo "  Credenciales: $ENV_FILE y $JANITOR_ENV (no se imprimen)."
+    echo "  Panel web:    http://127.0.0.1:3000/dashboard (usuario admin, contraseña en waha.env)"
     echo ""
-    echo "  Credenciales (en ~/.janitor/docker/waha.env y ~/.janitor/.env):"
-    echo "    WAHA_DASHBOARD_USERNAME = admin"
-    echo "    WAHA_DASHBOARD_PASSWORD = ${dash_pass}"
-    echo "    WHATSAPP_SWAGGER_USERNAME = swagger"
-    echo "    WHATSAPP_SWAGGER_PASSWORD = ${swagger_pass}"
-    echo "    WAHA_API_KEY             = ${api_key:0:16}...(64 hex total)"
+    echo "  Siguiente paso: vincular el WhatsApp del usuario (QR o código):"
+    echo "    bash $SCRIPT_DIR/pair-waha.sh           # QR"
+    echo "    bash $SCRIPT_DIR/pair-waha.sh 573001234567   # código por número"
+    echo "  Luego la auditoría de solo lectura: python3 $SCRIPT_DIR/waha_audit.py status"
     echo ""
-    echo "  Próximos pasos:"
-    echo "    1. Reinicia Hermes para que las tools lean las nuevas env vars"
-    echo "    2. Crea una sesión WhatsApp y vincúlala (ver skill janitor-waha §'Connecting a WhatsApp Number'):"
-    echo -e "       ${YLW}# Flujo recomendado (NOWEB engine, evita bug de GOWS):${NC}"
-    echo -e "       ${YLW}curl -X POST -H \"X-Api-Key: $WAHA_API_KEY -H \"Content-Type: application/json\" \\"
-    echo -e "         -d '{\"name\":\"default\",\"config\":{\"engine\":\"NOWEB\"}}' \\"
-    echo -e "         http://127.0.0.1:3000/api/sessions"
-    echo -e "       ${YLW}curl -X POST -H \"X-Api-Key: $WAHA_API_KEY \\"
-    echo -e "         http://127.0.0.1:3000/api/sessions/default/start${NC}"
-    echo "    3. Obtén QR o pairing code (ver skill para ambos flujos):"
-    echo -e "       ${YLW}# QR (si estás en el workstation):"
-    echo -e "       curl -H \"X-Api-Key: $WAHA_API_KEY \\"
-    echo -e "         http://127.0.0.1:3000/api/default/auth/qr -o /tmp/qr.png"
-    echo -e "       # Pairing code (si estás lejos, ej. solo con celular):"
-    echo -e "       curl -X POST -H \"X-Api-Key: $WAHA_API_KEY -H \"Content-Type: application/json\" \\"
-    echo -e "         -d '{\"phoneNumber\":\"573001234567\"}' \\"
-    echo -e "         http://127.0.0.1:3000/api/default/auth/request-code${NC}"
-    echo ""
-    echo "  💡 Tip: hay un helper para pairing:"
-    echo "       $SCRIPT_DIR/pair-waha.sh 573001234567"
-    echo ""
-    echo "  ⚠️  WAHA usa cliente WhatsApp Web no oficial. Cumple ToS de WhatsApp —"
-    echo "     no usar para spam/mass outreach. Ver skill janitor-waha para detalles."
+    echo -e "  ${YLW}WAHA es un cliente no oficial de WhatsApp: WhatsApp puede bloquear la cuenta.${NC}"
     echo ""
 }
 

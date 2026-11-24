@@ -30,13 +30,8 @@ def check_packaging():
     plugins = {ep.name: ep.value for ep in importlib.metadata.entry_points(group="hermes_agent.plugins")}
     assert plugins.get("janitor") == "janitor.plugin"
     assert callable(importlib.import_module("janitor.plugin").register)
-    for alias, target in (
-        ("janitor_cli", "janitor.cli"),
-        ("janitor_update_core", "janitor.update_core"),
-        ("janitor_update_bootstrap", "janitor.update_bootstrap"),
-        ("janitor_version", "janitor.version"),
-    ):
-        assert importlib.import_module(alias) is importlib.import_module(target), alias
+    # The banner touchpoints import the version helper by its root name.
+    assert importlib.import_module("janitor_version") is importlib.import_module("janitor.version")
 
 
 def check_banner(capsys=None):
@@ -60,12 +55,202 @@ def check_mcp_dashboard_endpoints():
     assert ("GET", "/api/mcp/servers/{name}/logs") in routes
 
 
+def check_install_sh(tmp_path):
+    """The config stage the desktop runs leaves a seeded Janitor home and a clean JSON frame."""
+    import yaml
+
+    from tests.janitor.install_sh_harness import fake_install_dir, run_stage, stage_frame
+
+    home = tmp_path / ".janitor"
+    result = run_stage(tmp_path, "config", fake_install_dir(tmp_path), home)
+    assert stage_frame(result.stdout) == {"ok": True, "stage": "config", "skipped": False}, (
+        result.stdout + result.stderr
+    )
+    assert "janitor" in yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))["plugins"]["enabled"]
+    assert (home / ".no-bundled-skills").is_file()
+
+
+def check_desktop_update_posix(tmp_path):
+    """The desktop's update hand-off drives `janitor update` with flags its parser accepts."""
+    from tests.janitor.desktop_update_harness import run_posix_handoff
+
+    seen = run_posix_handoff(tmp_path)
+    assert seen["hermes"] == [], seen
+    assert len(seen["core"]) == 1, seen
+    args = seen["core"][0]
+    assert args["keep_stash"] is True and args["yes"] is True and args["gateway"] is True, args
+    assert args["branch"] == "main", args
+    assert seen["result"]["ok"] is True, seen["result"]
+    # The relaunch gate's message reaches the app verbatim (boot dialog / shim window): Spanish.
+    import subprocess
+
+    from tests.janitor.desktop_update_harness import handoff_env
+
+    def gate(**env):
+        out = subprocess.run(
+            ["bash", str(REPO_ROOT / "scripts" / "desktop-update" / "posix.sh"), "--self-test-gate",
+             "--install-root", str(tmp_path / "hermes-agent"), "--relaunch-target", str(foreign)],
+            capture_output=True, text=True, check=True, env=handoff_env(tmp_path, **env),
+        ).stdout.strip()
+        return out.partition(":")[::2]
+
+    foreign = tmp_path / "opt" / "janitor"
+    decision, message = gate()
+    assert decision == "skew" and "AppImage" in message, (decision, message)
+    assert "Backend updated" not in message and "hermes" not in message.lower(), message
+    # Run from an AppImage, the engine update reopens that AppImage; the app judges compatibility.
+    appimage = tmp_path / "Janitor.AppImage"
+    appimage.write_text("#!/bin/sh\n", encoding="utf-8")
+    appimage.chmod(0o755)
+    decision, message = gate(APPIMAGE=str(appimage))
+    assert decision == "relaunch" and "Janitor" in message and "hermes" not in message.lower(), message
+
+
+def check_desktop_update_ui(tmp_path):
+    """The update window the user sees is served in Spanish and never names Hermes."""
+    import subprocess
+    import sys
+    import time
+    from html.parser import HTMLParser
+    from urllib.request import urlopen
+
+    shim = REPO_ROOT / "scripts" / "desktop-update"
+
+    class Visible(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.lang, self.stack, self.text, self.labels = None, [], [], []
+
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            self.lang = attrs.get("lang", self.lang) if tag == "html" else self.lang
+            self.labels += [attrs["aria-label"]] if "aria-label" in attrs else []
+            self.stack.append(tag)
+
+        def handle_endtag(self, tag):
+            if self.stack and self.stack[-1] == tag:
+                self.stack.pop()
+
+        def handle_data(self, data):
+            if data.strip() and not {"script", "style"} & set(self.stack):
+                self.text.append(data.strip())
+
+    proc = subprocess.Popen(
+        [sys.executable, str(shim / "serve-ui.py"), str(shim / "ui.html"),
+         str(tmp_path / "status"), str(time.time())],
+        stdout=subprocess.PIPE, text=True,
+    )
+    try:
+        port = int(proc.stdout.readline().strip())
+        with urlopen(f"http://127.0.0.1:{port}/", timeout=5) as response:
+            page = response.read().decode("utf-8")
+    finally:
+        proc.kill()
+        proc.wait(timeout=5)
+    parsed = Visible()
+    parsed.feed(page)
+    visible = parsed.text + parsed.labels
+    assert parsed.lang == "es", parsed.lang
+    assert any("Janitor" in t for t in visible), visible
+    assert not [t for t in visible if "hermes" in t.lower()], visible
+
+
+def check_backend_user_copy(tmp_path):
+    """user_messages reads the catalog: Janitor's overlay gives Spanish, upstream's keeps English."""
+    import os
+
+    from agent.i18n import reset_language_cache
+    from janitor import locales
+    from tui_gateway.user_messages import agent_init_failed_message, turn_error_text
+
+    home = os.environ["HERMES_HOME"]
+    os.makedirs(home, exist_ok=True)
+    with open(os.path.join(home, "config.yaml"), "w", encoding="utf-8") as f:
+        f.write("display:\n  language: es\n")
+    saved = os.environ.pop(locales.ENV_VAR, None)
+    exc = RuntimeError("No usable credentials found for provider 'minimax'. Set MINIMAX_API_KEY.")
+    try:
+        reset_language_cache()
+        assert agent_init_failed_message(exc).startswith("Hermes could not start the assistant")
+        os.environ[locales.ENV_VAR] = str(locales.build(tmp_path / "locales"))
+        reset_language_cache()
+        text = agent_init_failed_message(exc)
+        assert text.startswith("Janitor no pudo iniciar el asistente") and "`janitor setup`" in text, text
+        assert "Configura MINIMAX_API_KEY" in text, text
+        assert turn_error_text("x").startswith("La petición falló."), turn_error_text("x")
+    finally:
+        os.environ.pop(locales.ENV_VAR, None)
+        if saved is not None:
+            os.environ[locales.ENV_VAR] = saved
+        reset_language_cache()
+
+
+def check_runtime_copy(tmp_path):
+    """English literals with no upstream key ask the catalog: Janitor's gives Spanish, upstream's English."""
+    import os
+
+    from agent.i18n import reset_language_cache, t_default
+    from hermes_cli.commands import COMMAND_REGISTRY, localized_description
+    from janitor import locales
+
+    home = os.environ["HERMES_HOME"]
+    os.makedirs(home, exist_ok=True)
+    with open(os.path.join(home, "config.yaml"), "w", encoding="utf-8") as f:
+        f.write("display:\n  language: es\n")
+    saved = os.environ.pop(locales.ENV_VAR, None)
+    update = next(c for c in COMMAND_REGISTRY if c.name == "update")
+    try:
+        reset_language_cache()
+        assert localized_description(update) == update.description
+        assert t_default("runtime_copy.gateway.restarted", "Back {x}.", x=1) == "Back 1."
+        os.environ[locales.ENV_VAR] = str(locales.build(tmp_path / "locales"))
+        reset_language_cache()
+        assert localized_description(update) == "Actualiza Janitor a la última versión"
+        assert t_default("runtime_copy.gateway.restarted", "x").startswith("♻ Gateway reiniciado")
+    finally:
+        os.environ.pop(locales.ENV_VAR, None)
+        if saved is not None:
+            os.environ[locales.ENV_VAR] = saved
+        reset_language_cache()
+
+
+def check_update_single_flight(tmp_path):
+    """A /update in flight, from any entry point, makes the next one stand down; leftovers never block."""
+    import os
+    import time
+
+    from gateway.slash_commands import _update_already_running
+
+    pending, claimed, lock = (tmp_path / ".update_pending.json", tmp_path / ".update_pending.claimed.json",
+                              tmp_path / "lock")
+    assert not _update_already_running(pending, lock_path=lock)
+    pending.write_text("{}", encoding="utf-8")
+    assert _update_already_running(pending, lock_path=lock)  # spawned, lock not taken yet
+    pending.replace(claimed)
+    assert _update_already_running(pending, lock_path=lock)  # finished, its watcher is still delivering
+    an_hour_ago = time.time() - 3600
+    os.utime(claimed, (an_hour_ago, an_hour_ago))
+    assert not _update_already_running(pending, lock_path=lock)  # a crashed run's leftover never blocks
+    claimed.unlink()
+    lock.write_text(f"{os.getpid()}\n{time.time()}\n", encoding="utf-8")
+    assert _update_already_running(pending, lock_path=lock)  # the app or a terminal is updating
+
+
 CHECKS = {
+    "backend-user-copy": check_backend_user_copy,
+    "runtime-copy": check_runtime_copy,
+    "update-single-flight": check_update_single_flight,
     "version": check_version,
     "packaging": check_packaging,
     "banner": check_banner,
     "mcp-dashboard-endpoints": check_mcp_dashboard_endpoints,
+    "install-sh": check_install_sh,
+    "desktop-update-posix": check_desktop_update_posix,
+    "desktop-update-ui": check_desktop_update_ui,
 }
+
+# Checks that drive a POSIX shell script run on Linux only (directive #11 lanes).
+_LINUX_ONLY_CHECKS = {"install-sh", "desktop-update-posix"}
 
 
 @pytest.fixture(scope="module")
@@ -77,11 +262,20 @@ def test_every_test_touchpoint_has_a_check_and_vice_versa(overlay):
     assert overlay.test_check_ids() == set(CHECKS)
 
 
-@pytest.mark.parametrize("check_id", sorted(CHECKS))
-def test_touchpoint_contract(check_id, capsys):
+@pytest.mark.parametrize(
+    "check_id",
+    [
+        pytest.param(cid, marks=pytest.mark.linux_only) if cid in _LINUX_ONLY_CHECKS else cid
+        for cid in sorted(CHECKS)
+    ],
+)
+def test_touchpoint_contract(check_id, capsys, tmp_path):
     check = CHECKS[check_id]
     if check is check_banner:
         check(capsys)
+    elif check in (check_install_sh, check_desktop_update_posix, check_desktop_update_ui, check_backend_user_copy,
+                   check_runtime_copy, check_update_single_flight):
+        check(tmp_path)
     else:
         check()
 
@@ -117,7 +311,7 @@ def test_touchpoints_never_claim_fork_owned_paths(overlay):
         ("janitor/cli.py", "janitor/**", True),
         ("janitor/plugin/telegram.py", "janitor/**", True),
         ("janitorx/cli.py", "janitor/**", False),
-        ("scripts/janitor-install.sh", "scripts/*janitor*", True),
+        ("scripts/janitor-sync-verify.sh", "scripts/*janitor*", True),
         ("scripts/sub/janitor.sh", "scripts/*janitor*", False),
         (".github/workflows/tests.yml", ".github/workflows/*.yml", True),
         ("skills/janitor-core/SKILL.md", "skills/janitor-*/**", True),

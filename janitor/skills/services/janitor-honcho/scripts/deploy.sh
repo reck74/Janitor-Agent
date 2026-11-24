@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Deploy local Honcho. The implementation is scripts/setup-honcho.sh, which
-# janitor-install.sh also runs during base install (AGENTS.md directive #8).
+# Deploy or repair the local Honcho stack (`janitor services deploy honcho`).
+# Idempotent; never removes containers or volumes. All logic lives in
+# honcho_setup.py so the guided skill and this entry point share one path.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../../../.." && pwd)"
-export JANITOR_SOURCE_DIR="${JANITOR_SOURCE_DIR:-$REPO_ROOT}"
-exec bash "$REPO_ROOT/scripts/setup-honcho.sh" "$@"
+exec python3 "$SCRIPT_DIR/honcho_setup.py" deploy "$@"

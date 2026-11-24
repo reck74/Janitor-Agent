@@ -1,165 +1,108 @@
 ---
 name: janitor-onboarding
-description: "Janitor orientation and capability selector."
-version: 3.0.0
+description: "Mapa de Janitor: agentes, skills, aplicativos y archivos."
+version: 4.0.0
 author: Janitor Agent
 license: MIT
 platforms: [linux, macos]
 
 metadata:
   hermes:
-    tags: [onboarding, orientation, skills, capabilities]
+    tags: [onboarding, orientation, skills, profiles, templates, services]
     category: devops
 ---
 
-# janitor-onboarding
+# Janitor Onboarding Skill
 
-Welcome to Janitor. This skill does not deploy infrastructure itself.
-Instead, it guides you through available capabilities that can be
-installed as separate skills post-first-run.
+Explains what Janitor is today and where everything lives, so the agent can answer
+"what can you do / how do I add X" with real commands. It changes nothing by itself:
+every command below that mutates state is run only after the user confirms.
 
-## What Janitor Installed by Default
+## When to Use
 
-The first-run installer (`scripts/janitor-install.sh`) gives you a working agent with:
+- The user asks what Janitor is, what it can do, or how it is organised.
+- The user wants another agent (researcher, project creator), an optional app
+  (n8n, NocoDB, ...), or a skill added to or removed from an agent.
+- The user asks where the config, persona, keys or memory are.
 
-- `~/.janitor/.env` — environment variables (API keys)
-- `~/.janitor/config.yaml` — agent configuration
-- `~/.janitor/SOUL.md` — agent persona
-- `~/.janitor/skins/sentry-janitor.yaml` — visual theme
-- Optional: local Honcho memory (if you chose local setup during install)
-- Optional: local Firecrawl web scraping (the installer prompts for it after Honcho)
+## Prerequisites
 
-Per AGENTS.md directive #9, none of this requires external services — you can
-run `janitor` immediately after the base install.
+- The `janitor` command on `PATH` (installed by the desktop app or the installer).
+- Optional apps need Docker running (`docker info` succeeds).
 
-## Optional Capabilities
+## How to Run
 
-Janitor's skills ship with the install tree under `janitor/skills/` and are
-loaded through `skills.external_dirs`, so they update with `janitor update`.
-They are grouped by kind:
-
-| Group | Skills |
-|-------|--------|
-| `core` | janitor-core, janitor-config-audit, janitor-onboarding |
-| `services` | janitor-honcho, janitor-firecrawl, janitor-n8n, janitor-lightrag, janitor-nocodb, janitor-waha |
-| `agents` | janitor-code-review-agent, janitor-repo-research-agent |
-| `integrations` | janitor-browser, janitor-desktop-launcher, janitor-opendesign, janitor-skill-integration |
-
-Self-hosted services share one lifecycle command. Every deploy is idempotent
-and fully independent of the others:
+Read-only answers come from these commands via `terminal`:
 
 ```bash
-janitor services list              # what exists and what is running
-janitor services deploy firecrawl  # install or repair
-janitor services status honcho
-janitor services stop n8n
-janitor services start n8n
+janitor plantillas list                 # specialist templates and their skills
+janitor profile list                    # existing agents (one profile each)
+janitor skills list --enabled-only      # skills the main agent loads
+janitor -p <perfil> skills list --enabled-only
+janitor services list                   # optional apps and their state
+janitor config path                     # main agent's config.yaml (-p <perfil> for another)
 ```
 
-| Service | What It Does |
-|---------|-------------|
-| honcho | Local long-term memory (if skipped at install) |
-| firecrawl | Web scraping and crawling API |
-| n8n | Workflow automation |
-| lightrag | Graph RAG knowledge base |
-| nocodb | Spreadsheet-style database |
-| waha | WhatsApp HTTP API |
+## Quick Reference
 
-Non-service capabilities still ship a script inside their skill, e.g.
-`janitor-browser` → `scripts/install.sh`. `janitor agents list` shows the
-specialized agents.
+**Product.** Janitor runs as a desktop app and as a terminal UI (`janitor`). There is
+one main agent (Janitor). Specialists are optional, each a separate Hermes profile
+with its own skills, keys and empty memory — nothing is shared with the main agent.
+
+| Need | Command |
+|------|---------|
+| Create a specialist | `janitor plantillas crear investigador` or `janitor plantillas crear creador-proyectos [--nombre NOMBRE]` |
+| Talk to a specialist | `janitor -p <perfil>` |
+| Install an optional app | `janitor services deploy <name>` |
+| App state / stop / start | `janitor services status [name]`, `janitor services stop <name>`, `janitor services start <name>` |
+| Remove an app (keeps data volumes) | `janitor services uninstall <name>` |
+| Update Janitor | `janitor update` |
+
+**Where things live** (main agent; a specialist uses `~/.janitor/profiles/<perfil>/`):
+
+| Path | What |
+|------|------|
+| `~/.janitor/config.yaml` | Settings, model, `janitor.skills` |
+| `~/.janitor/SOUL.md` | Persona (a specialist's = this persona + its role section) |
+| `~/.janitor/.env` | API keys only |
+| `~/.janitor/memories/` | Long-term memory of that agent |
+| `~/.janitor/skins/sentry-janitor.yaml` | Terminal theme |
+| `~/.janitor/docker/` | Files of the optional apps |
+| `${HERMES_SKILL_DIR}/../../../catalog.yaml` | The skill catalog (every skill an agent may use, by purpose and template) |
+
+## Procedure
+
+**Which skills an agent has.** Run `janitor [-p <perfil>] skills list --enabled-only`.
+The source of truth is the list `janitor.skills` in that agent's `config.yaml`: catalog
+ids only. `skills.external_dirs` is generated from it — never edit it by hand.
+
+**Change an agent's skills.**
+1. Read the catalog with `read_file` on `${HERMES_SKILL_DIR}/../../../catalog.yaml`;
+   pick ids (entries with `templates: []` are optional skills the user ticks).
+2. Get the file with `janitor [-p <perfil>] config path`, show the user the edit to
+   `janitor.skills`, and after confirmation apply it with `patch`.
+3. The next start of that agent regenerates `skills.external_dirs`. The new list
+   applies from the next session, never mid-conversation.
+
+A skill the user removes stays removed: when a Janitor update adds a skill to the
+agent's template, it is offered once (recorded in `janitor.catalog_seen`). A home
+whose `config.yaml` has no `janitor.skills` (older installs) keeps loading the whole
+Janitor skill tree.
+
+**Create a specialist.** `janitor plantillas list`, confirm the name, then
+`janitor plantillas crear <plantilla> [--nombre NOMBRE]`. It refuses an existing
+profile, copies only the main model provider's key from `~/.janitor/.env` (never
+messaging tokens) and starts with empty memory.
+
+## Pitfalls
+
+- `janitor profile create --clone` copies memory; specialists are created with
+  `janitor plantillas crear` instead.
+- Optional apps are never installed by default: deploy them only when asked.
+- `janitor services uninstall` keeps Docker volumes; data is lost only if the user
+  removes volumes with Docker themselves.
 
 ## Verification
 
-Each skill's `SKILL.md` documents its own health checks. Common patterns:
-
-```bash
-# Honcho
-curl -f http://localhost:1973/health
-
-# Firecrawl
-curl -f http://127.0.0.1:1974/v0/health/liveness
-
-# Generic Docker health
-docker ps --filter "name=janitor-" --format "{{.Names}}\t{{.Status}}"
-```
-
-## Rollback
-
-```bash
-janitor services stop <name>       # stop containers, keep everything
-janitor services uninstall <name>  # remove containers, keep volumes and ~/.janitor/docker
-```
-
-`janitor services` never deletes Docker volumes. Data is only lost if you run
-`docker volume rm` yourself.
-
-## Post-Activation
-
-After installing a capability skill, **restart Janitor** to pick up new
-environment variables or configuration changes. The web tools (in particular)
-only activate when `FIRECRAWL_API_URL` and `FIRECRAWL_API_KEY` are present in
-`~/.janitor/.env` — `janitor-firecrawl`'s `deploy.sh` injects them for you.
-
-## Requirements
-
-- Docker daemon running (`docker info` must succeed)
-- `docker compose` v2+ available
-- For individual skills, check their `SKILL.md` for port and RAM requirements
-
-## Troubleshooting
-
-### Docker not found or not running
-
-Install Docker via the official script, then start the daemon:
-
-```bash
-curl -fsSL https://get.docker.com | sh
-sudo systemctl enable --now docker
-sudo usermod -aG docker "$USER"  # then log out and back in
-```
-
-Verify with `docker info` — it must return server info without errors.
-
-### Port conflicts
-
-If a skill's container cannot bind its port (e.g. `1974` for Firecrawl,
-`1973` for Honcho), find what is holding it:
-
-```bash
-ss -tlnp | grep -E ':(1973|1974|5672)\b'
-# or
-sudo lsof -iTCP:1974 -sTCP:LISTEN
-```
-
-Kill the conflicting process or change the port mapping in the skill's
-compose file (`~/.janitor/docker/<skill>-compose.yml`).
-
-### Service won't start
-
-Check container logs first:
-
-```bash
-docker logs <container-name> --tail 100
-# e.g.
-docker logs janitor-firecrawl-api --tail 100
-```
-
-Common causes: insufficient RAM (Firecrawl needs ~4GB across its 5 containers),
-missing `~/.janitor/docker/<skill>.env` file (re-run `janitor services deploy <name>`),
-or stale credentials (delete the env file and re-run the deploy).
-
-### `janitor update` fails with "Fast-forward not possible"
-
-If `janitor update` fails with "Fast-forward not possible (history diverged)",
-run `bash scripts/migrate-janitor-update-flow.sh` from the Janitor repo, then
-re-run `janitor update`.
-
-### A Janitor skill still shows an old version after upgrading to 1.0
-
-The first `janitor` start after an upgrade moves `~/.janitor` to the 1.0
-layout: Janitor skills are read from the install tree, and unedited old copies
-in `~/.janitor/skills` are removed (backup in `~/.janitor/.backup/v1-*/`).
-Copies you edited are kept on purpose and shadow the shipped skill; the
-migration lists them. Delete one to use the shipped version, or preview with
-`bash scripts/migrate-janitor-v1.sh --dry-run` from the Janitor repo.
+- `janitor -p <perfil> skills list --enabled-only` shows the selected ids plus `hermes-agent`.
+- `janitor services status <name>` reports `en marcha, responde` after a deploy.

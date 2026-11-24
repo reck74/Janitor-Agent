@@ -16,25 +16,23 @@ servicios self-hosted, sin reescribir el core.
 - Instalación mínima; Firecrawl, n8n, LightRAG, NocoDB, WAHA y Browser son opcionales.
 - Se mantiene al día con cada release de Hermes mediante un sync semanal verificado.
 
-> ⚠️ El instalador añade `HERMES_HOME=~/.janitor` a tu `~/.bashrc` / `~/.zshrc`.
-> Si también usas Hermes, el comando `hermes` pasará a usar el home de Janitor
-> en esas shells.
-
 ---
 
-## Instalación (Linux, macOS, WSL2)
+## Instalación
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/reck74/Janitor-Agent/main/scripts/bootstrap.sh | bash
-```
+Janitor se instala desde su **app de escritorio** (Linux AppImage primero; ver
+[Janitor Desktop](#janitor-desktop)). En el primer arranque la app ejecuta
+`scripts/install.sh` de este fork por etapas: el motor queda en
+`~/.janitor/hermes-agent`, el comando `janitor` en `~/.local/bin` y el
+proveedor de IA se elige en pantalla (MiniMax es el recomendado). No hace
+falta Docker ni ninguna clave para la instalación base.
 
-`bootstrap.sh` verifica Docker, clona el código en `~/.janitor/janitor-core`,
-crea el venv, compila el TUI, enlaza `janitor` en `~/.local/bin` y lanza el
-instalador interactivo (`scripts/janitor-install.sh`), que pide:
+¿Tienes un Janitor antiguo instalado por terminal (`~/.janitor/janitor-core`)?
+No se adopta ni se migra: desinstálalo siguiendo
+[`docs/janitor/desinstalar-instalacion-antigua.md`](docs/janitor/desinstalar-instalacion-antigua.md)
+y empieza de cero con la app.
 
-- `OPENAI_API_KEY` (obligatoria)
-- `MINIMAX_API_KEY` (obligatoria; Honcho la usa como `LLM_ANTHROPIC_API_KEY`)
-- Honcho: `HONCHO_API_KEY` (cloud) o Honcho local en Docker
+Con la app instalada, el terminal también sirve:
 
 ```bash
 janitor              # CLI interactiva
@@ -46,13 +44,12 @@ janitor update       # actualizar desde este fork
 Todos los subcomandos de `hermes` funcionan igual con `janitor`; la
 documentación del core está en [hermes-agent.nousresearch.com/docs](https://hermes-agent.nousresearch.com/docs/).
 
-## Servicios y agentes opcionales
+## Servicios opcionales
 
 ```bash
 janitor services list                 # catálogo y estado de cada servicio
 janitor services deploy firecrawl     # desplegar (contenedores janitor-*)
 janitor services stop firecrawl       # detener (los volúmenes se conservan)
-janitor agents list                   # agentes especializados (code-review, repo-research)
 ```
 
 | Servicio | Para qué |
@@ -64,30 +61,24 @@ janitor agents list                   # agentes especializados (code-review, rep
 | `nocodb` | Base de datos con UI |
 | `waha` | WhatsApp HTTP API |
 
-Dentro de Janitor, la skill `janitor-onboarding` guía el resto (Browser,
-Open Design, escritorio).
+Dentro de Janitor, la skill `janitor-onboarding` guía el resto (Open Design,
+escritorio).
 
 ## Janitor Desktop
 
 Las releases del fork publican un AppImage `Janitor-<versión>-linux-x86_64.AppImage`
 (app de escritorio de Hermes con la identidad Janitor, apuntando a
-`~/.janitor`). La skill `janitor-desktop-launcher` lo descarga y lo lanza:
+`~/.janitor`). Descárgalo de la página de releases del fork, dale permiso de
+ejecución y ábrelo.
 
-```bash
-bash ~/.janitor/janitor-core/janitor/skills/integrations/janitor-desktop-launcher/scripts/launch.sh --download
-```
-
-## Actualizar una instalación existente
+## Actualizar
 
 ```bash
 janitor update
-janitor          # el primer arranque migra ~/.janitor al layout nuevo
 ```
 
-La migración hace backup en `~/.janitor/.backup/` (incluida una copia
-consistente de `state.db`), conserva tus sesiones, memorias, `.env`, `SOUL.md`,
-cron y toda skill que hayas editado, y nunca toca contenedores ni volúmenes
-Docker. Para previsualizarla: `bash scripts/migrate-janitor-v1.sh --dry-run`.
+Si una versión futura reestructura `~/.janitor`, el siguiente arranque de
+`janitor` lo migra solo, con backup previo en `~/.janitor/.backup/`.
 
 ---
 
@@ -96,7 +87,7 @@ Docker. Para previsualizarla: `bash scripts/migrate-janitor-v1.sh --dry-run`.
 | Ruta | Contenido |
 |------|-----------|
 | `janitor/` | Lanzador, flujo de update, migraciones, plugin Hermes, servicios, inventario del fork |
-| `janitor/skills/{core,services,agents,integrations}/` | Skills Janitor (cargadas vía `skills.external_dirs`) |
+| `janitor/skills/{core,system,projects,research,services,integrations}/` | Skills Janitor (cargadas vía `skills.external_dirs`) |
 | `assets/janitor/` | Config, `SOUL.md` y skin `sentry-janitor` de partida |
 | `apps/desktop-janitor/` | Overlay de build del escritorio |
 | `tests/janitor/` | Suite de tests de Janitor |

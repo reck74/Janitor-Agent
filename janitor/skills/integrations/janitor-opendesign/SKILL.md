@@ -1,162 +1,134 @@
 ---
 name: janitor-opendesign
-description: "Register Janitor as Open Design's native coding agent."
-version: 1.0.0
-author: janitor
+description: "Instalación guiada de Open Design para generar diseños."
+version: 2.0.0
+author: Janitor Agent
 license: MIT
-platforms: [linux, macos, wsl2]
+platforms: [linux, macos]
 
 metadata:
   hermes:
-    tags: [opendesign, design-tools, coding-agent, janitor, integration]
+    tags: [design, opendesign, ui, mcp, local-setup, integration]
     category: devops
-    related_skills: [janitor-onboarding, janitor-config-audit]
+    related_skills: [janitor-onboarding]
 ---
 
-# janitor-opendesign
+# Janitor Open Design Skill
 
-Provisions a complete Open Design local stack and registers Janitor as its
-native coding agent. The same `pnpm tools-dev` control plane that ships
-with Open Design is the install target; Janitor is wired in via four
-idempotent patches so future `git pull upstream` updates don't clobber the
-integration.
+Installs **Open Design** (third-party, `nexu-io/open-design`) on the user's machine for
+**design generation**: a local web app where the user describes a design and a coding
+agent produces it. This skill clones it, registers **Janitor** as one of its agents (so the
+designs are generated with the model the user already configured in Janitor) and starts it
+on fixed loopback ports. It is **not** a Docker service and has no `service.yaml`: the
+Services screen lists it as an application without status; this skill is how it is
+installed, checked and removed. It never runs `sudo` and never deletes: files Janitor added
+are moved aside and the source tree is left for the user to send to the trash.
 
-## What This Skill Installs
+What Open Design itself does, its UI and its API are third-party and change upstream. The
+script only relies on the endpoints and source lines listed in Pitfalls, and refuses to
+patch when they are not there.
 
-- **Open Design source tree** at `~/open-design` (cloned from `nexu-io/open-design`, latest `open-design-v*` tag)
-- **pnpm workspace** with `@open-design/daemon`, `web`, `sidecar`, `tools-dev`
-- **Janitor agent registration** in `apps/daemon/src/runtimes/defs/janitor.ts`
-- **Janitor in `BASE_AGENT_DEFS`** in `apps/daemon/src/runtimes/registry.ts`
-- **Janitor PNG icon** in `apps/web/public/agent-icons/janitor.png`
-- **Janitor in `ICON_EXT`** (and explicitly removed from `MONO_ICONS`) in `apps/web/src/components/AgentIcon.tsx`
-- **Persistent port binding** so the MCP server URL never changes between restarts
+## When to Use
 
-## What This Skill Does NOT Do
+- "Instala Open Design", "quiero generar diseños / maquetas de UI", "¿Open Design
+  funciona?", "arranca / para Open Design", "quita Open Design".
 
-- Does not modify the Open Design remote — `origin` stays at `nexu-io/open-design`
-- Does not touch any file outside `apps/daemon/src/runtimes/` and `apps/web/src/components/` and `apps/web/public/agent-icons/`
-- Does not install Janitor itself (assumed already installed at `~/.local/bin/janitor`)
-- Does not run the Open Design daemon automatically — you start it with `scripts/start.sh` to keep ports stable
+Not for: editing Open Design's code, exposing it on the network, deleting the source tree
+(give the trash command; never run it).
 
-## Quick Start
+## Prerequisites
 
-The skill lives at `${HERMES_SKILL_DIR}/` (resolved when the skill is
-loaded, wherever Janitor is installed):
+- Linux or macOS with `git`, `node` and `pnpm` on `PATH` (the user installs them; give the
+  official links if missing: https://nodejs.org and https://pnpm.io/installation).
+- The `janitor` command on `PATH` (Open Design launches `janitor acp` as its agent).
+- `HERMES_HOME` set (the agent's `terminal` exports it). Network access for the clone and
+  `pnpm install`; a few GB of disk for `node_modules`.
 
-```bash
-export JANITOR_SKILLS_DIR="$(dirname "${HERMES_SKILL_DIR}")"
+## How to Run
 
-# 1. Install + register Janitor (idempotent, safe to re-run)
-bash "$JANITOR_SKILLS_DIR/janitor-opendesign/scripts/integrate-janitor.sh" register
-
-# 2. Start the stack on persistent ports
-bash "$JANITOR_SKILLS_DIR/janitor-opendesign/scripts/start.sh"
-
-# 3. Verify
-bash "$JANITOR_SKILLS_DIR/janitor-opendesign/scripts/status.sh"
-```
-
-For an in-repo development checkout, override the path:
+All steps run one script with the `terminal` tool:
 
 ```bash
-export JANITOR_SKILLS_DIR="/path/to/Janitor-Agent/janitor/skills/integrations"
+S=${HERMES_SKILL_DIR}/scripts/opendesign_setup.py
+python3 $S preflight                     # read-only
+python3 $S install [--ref TAG]           # git clone + pnpm install
+python3 $S register                      # Janitor as an Open Design agent (idempotent)
+python3 $S start                         # fixed ports, waits until it answers
+python3 $S verify                        # prove it answers and lists Janitor, write nothing
+python3 $S stop
+python3 $S uninstall                     # stop + undo register; source tree kept
 ```
 
-After step 2, the agent picker in Open Design shows **The Janitor** as a
-native agent and your MCP clients can target `http://127.0.0.1:45351/mcp`.
+- Global option before the command: `--source DIR` (default `<janitor home>/src/open-design`,
+  or `OD_SOURCE_DIR`). Port options on `preflight`/`start`/`verify`: `--daemon-port`
+  (default 45351, also the MCP endpoint) and `--web-port` (default 45343).
+- stdout: one JSON document (`ok`, and `reason` when `ok` is false). stderr: Spanish
+  progress lines. Exit 0 ok, 1 refused/failed, 2 `HERMES_HOME` unset.
+- `install` can take 10+ minutes: run it with `terminal(background=true, notify=true)`.
 
-## Persistent Ports
+## Quick Reference
 
-Open Design exposes a MCP server. If the daemon port changes between
-restarts, every external MCP client config breaks. This skill binds the
-daemon and web to fixed ports that survive restarts:
+| Command | Writes | Guarantees |
+|---|---|---|
+| `preflight` | nothing | tools, source tree, patch state, ports, live probe |
+| `install` | the source tree | clones only into an absent/empty dir; newest `open-design-v*` tag unless `--ref`; never changes an existing tree's version |
+| `register` | `defs/janitor.ts`, `registry.ts`, `agent-icons/janitor.png`, `AgentIcon.tsx` | checks every anchor first; refuses with `anchor_missing` and touches nothing if one is gone |
+| `start` | `<root>/janitor/opendesign/start.log` | loopback ports; `ok` only after `/api/health` answers |
+| `verify` | nothing | real HTTP answers: daemon health, Janitor in `/api/agents`, web UI |
+| `uninstall` | the four files above | removes the inserted lines, moves the two added files to `<root>/janitor/opendesign/removed-<ts>/` |
 
-| Service  | Port | URL                                |
-|----------|------|------------------------------------|
-| Daemon   | 45351 | `http://127.0.0.1:45351`          |
-| Web UI   | 45343 | `http://127.0.0.1:45343`          |
-| **MCP**  | 45351 | `http://127.0.0.1:45351/mcp`      |
+Blockers (`preflight.blockers[]`) → what to tell the user:
 
-Override via env vars if defaults collide with other services on the host:
+| Blocker | Action |
+|---|---|
+| `git_missing`, `node_missing`, `pnpm_missing` | They install it (links above); never install it yourself |
+| `janitor_command_missing` | The `janitor` command is not on `PATH`: Open Design could not launch Janitor |
+| `source_dir_not_open_design` | The target dir has other content: pick another `--source` |
+| `daemon_port_busy`, `web_port_busy` | Use other ports with `--daemon-port` / `--web-port` on every command |
 
-```bash
-OD_DAEMON_PORT=56095 OD_WEB_PORT=55983 \
-  bash "$JANITOR_SKILLS_DIR/janitor-opendesign/scripts/start.sh"
-# Now document the new MCP URL everywhere you configured it.
-```
+## Procedure
 
-## Idempotency Guarantees
+Reply in Spanish, dry and direct (Janitor's tone). Show what you will change before
+changing it; one confirmation per mutating step.
 
-Every script in this skill is **safe to re-run** at any time:
+1. Run `preflight`. If `recommendation` is `already-running`, run `verify` and report.
+   If `source.legacy_tree` is set, an older install exists at `~/open-design`: ask whether
+   to reuse it (`--source ~/open-design` on every command) or install a fresh one.
+2. Explain in two or three sentences: it is a third-party app that runs on this machine
+   with Node (not Docker); the designs are generated by Janitor with the AI provider the
+   user already pays for, so the prompts and the design context go to that provider; it
+   only listens on `127.0.0.1`. Resolve blockers with the table above.
+3. Install (yes required): «Voy a clonar Open Design en `<source>` y ejecutar
+   `pnpm install`. ¿Sigo?». Run `install`. On `ok: false` report `reason` and `log`.
+4. Register (yes required): say it adds one file and one icon to the Open Design tree and
+   inserts three lines in two of its files. Run `register`. On `anchor_missing` stop:
+   upstream changed those files and the skill must be adapted; do not patch by hand.
+5. Start (yes required): run `start`. On `health_timeout` quote `log_tail`.
+6. Run `verify`. Report the web UI URL (`service.web.url`) and the MCP endpoint
+   (`service.mcp_url`). If `janitor_in_agent_list` is `false`, the daemon did not pick up
+   the registration: `stop`, `start`, `verify` again. `null` means the agent list could not
+   be read: say it is unconfirmed.
+7. Uninstall (on request, yes required): run `uninstall`, list `changed` and
+   `moved_aside`, and give `trash_hint` so the user sends the source tree to the trash
+   themselves.
 
-- `01-register-agent-def.sh` overwrites the def file (idempotent copy)
-- `02-patch-registry.sh` checks for the import and the `BASE_AGENT_DEFS` entry; skips if present
-- `03-copy-icon.sh` looks for `janitor.png` in two paths (alongside the script and in the project root)
-- `04-patch-agent-icon.sh` uses `sed` with anchored patterns that never double-insert
+## Pitfalls
 
-This means you can re-run `integrate-janitor.sh` after every `git pull` upstream without breaking the integration. The skill rebuilds on the fly.
+- Not verified against a real Open Design: the clone URL, the `open-design-v*` tags, the
+  `tools-dev start --daemon-port --web-port` / `tools-dev stop` commands, the
+  `/api/health` and `/api/agents` endpoints and the four source anchors come from the
+  previous version of this skill. If any of them fails, report it as an upstream change.
+- After an upstream update (`git pull` in the tree) re-run `register`: it is idempotent and
+  restores the three lines if the merge dropped them.
+- `start` survives the agent's turn (detached). `stop` uses `tools-dev stop`, which finds
+  the processes by itself; `start` with other ports means passing them to `verify` too.
+- The ports are fixed on purpose so MCP clients keep a stable URL. Changing them means
+  updating every client that points at the old MCP URL.
+- The agent definition uses Janitor's default profile (`janitor acp`). Designs run with that
+  profile's model, tools and memory.
 
-## Bundle Contents
+## Verification
 
-```
-janitor-opendesign/
-├── SKILL.md                          # this file
-├── agent-defs/
-│   └── janitor.ts                    # RuntimeAgentDef for The Janitor
-├── icon/
-│   └── janitor.png                   # 310x311 RGBA, renders as <img>
-├── references/
-│   ├── persistent-ports.md           # why we pin ports
-│   └── upstream-compatibility.md     # what changes if upstream renames anything
-└── scripts/
-    ├── 01-register-agent-def.sh      # copy janitor.ts into Open Design source tree
-    ├── 02-patch-registry.sh          # register in BASE_AGENT_DEFS
-    ├── 03-copy-icon.sh               # install PNG to public/agent-icons/
-    ├── 04-patch-agent-icon.sh        # patch AgentIcon.tsx (ICON_EXT, not MONO_ICONS)
-    ├── integrate-janitor.sh          # orchestrator: register | start | stop | status
-    ├── start.sh                      # start with persistent ports
-    ├── stop.sh                       # stop the stack
-    └── status.sh                     # health check + MCP endpoint URL
-```
-
-## Compatibility With Upstream Syncs
-
-When you sync Open Design upstream (`git pull upstream main`), the patches
-this skill applies survive because:
-
-1. **Janitor def file** lives under `apps/daemon/src/runtimes/defs/janitor.ts` — upstream ignores files in `defs/` that aren't in their `registry.ts` imports
-2. **Registry entry** uses a stable insert point (after `hermesAgentDef,`) so merge conflicts are localized to one line
-3. **Icon file** is a new addition that upstream won't touch
-4. **AgentIcon.tsx** insert uses a stable anchor (`hermes: 'svg',`) — re-running the skill after a merge auto-resolves any conflict
-
-If upstream renames the registry file or the AgentIcon component, the
-skill's `sed` patterns will fail loudly. Re-author the patterns and
-re-run.
-
-## Known Limitations
-
-- **Cold-start latency**: The first `pnpm install` rebuilds the daemon from source (15-90s depending on `better-sqlite3` prebuilt availability).
-- **Agent probe latency**: `detectAgents()` runs all probes in parallel; Janitor's probe takes ~5-15s because it spawns `janitor acp --accept-hooks`. The browser may show an empty picker during the first 15s of a fresh page load.
-- **WSL2 only on WSL 11+**: WSLg (Windows 11) is required for the desktop sidecar. WSL2 without WSLg runs daemon+web headless.
-- **No Docker support**: This skill provisions the local pnpm workspace. For containerized deploy, use `opendesign-docker-deploy` (separate skill).
-
-## Security Notes
-
-- The daemon binds to `127.0.0.1` only by default. It does not expose `/api/*` externally.
-- The MCP endpoint at `http://127.0.0.1:45351/mcp` is loopback-only. To expose it on the LAN, use an SSH tunnel or a reverse proxy with auth.
-- v0.9.0+ enables `desktopAuthGate` on `/api/import/folder` — this is upstream spec, not a misconfiguration.
-- The git remote `origin` is `nexu-io/open-design`. Verify after install: `git -C ~/open-design remote -v`.
-
-## Recovery
-
-- **Stack won't start**: `cd ~/open-design && pnpm install` (rebuilds any broken TypeScript)
-- **Janitor missing from picker**: re-run `bash "$JANITOR_SKILLS_DIR/janitor-opendesign/scripts/integrate-janitor.sh" register` then restart
-- **Icon missing**: re-run `bash "$JANITOR_SKILLS_DIR/janitor-opendesign/scripts/04-patch-agent-icon.sh"` (idempotent) then rebuild web
-- **Port conflict**: another service is using 45351/45343. Override with `OD_DAEMON_PORT` / `OD_WEB_PORT` env vars and update your MCP client config
-- **Health check fails**: check `~/open-design/.tmp/tools-dev/default/logs/daemon/latest.log`
-
-## See Also
-
-- `janitor-onboarding` — orientation for first-time Janitor users
-- `janitor-config-audit` — diffs active config against the canonical janitor-core assets
-- `opendesign-install` (upstream Janitor core) — original install skill this one extends
+- `python3 $S verify` → `ok: true`, `service.daemon.responds: true`,
+  `janitor_in_agent_list: true`, `integration.registered: true`.
+- Tests: `scripts/run_tests.sh tests/janitor/test_janitor_opendesign_skill.py`.

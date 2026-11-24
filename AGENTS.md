@@ -1,21 +1,36 @@
 # JANITOR FORK DIRECTIVES (SUPREME RULES)
 
+> **REPLANTEO EN CURSO (desde 2026-11-22) — leer antes de tocar nada.** Janitor pasa de instalarse por terminal a ser una
+> **app de escritorio instalable** que convive con el TUI. La fuente de verdad de qué se decidió, qué está hecho y qué
+> falta es **`docs/janitor/plans/janitor-desktop-app.md`** (decisiones, fases, tablero de estado y protocolo de trabajo
+> entre agentes). Todo agente (Claude, Codex u otro) lee ese archivo primero y actualiza su tablero al terminar una
+> tarea. Estas directivas describen las **reglas vigentes**; donde el código heredado todavía no las cumple, el plan
+> lista ese código como pendiente de retiro — no lo tomes como modelo ni lo extiendas.
+>
+> **PUNTO CERO (decisión del dueño, 2026-11-22).** La app es el nuevo punto de partida: las instalaciones
+> antiguas por terminal **no se adoptan ni se migran**; se desinstalan (`docs/janitor/desinstalar-instalacion-antigua.md`)
+> y se empieza de cero. No se escribe código nuevo para homes antiguos; el que existe se retira (tarea F5-02).
+
 1. **ZERO-RENAMING POLICY**: Nunca hagas buscar-y-reemplazar de la palabra 'hermes' en el core. El motor subyacente se mantiene intacto para garantizar que el merge de cada release upstream funcione sin conflictos destructivos.
-2. **CLI WRAPPER**: Las extensiones de Janitor heredan de `HermesCLI` en el paquete `janitor/` (lanzador: `janitor/cli.py`). No se modifica `cli.py` original. Los módulos raíz `janitor_cli.py`, `janitor_update_core.py`, `janitor_update_bootstrap.py`, `janitor_version.py` y `janitor_ext/` son alias de compatibilidad para instalaciones pre-1.0 (su console script apunta a `janitor_cli:main`); no se les añade lógica.
-3. **SKILLS AISLADOS**: Toda skill Janitor vive en `janitor/skills/<grupo>/janitor-*/`, con grupos `core`, `services` (con Docker), `agents` e `integrations`. Se cargan in place vía `skills.external_dirs` (`${JANITOR_SKILLS_ROOT}`, exportado por el lanzador) y nunca se copian a `~/.janitor/skills`. Los árboles `skills/` y `optional-skills/` son de upstream y no se tocan. Las skills de `services/` declaran un `service.yaml` (contenedores `janitor-*`, script de deploy) que consume `janitor services list|status|deploy|start|stop|uninstall`.
-4. **TUI ISOLATION**: Los cambios visuales del TUI se inyectan vía el sistema de skins (`skin_engine.py`, skin `assets/janitor/sentry-janitor.yaml`) sin destruir la compatibilidad del protocolo JSON-RPC. No se hace hardcode en los componentes base del TUI; el único hook es el touchpoint `tui-branding-hook` (`branding.tagline` / `branding.vendor`). El desktop se personaliza en el overlay de build `apps/desktop-janitor/`, nunca reemplazando assets en `apps/desktop/`.
+2. **CLI WRAPPER**: Las extensiones de Janitor heredan de `HermesCLI` en el paquete `janitor/` (lanzador: `janitor/cli.py`). No se modifica `cli.py` original. El console script `janitor` apunta a `janitor.cli:main`. El único módulo raíz es `janitor_version.py`, alias de `janitor.version` por el que lo importan los touchpoints del banner (directiva #12); no se le añade lógica. Los alias pre-1.0 (`janitor_cli.py`, `janitor_update_*.py`, `janitor_ext/`) se retiraron con las instalaciones antiguas (punto cero).
+3. **SKILLS AISLADOS**: Toda skill Janitor vive en `janitor/skills/<grupo>/janitor-*/`, con grupos `core`, `system` (administración del equipo), `projects`, `research`, `services` (con Docker) e `integrations`. Cada skill tiene su entrada en `janitor/catalog.yaml` (directiva #19). Se cargan in place vía `skills.external_dirs` (`${JANITOR_SKILLS_ROOT}`, exportado por el lanzador) y nunca se copian a `~/.janitor/skills`. Los árboles `skills/` y `optional-skills/` son de upstream y no se tocan. Las skills de `services/` declaran un `service.yaml` (contenedores `janitor-*`, script de deploy) que consume `janitor services list|status|deploy|start|stop|uninstall`.
+4. **TUI ISOLATION**: Los cambios visuales del TUI se inyectan vía el sistema de skins (`skin_engine.py`, skin `assets/janitor/sentry-janitor.yaml`) sin destruir la compatibilidad del protocolo JSON-RPC. No se hace hardcode en los componentes base del TUI; el único hook es el touchpoint `tui-branding-hook` (`branding.tagline` / `branding.vendor`). El desktop se personaliza en el overlay de build `apps/desktop-janitor/`, nunca reemplazando assets en `apps/desktop/`. El texto visible de la app (marca e idioma) se ajusta únicamente con las reglas de la directiva #17.
 5. **NAMING CONVENTION (BRANDING)**: Todo contenedor Docker, red, volumen, servicio de sistema o aplicación de terceros que Janitor instale o configure en el futuro DEBE llevar obligatoriamente el prefijo `janitor-` (ej. `janitor-redis`, `janitor-network`). Sin excepciones.
 6. **merge-auditor**: Cada merge debe ser auditado contra estas directivas. Si un PR introduce 'hermes' renombrado en archivos core, se rechaza automáticamente. El gate mecánico es `scripts/janitor-sync-verify.sh` (ver `MERGE_GUIDE.md`).
 7. **tui-compilation**: Los cambios en el TUI requieren pasar `npm run build` Y `npm test` (vitest) ANTES de hacer commit. El pipeline CI de Janitor ejecuta esta habilidad como gate obligatorio.
-8. **ESSENTIAL DEPENDENCIES**: Docker y Honcho son dependencias fundamentales del stack Janitor, no opcionales. El `bootstrap.sh` verifica la presencia de Docker y asiste en su instalacion (`get-docker.sh`) si falta. El `janitor-install.sh` despliega Honcho (modo Docker local) o solicita credenciales de Honcho cloud. `MINIMAX_API_KEY` es obligatoria porque es el proveedor de IA principal de Janitor (usada como `LLM_ANTHROPIC_API_KEY` por Honcho). Las capacidades restantes (Firecrawl, n8n, LightRAG, NocoDB, WAHA, Browser) son skills opcionales bajo `janitor/skills/` que se instalan explicitamente post-primer-arranque.
-9. **OPTIONAL SKILLS ARE EXPLICIT**: Tras la instalacion base (que incluye Docker + Honcho), el usuario puede ejecutar `janitor` inmediatamente. Los servicios opcionales se despliegan explicitamente post-arranque con `janitor services deploy <nombre>`. Janitor no incluye Infisical ni AgentMemory en su stack — la gestion de secretos y memoria de codigo se maneja por otros mecanismos.
-10. **MIGRATION SUPPORT**: Cada reestructuracion de `~/.janitor` incluye una migración en `janitor/migrations/` (sube `LAYOUT_VERSION` en `janitor/home.py`) y su script `scripts/migrate-*.sh` con `--dry-run`. El lanzador `janitor` la ejecuta automáticamente en el primer arranque (marcador `~/.janitor/.layout_version`), con backup previo en `~/.janitor/.backup/` (incluida una copia consistente de `state.db` vía la API de backup de SQLite). Una migración nunca toca contenedores ni volúmenes Docker, `.env`, líneas del RC de shell ni unidades systemd, y conserva todo archivo que el usuario haya editado. El instalador, re-ejecutado sobre un home existente, conserva `config.yaml`, `SOUL.md`, `honcho.json` y el skin, y respalda `.env` antes de reescribirlo.
+8. **DEPENDENCIAS DE LA BASE**: La instalación base de Janitor NO requiere Docker, Honcho ni un proveedor de IA concreto. La memoria base es la integrada de Hermes (`MEMORY.md` + `USER.md` + `session_search`); `holographic` es el nivel opcional local y Honcho el avanzado. MiniMax es el proveedor **recomendado y preconfigurado**, no obligatorio: se elige en el primer arranque gráfico. La semilla `assets/janitor/config.yaml` contiene solo las diferencias de Janitor (idioma, skin, identidad, plugin, skills); todo lo demás se hereda de los valores por defecto de upstream, y no lleva valores personales (zona horaria, MCP de un proveedor). El nivel gratuito de Nous y cualquier flujo de cuenta de Nous quedan ocultos. Los instaladores por terminal que exigían Docker/Honcho/`MINIMAX_API_KEY` se retiraron (F5-02); la única vía de instalación es la app con `scripts/install.sh`.
+9. **APLICATIVOS OPCIONALES EXPLÍCITOS**: Honcho, n8n, LightRAG, NocoDB, WAHA, Firecrawl y Open Design son aplicativos opcionales. Ninguno se instala en la base; el usuario los agrega después, y solo entonces se pide Docker. Todos siguen un único patrón: una skill bajo `janitor/skills/services/` con `service.yaml` + `scripts/deploy.sh` que guía la instalación de forma conversacional y automática, administrables con `janitor services ...` y, en la app, desde la pantalla de servicios (plugin de escritorio). WAHA audita el WhatsApp personal del usuario en modo solo lectura: avisa de lo importante, no envía mensajes salvo orden directa, y su skill advierte que las conversaciones viajan al proveedor de IA elegido. Janitor no incluye Infisical ni AgentMemory en su stack.
+10. **MIGRATION SUPPORT**: Las instalaciones antiguas por terminal (`~/.janitor/janitor-core`) no se migran ni se adoptan: se desinstalan (punto cero; `scripts/install.sh` se niega a instalar sobre ellas). El mecanismo queda para el futuro: el marcador `~/.janitor/.layout_version` y `LAYOUT_VERSION` en `janitor/home.py`, cuya base es la **v2** (la que `janitor/seed.py` sella en todo home nuevo). Hoy no hay pasos de migración: `janitor.migrations.auto_migrate`, que el lanzador ejecuta antes de arrancar Hermes, solo sella un home sin marcador. Cada reestructuración futura de `~/.janitor` sube `LAYOUT_VERSION`, añade su paso en `janitor/migrations/` y un script `scripts/migrate-*.sh` con `--dry-run`, y hace backup previo en `~/.janitor/.backup/` (incluida una copia consistente de `state.db` vía la API de backup de SQLite). Una migración nunca toca contenedores ni volúmenes Docker, `.env`, líneas del RC de shell ni unidades systemd, y conserva todo archivo que el usuario haya editado. La semilla nunca sobrescribe `config.yaml`, `SOUL.md` ni el skin que el usuario editó, ni toca `.env`.
 11. **TEST PRUNING (TWO-TIER CI)**: Todo test Janitor vive en `tests/janitor/` — no hay listas que mantener sincronizadas. El gate de PR (`tests.yml :: test`) corre `scripts/janitor-sync-verify.sh --skip-tui --skip-desktop`: el overlay check (directiva #16) más `scripts/run_tests.sh tests/janitor/`. `janitor-ci.yml` corre el mismo directorio en `python-tests` (ubuntu) y en `os-compat` (macOS vía `scripts/run_tests.sh`, Windows vía `.venv/Scripts/python.exe -m pytest`; los tests `@pytest.mark.linux_only` se saltan fuera de Linux), además de los gates del TUI (`react-tests`) y del overlay desktop (`desktop-overlay`). El suite completo de upstream (~50k tests, salvo `tests/ci/`, que asserta sobre los workflows podados, y los pocos tests deseleccionados en el propio job que chocan con el fork por diseño, como los de descubrimiento de plugins que ven el entry point `janitor`) se ejecuta en el job `upstream-sync-verify`, y su suite e2e (`tests/e2e/`) en el job `e2e`; ambos corren en `workflow_dispatch` (manual) o automaticamente en push a `main` cuyo commit message matche `chore(sync):`, `fix(sync):`, o merge de un branch `upstream-sync-*`. **Razon**: upstream ya valida su propio test suite antes de que cualquier commit llegue al fork. **NO** se borran los archivos de test upstream del arbol — permanecen disponibles para que `upstream-sync-verify` los corra. **NO** se deshabilita el `test` job para que ejecute la suite completa, eso revierte esta directiva.
 12. **TEST ASSERTION BRANDING**: Toda aserción de test que compare contra el string del banner CLI (e.g. output de `--version`, el titulo del welcome banner) DEBE assertar sobre `THE JANITOR` / `THE JANITOR v`, NO sobre `Hermes Agent` / `Hermes Agent v`. El touchpoint `banner` re-aplica el string del banner Janitor en `hermes_cli/banner.py` (`format_banner_version_label`), `hermes_cli/_startup_fast.py` (fallback) y `hermes_cli/cli_render.py` (rama rápida de `_build_compact_banner`, que upstream sacó de `cli.py` en v2026.9.24), pero los tests upstream siguen hardcodeando el string upstream. Cuando un nuevo test upstream introduzca el literal `Hermes Agent`, actualizar la aserción a `THE JANITOR` en el mismo commit, añadir un comentario inline que apunte a esta directiva y declarar el archivo en el touchpoint `banner` de `janitor/overlay.yaml`.
-13. **JANITOR UPDATE FLOW**: Both `janitor update` entry points — the early intercept in `janitor/cli.py` (`if sys.argv[1] == "update"`, via `janitor/update_bootstrap.py`) and the monkey-patched `cmd_update` (`janitor/cli.py:_janitor_cmd_update`) — delegate to a single shared core in `janitor/update_core.py:run_janitor_update(args)`. Any change to the update flow (pre-check, fetch, pull, fallback, post-pull validation, dependency install, stash handling, error recovery) lives in `janitor/update_core.py`. The entry-point shells may ONLY print their branding banner and call the core. Rationale: the previous two-path design led to silent divergence — one path had a `git pull --ff-only` failure with no recovery because it lacked the `git reset --hard origin/main` fallback. Helpers from `hermes_cli.main` are imported lazily inside the core so the early intercept still works on a partially-broken venv. The core claims upstream's shared update marker (`hermes_cli/update_lock.py`, also used by `hermes update`, the dashboard and the desktop/Tauri updaters) and refuses with exit code 2 while another live update holds it; `--check` stays lock-free, and an unimportable lock module degrades to an unlocked update. The `~/.janitor` layout migration is NOT part of the update flow: the code that pulls a release is the previous release's, so the new launcher migrates on first start (directive #10).
-14. **MONKEY-PATCH SIGNATURE INVARIANTS**: `janitor/cli.py` monkey-patches upstream callables at import / launch time (currently: `argparse.ArgumentParser.__init__`, `hermes_cli.main.cmd_update`, and `hermes_cli.tips.TIPS` / `get_random_tip`). Each wrapper's signature MUST stay compatible with the upstream function it replaces — it must accept every parameter the original accepts. When upstream adds a parameter to a patched function, the sync merge adopts the new callee signature AND the new caller, but never touches `janitor/` (fork-only), so the wrapper silently keeps the old signature and crashes at runtime with `TypeError: ... takes 0 positional arguments but 1 was given`. Upstream tests mock the patched functions and never import the launcher, so only our test catches it. **Enforcement**: `tests/janitor/test_janitor_monkeypatch_signatures.py`. When a sync breaks this test, update the wrapper signature in `janitor/cli.py` to match — do NOT weaken the test. Prefer a plugin hook or skin key over a new monkey-patch.
+13. **JANITOR UPDATE FLOW**: Both `janitor update` entry points — the early intercept in `janitor/cli.py` (`if sys.argv[1] == "update"`, via `janitor/update_bootstrap.py`) and the monkey-patched `cmd_update` (`janitor/cli.py:_janitor_cmd_update`) — delegate to a single shared core in `janitor/update_core.py:run_janitor_update(args)`. The messaging `/update` command reaches the same early intercept: the Janitor plugin wraps `gateway.slash_commands._spawn_detached_update` (`janitor/plugin/gateway_update.py`) so the gateway spawns `python -m janitor.cli update --gateway` instead of upstream's `hermes_cli.main update` (POSIX only; on Windows upstream ignores the argv). Any change to the update flow (pre-check, fetch, pull, fallback, post-pull validation, dependency install, stash handling, error recovery) lives in `janitor/update_core.py`. The entry-point shells may ONLY print their branding banner and call the core. Rationale: the previous two-path design led to silent divergence — one path had a `git pull --ff-only` failure with no recovery because it lacked the `git reset --hard origin/main` fallback. Helpers from `hermes_cli.main` are imported lazily inside the core so the early intercept still works on a partially-broken venv. The core claims upstream's shared update marker (`hermes_cli/update_lock.py`, also used by `hermes update`, the dashboard and the desktop/Tauri updaters) and refuses with exit code 2 while another live update holds it; `--check` stays lock-free, and an unimportable lock module degrades to an unlocked update. The `~/.janitor` layout migration is NOT part of the update flow: the code that pulls a release is the previous release's, so the new launcher migrates on first start (directive #10).
+14. **MONKEY-PATCH SIGNATURE INVARIANTS**: `janitor/cli.py` monkey-patches upstream callables at import / launch time (currently: `argparse.ArgumentParser.__init__`, `hermes_cli.main.cmd_update`, `hermes_cli.tips.TIPS` / `get_random_tip`, and — from the plugin, not the launcher — `gateway.slash_commands._spawn_detached_update` (directive #13); the tips patch is also applied by the Janitor plugin's `register()` so that gateways and other processes not started by the launcher get it. Gateway subcommands hand off with `exec` to `python -m hermes_cli.main` after the launcher's seeding and env exports, so the long-running process has a command line upstream's discovery recognises). Each wrapper's signature MUST stay compatible with the upstream function it replaces — it must accept every parameter the original accepts. When upstream adds a parameter to a patched function, the sync merge adopts the new callee signature AND the new caller, but never touches `janitor/` (fork-only), so the wrapper silently keeps the old signature and crashes at runtime with `TypeError: ... takes 0 positional arguments but 1 was given`. Upstream tests mock the patched functions and never import the launcher, so only our test catches it. **Enforcement**: `tests/janitor/test_janitor_monkeypatch_signatures.py`. When a sync breaks this test, update the wrapper signature in `janitor/cli.py` to match — do NOT weaken the test. Prefer a plugin hook or skin key over a new monkey-patch.
 15. **POST-SYNC DUPLICATE DEFINITION AUDIT**: When both the Janitor fork and upstream add a method or function with the same name to the same scope, a sync merge can leave both non-conflicting additions in place. Python's "last definition wins" rule then silently shadows the first, which can change a method from `async` to `sync` while callers still `await` it — producing `TypeError: object NoneType can't be used in 'await' expression` at runtime. **Real-world impact**: the v2026.7.7.2 sync (merge `83d4f8d62`) left duplicate `_refresh_agent_cache_message_count` definitions in `gateway/run.py` and every Telegram message crashed AFTER generating the correct response; the v2026.8.13 audit found more in `cron/`, `tools/`, `agent/`, `hermes_cli/` and `tui_gateway/`. Since v2026.9.24 upstream splits `GatewayRunner` into mixins, so the method now lives in `gateway/run_agent_cache.py` (callers in `gateway/run_turn.py`) and the Janitor cache-refresh touchpoint is retired — the gateway holds an `AsyncSessionDB`, so upstream's direct `await` is correct. **Enforcement**: `tests/janitor/test_janitor_no_duplicate_methods.py` scans the top-level core modules and every core package (`agent/`, `tools/`, `cron/`, `hermes_cli/`, `gateway/`, `tui_gateway/`, `plugins/`) for duplicate class methods (excluding `@property`/`@.setter` pairs) and duplicate module-level functions, and locks `_refresh_agent_cache_message_count` as a single `async` definition across the whole `gateway/` package, resolved as a coroutine on `GatewayRunner` and always awaited by its callers. Upstream's intentional PLUGIN-COMPAT chained module `__getattr__` pairs are listed in `_UPSTREAM_KNOWN_DUPLICATES`. When a sync breaks this test, keep the correct definition (usually the one with the more complete logic) and delete the other — do NOT weaken the test.
 16. **OVERLAY INVENTORY**: `janitor/overlay.yaml` declares every divergence from upstream: `fork_paths` (zonas exclusivas del fork: `janitor/`, `assets/janitor/`, `apps/desktop-janitor/`, `tests/janitor/`, `docs/janitor/`, scripts y workflows Janitor) and `touchpoints` (each in-place edit of an upstream file, with `why`, `verify` and `merge: ours|reapply`). `python -m janitor.overlay check` fails on any undeclared difference against `upstream.base`, so merge residue cannot survive silently. Editing an upstream file requires declaring it as a touchpoint in the same PR, with a behavioral check in `tests/janitor/test_janitor_overlay_contract.py` when `verify: test:<id>`. Generic hooks worth upstreaming are marked `upstream_candidate: true` (see `docs/janitor/upstream-candidates.md`).
+17. **MARCA E IDIOMA AL COMPILAR**: El usuario no debe ver la palabra «Hermes» ni texto en inglés en el uso normal de la app. Como la directiva #1 prohíbe renombrar el core, el reemplazo ocurre **al compilar**: `apps/desktop-janitor/scripts/build.mjs` aplica las reglas de `apps/desktop-janitor/brand/` (Hermes → Janitor, comando `hermes` → `janitor` en instrucciones, traducción de menús y avisos del sistema, origen de instalación, home `~/.janitor`, español por defecto) sobre una lista explícita de archivos de `apps/desktop/`, compila y **revierte cada archivo**. El árbol del repo queda idéntico a upstream. Una prueba falla si queda «Hermes» en el texto visible en español fuera de la lista de excepciones declarada, de modo que cada frase nueva de upstream se detecta en la sincronización. Los textos que no pasan por ese build (mensajes de gateway en `locales/es.yaml`, TUI) se cubren con touchpoints declarados (directiva #16). Se acepta que permanezcan rutas, variables `HERMES_*`, registros y nombres de servicios de terceros.
+18. **IDENTIDAD Y PÚBLICO (INVARIANTE DE PRODUCTO)**: Janitor es sarcástico, rudo, directo y sin filtro; corrige e insulta al usuario cuando pide algo estúpido. Es la característica principal del producto y **no se suaviza**: ningún agente propone un tono «respetuoso», una identidad nueva ni personalidades neutras. Su alcance es **toda la tecnología** (equipos, sistemas, redes, infraestructura, seguridad, proyectos, código), no solo código. El público son personas técnicas hispanohablantes. El **español es obligatorio** en toda superficie visible. El TUI se conserva completo (skin `sentry-janitor`, banner, caras, frases de «pensando», saludo, despedida, `janitor/tips_es.py`) y el comando `janitor` sigue abriéndolo; esas frases viven solo en el terminal, la app de escritorio hereda del skin únicamente los colores. Las reglas operativas de `SOUL.md` (confirmar antes de mutar, usar la skill disponible, delegar) se mantienen.
+19. **AGENTES Y SKILLS POR PERFIL**: Un agente Janitor es un perfil de Hermes. Hay un agente principal (Janitor) y especialistas opcionales por plantilla (Investigador, Creador de proyectos). Los perfiles nacen **sin** el paquete de skills de upstream (marcador `.no-bundled-skills`, solo esenciales) y reciben skills de un catálogo Janitor organizado por propósito; ninguna skill se activa por defecto solo porque upstream la añada. No se crean sistemas de agentes paralelos a los perfiles (`janitor/agents.py` y `janitor/opencode/` están en retiro). Toda skill que toque archivos o el sistema del usuario muestra lo que va a hacer antes de hacerlo y envía a la papelera en lugar de borrar.
+20. **PROTOCOLO DE TRABAJO ENTRE AGENTES**: El trabajo del replanteo se ejecuta por tareas del tablero de `docs/janitor/plans/janitor-desktop-app.md`. Cada tarea tiene un alcance de archivos explícito; dos agentes nunca escriben los mismos archivos a la vez. Quien toma una tarea la marca en el tablero, trabaja solo dentro de su alcance, corre las verificaciones indicadas y deja evidencia (comando + resultado). Ninguna tarea se da por hecha por el informe de quien la ejecutó: un revisor distinto lee el diff y vuelve a correr las pruebas antes de marcarla como auditada. Lo no verificado se anota como no verificado. Una decisión de producto registrada en el plan no se reabre sin el dueño del proyecto.
 
 ---
 
@@ -36,33 +51,45 @@ Everything else is delivered as opt-in skills and services.
 | `janitor/cli.py` | `janitor` launcher: `HERMES_HOME=~/.janitor`, skin, layout migration, update intercept |
 | `janitor/update_core.py`, `janitor/update_bootstrap.py` | Update flow (directive #13) |
 | `janitor/migrations/` | `~/.janitor` layout migrations (directive #10) |
-| `janitor/plugin/` | Hermes plugin (`plugins.enabled: [janitor]`): Telegram `/start` + avatar, language prompt section, `janitor services` and `janitor agents` CLI commands |
-| `janitor/services.py`, `janitor/agents.py` | Service lifecycle (`service.yaml`) and specialized-agent catalog |
+| `janitor/plugin/` | Hermes plugin (`plugins.enabled: [janitor]`): Telegram `/start` + avatar, language prompt section, `janitor services` CLI command |
+| `janitor/services.py` | Service lifecycle (`service.yaml`) |
+| `janitor/seed.py` | Seeds a new `~/.janitor` (minimal config, `SOUL.md`, skin, `.no-bundled-skills`); never overwrites user-edited files |
+| `janitor/catalog.py`, `janitor/catalog.yaml` | Skill catalog by purpose and template; `apply(home)` turns a profile's `janitor.skills` into `skills.external_dirs` (directive #19) |
 | `janitor/skills/` | All Janitor skills (directive #3) |
 | `janitor/overlay.py`, `janitor/overlay.yaml` | Overlay inventory and check (directive #16) |
 | `assets/janitor/` | Seed `config.yaml`, `SOUL.md`, `honcho.json`, `sentry-janitor.yaml` skin, Telegram assets |
 | `apps/desktop-janitor/` | Desktop build overlay (`scripts/build.mjs`, `electron-builder.janitor.json`) |
 | `tests/janitor/` | The Janitor test suite (directive #11) |
 
-### Installer Contract
+### Install Contract
 
-`scripts/janitor-install.sh` deploys **only**:
-- `~/.janitor/.env` — environment variables (backed up to `~/.janitor/.backup/install-*/` before a rewrite)
-- `~/.janitor/config.yaml` — agent configuration (kept if it already exists)
-- `~/.janitor/SOUL.md` — agent persona (kept if it already exists)
-- `~/.janitor/skins/sentry-janitor.yaml` — visual theme (kept if it already exists)
-- Optional: local Honcho (via `scripts/setup-honcho.sh`)
+The desktop app is the entry point. A Janitor build of the app (directive #17)
+downloads `scripts/install.sh` from this fork and runs it by stages; the engine
+lands in `~/.janitor/hermes-agent` (venv in `~/.janitor/hermes-agent/venv`), the
+`janitor` command in `~/.local/bin`, and the backend starts as
+`python -m janitor.cli serve`. `janitor/seed.py` seeds a **new** home with only:
+- `~/.janitor/config.yaml` — minimal seed (Janitor's differences; `_config_version` from upstream defaults)
+- `~/.janitor/SOUL.md` — agent persona
+- `~/.janitor/skins/sentry-janitor.yaml` — visual theme
+- `~/.janitor/.no-bundled-skills` — the home does not receive upstream's skill pack
 
-**Does NOT deploy by default**: Firecrawl, Browser, or any other service.
+It never touches `.env` and never overwrites a file the user edited. **Nothing
+else is deployed by default**: no Docker, no Honcho, no services (directives #8, #9).
+
+The old terminal installers (layout `~/.janitor/janitor-core` + `.venv`) are
+retired: such a home is not adopted, and `scripts/install.sh` refuses to install
+over it until the user uninstalls it.
 
 ### Skill Hierarchy
 
 | Group | Skills |
 |-------|--------|
-| `core/` | `janitor-core` (cache/environment hygiene), `janitor-config-audit` (config/SOUL.md drift), `janitor-onboarding` (orientation guide) |
+| `core/` | `janitor-onboarding` (orientation guide) |
+| `system/` | System administration: `janitor-system-health`, `janitor-maintenance`, `janitor-cleanup`, `janitor-file-organizer` (see the plan board for which exist) |
+| `projects/` | Reserved for project-creation skills |
+| `research/` | `janitor-repo-research` |
 | `services/` | `janitor-honcho`, `janitor-firecrawl`, `janitor-n8n`, `janitor-lightrag`, `janitor-nocodb`, `janitor-waha` — each with `service.yaml` + `scripts/deploy.sh` |
-| `agents/` | `janitor-code-review-agent`, `janitor-repo-research-agent` — each with `agent.yaml` |
-| `integrations/` | `janitor-browser`, `janitor-desktop-launcher`, `janitor-opendesign`, `janitor-skill-integration` |
+| `integrations/` | `janitor-opendesign` |
 
 Each skill contains `SKILL.md`, optional `scripts/`, and compose files scoped to
 that service only. SKILL.md prose references its own files as
@@ -72,33 +99,29 @@ that service only. SKILL.md prose references its own files as
 
 1. Create `janitor/skills/<group>/janitor-<name>/` with a `SKILL.md` (name, description ≤ 60 chars, version, platforms, metadata).
 2. Add scripts under `scripts/`. A Docker service also gets a `service.yaml` (`name`, `description`, `deploy`, `compose`, `url`, `containers` — all `janitor-*`).
-3. Reference the skill from `janitor/skills/core/janitor-onboarding/SKILL.md` so users can discover it.
-4. Add its tests under `tests/janitor/`.
-5. Do NOT modify core Hermes files or built-in skills.
+3. Add its entry to `janitor/catalog.yaml` (purpose, platforms, templates); `python -m janitor.catalog check` must pass. A skill is only visible to an agent whose `janitor.skills` lists it.
+4. Reference the skill from `janitor/skills/core/janitor-onboarding/SKILL.md` so users can discover it.
+5. Add its tests under `tests/janitor/`.
+6. Do NOT modify core Hermes files or built-in skills.
+7. A skill that touches the user's files or system follows directive #19: plan first, user confirms, trash instead of delete, never `sudo`.
+
+Retiring or renaming a skill changes its `janitor/catalog.yaml` entry; skills are read in place, so homes hold no copy to clean. If a change ever leaves something in existing homes, removing it is a layout migration (directive #10).
 
 ### User Workflow
 
-```bash
-# Fresh install — minimal
-curl -fsSL .../bootstrap.sh | bash
-janitor
-
-# Post-install: add capabilities as needed
-janitor services list
-janitor services deploy firecrawl
-```
-
-### Upgrading Existing Installs
-
-`janitor update` pulls the new release; the next `janitor` start migrates
-`~/.janitor` to the current layout (backup first). Manual / preview:
+Install the Janitor app (Linux AppImage first), open it, pick a provider
+(MiniMax is the recommended one). Then, optionally:
 
 ```bash
-bash scripts/migrate-janitor-v1.sh --dry-run
+janitor                            # the TUI, same home and sessions as the app
+janitor services list              # optional applications (need Docker)
+janitor services deploy honcho
 ```
 
-Users of the pre-v5 full stack run `bash scripts/migrate-janitor-minimal.sh`
-first (Infisical RC snippets, secret export; Docker volumes are never deleted).
+### Old Terminal Installs
+
+They are not upgraded. Uninstall them with
+`docs/janitor/desinstalar-instalacion-antigua.md` and start from the app.
 
 ---
 

@@ -1,0 +1,234 @@
+# Janitor overlay on top of upstream's locales/es.yaml.
+#
+# Only the keys that differ from upstream live here: `janitor.locales` merges
+# this file over upstream's catalog at launch and points the engine at the
+# result (HERMES_BUNDLED_LOCALES). Three kinds of keys:
+#   - brand fixes: upstream keys (they must exist in locales/en.yaml) whose
+#     Spanish text says "Hermes" or names a `hermes` command; the `janitor`
+#     launcher passes every one of these subcommands through to the engine.
+#   - `tui_gateway.*`: copy that tui_gateway/user_messages.py looks up before
+#     falling back to its English text (touchpoint backend-user-copy).
+#   - `runtime_copy.*`: English literals other upstream call sites look up
+#     through agent.i18n.t_default (touchpoint runtime-copy), at the end.
+# tests/janitor/test_janitor_backend_i18n.py and
+# tests/janitor/test_janitor_locales_runtime_copy.py guard them.
+
+approval:
+  timeout:         "      ⏱ Sin respuesta en {waited} — el comando no se ejecutó. Pide de nuevo para reintentar, o sube el límite: janitor config set approvals.timeout {suggested}"
+
+gateway:
+  debug:
+    full_logs_hint:        "Para subir registros completos, usa `janitor debug share` desde la CLI."
+    share_hint:            "Comparte estos enlaces con quien te dé soporte de Janitor."
+  help:
+    header:                "📖 **Comandos de Janitor**\n"
+  kanban:
+    truncated_suffix:      "… (truncado; usa `janitor kanban …` en tu terminal para la salida completa)"
+  restart:
+    restarting:            "♻ Reiniciando el gateway. Si no recibes notificación en 60 segundos, reinicia desde la consola con `janitor gateway restart`."
+  resume:
+    matrix_blocked_no_origin: "⚠️ Matrix /resume bloqueado: esta sesión con nombre no tiene sala de origen registrada, por lo que Janitor no la reanudará dentro de la sala actual por defecto. Usa `/resume --cross-room {name}` si quieres cruzar los límites de sala intencionadamente."
+  status:
+    header:                "📊 **Estado del gateway de Janitor**"
+  topic:
+    thread_ready:            "Los topics multisesión de Telegram están habilitados.\n\nEste topic se usará como una sesión independiente de Janitor. Usa /new para reemplazar la sesión actual de este topic. Para trabajo paralelo, abre All Messages y envía un mensaje allí para crear otro topic."
+  update:
+    platform_not_messaging:  "✗ /update solo está disponible en plataformas de mensajería. Ejecuta `janitor update` desde la terminal."
+    hermes_cmd_not_found:    "✗ No se pudo localizar el comando de actualización. Janitor está en ejecución, pero no encontró el ejecutable en PATH ni a través del intérprete de Python actual. Ejecuta `janitor update` manualmente en tu terminal."
+    starting:                "☤ Iniciando la actualización de Janitor… Transmitiré el progreso aquí."
+  verbose:
+    mode_log:              "⚙️ Progreso de herramientas: **LOG** — silencioso en el chat; las llamadas a herramientas se escriben en ~/.janitor/logs/tool_calls.log."
+
+tui_gateway:
+  agent_init_failed: "Janitor no pudo iniciar el asistente de esta sesión. Detalles: {detail}. Revisa el modelo y el proveedor con /model, o ejecuta `janitor setup` en una terminal para reconfigurarlo."
+  details: "Detalles: {detail}"
+  detail:
+    missing_credentials: "No hay credenciales utilizables para el proveedor '{provider}'. Configura {env}."
+  turn_error:
+    not_answered: "{title}. Tu mensaje quedó sin respuesta."
+    retry_step: "Envía /retry"
+    switch_step: "Elige otro modelo con /model"
+    default:
+      title: "La petición falló"
+      hint: "Envía /retry, o cambia de modelo con /model."
+    code:
+      auth:
+        title: "El proveedor del modelo rechazó la clave de API"
+        hint: "Corrige la clave con /model y luego usa /retry."
+      auth_permanent:
+        title: "El proveedor del modelo rechazó la clave de API"
+        hint: "Corrige la clave con /model y luego usa /retry."
+      billing:
+        title: "El proveedor del modelo indica que no queda saldo"
+        hint: "Recarga la cuenta o cambia de modelo con /model."
+      billing_unverified:
+        title: "El proveedor del modelo indica que no queda saldo"
+        hint: "Recarga la cuenta o cambia de modelo con /model."
+      rate_limit:
+        title: "El proveedor del modelo está limitando las peticiones"
+        hint: "Espera un momento y luego usa /retry."
+      upstream_rate_limit:
+        title: "El proveedor del modelo está limitando las peticiones"
+        hint: "Espera un momento y luego usa /retry."
+      upstream_blocked:
+        title: "Un firewall o CDN delante del proveedor del modelo bloqueó la petición"
+        hint: "Define un User-Agent en los extra_headers del proveedor, o cambia de modelo con /model."
+      overloaded:
+        title: "El proveedor del modelo está saturado"
+        hint: "Espera un momento y luego usa /retry."
+      server_error:
+        title: "El proveedor del modelo tuvo un error interno"
+        hint: "Espera un momento y luego usa /retry."
+      timeout:
+        title: "El proveedor del modelo no respondió a tiempo"
+        hint: "Prueba /retry; si se repite, cambia de modelo con /model."
+      context_overflow:
+        title: "La conversación es demasiado larga para este modelo"
+        hint: "Ejecuta /compress y luego /retry."
+      payload_too_large:
+        title: "La petición es demasiado grande para este modelo"
+        hint: "Ejecuta /compress y luego /retry."
+      model_not_found:
+        title: "El proveedor del modelo no conoce este modelo"
+        hint: "Elige otro modelo con /model."
+      content_policy_blocked:
+        title: "El proveedor del modelo rechazó esta petición (política de contenido)"
+        hint: "Reformula el mensaje y envíalo de nuevo."
+      provider_policy_blocked:
+        title: "El proveedor del modelo rechazó esta petición (política de la cuenta)"
+        hint: "Cambia de modelo con /model."
+      format_error:
+        title: "El proveedor del modelo rechazó el formato de la petición"
+        hint: "Prueba /retry; si persiste, cambia de modelo con /model."
+      ssl_cert_verification:
+        title: "No se pudo verificar la conexión con el proveedor del modelo (TLS)"
+        hint: "Revisa el certificado del endpoint y luego usa /retry."
+    layer:
+      auth:
+        title: "El proveedor del modelo rechazó las credenciales"
+        hint: "Corrígelas con /model y luego usa /retry."
+      billing:
+        title: "El proveedor del modelo indica que no queda saldo"
+        hint: "Recarga la cuenta o cambia de modelo con /model."
+      endpoint:
+        title: "Tu endpoint de modelo personalizado no respondió"
+        hint: "Comprueba que el endpoint está en marcha y luego usa /retry."
+      streaming:
+        title: "La conexión con el proveedor del modelo se cortó a mitad de la respuesta"
+        hint: "Envía /retry."
+      disk:
+        title: "El disco está lleno, así que Janitor no pudo guardar el turno"
+        hint: "Libera espacio y luego usa /retry."
+      gateway:
+        title: "Janitor tuvo un error interno al ejecutar este turno"
+        hint: "Envía /retry; escribe /logs para ver la traza."
+      provider:
+        title: "El proveedor del modelo devolvió un error"
+        hint: "Envía /retry, o cambia de modelo con /model."
+
+# `runtime_copy.*`: text upstream code emits as an English literal (no key in
+# upstream's en.yaml). The touchpoint runtime-copy makes those call sites ask
+# the catalog first (agent.i18n.t_default) and keep the English otherwise.
+# tests/janitor/test_janitor_locales_runtime_copy.py guards these keys.
+runtime_copy:
+  gateway:
+    home_channel_prompt: "📬 No hay canal principal para {platform}. Ahí es donde Janitor deja los resultados de las tareas programadas y los mensajes entre plataformas.\n\nEscribe {sethome_cmd} para que este chat sea el canal principal, o ignóralo."
+    update_finished: "✅ Actualización de Janitor terminada."
+    update_finished_successfully: "✅ Actualización de Janitor terminada sin errores."
+    update_failed: "❌ La actualización de Janitor falló; sigue corriendo la versión anterior. Ejecuta `janitor update` en el equipo para ver el error completo, o vuelve a intentar /update más tarde."
+    update_last_lines: "Últimas líneas:"
+    update_already_running: "⏳ Ya hay una actualización en marcha. Espera a que termine; no voy a lanzar otra encima."
+    update_timed_out: "❌ La actualización de Janitor no terminó en 30 minutos. Se cortó."
+    update_prompt: "☤ **La actualización necesita una respuesta:**\n\n{prompt}{default_hint}\n\nResponde `{p}approve` (sí) o `{p}deny` (no), o escribe la respuesta directamente."
+    update_prompt_default: " (por defecto: {default})"
+    restarted: "♻ Gateway reiniciado. Tu sesión sigue donde estaba."
+  telegram_onboarding:
+    # expired/claimed stay English on purpose: the app detects a dead pairing
+    # by reading "expired"/"claimed" in the 410 body (telegram-qr-setup.tsx).
+    not_found: "No existe ese emparejamiento de Telegram. Empieza la configuración de nuevo."
+    unauthorized: "El servicio de configuración de Telegram rechazó la petición."
+    telegram_manager_bot_token_not_configured: "El servicio de configuración de Telegram no está configurado."
+    telegram_token_fetch_failed: "Telegram no pudo terminar de crear el bot. Inténtalo otra vez."
+    error: "El servicio de configuración de Telegram devolvió un error."
+    unavailable: "El servicio de configuración de Telegram no responde. Prueba en un momento."
+    invalid: "El servicio de configuración de Telegram devolvió una respuesta inválida."
+  # Descriptions in /help, /commands and the Telegram command menu, by command name.
+  # `janitor --version` (hermes_cli/_startup_fast.py::print_fast_version_info).
+  version:
+    install_dir: "Directorio de instalación: {path}"
+    install_method: "Método de instalación: {method}"
+    openai_sdk: "SDK de OpenAI: {version}"
+    openai_sdk_missing: "SDK de OpenAI: no instalado"
+    update_available: "Hay una actualización: ejecuta `janitor update`"
+    update_behind: "Hay una actualización: vas {behind} cambio(s) por detrás. Ejecuta `janitor update`"
+    up_to_date: "Al día"
+  commands:
+    start: "Confirma el /start de la plataforma sin responder"
+    new: "Empieza una sesión nueva (ID e historial limpios)"
+    topic: "Activa o revisa las sesiones por tema en los DM de Telegram"
+    save: "Exporta la conversación actual (/save solo muestra el uso)"
+    retry: "Reintenta el último mensaje"
+    undo: "Retrocede N turnos tuyos y vuelve a preguntar (por defecto 1)"
+    title: "Pon título a la sesión actual"
+    branch: "Ramifica la sesión actual (hilo nuevo en Discord/Telegram/Slack/Matrix; --here se queda aquí)"
+    compress: "Comprime el contexto de la conversación ('here [N]' conserva los N turnos recientes; --preview muestra qué haría)"
+    rollback: "Lista o restaura puntos de control del sistema de archivos (respeta tus ediciones; --all las pisa)"
+    stop: "Mata todos los procesos en segundo plano"
+    pause: "Pausa todo trabajo nuevo (parada de emergencia); '/pause off' lo reanuda"
+    approve: "Aprueba un comando peligroso pendiente"
+    deny: "Rechaza un comando peligroso pendiente (con motivo, si quieres)"
+    bg: "Ejecuta un prompt en una sesión aparte en segundo plano"
+    btw: "Pregunta algo al margen de la conversación sin interrumpirla"
+    agents: "Muestra los agentes activos y las tareas en curso"
+    queue: "Encola un prompt para el siguiente turno, o lista/edita/borra/mueve/vacía la cola"
+    steer: "Mete un mensaje tras la siguiente llamada a herramienta sin interrumpir"
+    goal: "Fija un objetivo en el que Janitor trabaja turno tras turno hasta cumplirlo"
+    heartbeat: "Fija un prompt recurrente que vuelve a esta sesión cuando está inactiva"
+    refine: "Revisa esta conversación ahora y guarda lo aprendido en memoria/skills"
+    review: "Lanza un subagente independiente que revisa el trabajo recién discutido (PR, código, docs)"
+    loop: "Repite un prompt a intervalos en esta sesión"
+    plan: "Escribe un plan de implementación en markdown en la carpeta de planes del proyecto, sin ejecutar nada"
+    moa: "Pasa un prompt por el preset Mixture of Agents por defecto y luego restaura tu modelo"
+    subgoal: "Añade o gestiona criterios extra del objetivo activo"
+    status: "Muestra sesión, modelo, tokens y contexto"
+    egress: "Muestra el estado del proxy de salida de Docker"
+    context: "Vista detallada de la ventana de contexto: uso, desglose por categoría, compresión y rendimiento"
+    whoami: "Muestra tu acceso a comandos (admin / usuario)"
+    profile: "Muestra el perfil activo y su directorio"
+    sethome: "Hace de este chat el canal principal"
+    resume: "Reanuda una sesión con nombre"
+    sessions: "Explora y reanuda sesiones anteriores"
+    model: "Cambia de modelo (solo esta sesión; --global para guardarlo)"
+    codex-runtime: "Activa o desactiva el runtime app-server de Codex para modelos OpenAI/Codex"
+    personality: "Elige una personalidad predefinida"
+    diff: "Muestra los cambios de git del directorio de trabajo"
+    verbose: "Rota la vista de progreso de herramientas: off -> new -> all -> verbose"
+    footer: "Activa o desactiva el pie con metadatos del gateway en las respuestas"
+    yolo: "Activa o desactiva el modo YOLO (sin aprobaciones de comandos peligrosos)"
+    approvals: "Muestra o fija el modo persistente de aprobación de comandos peligrosos"
+    reasoning: "Gestiona el esfuerzo de razonamiento y su visualización"
+    fast: "Modo rápido: Priority Processing de OpenAI / Fast Mode de Anthropic (normal/fast/auto/cold)"
+    voice: "Activa o desactiva el modo voz"
+    busy: "Decide qué pasa con tus mensajes mientras Janitor trabaja"
+    skills: "Busca, instala, inspecciona o gestiona skills"
+    memory: "Revisa escrituras de memoria pendientes / activa o quita la aprobación"
+    bundles: "Lista los paquetes de skills (alias /<nombre> para varias skills)"
+    learn: "Aprende una skill reutilizable de lo que describas (directorios, URLs, este chat, notas)"
+    init: "Genera o actualiza las instrucciones AGENTS.md a partir del repositorio"
+    suggestions: "Revisa automatizaciones sugeridas (aceptar/descartar)"
+    blueprint: "Monta una automatización a partir de una plantilla"
+    curator: "Mantenimiento de skills en segundo plano (status, run, pin, archive, list-archived)"
+    kanban: "Tablero de colaboración entre perfiles (tareas, enlaces, comentarios)"
+    reload-mcp: "Recarga los servidores MCP desde la configuración"
+    reload-skills: "Vuelve a escanear las skills instaladas o eliminadas"
+    commands: "Explora todos los comandos y skills (paginado)"
+    help: "Muestra los comandos disponibles (/help skills lista las skills, /help <texto> filtra)"
+    restart: "Reinicia el gateway con calma tras vaciar las ejecuciones activas"
+    usage: "Muestra el uso de tokens y los límites; `reset` canjea un reinicio de límite de Codex guardado"
+    login: "Inicia sesión con una cuenta de Nous (conserva tus conectores)"
+    topup: "Muestra tu saldo de Nous y gestiona la facturación en el portal"
+    insights: "Muestra estadísticas y análisis de uso"
+    platform: "Pausa, reanuda o lista una plataforma del gateway que falla"
+    update: "Actualiza Janitor a la última versión"
+    version: "Muestra la versión de Janitor"
+    debug: "Sube un informe de depuración (sistema + registros) y devuelve enlaces para compartir"

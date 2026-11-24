@@ -1,0 +1,13 @@
+import { createApp } from "./server.js";
+
+const port = Number(process.env.PORT ?? "3000");
+const host = process.env.HOST ?? "127.0.0.1";
+
+const server = createApp();
+server.listen(port, host, () => {
+  console.log(`{{NAME}} escuchando en http://${host}:${port}`);
+});
+
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, () => server.close());
+}

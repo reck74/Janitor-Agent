@@ -1,0 +1,47 @@
+# {{NAME}}
+
+{{PROBLEM}}
+
+**Quién lo usa:** {{USERS}}
+
+## Requisitos
+
+- [uv](https://docs.astral.sh/uv/) (gestiona Python {{PIN_PYTHON}} y las dependencias).
+- Git.
+
+## Instalación
+
+```bash
+uv sync
+```
+
+Crea `.venv/` y respeta `uv.lock`. Las dependencias de desarrollo tienen techo de versión en
+`pyproject.toml`; `uv lock --upgrade` las actualiza dentro de ese rango.
+
+## Uso
+
+```bash
+uv run {{NAME}} --help
+uv run python -m {{PY_PACKAGE}} --version
+```
+
+## Pruebas y calidad
+
+```bash
+uv run ruff check .          # lint
+uv run ruff format --check . # formato
+uv run pytest                # pruebas
+```
+
+La CI (`.github/workflows/ci.yml`) ejecuta lo mismo en cada push y pull request.
+
+## Estructura
+
+```text
+src/{{PY_PACKAGE}}/   código del paquete
+tests/          pruebas (pytest)
+```
+
+## Licencia
+
+{{LICENSE_README}}

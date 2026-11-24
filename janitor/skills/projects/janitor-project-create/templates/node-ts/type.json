@@ -1,0 +1,31 @@
+{
+  "title": "Servicio o CLI de Node.js con TypeScript",
+  "kinds": ["cli", "service"],
+  "package_managers": ["npm", "pnpm"],
+  "tools": ["node", "{{PM}}"],
+  "install": {
+    "argv": ["{{PM}}", "install"],
+    "purpose": "Descarga las dependencias de desarrollo fijadas (registro npm) y escribe {{LOCKFILE}}.",
+    "creates": ["{{LOCKFILE}}", "node_modules/"]
+  },
+  "deps_present": ["{{LOCKFILE}}", "node_modules"],
+  "verify": [
+    {"id": "lint", "argv": ["{{PM}}", "run", "lint"], "needs": ["node", "{{PM}}"]},
+    {"id": "test", "argv": ["{{PM}}", "test"], "needs": ["node", "{{PM}}"]}
+  ],
+  "purposes": {
+    "package.json": "Metadatos, scripts y herramientas de desarrollo con versión exacta.",
+    ".npmrc": "save-exact y engine-strict: toda dependencia nueva queda fijada.",
+    "tsconfig.json": "TypeScript estricto, módulos nodenext, salida en dist/.",
+    "biome.json": "Lint y formato (Biome), respetando .gitignore.",
+    ".gitignore": "Excluye secretos, .env, node_modules y dist.",
+    "README.md": "Qué resuelve, para quién, y cómo instalar, ejecutar y probar.",
+    "AGENTS.md": "Instrucciones de build y pruebas para agentes de código.",
+    ".github/workflows/ci.yml": "CI: instalación con lockfile, lint, tipos y pruebas en cada push y PR.",
+    "src/cli.ts": "Lógica de la CLI, exportada para probarla sin procesos.",
+    "src/main.ts": "Ejecutable: lee argv y devuelve el código de salida.",
+    "src/server.ts": "Servidor HTTP (node:http, sin framework) con /health.",
+    "test/cli.test.ts": "Prueba que pasa desde el primer commit (node:test).",
+    "test/server.test.ts": "Prueba que levanta el servidor en un puerto libre y consulta /health (node:test)."
+  }
+}

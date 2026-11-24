@@ -1,6 +1,6 @@
 """Compatibility alias for ``janitor.version``.
 
-Core touchpoints (``cli.py``, ``hermes_cli/banner.py``,
+The banner touchpoints (``hermes_cli/banner.py``, ``hermes_cli/cli_render.py``,
 ``hermes_cli/_startup_fast.py``) import ``janitor_version`` by this name.
 """
 

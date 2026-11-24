@@ -1,0 +1,11 @@
+# Plantilla de agente especialista (directiva #19). `janitor plantillas crear investigador`
+# crea un perfil con esta configuración, las skills del catálogo marcadas con
+# `investigador` y SOUL.md = persona principal + la sección del rol (SOUL.md de aquí).
+name: investigador
+display_name: Investigador
+description: Investigación con fuentes verificables.
+inherit_soul: true
+config:
+  display: {personality: janitor, skin: sentry-janitor, language: es}
+  plugins: {enabled: [janitor]}
+skills_from_catalog: true

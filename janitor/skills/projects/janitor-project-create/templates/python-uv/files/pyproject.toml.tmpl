@@ -1,0 +1,37 @@
+[project]
+name = "{{NAME}}"
+version = "0.1.0"
+description = {{DESCRIPTION_TOML}}
+readme = "README.md"
+requires-python = "{{PIN_REQUIRES_PYTHON}}"
+{{PY_LICENSE_LINES}}dependencies = []
+
+[project.scripts]
+{{NAME}} = "{{PY_PACKAGE}}.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest{{PIN_PYTEST}}",
+    "ruff{{PIN_RUFF}}",
+]
+
+[build-system]
+requires = ["uv_build{{PIN_UV_BUILD}}"]
+build-backend = "uv_build"
+
+[tool.uv]
+# Cuarentena: no resuelve versiones publicadas hace menos de 14 días.
+exclude-newer = "14 days"
+
+[tool.ruff]
+line-length = 100
+target-version = "{{PIN_RUFF_TARGET}}"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+# El formateador controla el largo de línea; E501 solo duplicaría avisos.
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

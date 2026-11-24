@@ -17,21 +17,27 @@ from any pre-existing Hermes installation at ~/.hermes/.
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import sys
 
-from janitor.home import ASSETS_ROOT, REPO_ROOT, SKILLS_ROOT, janitor_home
+from pathlib import Path
+
+from janitor.home import ASSETS_ROOT, REPO_ROOT, SKILLS_ROOT, janitor_home, resolve_hermes_home
 
 # AISLAMIENTO CRÍTICO: Must be set BEFORE any hermes_ modules are imported.
 # hermes_constants.get_hermes_home() reads this env var at import time.
-os.environ["HERMES_HOME"] = str(janitor_home())
+# A HERMES_HOME that already names a ~/.janitor profile is kept; anything else
+# (unset, ~/.hermes, ...) becomes ~/.janitor. ``--profile`` / ``active_profile``
+# are resolved by upstream when hermes_cli.main is imported below.
+os.environ["HERMES_HOME"] = str(resolve_hermes_home(os.environ.get("HERMES_HOME")))
 # Referenced as ${JANITOR_SKILLS_ROOT} in skills.external_dirs so Janitor's
 # skills resolve from whichever install tree is running.
 os.environ["JANITOR_SKILLS_ROOT"] = str(SKILLS_ROOT)
 
 
 def _load_janitor_env() -> None:
-    env_path = janitor_home() / ".env"
+    env_path = Path(os.environ["HERMES_HOME"]) / ".env"
     try:
         with open(env_path, "r", encoding="utf-8") as f:
             for line in f:
@@ -51,17 +57,19 @@ def _load_janitor_env() -> None:
         pass
 
 
-_load_janitor_env()
-
 # COMMAND HIJACKING: Intercept `janitor update` before Hermes CLI parses arguments.
 # We delegate to a minimal bootstrap helper so this path stays importable
 # even when the venv is partially broken (e.g. new Hermes imports after a pull).
+# Only this path loads .env by hand: everywhere else Hermes loads the .env of
+# the home it resolved, and an early load of the root .env would leak its
+# secrets into a ``--profile`` process (the desktop's per-profile backends).
 if len(sys.argv) > 1 and sys.argv[1] == "update":
+    _load_janitor_env()
     try:
         from janitor.update_bootstrap import run_update
         sys.exit(run_update())
     except Exception as e:
-        print(f"⚠ Bootstrap update failed: {e}", file=sys.stderr)
+        print(f"✗ La actualización no pudo arrancar: {e}\n  Vuelve a ejecutar `janitor update`.", file=sys.stderr)
         sys.exit(1)
 
 import argparse
@@ -79,7 +87,48 @@ argparse.ArgumentParser.__init__ = _janitor_argparser_init
 
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
-import cli
+
+# Seed a fresh ~/.janitor before Hermes loads its config: that first load
+# writes upstream's default SOUL.md. Never blocks startup.
+try:
+    from janitor.seed import ensure_home
+
+    ensure_home(janitor_home())
+except Exception as _seed_exc:  # noqa: BLE001
+    print(f"⚠ Janitor home seeding failed: {_seed_exc}", file=sys.stderr)
+
+# Backend messages (TUI gateway, desktop backend, messaging gateways) read
+# Janitor's catalogs: upstream's with janitor/locales/ merged in, exported as
+# HERMES_BUNDLED_LOCALES so every child process inherits them. On failure the
+# engine keeps upstream's catalogs. The Janitor plugin repeats this (a no-op
+# here) for processes started without the launcher.
+try:
+    from janitor.locales import ensure_exported as _export_locales
+
+    _export_locales()
+except Exception as _locale_exc:  # noqa: BLE001
+    print(f"⚠ Janitor message catalogs unavailable: {_locale_exc}", file=sys.stderr)
+
+# What a gateway hand-off replays (``_hand_off_gateway``): the argv and
+# environment as they are before hermes_cli.main strips ``-p`` and loads .env,
+# so the canonical process resolves the same home the launcher did.
+_LAUNCH_ARGV = list(sys.argv)
+_LAUNCH_ENV = dict(os.environ)
+
+# Upstream resolves ``--profile`` / ``active_profile`` (and loads that home's
+# .env) when hermes_cli.main is imported; ``cli`` reads the home at import, so
+# it must come second or a profile process starts on the root profile's state.
+import hermes_cli.main  # noqa: E402,F401
+
+# The home is final now (root or the ``--profile`` home): bring its skill
+# selection up to the catalog before ``cli`` loads the config. A no-op rewrite
+# is skipped, a config without ``janitor.skills`` is untouched, and a broken
+# catalog/config only warns.
+from janitor.catalog import apply_quietly  # noqa: E402
+
+apply_quietly(Path(os.environ["HERMES_HOME"]))
+
+import cli  # noqa: E402
 
 
 def _ensure_janitor_skin_file():
@@ -135,91 +184,155 @@ class JanitorCLI(cli.HermesCLI):
         return "sentry-janitor"
 
 
-def _owasp_honcho_fail_safe():
+# Commands that run while the Honcho fail-safe is tripped: the way out of it
+# (``memory off``, ``config set``, ``setup``) and diagnostics. They never open
+# a session, so no conversation can reach a half-configured Honcho.
+_FAILSAFE_EXEMPT_COMMANDS = frozenset({
+    "memory", "config", "setup", "doctor", "update", "honcho", "status", "logs",
+    "dump", "version", "profile", "uninstall", "help",
+})
+_FAILSAFE_EXEMPT_FLAGS = frozenset({"-h", "--help", "-V", "--version"})
+
+
+def _honcho_json_has_credential(path: Path) -> bool:
+    """Fallback when the Honcho plugin cannot be imported: ``apiKey`` / ``baseUrl`` / an OAuth
+    grant at the root or in any host block of ``path``."""
+    import json
+
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(raw, dict):
+        return False
+    endpoint = raw.get("endpoint") if isinstance(raw.get("endpoint"), dict) else {}
+    hosts = raw.get("hosts") if isinstance(raw.get("hosts"), dict) else {}
+    blocks = [raw, endpoint, *(b for b in hosts.values() if isinstance(b, dict))]
+    return any(b.get(k) for b in blocks for k in ("apiKey", "baseUrl", "base_url", "oauth"))
+
+
+def _honcho_credential_configured() -> bool:
+    """Does Honcho have something to connect with: a key or URL in the environment, or an API
+    key / OAuth grant / base URL in the Honcho config upstream's client resolves
+    (``$HERMES_HOME/honcho.json`` > default profile > ``~/.honcho/config.json``)?"""
+    if any(os.environ.get(n, "").strip() for n in ("HONCHO_API_KEY", "HONCHO_BASE_URL", "HONCHO_URL")):
+        return True
+    try:
+        from plugins.memory.honcho.client import HonchoClientConfig
+
+        cfg = HonchoClientConfig.from_global_config()
+    except Exception:  # noqa: BLE001 — plugin missing or broken: read the profile's file
+        return _honcho_json_has_credential(Path(os.environ["HERMES_HOME"]) / "honcho.json")
+    host_block = ((cfg.raw or {}).get("hosts") or {}).get(cfg.host) or {}
+    return bool(cfg.api_key or cfg.base_url or (isinstance(host_block, dict) and host_block.get("oauth")))
+
+
+def _honcho_failsafe_refusal(cfg: dict) -> str | None:
+    """The Spanish refusal when ``cfg`` selects Honcho with nothing to connect with, else None."""
+    memory = cfg.get("memory") if isinstance(cfg.get("memory"), dict) else {}
+    if memory.get("provider") != "honcho" or _honcho_credential_configured():
+        return None
+    from hermes_constants import display_hermes_home
+
+    home = Path(os.environ["HERMES_HOME"])
+    janitor = f"janitor -p {home.name}" if home.parent.name == "profiles" else "janitor"
+    return (
+        "FATAL: memory.provider es 'honcho' pero Honcho no tiene credencial: ni HONCHO_API_KEY ni "
+        "HONCHO_BASE_URL, ni apiKey, baseUrl o acceso OAuth en honcho.json.\n"
+        "Janitor no arranca con una integración de Honcho incompleta (fail-safe OWASP).\n"
+        f"Para volver a la memoria integrada:  {janitor} memory off\n"
+        f"Para usar Honcho cloud:  {janitor} config set HONCHO_API_KEY <tu-clave>  "
+        f"(se guarda en {display_hermes_home()}/.env)\n"
+        "Para Honcho local, vuelve a la memoria integrada y pide a Janitor que instale Honcho "
+        "(skill janitor-honcho)."
+    )
+
+
+def _failsafe_applies(argv: list[str]) -> bool:
+    """False for the recovery and diagnostic commands, which must run while it is tripped."""
+    words = _command_words(argv)
+    if words:
+        return words[0] not in _FAILSAFE_EXEMPT_COMMANDS
+    return not any(token in _FAILSAFE_EXEMPT_FLAGS for token in argv[1:])
+
+
+def _owasp_honcho_fail_safe(argv: list[str] | None = None):
+    """OWASP fail-safe: never open a session on a Honcho integration without credentials.
+
+    Exits 1 when ``memory.provider`` is ``honcho`` and neither the environment nor the
+    resolved Honcho config has an API key, an OAuth grant or a base URL, unless the command
+    is one of ``_FAILSAFE_EXEMPT_COMMANDS`` (``janitor memory off`` is the way back).
     """
-    OWASP fail-safe: verify Honcho memory integration has required credentials.
-
-    Exit with security error (code 1) if:
-    - memory.provider is 'honcho' AND
-    - neither HONCHO_API_KEY nor HONCHO_BASE_URL is set
-
-    This prevents the Janitor from running with an incomplete Honcho integration
-    that could leak session data to an unconfigured external service.
-    """
-
-    honcho_key = os.environ.get("HONCHO_API_KEY", "").strip()
-    honcho_base = os.environ.get("HONCHO_BASE_URL", "").strip()
-
-    if honcho_key or honcho_base:
+    if not _failsafe_applies(sys.argv if argv is None else argv):
         return
-
     from cli import load_cli_config
 
     try:
         cfg = load_cli_config()
     except Exception:
         return
+    refusal = _honcho_failsafe_refusal(cfg if isinstance(cfg, dict) else {})
+    if refusal:
+        print(refusal, file=sys.stderr)
+        sys.exit(1)
 
-    memory_provider = cfg.get("memory", {}).get("provider", "")
-    if memory_provider != "honcho":
+
+_PROFILE_FLAGS = ("-p", "--profile")
+
+
+def _command_words(argv: list[str]) -> list[str]:
+    """Positional words of a launcher argv (``argv[1:]``): flags and the ``-p`` value dropped."""
+    words: list[str] = []
+    skip = False
+    for token in argv[1:]:
+        if skip:
+            skip = False
+        elif token in _PROFILE_FLAGS:
+            skip = True
+        elif not token.startswith("-"):
+            words.append(token)
+    return words
+
+
+def _gateway_handoff_argv(argv: list[str], python: str) -> list[str] | None:
+    """``python -m hermes_cli.main <args>`` when ``argv`` makes this process a gateway runtime.
+
+    A gateway started as ``janitor gateway run`` (console script) or ``python
+    -m janitor.cli gateway run`` keeps that command line for life, and
+    upstream's discovery (``gateway.status.looks_like_gateway_command_line``,
+    behind ``find_gateway_pids``, PID-file validation and the update fleet
+    restart) only recognises Hermes entrypoints, so that gateway is invisible
+    to status, stop and every update. The decision is upstream's own runtime
+    matcher applied to the canonical command line.
+    """
+    from gateway.status import looks_like_gateway_runtime_command_line
+
+    words = _command_words(argv)
+    if not words or words[0] != "gateway":
+        return None
+    canonical = [python, "-m", "hermes_cli.main", *argv[1:]]
+    return canonical if looks_like_gateway_runtime_command_line(shlex.join(canonical)) else None
+
+
+def _hand_off_gateway() -> None:
+    """Replace this launcher with the canonical gateway process; return when it is not one.
+
+    Everything the launcher gives a gateway is done by now (seed, migration,
+    catalogs, skill selection, fail-safe) or travels with it: the environment
+    (``HERMES_HOME``, ``JANITOR_SKILLS_ROOT``, ``HERMES_BUNDLED_LOCALES``) and
+    the Janitor plugin (catalogs, tips). The in-process patches below do not
+    matter to a gateway: ``/update`` runs a separate updater process.
+    """
+    argv = _gateway_handoff_argv(_LAUNCH_ARGV, sys.executable)
+    if argv is None:
         return
+    sys.stdout.flush()
+    sys.stderr.flush()
+    if os.name == "nt":  # no exec on Windows: the child is the gateway, the launcher waits
+        import subprocess
 
-    from hermes_constants import display_hermes_home
-
-    home_display = display_hermes_home()
-
-    print(
-        "FATAL: Honcho memory provider configured but HONCHO_API_KEY / HONCHO_BASE_URL not set.",
-        file=sys.stderr,
-    )
-    print(
-        "Janitor will not start with partial Honcho credentials (OWASP fail-safe).",
-        file=sys.stderr,
-    )
-    print(
-        f"Set HONCHO_API_KEY in {home_display}/.env or run 'janitor honcho setup'.",
-        file=sys.stderr,
-    )
-    sys.exit(1)
-
-
-def _owasp_honcho_fail_safe_for_test(hermes_home: str):
-    """
-    OWASP fail-safe variant that accepts an explicit hermes_home path.
-    Used only by tests to validate the check works with any HERMES_HOME.
-    """
-    honcho_key = os.environ.get("HONCHO_API_KEY", "").strip()
-    honcho_base = os.environ.get("HONCHO_BASE_URL", "").strip()
-
-    if honcho_key or honcho_base:
-        return True, ""
-
-    from pathlib import Path
-
-    config_path = Path(hermes_home) / "config.yaml"
-    if not config_path.exists():
-        return True, ""
-
-    import yaml
-
-    with open(config_path, encoding="utf-8") as f:
-        cfg = yaml.safe_load(f) or {}
-
-    memory_provider = cfg.get("memory", {}).get("provider", "")
-    if memory_provider != "honcho":
-        return True, ""
-
-    from hermes_constants import display_hermes_home
-
-    os.environ["HERMES_HOME"] = hermes_home
-    home_display = display_hermes_home()
-
-    msg = (
-        f"FATAL: Honcho memory provider configured but HONCHO_API_KEY / HONCHO_BASE_URL not set.\n"
-        f"Janitor will not start with partial Honcho credentials (OWASP fail-safe).\n"
-        f"Set HONCHO_API_KEY in {home_display}/.env or run 'janitor honcho setup'."
-    )
-    return False, msg
+        sys.exit(subprocess.call(argv, env=_LAUNCH_ENV))
+    os.execve(sys.executable, argv, _LAUNCH_ENV)
 
 
 def _janitor_cmd_update(args):
@@ -242,9 +355,8 @@ def main():
     We do NOT run HermesCLI here directly — we configure the environment
     first so that when HermesCLI initializes, it picks up the Janitor identity.
     """
-    # Must run before Hermes starts: its bundled-skills sync drops manifest
-    # entries for skills that left the bundled tree, which is the evidence the
-    # layout migration uses to tell pristine copies from user edits.
+    # Before Hermes starts: a future layout step may need the home as the
+    # previous release left it (directive #10).
     from janitor.migrations import auto_migrate
 
     auto_migrate()
@@ -259,6 +371,8 @@ def main():
         pass
 
     _owasp_honcho_fail_safe()
+
+    _hand_off_gateway()
 
     # Monkey-patch tips to the Janitor Spanish corpus without touching core Hermes.
     import hermes_cli.tips as _hermes_tips_mod

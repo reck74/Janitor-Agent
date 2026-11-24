@@ -55,9 +55,29 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
-          node-version: '22'
+          node-version: '26'
+          cache: npm
+      - name: Install npm 12
+        run: npm install --global npm@12.2.2
+      - name: Install apps/desktop dependencies (no install scripts)
+        # Only for esbuild: `build.mjs --check` transpiles every patched file
+        # with it. Without it the .tsx files are skipped (Node's type
+        # stripping covers .ts only). No Electron download is needed.
+        run: npm ci --workspace apps/desktop --ignore-scripts --no-audit --no-fund
       - name: apps/desktop-janitor overlay tests
         run: node --test apps/desktop-janitor/scripts/build.test.mjs
+      - name: Brand patches resolve against apps/desktop (drift detector)
+        # Fails with the patch id when an upstream sync moves a patch anchor,
+        # and when a patched file no longer transpiles.
+        shell: bash
+        run: |
+          node apps/desktop-janitor/scripts/build.mjs --check | tee "$RUNNER_TEMP/brand-check.log"
+          # Files that are not TypeScript (a .json registry, a plugin .js) are
+          # reported as skipped by design; only a missing transpiler is an error.
+          if grep '^skip transpile' "$RUNNER_TEMP/brand-check.log" | grep -qv 'not TypeScript'; then
+            echo "::error::build.mjs --check skipped transpilation (esbuild missing)"
+            exit 1
+          fi
 
   web-tests:
     name: web-tests
@@ -88,14 +108,15 @@ jobs:
     # upstream tag v2026.8.13's install-e2e.yml — Janitor does not publish
     # release tags, so the upstream "install from N prior releases" matrix is
     # dropped. We instead point at the current branch, assert janitor --version
-    # prints THE JANITOR banner (per AGENTS.md directive #12), run the minimal
-    # janitor-install.sh against an isolated HOME scratch dir, and verify the
-    # base install does NOT bring up any opt-in service containers (Honcho
-    # local, Firecrawl, Browser, Computer Use, voice/wake) — see AGENTS.md
-    # directive #9 (OPTIONAL SKILLS ARE EXPLICIT) and directive #5 (janitor-
-    # prefix for every container / network / volume / service Janitor owns).
-    # Any Docker resource the installer creates here must carry the janitor-
-    # prefix and must appear in a snapshot diff to fail the job.
+    # prints THE JANITOR banner (per AGENTS.md directive #12), seed a Janitor
+    # home with `python -m janitor.seed` (what scripts/install.sh's config
+    # stage runs for the desktop app) against an isolated HOME scratch dir,
+    # and verify the base home does NOT bring up any opt-in service containers
+    # (Honcho local, Firecrawl, Browser, Computer Use, voice/wake) — see
+    # AGENTS.md directive #9 (OPTIONAL SKILLS ARE EXPLICIT) and directive #5
+    # (janitor- prefix for every container / network / volume / service
+    # Janitor owns). Any Docker resource the seed creates here must carry the
+    # janitor- prefix and must appear in a snapshot diff to fail the job.
     name: Janitor minimal-install smoke
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -295,49 +316,29 @@ jobs:
           capture_dir_listing "$HOME/.cache/ms-playwright" "$ART/fs-ms-playwright.before.txt"
           capture_dir_listing "$HOME/.cua-driver"          "$ART/fs-cua-driver.before.txt"
 
-      - name: Run minimal Janitor installer non-interactively
-        # HOME / JANITOR_HOME / HERMES_HOME are all redirected to an isolated
-        # scratch dir under ${RUNNER_TEMP}. The installer's RC-file injection
-        # loop (lines 243-255) writes to ${HOME}/.bashrc / ${HOME}/.zshrc —
-        # with HOME redirected, those writes land in the scratch dir and never
-        # touch the runner's real $HOME. setup_mode = "1" (Honcho cloud)
-        # ensures scripts/setup-honcho.sh is NEVER invoked; that script
-        # would otherwise spin up janitor-honcho-{api,deriver,database,redis}
-        # Docker containers, which is a hard opt-in violation.
-        #
-        # Every prompt is fed deterministically via stdin in the order the
-        # installer reads them (scripts/janitor-install.sh lines 70 / 82 /
-        # 102 / 115 / 122):
-        #   line 1: OPENAI_API_KEY    (required, non-empty)
-        #   line 2: MINIMAX_API_KEY   (required, retries until non-empty)
-        #   line 3: setup_mode        (1 = Honcho cloud, never invokes Docker)
-        #   line 4: HONCHO_API_KEY    (cloud placeholder; consumed only in mode=1)
-        #   line 5: OPENAI_BASE_URL   (empty)
-        # The HONCHO_API_KEY env var was REMOVED in round 2: the installer
-        # reads the Honcho key ONLY from stdin (line 115), not from env —
-        # setting it in env: was a no-op.
-        # Any failure from the installer propagates to CI (no `|| true`).
+      - name: Seed a minimal Janitor home
+        # HOME / HERMES_HOME are redirected to an isolated scratch dir under
+        # ${RUNNER_TEMP}, so nothing lands in the runner's real $HOME. The
+        # seed needs no provider key and never deploys an optional service
+        # (directives #8 and #9). Any failure propagates (no `|| true`).
         env:
           HOME: ${{ runner.temp }}/janitor-e2e-home
-          JANITOR_HOME: ${{ runner.temp }}/janitor-e2e
           HERMES_HOME: ${{ runner.temp }}/janitor-e2e
         run: |
           set -euo pipefail
-          mkdir -p "$HOME" "$JANITOR_HOME"
-          printf 'ci-openai-key\nci-minimax-key\n1\nci-placeholder-honcho-key\n\n' \
-            | bash scripts/janitor-install.sh
+          mkdir -p "$HOME"
+          uv run python -m janitor.seed --home "${{ runner.temp }}/janitor-e2e"
 
       - name: Assert minimal base artifacts were deployed
         run: |
           set -euo pipefail
           JH="${{ runner.temp }}/janitor-e2e"
-          test -f "$JH/.env"
           test -f "$JH/config.yaml"
           test -f "$JH/SOUL.md"
           test -f "$JH/skins/sentry-janitor.yaml"
-          test -d "$JH/skills"
-          test -d "$JH/sessions"
-          test -d "$JH/logs"
+          test -f "$JH/.no-bundled-skills"
+          test -f "$JH/.layout_version"
+          test ! -e "$JH/.env"
           echo "Minimal install artifacts: OK"
 
       - name: Snapshot state (after install) and assert no new Docker resource and no optional-capability state change
@@ -479,7 +480,7 @@ jobs:
           JH="${{ runner.temp }}/janitor-e2e"
           fail=0
           if [ -s "$ART/new-containers.txt" ] || [ -s "$ART/new-volumes.txt" ] || [ -s "$ART/new-networks.txt" ]; then
-            echo "::error::New janitor-* Docker resources appeared after the minimal install:"
+            echo "::error::New janitor-* Docker resources appeared after seeding the minimal home:"
             echo "  new_containers: $(tr '\n' ' ' < "$ART/new-containers.txt" 2>/dev/null)none"
             echo "  new_volumes:    $(tr '\n' ' ' < "$ART/new-volumes.txt" 2>/dev/null)none"
             echo "  new_networks:   $(tr '\n' ' ' < "$ART/new-networks.txt" 2>/dev/null)none"

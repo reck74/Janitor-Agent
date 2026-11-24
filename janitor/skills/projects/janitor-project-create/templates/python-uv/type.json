@@ -1,0 +1,29 @@
+{
+  "title": "Paquete y CLI de Python gestionado con uv",
+  "kinds": ["cli"],
+  "tools": ["uv"],
+  "install": {
+    "argv": ["uv", "sync"],
+    "purpose": "Resuelve las dependencias de desarrollo, escribe uv.lock y crea .venv (descarga de PyPI y, si falta, del intérprete).",
+    "creates": ["uv.lock", ".venv/"]
+  },
+  "deps_present": ["uv.lock", ".venv"],
+  "verify": [
+    {"id": "lint", "argv": ["uv", "run", "--offline", "--frozen", "ruff", "check", "."], "needs": ["uv"]},
+    {"id": "format", "argv": ["uv", "run", "--offline", "--frozen", "ruff", "format", "--check", "."], "needs": ["uv"]},
+    {"id": "test", "argv": ["uv", "run", "--offline", "--frozen", "pytest", "-q"], "needs": ["uv"]}
+  ],
+  "purposes": {
+    "pyproject.toml": "Metadatos, dependencias de desarrollo con techo de versión, ruff y pytest.",
+    ".python-version": "Versión de Python que uv usa en local y en CI.",
+    ".gitignore": "Excluye secretos, .env, entornos virtuales y artefactos de build.",
+    "README.md": "Qué resuelve, para quién, y cómo instalar, ejecutar y probar.",
+    "AGENTS.md": "Instrucciones de build y pruebas para agentes de código.",
+    ".github/workflows/ci.yml": "CI: uv sync --locked, ruff y pytest en cada push y PR.",
+    "src/{{PY_PACKAGE}}/__init__.py": "Paquete importable (layout src/).",
+    "src/{{PY_PACKAGE}}/__main__.py": "Permite ejecutar python -m {{PY_PACKAGE}}.",
+    "src/{{PY_PACKAGE}}/cli.py": "Punto de entrada de la CLI (argparse, sin dependencias).",
+    "src/{{PY_PACKAGE}}/py.typed": "Marca el paquete como tipado (PEP 561).",
+    "tests/test_cli.py": "Prueba que pasa desde el primer commit."
+  }
+}

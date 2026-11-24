@@ -33,15 +33,9 @@ fork_paths:
   - apps/desktop-janitor/**
   - docs/janitor/**
   - scripts/*janitor*
-  - scripts/setup-honcho.sh
   - scripts/verify-firecrawl-pgcron.sh
-  - scripts/test_opencode_orchestrator.py
-  # Pre-1.0 import aliases kept for old console scripts.
-  - janitor_cli.py
-  - janitor_update_core.py
-  - janitor_update_bootstrap.py
+  # Root name the banner touchpoints import janitor.version by.
   - janitor_version.py
-  - janitor_ext/**
   - janitor-tui.png
   # Fork automation.
   - .github/workflows/janitor-ci.yml
@@ -61,7 +55,7 @@ touchpoints:
     files: [pyproject.toml, uv.lock]
     why: >-
       `janitor` console script, `hermes_agent.plugins` entry point for the
-      Janitor plugin, `janitor` package + data, pre-1.0 alias py-modules.
+      Janitor plugin, `janitor` package + data.
     verify: test:packaging
     merge: reapply
 
@@ -86,6 +80,64 @@ touchpoints:
       `POST /api/mcp/servers/{name}/discover` (tools with inputSchema) and
       `GET /api/mcp/servers/{name}/logs` (per-server stderr slice).
     verify: test:mcp-dashboard-endpoints
+    merge: reapply
+    upstream_candidate: true
+
+  - id: backend-user-copy
+    files: [tui_gateway/user_messages.py]
+    why: >-
+      The session/turn error copy the TUI, desktop and dashboard print
+      (`turn_error_text`, `agent_init_failed_message`) is looked up under
+      `tui_gateway.*` in the i18n catalog before falling back to the English
+      text, and the missing-credentials detail is matched to a catalog
+      sentence. Upstream catalogs lack those keys, so upstream output is
+      unchanged; Janitor's overlay (janitor/locales/es.yaml, merged and
+      exported as HERMES_BUNDLED_LOCALES by the launcher) supplies Spanish
+      "Janitor" copy. One `# JANITOR:` block plus the call sites using it.
+    verify: test:backend-user-copy
+    merge: reapply
+    upstream_candidate: true
+
+  - id: update-single-flight
+    files:
+      - gateway/slash_commands.py
+    why: >-
+      The messaging /update handler rewrote .update_pending.json and removed
+      .update_exit_code before spawning, so a second /update (or one sent
+      while the app or a terminal held the update lock) made the first
+      update's watcher announce a failure with the real update still running.
+      `_update_already_running` answers "already running" before any marker
+      is touched: the shared lock is held, or a pending/claimed marker
+      younger than the watcher's 30-minute ceiling still exists (its watcher
+      has not delivered the result yet). The defect is
+      upstream's. Every changed line carries `# JANITOR:`.
+    verify: test:update-single-flight
+    merge: reapply
+    upstream_candidate: true
+
+  - id: runtime-copy
+    files:
+      - agent/i18n.py
+      - gateway/run_turn.py
+      - gateway/run_notifications.py
+      - hermes_cli/commands.py
+      - hermes_cli/commands_platforms.py
+      - hermes_cli/web_server_messaging.py
+      - hermes_cli/_startup_fast.py
+    why: >-
+      English literals the engine sends to a user with no key in upstream's
+      en.yaml ask the i18n catalog first: `agent.i18n.t_default(key,
+      english)` returns the catalog text, else the inline English, so
+      upstream catalogs give upstream output byte for byte. Call sites: the
+      one-time "no home channel" notice (run_turn), the /update watcher and
+      post-update/restart notices (run_notifications), command descriptions
+      in gateway /help, /commands and the Telegram command menu
+      (`commands.localized_description`), and the Telegram QR pairing errors
+      (web_server_messaging; expired/claimed stay English because the app
+      matches those words in the 410 body), and the `--version` lines after the
+      banner (_startup_fast, also in touchpoint banner). Keys live under `runtime_copy.*`
+      in janitor/locales/es.yaml. Every changed line carries `# JANITOR:`.
+    verify: test:runtime-copy
     merge: reapply
     upstream_candidate: true
 
@@ -117,10 +169,71 @@ touchpoints:
     upstream_candidate: true
 
   - id: installers
-    files: [scripts/bootstrap.sh, scripts/install.ps1]
-    why: Install from the Janitor fork into ~/.janitor and check Docker/Honcho (directive #8).
+    files: [scripts/install.ps1]
+    why: >-
+      The only fork hunk left after bootstrap.sh was retired: a second, older
+      autostash-restore block after upstream's in Install-Repository. Upstream's
+      block clears $autostashRef first, so this one never runs (sync residue,
+      kept until a task with install.ps1 in scope drops it).
     verify: ci:janitor-ci
     merge: ours
+
+  - id: install-sh
+    files: [scripts/install.sh]
+    why: >-
+      The desktop app's installer installs the fork: clones reck74/Janitor-Agent
+      into ~/.janitor by default, links `janitor` (never the hermes /
+      hermes-agent / hermes-acp launchers) via `python -m janitor.seed
+      --link-command`, defaults to --no-skills, and runs `python -m
+      janitor.seed --home` in the config stage before any skills sync. A
+      home that already holds the legacy terminal install (`janitor-core/`)
+      is refused in every --stage, in --ensure and in the monolithic run before anything
+      is written, with a Spanish message (and the {ok:false} JSON frame's
+      reason) telling the user to uninstall the old one first: the app is a clean
+      start and adopts nothing (plan decision 2.9, F1-22). cua-driver (Computer
+      Use) is opt-in (`--with-computer-use`): it writes outside the home and seeds
+      a telemetry id (F1-26). One fork block after `print_success` redefines the
+      banner, the final summary and the log helpers so what the app shows reads in
+      Spanish with `janitor` commands (a message the table does not list prints
+      upstream's English); a failed stage's JSON reason is Spanish. Every changed
+      hunk carries a `# JANITOR:` comment.
+    verify: test:install-sh
+    merge: reapply
+
+  - id: desktop-update-posix
+    files: [scripts/desktop-update/posix.sh, scripts/desktop-update/repro.sh]
+    why: >-
+      The desktop app's POSIX update hand-off runs `venv/bin/janitor update`
+      (or `python -m janitor.cli update` on the bricked-alias fallback)
+      instead of `hermes update` whenever the checkout's venv has the
+      `janitor` script, so app-driven updates go through
+      janitor/update_core.py (directive #13). One `# JANITOR:` block right
+      after the update invoke is chosen. When the running binary is not the
+      checkout's rebuilt one and `$APPIMAGE` (AppImage runtime, inherited
+      from the app's env) is an absolute path to an executable regular file,
+      the gate relaunches that AppImage instead of ending in `skew`, with a
+      neutral note: the app decides app/engine compatibility at boot
+      (design actualizacion-diseno.md 3.3). Without `$APPIMAGE` (deb/rpm)
+      `skew` stays. Every Linux-visible text — result messages (main.ts boot
+      dialog `detail`, ui.html shim, notify-send/zenity/kdialog), stage names
+      and the notification title — is Spanish, plus a message of its own for
+      exit 2 (another update holds the lock); macOS-only bundle-swap copy and
+      log lines stay upstream's. repro.sh's launch matrix matches the Spanish
+      messages. Each line carries `# JANITOR:`.
+    verify: test:desktop-update-posix
+    merge: reapply
+
+  - id: desktop-update-ui
+    files: [scripts/desktop-update/ui.html]
+    why: >-
+      The shim window shown while the app updates (served by serve-ui.py) is
+      in Spanish and names Janitor: `lang`, title, default heading/line,
+      elapsed clock, the done/manual/error/disconnected states. `done` shows
+      the orchestrator's note when there is one (AppImage relaunch) and
+      `error` shows the orchestrator's reason instead of a fixed hint. Each
+      changed line carries a `JANITOR` comment (HTML or JS).
+    verify: test:desktop-update-ui
+    merge: reapply
 
   - id: fork-docs
     files: [AGENTS.md, README.md, CHANGELOG.md, MERGE_GUIDE.md, .env.example, .gitignore]
