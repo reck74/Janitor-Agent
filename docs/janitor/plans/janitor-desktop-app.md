@@ -5,10 +5,62 @@
 > terminar una tarea. Las reglas vigentes están en `AGENTS.md` (directivas 1-20).
 > Decisiones acordadas con el dueño del proyecto el 2026-11-22; no se reabren sin él.
 
-Índice: [1 Objetivo](#1-objetivo) · [2 Decisiones de producto](#2-decisiones-de-producto) ·
+Índice: [0 Estado y cómo retomar](#0-estado-al-cierre-del-2026-11-23-y-cómo-retomar) · [1 Objetivo](#1-objetivo) · [2 Decisiones de producto](#2-decisiones-de-producto) ·
 [3 Hechos verificados](#3-hechos-verificados-en-el-código) · [4 Diseño técnico](#4-diseño-técnico) ·
 [5 Tablero](#5-tablero-de-tareas) · [6 Protocolo entre agentes](#6-protocolo-de-trabajo-entre-agentes) ·
 [7 Riesgos](#7-riesgos-y-puntos-sin-verificar) · [8 Bitácora](#8-bitácora)
+
+## 0. Estado al cierre del 2026-11-23 y cómo retomar
+
+**Dónde está todo.** Rama `janitor-app/fase-1`, publicada en `origin` y con PR abierto
+contra `main`: [reck74/Janitor-Agent#91](https://github.com/reck74/Janitor-Agent/pull/91),
+listo para revisión y **sin fusionar**. `Janitor CI` pasó en todos los jobs (Python,
+instalación mínima, TUI, web, capa de construcción, macOS y Windows) antes de abrir el PR.
+
+**Qué está hecho.** Fases 1 a 4 y el retiro de lo antiguo (F5-02), en código y pruebas. La
+instalación real de punta a punta funciona desde un home vacío con la app compilada en
+local. El detalle por tarea está en el [tablero](#5-tablero-de-tareas); la evidencia, en la
+[bitácora](#8-bitácora).
+
+**Qué sigue, en orden.**
+
+| # | Paso | Depende de |
+|---|---|---|
+| 1 | Revisar y fusionar el PR #91. Resuelve F1-27: hoy una instalación hecha desde la rama se actualiza contra `main`, que es más antiguo | el dueño |
+| 2 | F1-21f: workflow de release (nombre estable del AppImage, etiqueta = versión) y **primera etiqueta `v…`**, que publica el AppImage por primera vez | paso 1 y decisión del dueño |
+| 3 | Repetir F1-15 con el AppImage publicado, en una sesión **con escritorio**: elegir proveedor y chatear, abrir el TUI con `janitor`, ver el aviso de app vieja (el diálogo nativo no se pudo ver sin pantalla), y los fallos (sin red, corte a medias, reparación) | paso 2 y una clave del dueño |
+| 4 | F1-21g: actualizar de una versión publicada a la siguiente con un gateway en marcha, desde la app, el terminal y Telegram | paso 2 |
+| 5 | F1-23 y F1-24: bot de Telegram real (QR, nombre, `/start`, avatar) y segundo plano (gateway como servicio; posible segunda unidad systemd) | paso 3 |
+| 6 | F1-25: memoria integrada con MiniMax en cuatro casos observables | una clave del dueño |
+| 7 | Despliegue real de cada aplicativo (F4-01, F4-03, F4-07): imágenes, puertos y variables salen de las skills antiguas y no se han probado; LightRAG y la API de WAHA son los más dudosos | un equipo de prueba con Docker |
+| 8 | Restos de F1-19 (textos del motor en inglés fuera de la app), F5-03 (reducir `update_core.py`), residuo en `scripts/install.ps1` | — |
+
+Las decisiones del dueño que siguen abiertas están en la [sección 9](#9-decisiones-pendientes-del-dueño).
+
+**Cómo verificar (lo que funcionó en esta rama).**
+- Pruebas: `scripts/run_tests.sh tests/janitor/` (668), `node --test apps/desktop-janitor/scripts/*.test.mjs` (243),
+  `node apps/desktop-janitor/scripts/build.mjs --check` (222 anclas), `python -m janitor.overlay check`,
+  `python -m janitor.catalog check`.
+- App sin pantalla: `node apps/desktop-janitor/scripts/build.mjs --linux --dir` y abrir
+  `apps/desktop/release/linux-unpacked/Janitor` con Playwright (`_electron.launch`,
+  `--ozone-platform=headless --no-sandbox --disable-gpu`) y un `HOME` temporal. Con
+  `HERMES_DESKTOP_HERMES_ROOT=<repo>` usa el motor del checkout y **salta la instalación**;
+  sin esa variable hace la instalación real (la app descarga `install.sh` por el commit de su
+  compilación, que debe existir en `origin`).
+- Un diálogo nativo no sale en una captura: se comprobó sustituyendo `dialog.showMessageBox`
+  bajo `--inspect-brk`.
+
+**Avisos del equipo de desarrollo.**
+- `/tmp` es memoria (tmpfs): una instalación de prueba ocupa gigas y debe ir en disco
+  (`/var/tmp`). Lo que se guarde en `/tmp` se pierde al reiniciar.
+- Al correr `scripts/run_tests.sh`, de vez en cuando un proceso muere por SIGKILL externo
+  (un archivo de pruebas sale «CRASHED» y a solas pasa). No es memoria. Causa sin
+  identificar; pista sin comprobar: `scripts/run_tests_parallel.py::_kill_tree` hace
+  `os.killpg(…, SIGKILL)` al terminar cada archivo.
+- `gh` solo está autenticado en el terminal del dueño (variable `GH_TOKEN`), no en el
+  shell de los agentes: los registros de CI y el PR se manejaron desde ese terminal.
+- En el equipo hay un `~/.janitor` real de la instalación antigua, con un gateway y
+  contenedores `janitor-*` en marcha. Ninguna prueba lo toca.
 
 ## 1. Objetivo
 
@@ -516,6 +568,7 @@ Windows y macOS (firma de código). WhatsApp como canal.
 | 2026-11-23 | Subagentes Opus, auditado por el orquestador | F1-26. **App** (`brand/install-boot.mjs`, parches P15-P17 y `P13-compat-after-bootstrap`; 222 anclas): causa raíz de la pantalla de fallo falsa = defecto de upstream — `use-gateway-boot.ts` limita la conexión a 45 s contados desde que abre la ventana (saltó a los 46 s, no a los 3 min) y el cerrojo `bootFailed` ignora el progreso posterior; ahora no falla con una instalación en curso o esperando la elección, y un fallo mostrado se retira al evento `complete`. Las sondas del intérprete del motor llevan `HERMES_HOME` (4 de 12 invocaciones no lo pasaban). Etapas en español. **Instalador/CLI**: `SKIP_COMPUTER_USE=true` con `--with-computer-use`; banner, resumen y mensajes del recorrido de Linux mediante una tabla que redefine los ayudantes de upstream (2 líneas de upstream cambiadas); `janitor --version` (touchpoint `runtime-copy` ampliado a `hermes_cli/_startup_fast.py`) y `janitor services` en español. Candidatos a upstream: el plazo de arranque durante la instalación y la sonda sin home. Evidencia: `node --test …/*.test.mjs` → 243/243; overlay limpio; `scripts/run_tests.sh tests/janitor/` → 657 pasan, 0 fallan y **1 archivo muerto por SIGKILL externo** (`test_janitor_update_outcomes.py`, 33/33 en tres corridas a solas: es el problema del equipo de desarrollo; pista sin comprobar: `scripts/run_tests_parallel.py::_kill_tree` hace `os.killpg(…, SIGKILL)` al terminar cada archivo) |
 | 2026-11-23 | Subagente Opus (verificación), evidencias comprobadas por el orquestador en `/var/tmp/janitor-e2e/` | **Instalación real repetida** con la app recompilada en `60434274ff`, dos corridas desde un home vacío (3a con cachés, 3b sin cachés: 3 min 15 s del clic al backend listo; ventana abierta 4 min 37 s, con 70 s de espera antes de pulsar). (a) sin «Janitor no pudo iniciarse» en ninguna captura ni en el texto, y la app pasa sola a la pantalla de proveedor; (b) sin `~/.hermes` tras instalar, tras el primer arranque y tras reabrir; (c) sin `cua-driver` ni `~/.cursor` ni `~/.agents`; fuera de `.janitor`, `.local`, `.config` y `.cache` solo existe `.pki` (Chromium de Electron); (d) etapas «Requisitos del sistema, Descarga de Janitor, Entorno de Python, Dependencias de Python, Herramientas del navegador, Comando janitor, Configuración y skills, Claves y ajustes, Servicio de mensajería, Finalizar»; banner «THE JANITOR · instalador»; `janitor --version` y `janitor services list` en español; (e) `[janitor-compat] app 1, engine 1: compatible` después de instalar y antes de `HERMES_BACKEND_READY`. `~/.janitor`: 1,5 GB. **Defecto nuevo → F1-27** (aviso de actualización falso contra `main`). Observaciones: el sello de la compilación dice `dirty: true` con el árbol limpio; la barra de progreso de Playwright llena la salida desplegada; la etapa de navegador sigue siendo la larga (144 s sin cachés) |
 | 2026-11-23 | Claude (orquestador), a petición del dueño | PR abierto para integrar `janitor-app/fase-1` en `main`: `reck74/Janitor-Agent#91` (listo para revisión, sin fusionar). Su descripción lista lo verificado y lo que no. Integrarlo resuelve F1-27 |
+| 2026-11-23 | Claude (orquestador) | **Cierre de sesión.** Sección 0 añadida con el estado, los siguientes pasos en orden, el método de verificación y los avisos del equipo. Eliminados los artefactos temporales de la sesión (homes y cachés de las instalaciones de prueba en `/var/tmp/janitor-e2e/`, registros de CI descargados, ejecuciones de `.bridge/`); se conservan en `/var/tmp/janitor-e2e/` los guiones (`scripts/`) y las capturas (`capturas/`, `capturas3/`), que no están en el repositorio y pueden desaparecer con una limpieza del sistema |
 
 ## 9. Decisiones pendientes del dueño
 
