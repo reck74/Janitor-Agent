@@ -228,6 +228,23 @@ def test_node_deps_stage_does_not_install_computer_use_by_default(tmp_path):
     assert "Skipping" not in result.stdout
 
 
+def test_node_deps_stage_does_not_install_the_browser_by_default(tmp_path):
+    """The base ships no browser (decision 2.10): no Playwright, no Browser Use, and the user is told."""
+    result, seen, _ = _node_deps_run(tmp_path)
+
+    assert stage_frame(result.stdout)["ok"] is True, result.stdout + result.stderr
+    assert "playwright" not in seen and "browser-use" not in seen, seen
+    assert "la primera vez que Janitor navegue" in result.stdout
+    assert "Browser tools will be unavailable" not in result.stdout
+
+
+def test_with_browser_flag_installs_the_browser_use_cli(tmp_path):
+    result, seen, _ = _node_deps_run(tmp_path, "--with-browser")
+
+    assert any(line.startswith("uv ") and "browser-use" in line for line in seen.splitlines()), seen
+    assert stage_frame(result.stdout)["ok"] is True, result.stdout + result.stderr
+
+
 def test_with_computer_use_flag_runs_the_cua_driver_installer(tmp_path):
     result, seen, _ = _node_deps_run(tmp_path, "--with-computer-use")
 

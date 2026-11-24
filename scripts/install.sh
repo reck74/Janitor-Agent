@@ -71,7 +71,7 @@ DETECTED_BROWSER_EXECUTABLE=""
 # Options
 USE_VENV=true
 RUN_SETUP=true
-SKIP_BROWSER=false
+SKIP_BROWSER=true  # JANITOR: the base ships no browser (~800 MB); it downloads on first use (--with-browser)
 SKIP_COMPUTER_USE=true  # JANITOR: optional; cua-driver writes outside the home and seeds telemetry (--with-computer-use)
 NO_SKILLS=true  # JANITOR: homes start without upstream's bundled skills (.no-bundled-skills)
 BRANCH="main"
@@ -109,6 +109,10 @@ while [[ $# -gt 0 ]]; do
             SKIP_BROWSER=true
             shift
             ;;
+        --with-browser)  # JANITOR: opt in to the browser install
+            SKIP_BROWSER=false  # JANITOR: opt in to the browser install
+            shift  # JANITOR: opt in to the browser install
+            ;;  # JANITOR: opt in to the browser install
         --skip-computer-use)
             SKIP_COMPUTER_USE=true
             shift
@@ -176,6 +180,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --no-venv      Don't create virtual environment"
             echo "  --skip-setup   Skip interactive setup wizard"
             echo "  --skip-browser Skip Playwright/Chromium install (browser tools won't work)"
+            echo "  --with-browser Install Playwright/Chromium and the Browser Use CLI now; Janitor skips them by default"  # JANITOR: opt-in flag
             echo "  --skip-computer-use  Skip the cua-driver (Computer Use) install"
             echo "  --with-computer-use  Install cua-driver (Computer Use); Janitor skips it by default"  # JANITOR: opt-in flag
             echo "  --no-skills    Start with a blank slate — seed no bundled skills, and"
@@ -3377,6 +3382,10 @@ janitor_tr() {
         "Browser Use CLI installed") m="Browser Use CLI instalado" ;;
         "Browser Use CLI already installed") m="Browser Use CLI ya estaba instalado" ;;
         "Browser Use CLI install failed — browser automation falls back to built-in tools.") m="Falló la instalación de Browser Use CLI: el navegador usará las herramientas integradas." ;;
+        "Skipping Playwright/Chromium install (--skip-browser)") m="Navegador (Chromium) no instalado: se descarga solo la primera vez que Janitor navegue" ;;
+        "Browser tools will be unavailable until you run manually:") m="Para instalarlo ya, sin esperar al primer uso:" ;;
+        "On apt-based systems, an admin also needs to run:") m="En sistemas con apt, un administrador además tiene que ejecutar:" ;;
+        "Skipping Browser Use CLI install (--skip-browser)") m="Browser Use no instalado: se descarga la primera vez que Janitor navegue" ;;
         "Skipping Computer Use (cua-driver) install (--skip-computer-use)") m="Control del escritorio (cua-driver) no instalado: es opcional y se instala cuando lo activas" ;;
         "Installing Computer Use driver (cua-driver)...") m="Instalando el control del escritorio (cua-driver)..." ;;
         "Computer Use driver installed (enable via 'hermes tools' → Computer Use)") m="Control del escritorio instalado (actívalo con 'janitor tools' → Computer Use)" ;;

@@ -192,7 +192,9 @@ touchpoints:
       reason) telling the user to uninstall the old one first: the app is a clean
       start and adopts nothing (plan decision 2.9, F1-22). cua-driver (Computer
       Use) is opt-in (`--with-computer-use`): it writes outside the home and seeds
-      a telemetry id (F1-26). One fork block after `print_success` redefines the
+      a telemetry id (F1-26). The browser (Playwright Chromium, Browser Use CLI)
+      is opt-in too (`--with-browser`): the base ships none and the engine
+      downloads it on first use (plan decision 2.10, F1-29). One fork block after `print_success` redefines the
       banner, the final summary and the log helpers so what the app shows reads in
       Spanish with `janitor` commands (a message the table does not list prints
       upstream's English); a failed stage's JSON reason is Spanish. Every changed
