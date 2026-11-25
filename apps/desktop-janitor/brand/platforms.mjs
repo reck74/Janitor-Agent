@@ -15,6 +15,14 @@
 //                     menu (only built on macOS): Electron labels roles in English.
 //   P20-about-skew    Spanish note in the About panel when the app build is stale.
 //   P20-git-for-windows  Spanish start-up error when Git Bash is missing (Windows).
+//   P20-git-home-*    scripts/install.ps1 puts PortableGit in <home>\git (home =
+//                     HERMES_HOME or %USERPROFILE%\.janitor), not in
+//                     %LOCALAPPDATA%\hermes\git. The app's resolved home
+//                     (HERMES_HOME in main.ts) is probed first for bash.exe
+//                     (findGitBash) and git.exe (resolveGitBinary), so an app
+//                     already open during the install, blind to the new user
+//                     variable HERMES_GIT_BASH_PATH, still finds it. The variable
+//                     and every upstream candidate stay, in their order.
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -154,6 +162,52 @@ export function platformPatches(appId = janitorAppId()) {
       replace:
         "      'Janitor necesita un componente llamado Git para Windows, que no está instalado. ' +\n" +
         "        'Elige Reparar instalación para añadirlo automáticamente, o instálalo tú desde git-scm.com y vuelve a abrir Janitor.'\n",
+      count: 1
+    },
+    {
+      id: 'P20-git-home-option',
+      purpose: 'findGitBash options: the resolved app home, where install.ps1 puts PortableGit',
+      file: 'electron/find-git-bash.ts',
+      find: '  findOnPath?: (command: string) => string | null\n}\n',
+      replace:
+        '  findOnPath?: (command: string) => string | null\n' +
+        '  janitorHome?: string // Janitor build (P20-git-home): PortableGit lives in <home>\\git\n' +
+        '}\n',
+      count: 1
+    },
+    {
+      id: 'P20-git-home-bash',
+      purpose: 'findGitBash: <home>\\git\\bin and \\usr\\bin bash.exe before %LOCALAPPDATA%\\hermes\\git',
+      file: 'electron/find-git-bash.ts',
+      find: "  if (localAppData) {\n    candidates.push(joinWin(localAppData, 'hermes', 'git', 'bin', 'bash.exe'))\n",
+      replace:
+        '  // Janitor build (P20-git-home): scripts/install.ps1 puts PortableGit in\n' +
+        '  // <home>\\git (MinGit: usr\\bin\\bash.exe), ahead of the upstream location.\n' +
+        '  if (opts.janitorHome) {\n' +
+        "    candidates.push(joinWin(opts.janitorHome, 'git', 'bin', 'bash.exe'))\n" +
+        "    candidates.push(joinWin(opts.janitorHome, 'git', 'usr', 'bin', 'bash.exe'))\n" +
+        '  }\n\n' +
+        "  if (localAppData) {\n    candidates.push(joinWin(localAppData, 'hermes', 'git', 'bin', 'bash.exe'))\n",
+      count: 1
+    },
+    {
+      id: 'P20-git-home-caller',
+      purpose: 'main.ts findGitBash passes the resolved app home (HERMES_HOME)',
+      file: 'electron/main.ts',
+      find: '  return _findGitBash({\n    isWindows: IS_WINDOWS,\n',
+      replace: '  return _findGitBash({\n    janitorHome: HERMES_HOME, // Janitor build (P20-git-home)\n    isWindows: IS_WINDOWS,\n',
+      count: 1
+    },
+    {
+      id: 'P20-git-home-binary',
+      purpose: 'resolveGitBinary: <home>\\git\\cmd and \\bin git.exe before %LOCALAPPDATA%\\hermes\\git',
+      file: 'electron/main.ts',
+      find: "  if (localAppData) {\n    candidates.push(path.join(localAppData, 'hermes', 'git', 'cmd', 'git.exe'))\n",
+      replace:
+        '  // Janitor build (P20-git-home): PortableGit from scripts/install.ps1 is in <home>\\git.\n' +
+        "  candidates.push(path.join(HERMES_HOME, 'git', 'cmd', 'git.exe'))\n" +
+        "  candidates.push(path.join(HERMES_HOME, 'git', 'bin', 'git.exe'))\n\n" +
+        "  if (localAppData) {\n    candidates.push(path.join(localAppData, 'hermes', 'git', 'cmd', 'git.exe'))\n",
       count: 1
     }
   ]

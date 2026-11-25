@@ -336,3 +336,72 @@ test('F6-04e: every item of the application menu has a Spanish label, role items
   assert.ok(mac.some(item => item.role === 'hide' && item.label === 'Ocultar Janitor'))
   assert.equal(new Set(MENU_ROLE_LABELS.map(([role]) => role)).size, MENU_ROLE_LABELS.length)
 })
+
+// F6-04 git home: scripts/install.ps1 puts PortableGit in <home>\git. The patched
+// main.ts wrapper runs over the patched find-git-bash.ts, on a simulated disk.
+const WIN_HOME = 'C:\\Users\\ana\\.janitor'
+const WIN_ENV = { LOCALAPPDATA: 'C:\\Users\\ana\\AppData\\Local', ProgramFiles: 'C:\\Program Files' }
+
+function patchedFindGitBash() {
+  const source = patched('electron/find-git-bash.ts')
+  const start = source.indexOf('\nexport function findGitBash(')
+
+  assert.ok(start >= 0, 'findGitBash not found')
+
+  const body = source.slice(start, source.indexOf('\n}\n', start) + 3).replace('\nexport function', '\nfunction')
+
+  return vm.runInNewContext(`${module.stripTypeScriptTypes(body)}\nfindGitBash`, { path })
+}
+
+function gitBashWith(existing, env = WIN_ENV) {
+  const context = {
+    _findGitBash: patchedFindGitBash(),
+    HERMES_HOME: WIN_HOME,
+    IS_WINDOWS: true,
+    process: { env },
+    fileExists: file => existing.includes(file),
+    findOnPath: () => null
+  }
+
+  return vm.runInNewContext(`${topLevelFunction(patched('electron/main.ts'), 'findGitBash')}\nfindGitBash()`, context)
+}
+
+test('F6-04 git home: the app finds Git Bash in the Janitor home before upstream\'s location', () => {
+  const portable = `${WIN_HOME}\\git\\bin\\bash.exe`
+  const minGit = `${WIN_HOME}\\git\\usr\\bin\\bash.exe`
+  const upstream = 'C:\\Users\\ana\\AppData\\Local\\hermes\\git\\bin\\bash.exe'
+
+  assert.equal(gitBashWith([portable]), portable)
+  assert.equal(gitBashWith([minGit]), minGit)
+  assert.equal(gitBashWith([upstream, portable]), portable)
+  // Upstream candidates and the env override stay.
+  assert.equal(gitBashWith([upstream]), upstream)
+  assert.equal(gitBashWith(['C:\\Program Files\\Git\\bin\\bash.exe']), 'C:\\Program Files\\Git\\bin\\bash.exe')
+  assert.equal(gitBashWith([portable, 'D:\\git\\bash.exe'], { ...WIN_ENV, HERMES_GIT_BASH_PATH: 'D:\\git\\bash.exe' }), 'D:\\git\\bash.exe')
+  assert.equal(gitBashWith([]), null)
+})
+
+function gitBinaryWith(existing) {
+  const context = {
+    _gitBinaryCache: null,
+    path: path.win32,
+    HERMES_HOME: WIN_HOME,
+    IS_WINDOWS: true,
+    process: { env: WIN_ENV },
+    fileExists: file => existing.includes(file),
+    findOnPath: () => null
+  }
+
+  return vm.runInNewContext(`${topLevelFunction(patched('electron/main.ts'), 'resolveGitBinary')}\nresolveGitBinary()`, context)
+}
+
+test('F6-04 git home: update checks use git.exe from the Janitor home before upstream\'s location', () => {
+  const portable = `${WIN_HOME}\\git\\cmd\\git.exe`
+  const upstream = 'C:\\Users\\ana\\AppData\\Local\\hermes\\git\\cmd\\git.exe'
+
+  assert.equal(gitBinaryWith([portable]), portable)
+  assert.equal(gitBinaryWith([`${WIN_HOME}\\git\\bin\\git.exe`]), `${WIN_HOME}\\git\\bin\\git.exe`)
+  assert.equal(gitBinaryWith([upstream, portable]), portable)
+  assert.equal(gitBinaryWith([upstream]), upstream)
+  assert.equal(gitBinaryWith([]), 'git')
+})
