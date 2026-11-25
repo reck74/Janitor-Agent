@@ -22,6 +22,7 @@ import sys
 from typing import Optional
 
 from janitor import update_core as janitor_update_core
+from janitor.stdio import ensure_utf8_stdio
 
 # Printed to the terminal and, since ``/update`` from messaging runs this
 # module (directive #13), streamed into the chat: Spanish, like every surface.
@@ -36,6 +37,8 @@ def run_update(argv: Optional[list[str]] = None) -> int:
     args = janitor_update_core.parse_update_args(
         sys.argv[2:] if argv is None else argv
     )
+    # cp1252 pipes on Windows cannot encode the banner (directive #13 path).
+    ensure_utf8_stdio()
     print(f"\n{BANNER}\n")
     return janitor_update_core.run_janitor_update(args)
 

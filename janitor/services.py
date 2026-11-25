@@ -29,6 +29,7 @@ import http.client
 import os
 import ssl
 import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
@@ -139,15 +140,31 @@ DOCKER_OK = "ok"
 DOCKER_MISSING = "missing"          # no ``docker`` CLI on PATH
 DOCKER_UNAVAILABLE = "unavailable"  # CLI present, daemon down or no permission
 DOCKER_TIMEOUT = "timeout"
+DOCKER_UNSUPPORTED = "unsupported"  # this OS cannot run Janitor's services (Windows)
+
+# The deploy scripts are bash and the compose stacks assume a Linux/macOS Docker
+# host: on Windows they would fail cryptically or land in WSL's bash.
+UNSUPPORTED_OS_TEXT = (
+    "Los aplicativos opcionales de Janitor necesitan Linux o macOS con Docker; "
+    "en Windows no se pueden instalar ni administrar desde Janitor."
+)
 
 
-def docker_status(runner: Runner = subprocess.run, timeout: float = 10.0) -> str:
+def services_supported(platform: str = sys.platform) -> bool:
+    return platform != "win32"
+
+
+def docker_status(runner: Runner = subprocess.run, timeout: float = 10.0,
+                  platform: str = sys.platform) -> str:
     """Whether the Docker daemon answers (read-only): one of the ``DOCKER_*`` values.
 
     ``container_states`` reports every container ``absent`` when the daemon is
     down, which would read as "not deployed"; callers that show state to a
-    user check this first.
+    user check this first. On an OS where the services cannot run the answer
+    is ``DOCKER_UNSUPPORTED`` and Docker is not asked.
     """
+    if not services_supported(platform):
+        return DOCKER_UNSUPPORTED
     try:
         proc = runner(
             ["docker", "version", "--format", "{{.Server.Version}}"],
@@ -297,7 +314,9 @@ def container_state_text(state: str) -> str:
     return _CONTAINER_TEXT.get(state, state)
 
 
-def deploy(service: Service, runner: Runner = subprocess.run) -> int:
+def deploy(service: Service, runner: Runner = subprocess.run, platform: str = sys.platform) -> int:
+    if not services_supported(platform):
+        raise ServiceError(UNSUPPORTED_OS_TEXT)
     script = service.deploy_script
     if not script.is_file():
         raise ServiceError(f"Falta el script de instalación: {script}")

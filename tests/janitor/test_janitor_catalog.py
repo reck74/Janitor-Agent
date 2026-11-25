@@ -96,6 +96,22 @@ def test_declared_platforms_are_accepted_by_the_skill_itself(catalog):
             assert set(e.platforms) <= {str(p).lower() for p in declared}, e.id
 
 
+def test_every_os_gets_the_welcome_skill(catalog):
+    """The orientation skill is the main agent's map of Janitor: no OS starts without it."""
+    for platform in cat.PLATFORMS:
+        assert "janitor-onboarding" in cat.skills_for_template("main", catalog=catalog, platform=platform)
+
+
+@pytest.mark.windows_only
+def test_windows_fresh_home_loads_the_welcome_skill(env, monkeypatch):
+    """Catalog gate AND the skill's own frontmatter gate both let it through on Windows."""
+    from janitor.seed import ensure_home
+
+    home = env / ".janitor"
+    ensure_home(home)
+    assert "janitor-onboarding" in _index(home, monkeypatch)
+
+
 @pytest.mark.parametrize("bad, message", [
     ({"source": "elsewhere"}, "unknown source"),
     ({"purpose": "nope"}, "unknown purpose"),

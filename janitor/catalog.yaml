@@ -38,7 +38,7 @@ skills:
     source: janitor
     path: core/janitor-onboarding
     purpose: sistema
-    platforms: [linux, macos]
+    platforms: [linux, macos, windows]
     templates: [main]
 
   - id: janitor-system-health

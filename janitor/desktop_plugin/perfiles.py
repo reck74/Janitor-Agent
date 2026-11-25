@@ -286,6 +286,8 @@ def _child_env(root: Path) -> dict:
     env = served_profile_child_env(target_home=root)
     package_parent = str(Path(__file__).resolve().parents[2])
     env["PYTHONPATH"] = os.pathsep.join(p for p in (package_parent, env.get("PYTHONPATH", "")) if p)
+    # The parent decodes UTF-8; a Windows child would otherwise write cp1252.
+    env.setdefault("PYTHONIOENCODING", "utf-8")
     return env
 
 
@@ -301,7 +303,8 @@ def create_agent(template, name) -> dict:
         try:
             proc = subprocess.run(
                 [sys.executable, "-m", "janitor.desktop_plugin.crear_agente", template, name],
-                capture_output=True, text=True, timeout=CREATE_TIMEOUT, env=_child_env(root),
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=CREATE_TIMEOUT, env=_child_env(root),
                 cwd=str(root), stdin=subprocess.DEVNULL,
             )
         except subprocess.TimeoutExpired:

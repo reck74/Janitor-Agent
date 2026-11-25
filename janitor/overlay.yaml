@@ -183,15 +183,37 @@ touchpoints:
     merge: reapply
     upstream_candidate: true
 
-  - id: installers
+  - id: install-ps1
     files: [scripts/install.ps1]
     why: >-
-      The only fork hunk left after bootstrap.sh was retired: a second, older
-      autostash-restore block after upstream's in Install-Repository. Upstream's
-      block clears $autostashRef first, so this one never runs (sync residue,
-      kept until a task with install.ps1 in scope drops it).
-    verify: ci:janitor-ci
-    merge: ours
+      The Windows twin of install-sh (F6-05): the desktop app downloads it and
+      runs it stage by stage with Windows PowerShell 5.1. It clones
+      reck74/Janitor-Agent (git and ZIP fallback) into %USERPROFILE%\.janitor by
+      default (the same ~/.janitor on every platform), defaults -Branch to the
+      release channel (`stable`, janitor/release_channel.py), installs the
+      browser (Playwright Chromium, Browser Use CLI) only with -WithBrowser and
+      Computer Use only with -WithComputerUse, stages only the `janitor`
+      launcher (requires venv\Scripts\janitor.exe; never hermes / hermes-acp),
+      and in the config-templates stage runs `python -m janitor.seed --home`
+      and writes .no-bundled-skills instead of syncing upstream's bundled
+      skills. HERMES_HOME is never persisted as a user variable (it would
+      hijack, or be hijacked by, a real Hermes install). PortableGit still lands
+      in <home>\git and is published through HERMES_GIT_BASH_PATH, as upstream.
+      A home holding the legacy terminal install (`janitor-core/`) is refused
+      in every -Stage, in -Ensure / -PostInstall and in the full run before
+      anything is written, with the Spanish reason in the {ok:false} JSON frame
+      the app reads. New visible text is Spanish; the file stays pure ASCII
+      (accents as \uXXXX through Get-JanitorText). Upstream's dead second
+      autostash-restore block (old `installers` touchpoint) is gone. Every
+      changed hunk carries a `# JANITOR:` comment. Review fixes: a seed that
+      cannot run (no venv python, janitor.seed exit != 0) fails the
+      config-templates stage; an existing checkout whose origin is not the fork
+      is refused before any stash/fetch/reset; recreating the venv stops only
+      processes running from THAT venv and only gateway tasks whose action
+      points into this home (no system-wide `taskkill /IM hermes.exe`); the
+      repository/path stage titles are Spanish; -IncludeDesktop is refused.
+    verify: test:install-ps1
+    merge: reapply
 
   - id: install-sh
     files: [scripts/install.sh]
@@ -240,6 +262,28 @@ touchpoints:
       log lines stay upstream's. repro.sh's launch matrix matches the Spanish
       messages. Each line carries `# JANITOR:`.
     verify: test:desktop-update-posix
+    merge: reapply
+
+  - id: desktop-update-windows
+    files: [scripts/desktop-update/windows.ps1]
+    why: >-
+      The desktop app's Windows update hand-off (F6-06). When the checkout's
+      venv has janitor.exe it runs `python.exe -m janitor.cli update --yes
+      [--gateway] --branch <b> --keep-stash` (janitor/update_core.py,
+      directive 13) instead of upstream's `hermes_cli.main update ... --force`
+      (the strict Janitor parser exits 2 on an unknown flag), waits for
+      janitor.exe instead of hermes.exe to unlock, skips the apps/desktop
+      build verification (the Janitor app is installed from its release, not
+      built in the checkout) and restarts gateways with `-m janitor.cli
+      gateway start --all`. Upstream's lines stay in place, overridden right
+      after (`if ($janitorCheckout)`). Result messages, stage names and the
+      WinForms card are Spanish, with a message of its own for exit 2
+      (another update holds the lock). New text is ASCII (Get-JanitorText).
+      Each changed line carries `# JANITOR:`. A Janitor checkout is recognised
+      by janitor\cli.py (not by its launcher), so upstream's updater never runs
+      on one; without -Branch no --branch is passed (the engine follows its
+      channel); -NoGateway adds --no-gateway-restart.
+    verify: test:desktop-update-windows
     merge: reapply
 
   - id: desktop-update-ui

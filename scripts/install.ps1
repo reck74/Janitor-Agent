@@ -16,7 +16,15 @@ param(
     [switch]$NoVenv,
     [switch]$SkipSetup,
     [switch]$SkipComputerUse,
-    [string]$Branch = "main",
+    # JANITOR: the base ships no browser (Playwright Chromium, Browser Use CLI): it
+    # JANITOR: downloads on first use. -WithBrowser installs it now (plan 2.10, F1-29).
+    [switch]$WithBrowser,
+    # JANITOR: Computer Use (cua-driver) writes outside the home and seeds a telemetry
+    # JANITOR: id: only with -WithComputerUse (F1-26).
+    [switch]$WithComputerUse,
+    # JANITOR: the release channel (janitor/release_channel.py RELEASE_BRANCH): without
+    # JANITOR: -Branch the user gets the latest tagged version, never main (F1-28).
+    [string]$Branch = "stable",
     # -Commit and -Tag are higher-precedence variants of -Branch for users
     # who need reproducible installs (desktop installer pinning, CI, release
     # bundles).  When set, the repository stage clones $Branch (faster than
@@ -30,8 +38,9 @@ param(
     # existing tree pass -ForceCommit.
     [switch]$ForceCommit,
     [string]$Tag = "",
-    [string]$HermesHome = $(if ($env:HERMES_HOME) { $env:HERMES_HOME } else { "$env:LOCALAPPDATA\hermes" }),
-    [string]$InstallDir = $(if ($env:HERMES_HOME) { "$env:HERMES_HOME\hermes-agent" } else { "$env:LOCALAPPDATA\hermes\hermes-agent" }),
+    # JANITOR: the same ~/.janitor home on every platform (plan, Fase 6).
+    [string]$HermesHome = $(if ($env:HERMES_HOME) { $env:HERMES_HOME } else { "$env:USERPROFILE\.janitor" }),
+    [string]$InstallDir = $(if ($env:HERMES_HOME) { "$env:HERMES_HOME\hermes-agent" } else { "$env:USERPROFILE\.janitor\hermes-agent" }),
 
     # --- Stage protocol (additive; default invocation behaves as before) ----
     # See the "Stage protocol" section near the bottom of the file for the
@@ -345,14 +354,14 @@ if ($PSBoundParameters.ContainsKey('HermesHome')) {
     $HermesHome = ConvertTo-LongPath $HermesHome
 } else {
     $HermesHome = ConvertTo-LongPath $(
-        if ($env:HERMES_HOME) { $env:HERMES_HOME } else { "$env:LOCALAPPDATA\hermes" }
+        if ($env:HERMES_HOME) { $env:HERMES_HOME } else { "$env:USERPROFILE\.janitor" }  # JANITOR: ~/.janitor
     )
 }
 if ($PSBoundParameters.ContainsKey('InstallDir')) {
     $InstallDir = ConvertTo-LongPath $InstallDir
 } else {
     $InstallDir = ConvertTo-LongPath $(
-        if ($env:HERMES_HOME) { "$env:HERMES_HOME\hermes-agent" } else { "$env:LOCALAPPDATA\hermes\hermes-agent" }
+        if ($env:HERMES_HOME) { "$env:HERMES_HOME\hermes-agent" } else { "$env:USERPROFILE\.janitor\hermes-agent" }  # JANITOR: ~/.janitor
     )
 }
 if ($script:NormalizedProfilePaths) {
@@ -383,8 +392,9 @@ $script:ResolvedPathReport = @{
 # Configuration
 # ============================================================================
 
-$RepoUrlSsh = "git@github.com:NousResearch/hermes-agent.git"
-$RepoUrlHttps = "https://github.com/NousResearch/hermes-agent.git"
+# JANITOR: the fork's installer installs the fork.
+$RepoUrlSsh = "git@github.com:reck74/Janitor-Agent.git"
+$RepoUrlHttps = "https://github.com/reck74/Janitor-Agent.git"
 $PythonVersion = "3.11"
 # Minor versions the installer accepts when the requested $PythonVersion isn't
 # available, in preference order. Only checkout-private uv-managed interpreters
@@ -404,6 +414,69 @@ $NpmRange = "<11.10.0 || >=11.17.0"
 # manifest schema, stage-name set semantics, or stdout JSON shape.  Adding a
 # new stage does NOT bump this -- drivers iterate the manifest dynamically.
 $InstallStageProtocolVersion = 1
+
+# JANITOR: begin -- helpers of the fork's installer (touchpoint install-ps1).
+# JANITOR: This file must stay pure ASCII (PS 5.1 reads a BOM-less .ps1 in the ANSI
+# JANITOR: code page), so Spanish text is written with \uXXXX escapes. Only the
+# JANITOR: template is unescaped: values (paths) go in through -f untouched.
+function Get-JanitorText {
+    param([string]$Template, [object[]]$Values = @())
+    return ([regex]::Unescape($Template) -f $Values)
+}
+
+# JANITOR: a home holding the pre-app terminal install (janitor-core) is refused
+# JANITOR: before anything is written: the app is a clean start (plan decision 2.9).
+function Get-JanitorLegacyHomeMessage {
+    return (Get-JanitorText "Alto ah\u00ed: en {0} hay una instalaci\u00f3n antigua de Janitor por terminal (janitor-core). Esta versi\u00f3n parte de cero y no adopta nada viejo, as\u00ed que no toqu\u00e9 nada. Desinstala lo antiguo primero (docs/janitor/desinstalar-instalacion-antigua.md en el repositorio) y vuelve a abrir la app." @($HermesHome))
+}
+
+# JANITOR: an existing checkout is only reused when its origin is the fork: the
+# JANITOR: installer never stashes, fetches or resets another repository (a Hermes one).
+function Test-JanitorOrigin {
+    param([string]$Url)
+    $u = "$Url".Trim().ToLowerInvariant().TrimEnd('/')
+    if ($u.EndsWith(".git")) { $u = $u.Substring(0, $u.Length - 4) }
+    return ($u -match 'github\.com[:/]reck74/janitor-agent$')
+}
+
+function Test-JanitorLegacyHome {
+    return (Test-Path -LiteralPath (Join-Path $HermesHome "janitor-core"))
+}
+
+# JANITOR: seed the Janitor home (minimal config.yaml, SOUL.md, skin) and mark it
+# JANITOR: .no-bundled-skills: upstream's bundled skills are never copied in. The
+# JANITOR: seed never touches .env nor a file the user edited.
+function Invoke-JanitorSeed {
+    $pythonExe = "$InstallDir\venv\Scripts\python.exe"
+    # JANITOR: an unseeded home would keep upstream's SOUL.md and config: the stage fails.
+    if (-not (Test-Path -LiteralPath $pythonExe)) {
+        throw (Get-JanitorText "No se pudo preparar el home de Janitor: falta {0}. Repite la instalaci\u00f3n desde la app." @($pythonExe))
+    }
+    Write-Info (Get-JanitorText "Preparando el home de Janitor en {0}..." @($HermesHome))
+    $prevPythonioencoding = $env:PYTHONIOENCODING
+    $prevPythonutf8 = $env:PYTHONUTF8
+    $env:PYTHONIOENCODING = "utf-8"
+    $env:PYTHONUTF8 = "1"
+    try {
+        Invoke-NativeWithRelaxedErrorAction {
+            & $pythonExe -m janitor.seed --home $HermesHome 2>&1 | ForEach-Object { Write-Host "  $_" }
+        }
+        if ($LASTEXITCODE -ne 0) {
+            throw (Get-JanitorText "No se pudo preparar el home de Janitor: janitor.seed fall\u00f3 (c\u00f3digo {0}). Revisa la salida del instalador." @($LASTEXITCODE))
+        }
+    } finally {
+        $env:PYTHONIOENCODING = $prevPythonioencoding
+        $env:PYTHONUTF8 = $prevPythonutf8
+    }
+    $marker = Join-Path $HermesHome ".no-bundled-skills"
+    if (-not (Test-Path -LiteralPath $marker)) {
+        New-Item -ItemType Directory -Force -Path $HermesHome | Out-Null
+        $markerText = "Janitor homes start without Hermes' bundled skills (essential skills only).`nDelete this file to re-enable bundled-skill sync on the next update.`n"
+        [System.IO.File]::WriteAllText($marker, $markerText, (New-Object System.Text.UTF8Encoding $false))
+    }
+    Write-Success (Get-JanitorText "Sin el paquete de skills de upstream: escrito {0}" @($marker))
+}
+# JANITOR: end
 
 # ============================================================================
 # Helper functions
@@ -2280,6 +2353,10 @@ function Install-Repository {
         }
 
         if ($repoValid) {
+            $janitorOrigin = Invoke-NativeWithRelaxedErrorAction { (& git -C $InstallDir remote get-url origin 2>$null | Out-String).Trim() }  # JANITOR:
+            if (-not (Test-JanitorOrigin $janitorOrigin)) {  # JANITOR: before any stash/fetch/reset
+                throw (Get-JanitorText "Alto ah\u00ed: {0} es un repositorio de git cuyo origin es '{1}', no el de Janitor (reck74/Janitor-Agent). No toqu\u00e9 nada. Elige otra carpeta de instalaci\u00f3n o mueve esa." @($InstallDir, $janitorOrigin))  # JANITOR:
+            }  # JANITOR:
             Write-Info "Existing installation found, updating..."
             Push-Location $InstallDir
             # Wrap the entire fetch+checkout block in EAP=Continue so git's
@@ -2466,51 +2543,6 @@ function Install-Repository {
                     }
                     $autostashRef = ""
                 }
-
-                if ($autostashRef) {
-                    # Default to restoring so work is never silently dropped.
-                    # Only prompt when we're certain a human can answer: an
-                    # interactive session AND a real, non-redirected console on
-                    # both stdin and stdout. The desktop "Update" button and
-                    # bootstrap run the installer without a usable console -- in
-                    # those cases Read-Host would hang or return empty, so we
-                    # skip the prompt and just restore (the safe default).
-                    $restoreNow = $true
-                    $hasConsole = $false
-                    try {
-                        $hasConsole = (
-                            [Environment]::UserInteractive `
-                            -and (-not [Console]::IsInputRedirected) `
-                            -and (-not [Console]::IsOutputRedirected) `
-                            -and ($Host.Name -eq "ConsoleHost")
-                        )
-                    } catch { $hasConsole = $false }
-                    if ($hasConsole) {
-                        Write-Warn "Local changes were stashed before updating."
-                        Write-Warn "Restoring them may reapply local customizations onto the updated codebase."
-                        $restoreAnswer = Read-Host "Restore local changes now? [Y/n]"
-                        if ($restoreAnswer -match '^(n|no)$') { $restoreNow = $false }
-                    }
-
-                    if ($restoreNow) {
-                        Write-Info "Restoring local changes..."
-                        git -c windows.appendAtomically=false stash apply $autostashRef
-                        if ($LASTEXITCODE -eq 0) {
-                            git -c windows.appendAtomically=false stash drop $autostashRef 2>$null
-                            Write-Warn "Local changes were restored on top of the updated codebase."
-                            Write-Warn "Review git diff / git status if Hermes behaves unexpectedly."
-                        } else {
-                            Write-Err "Update succeeded, but restoring local changes failed. Your changes are still preserved in git stash."
-                            Write-Info "Resolve manually with: git stash apply $autostashRef"
-                            throw "git stash apply failed after update"
-                        }
-                    } else {
-                        Write-Info "Skipped restoring local changes."
-                        Write-Info "Your changes are still preserved in git stash."
-                        Write-Info "Restore manually with: git stash apply $autostashRef"
-                    }
-                    $autostashRef = ""
-                }
             } finally {
                 if ($autostashRef) {
                     # We stashed but never reached the restore block (a fetch/
@@ -2584,13 +2616,13 @@ function Install-Repository {
                 # for.  GitHub supports archive URLs for commits, tags, and
                 # branches; we honour Commit > Tag > Branch.
                 if ($Commit) {
-                    $zipUrl = "https://github.com/NousResearch/hermes-agent/archive/$Commit.zip"
+                    $zipUrl = "https://github.com/reck74/Janitor-Agent/archive/$Commit.zip"  # JANITOR: the fork
                     $zipLabel = $Commit
                 } elseif ($Tag) {
-                    $zipUrl = "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$Tag.zip"
+                    $zipUrl = "https://github.com/reck74/Janitor-Agent/archive/refs/tags/$Tag.zip"  # JANITOR: the fork
                     $zipLabel = $Tag
                 } else {
-                    $zipUrl = "https://github.com/NousResearch/hermes-agent/archive/refs/heads/$Branch.zip"
+                    $zipUrl = "https://github.com/reck74/Janitor-Agent/archive/refs/heads/$Branch.zip"  # JANITOR: the fork
                     $zipLabel = $Branch
                 }
                 $zipPath = "$env:TEMP\hermes-agent-$zipLabel.zip"
@@ -2769,9 +2801,13 @@ function Install-Venv {
             # on failure -- but only for tasks that were enabled to begin with.
             # Best-effort: a missing task just errors quietly.
             try {
-                schtasks /Query /FO CSV 2>$null | ConvertFrom-Csv | Where-Object { $_.TaskName -like '*Hermes_Gateway*' } | ForEach-Object {
-                    $tn = $_.TaskName
-                    if ($_.Status -eq 'Disabled') {
+                # JANITOR: only the gateway tasks of THIS home (their action runs a launcher under
+                # JANITOR: $HermesHome\gateway-service): a separate Hermes install keeps its own.
+                Get-ScheduledTask -TaskName '*Hermes_Gateway*' -ErrorAction SilentlyContinue | Where-Object {
+                    (($_.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)" }) -join ' ').IndexOf($HermesHome, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+                } | ForEach-Object {  # JANITOR:
+                    $tn = "$($_.TaskPath)$($_.TaskName)"  # JANITOR:
+                    if ("$($_.State)" -eq 'Disabled') {  # JANITOR:
                         Write-Info "  gateway autostart task $tn is already disabled; leaving it that way"
                         return
                     }
@@ -2783,8 +2819,8 @@ function Install-Venv {
             } catch {
                 Write-Warn "Could not enumerate gateway scheduled tasks: $($_.Exception.Message)"
             }
-            # The launcher CLI (hermes.exe) plus its child tree.
-            & taskkill /F /T /IM hermes.exe /FI "PID ne $myPid" 2>$null | Out-Null
+            # JANITOR: no system-wide `taskkill /IM hermes.exe` (it would kill a separate Hermes):
+            # JANITOR: the path-filtered sweep below stops janitor.exe / hermes.exe / python.exe of THIS venv.
             # taskkill /IM hermes.exe is NOT enough: the gateway/agent that a
             # scheduled task or watchdog autostarts runs as
             # `pythonw.exe -m hermes_cli.main gateway run` straight out of
@@ -3320,9 +3356,9 @@ function Install-HermesCommandLaunchers {
     # Requiring hermes.exe before creating the destination keeps the PATH
     # stage from reporting success with an unusable command (PR #92092).
     $scriptsDir = Join-Path $Root "venv\Scripts"
-    $requiredSource = Join-Path $scriptsDir "hermes.exe"
+    $requiredSource = Join-Path $scriptsDir "janitor.exe"  # JANITOR: the command is janitor
     if (-not (Test-Path -LiteralPath $requiredSource -PathType Leaf)) {
-        throw "Cannot set up the hermes command: required launcher not found: $requiredSource"
+        throw (Get-JanitorText "No se pudo preparar el comando janitor: falta {0}" @($requiredSource))  # JANITOR:
     }
 
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
@@ -3339,7 +3375,8 @@ function Install-HermesCommandLaunchers {
     if (Test-Path -LiteralPath $pyvenvCfg) {
         $venvRelocatable = [bool](Select-String -Path $pyvenvCfg -Pattern '^\s*relocatable\s*=\s*true\s*$' -Quiet)
     }
-    foreach ($launcher in @("hermes", "hermes-acp")) {
+    # JANITOR: only `janitor`; the hermes / hermes-acp launchers belong to a real Hermes install.
+    foreach ($launcher in @("janitor")) {
         $src = Join-Path $scriptsDir "$launcher.exe"
         if (-not (Test-Path -LiteralPath $src -PathType Leaf)) { continue }
         if ($venvRelocatable) {
@@ -3352,17 +3389,17 @@ function Install-HermesCommandLaunchers {
     }
 
     # Verify either staged form before the caller mutates PATH.
-    $requiredExe = Join-Path $Destination "hermes.exe"
-    $requiredCmd = Join-Path $Destination "hermes.cmd"
+    $requiredExe = Join-Path $Destination "janitor.exe"  # JANITOR:
+    $requiredCmd = Join-Path $Destination "janitor.cmd"  # JANITOR:
     if (-not ((Test-Path -LiteralPath $requiredExe -PathType Leaf) -or
               (Test-Path -LiteralPath $requiredCmd -PathType Leaf))) {
-        throw "Cannot set up the hermes command: launcher was not installed: $requiredExe"
+        throw (Get-JanitorText "No se pudo preparar el comando janitor: no se instal\u00f3 {0}" @($requiredExe))  # JANITOR:
     }
     return $Destination
 }
 
 function Set-PathVariable {
-    Write-Info "Setting up hermes command..."
+    Write-Info "Preparando el comando janitor..."  # JANITOR:
     
     if ($NoVenv) {
         $hermesBin = "$InstallDir"
@@ -3413,17 +3450,15 @@ function Set-PathVariable {
     # Set HERMES_HOME so the Python code finds config/data in the right place.
     # Only needed on Windows where we install to %LOCALAPPDATA%\hermes instead
     # of the Unix default ~/.hermes
-    $currentHermesHome = [Environment]::GetEnvironmentVariable("HERMES_HOME", "User")
-    if (-not $currentHermesHome -or $currentHermesHome -ne $HermesHome) {
-        [Environment]::SetEnvironmentVariable("HERMES_HOME", $HermesHome, "User")
-        Write-Success "Set HERMES_HOME=$HermesHome"
-    }
+    # JANITOR: HERMES_HOME is never persisted for the user: the janitor launcher runs
+    # JANITOR: with ~/.janitor whatever it says, the app defaults to ~/.janitor, and a
+    # JANITOR: persisted value would hijack (or be hijacked by) a real Hermes install.
     $env:HERMES_HOME = $HermesHome
     
     # Update current session
     $env:Path = "$hermesBin;$env:Path"
     
-    Write-Success "hermes command ready"
+    Write-Success "Comando janitor listo"  # JANITOR:
 }
 
 function Write-BootstrapMarker {
@@ -3569,6 +3604,9 @@ You are Hermes Agent, built by Nous Research. Be direct: match the length of you
     
     Write-Success "Configuration directory ready: $HermesHome"
     
+    Invoke-JanitorSeed  # JANITOR: seed + .no-bundled-skills before any skills sync
+    return  # JANITOR: upstream's bundled-skills sync below never runs in a Janitor home
+
     # Seed bundled skills into $HermesHome\skills (manifest-based, one-time per skill)
     Write-Info "Syncing bundled skills to $HermesHome\skills ..."
     $pythonExe = "$InstallDir\venv\Scripts\python.exe"
@@ -3777,6 +3815,10 @@ function Install-NodeDeps {
         Write-Info "Installing Node.js dependencies (browser tools)..."
         $browserLog = "$env:TEMP\hermes-npm-browser-$(Get-Random).log"
         $browserNpmOk = _Run-NpmInstall "Browser tools" $InstallDir $browserLog $npmExe
+        if (-not $WithBrowser) {  # JANITOR: no Playwright Chromium in the base (-WithBrowser)
+            Write-Info (Get-JanitorText "Navegador (Chromium) no instalado: se descarga solo la primera vez que Janitor navegue")  # JANITOR:
+            $browserNpmOk = $false  # JANITOR: skips only the Chromium download below
+        }  # JANITOR:
 
         # Install Playwright Chromium (mirrors scripts/install.sh behaviour for
         # Linux).  Without this, tools/browser_tool.py::check_browser_requirements
@@ -3898,6 +3940,10 @@ function Install-NodeDeps {
 # failure is non-fatal (browser_exec can still run via uvx, and `hermes tools`
 # can install it later).
 function Install-BrowserUseCli {
+    if (-not $WithBrowser) {  # JANITOR: no Browser Use CLI in the base (-WithBrowser)
+        Write-Info (Get-JanitorText "Browser Use no instalado: se descarga la primera vez que Janitor navegue")  # JANITOR:
+        return  # JANITOR:
+    }  # JANITOR:
     if (-not $script:UvCmd) { Resolve-UvCmd }
     if (-not $script:UvCmd) {
         Write-Info "Skipping Browser Use CLI install (uv unavailable)"
@@ -3995,6 +4041,10 @@ function Test-CuaDriverRuntimeContract {
 # paths still lazy-install via install_cua_driver() (hermes_cli/tools_config)
 # when this step was skipped or failed.
 function Install-CuaDriver {
+    if (-not $WithComputerUse) {  # JANITOR: Computer Use is opt-in (-WithComputerUse)
+        Write-Info (Get-JanitorText "Control del escritorio (cua-driver) no instalado: es opcional y se instala cuando lo activas")  # JANITOR:
+        return  # JANITOR:
+    }  # JANITOR:
     if ($SkipComputerUse) {
         Write-Info "Skipping Computer Use (cua-driver) install (-SkipComputerUse)"
         return
@@ -4908,7 +4958,7 @@ $InstallStages = @(
     @{ Name = "git";              Title = "Installing Git";                       Category = "prereqs";      NeedsUserInput = $false; Worker = "Stage-Git" }
     @{ Name = "node";             Title = "Detecting Node.js";                    Category = "prereqs";      NeedsUserInput = $false; Worker = "Stage-Node" }
     @{ Name = "system-packages";  Title = "Installing ripgrep and ffmpeg";        Category = "prereqs";      NeedsUserInput = $false; Worker = "Stage-SystemPackages" }
-    @{ Name = "repository";       Title = "Cloning Hermes repository";            Category = "install";      NeedsUserInput = $false; Worker = "Stage-Repository" }
+    @{ Name = "repository";       Title = "Descargando Janitor";                   Category = "install";      NeedsUserInput = $false; Worker = "Stage-Repository" }  # JANITOR: Spanish title
     # Managed Python lives under $InstallDir\.hermes-runtime, so the checkout
     # must exist before this stage creates that directory. Otherwise the later
     # repository stage treats the runtime-only directory as a broken checkout,
@@ -4925,7 +4975,7 @@ if ($IncludeDesktop) {
     $InstallStages += @{ Name = "desktop"; Title = "Building desktop app"; Category = "install"; NeedsUserInput = $false; Worker = "Stage-Desktop" }
 }
 $InstallStages += @(
-    @{ Name = "path";             Title = "Adding Hermes to PATH";                Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-Path" }
+    @{ Name = "path";             Title = "Instalando el comando janitor";        Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-Path" }  # JANITOR: Spanish title
     @{ Name = "config-templates"; Title = "Writing configuration templates";      Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-ConfigTemplates" }
     @{ Name = "platform-sdks";    Title = "Installing messaging platform SDKs";   Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-PlatformSdks" }
     @{ Name = "bootstrap-marker"; Title = "Marking install complete";              Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-BootstrapMarker" }
@@ -5141,15 +5191,21 @@ if ($MyInvocation.InvocationName -eq ".") {
 }
 
 try {
+    if ($IncludeDesktop) {  # JANITOR: the Janitor app is installed from its release, never built here
+        Write-Err (Get-JanitorText "-IncludeDesktop no est\u00e1 disponible en Janitor: la app se instala desde su versi\u00f3n publicada.")  # JANITOR:
+        exit 1  # JANITOR:
+    }  # JANITOR:
     if ($Ensure -ne "") {
         if ($PSBoundParameters.ContainsKey("Stage")) {
             Write-Err "Cannot use -Ensure and -Stage simultaneously"
             exit 1
         }
+        if (Test-JanitorLegacyHome) { Write-Err (Get-JanitorLegacyHomeMessage); exit 1 }  # JANITOR: legacy-home guard
         Invoke-EnsureMode -Deps $Ensure
         exit 0
     }
     if ($PostInstall) {
+        if (Test-JanitorLegacyHome) { Write-Err (Get-JanitorLegacyHomeMessage); exit 1 }  # JANITOR: legacy-home guard
         Invoke-PostInstallMode
         exit 0
     }
@@ -5196,6 +5252,8 @@ try {
             $err | ConvertTo-Json -Compress | Write-Output
             exit 2
         }
+        # JANITOR: every stage, before any write; the catch below emits the JSON frame the app reads.
+        if (Test-JanitorLegacyHome) { throw (Get-JanitorLegacyHomeMessage) }
         Step-OutOfInstallDir
         Invoke-Stage -StageDef $def
         exit 0
@@ -5203,6 +5261,7 @@ try {
 
     # Default: full install (today's behavior, plus optional -NonInteractive
     # and -Json layered on by the params above).
+    if (Test-JanitorLegacyHome) { throw (Get-JanitorLegacyHomeMessage) }  # JANITOR: legacy-home guard
     Main
 } catch {
     if ($Json -or $Stage) {
@@ -5229,7 +5288,7 @@ try {
     Write-Err "Installation failed: $_"
     Write-Host ""
     Write-Info "If the error is unclear, try downloading and running the script directly:"
-    Write-Host "  Invoke-WebRequest -Uri 'https://hermes-agent.nousresearch.com/install.ps1' -OutFile install.ps1" -ForegroundColor Yellow
+    Write-Host "  Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/reck74/Janitor-Agent/stable/scripts/install.ps1' -OutFile install.ps1" -ForegroundColor Yellow  # JANITOR: the fork
     Write-Host "  .\install.ps1" -ForegroundColor Yellow
     Write-Host ""
 }

@@ -4,7 +4,7 @@ description: "Mapa de Janitor: agentes, skills, aplicativos y archivos."
 version: 4.0.0
 author: Janitor Agent
 license: MIT
-platforms: [linux, macos]
+platforms: [linux, macos, windows]
 
 metadata:
   hermes:
@@ -28,7 +28,8 @@ every command below that mutates state is run only after the user confirms.
 ## Prerequisites
 
 - The `janitor` command on `PATH` (installed by the desktop app or the installer).
-- Optional apps need Docker running (`docker info` succeeds).
+- Optional apps need Linux or macOS with Docker running (`docker info` succeeds);
+  on Windows they are not available.
 
 ## How to Run
 
@@ -58,7 +59,8 @@ with its own skills, keys and empty memory — nothing is shared with the main a
 | Remove an app (keeps data volumes) | `janitor services uninstall <name>` |
 | Update Janitor | `janitor update` |
 
-**Where things live** (main agent; a specialist uses `~/.janitor/profiles/<perfil>/`):
+**Where things live** (main agent; a specialist uses `~/.janitor/profiles/<perfil>/`;
+on Windows `~` is `%USERPROFILE%`):
 
 | Path | What |
 |------|------|
@@ -99,6 +101,7 @@ messaging tokens) and starts with empty memory.
 - `janitor profile create --clone` copies memory; specialists are created with
   `janitor plantillas crear` instead.
 - Optional apps are never installed by default: deploy them only when asked.
+- On Windows `janitor services deploy` refuses: the optional apps need Linux or macOS.
 - `janitor services uninstall` keeps Docker volumes; data is lost only if the user
   removes volumes with Docker themselves.
 

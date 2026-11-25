@@ -123,6 +123,44 @@ def check_desktop_update_posix(tmp_path):
     assert decision == "relaunch" and "Janitor" in message and "hermes" not in message.lower(), message
 
 
+def check_install_ps1(tmp_path):
+    """Windows installer: a legacy home is refused with the Spanish reason in the JSON
+    frame, and the config stage leaves a seeded home without upstream's skills."""
+    from tests.janitor.test_janitor_install_ps1 import (
+        assert_legacy_refusal,
+        legacy_home,
+        run_config_stage,
+        run_install_ps1,
+    )
+
+    legacy = tmp_path / "legacy"
+    legacy.mkdir()
+    refused = run_install_ps1(legacy, legacy_home(legacy), "-Stage", "repository", "-NonInteractive", "-Json",
+                              "-InstallDir", str(legacy / "install"))
+    assert_legacy_refusal(refused, "repository")
+
+    fresh = tmp_path / "fresh"
+    fresh.mkdir()
+    result, home = run_config_stage(fresh)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (home / ".no-bundled-skills").is_file()
+    assert "janitor" in (home / "config.yaml").read_text(encoding="utf-8")
+
+
+def check_desktop_update_windows(tmp_path):
+    """Windows update hand-off drives `janitor update` with flags the real parser accepts."""
+    from janitor.update_core import parse_update_args
+    from tests.janitor.test_janitor_desktop_update_windows import run_windows_handoff, update_calls
+
+    seen = run_windows_handoff(tmp_path)
+    assert seen["code"] == 0, seen["output"]
+    assert not any("hermes_cli.main" in call for call in seen["calls"]), seen["calls"]
+    (update,) = update_calls(seen)
+    args = parse_update_args(update[3:])
+    assert args.gateway and args.keep_stash and args.branch == "stable", update
+    assert seen["result"]["ok"] is True, seen["result"]
+
+
 def check_desktop_update_ui(tmp_path):
     """The update window the user sees is served in Spanish and never names Hermes."""
     import subprocess
@@ -265,10 +303,14 @@ CHECKS = {
     "install-sh": check_install_sh,
     "desktop-update-posix": check_desktop_update_posix,
     "desktop-update-ui": check_desktop_update_ui,
+    "install-ps1": check_install_ps1,
+    "desktop-update-windows": check_desktop_update_windows,
 }
 
 # Checks that drive a POSIX shell script run on Linux only (directive #11 lanes).
 _LINUX_ONLY_CHECKS = {"install-sh", "desktop-update-posix"}
+# Checks that drive Windows PowerShell 5.1 scripts run on Windows only (os-compat lane).
+_WINDOWS_ONLY_CHECKS = {"install-ps1", "desktop-update-windows"}
 
 
 @pytest.fixture(scope="module")
@@ -283,7 +325,9 @@ def test_every_test_touchpoint_has_a_check_and_vice_versa(overlay):
 @pytest.mark.parametrize(
     "check_id",
     [
-        pytest.param(cid, marks=pytest.mark.linux_only) if cid in _LINUX_ONLY_CHECKS else cid
+        pytest.param(cid, marks=pytest.mark.linux_only) if cid in _LINUX_ONLY_CHECKS
+        else pytest.param(cid, marks=pytest.mark.windows_only) if cid in _WINDOWS_ONLY_CHECKS
+        else cid
         for cid in sorted(CHECKS)
     ],
 )
@@ -294,7 +338,8 @@ def test_touchpoint_contract(check_id, capsys, tmp_path, monkeypatch):
     elif check is check_update_channel:
         check(monkeypatch, tmp_path)
     elif check in (check_install_sh, check_desktop_update_posix, check_desktop_update_ui, check_backend_user_copy,
-                   check_runtime_copy, check_update_single_flight):
+                   check_runtime_copy, check_update_single_flight, check_install_ps1,
+                   check_desktop_update_windows):
         check(tmp_path)
     else:
         check()

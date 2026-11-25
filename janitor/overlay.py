@@ -133,7 +133,7 @@ def changed_paths(base: str, repo: Path = REPO_ROOT) -> List[str]:
         ["git", "diff", "--name-only", "--no-renames", base],
         cwd=repo,
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         check=True,
     )
     return [line for line in result.stdout.splitlines() if line]

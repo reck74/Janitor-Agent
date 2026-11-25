@@ -29,3 +29,12 @@ def test_the_release_job_command_exits_nonzero_on_a_wrong_tag(capsys):
     assert release_channel.main(["--check-tag", good]) == 0
     assert release_channel.main(["--check-tag", good + "-x"]) == 1
     assert "::error::" in capsys.readouterr().out
+
+
+def test_expected_tag_command_prints_the_tag_check_tag_accepts(capsys):
+    """``--expected-tag`` names exactly the tag ``--check-tag`` lets release this tree."""
+    assert release_channel.main(["--expected-tag"]) == 0
+    printed = capsys.readouterr().out.strip()
+
+    assert release_channel.main(["--check-tag", printed]) == 0
+    assert release_channel.main(["--expected-tag", "extra"]) == 2

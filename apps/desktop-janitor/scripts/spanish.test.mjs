@@ -2,6 +2,7 @@
 // untranslated check, and the plugin Spanish bundles (P11). Read-only on
 // apps/desktop.
 
+import { pathToFileURL } from 'node:url'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -98,7 +99,7 @@ for (const entry of PLUGIN_LOCALES) {
   test(`plugin ${entry.plugin}: the injected es bundle has the English key set, value kinds and arguments`, async () => {
     const english = evaluateLiteral(objectLiteralAfter(read(entry.file), entry.english))
     const injected = evaluateLiteral(objectLiteralAfter(finalText(entry.file), entry.spanish))
-    const authored = (await import(bundlePath(entry.plugin))).default
+    const authored = (await import(pathToFileURL(bundlePath(entry.plugin)).href)).default
 
     assert.deepEqual(shapeDifferences(english, injected), [])
     // What gets injected is exactly the authored module.
@@ -107,7 +108,7 @@ for (const entry of PLUGIN_LOCALES) {
   })
 
   test(`plugin ${entry.plugin}: Spanish text never says Hermes and keeps the Janitor command`, async () => {
-    const authored = (await import(bundlePath(entry.plugin))).default
+    const authored = (await import(pathToFileURL(bundlePath(entry.plugin)).href)).default
 
     for (const [at, value] of renderedStrings(authored)) {
       assert.doesNotMatch(value, /hermes/i, at)

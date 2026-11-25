@@ -27,6 +27,11 @@ import './nous-urls.test.mjs'
 import './compat.test.mjs'
 import './palette.test.mjs'
 import './install-boot.test.mjs'
+import './arch-package.test.mjs'
+import './platforms.test.mjs'
+import './smoke-packaged.test.mjs'
+import './release-channel.test.mjs'
+import './app-version.test.mjs'
 
 test('overrides deep-merge into the upstream config without dropping keys', () => {
   const upstream = readJson(path.join(APP_DIR, 'package.json')).build
@@ -40,9 +45,13 @@ test('overrides deep-merge into the upstream config without dropping keys', () =
   assert.deepEqual(merged.files, upstream.files)
   assert.deepEqual(merged.extraResources, upstream.extraResources)
 
+  // Every upstream Info.plist key survives; the ones macOS shows (bundle name,
+  // permission prompts) are Janitor's, in Spanish (F6-03).
   for (const [key, value] of Object.entries(upstream.mac.extendInfo)) {
-    if (!key.startsWith('CFBundle')) {
-      assert.equal(merged.mac.extendInfo[key], value)
+    assert.ok(key in merged.mac.extendInfo, `mac.extendInfo.${key} lost`)
+
+    if (/^NS\w+UsageDescription$/.test(key)) {
+      assert.notEqual(merged.mac.extendInfo[key], value, `${key} still upstream's`)
     }
   }
 })

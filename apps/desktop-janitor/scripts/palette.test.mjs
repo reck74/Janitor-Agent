@@ -2,7 +2,8 @@
 // to its source of truth, so a sync that adds a command, a category, a usage
 // hint or a catalog skill fails here instead of shipping English.
 // Read-only on apps/desktop; the engine's command registry is read by
-// importing hermes_cli.commands with the system Python (stdlib-only module).
+// importing hermes_cli.commands with the system Python, which needs the
+// engine's own dependencies (PyYAML, via utils.py).
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
@@ -38,16 +39,28 @@ print(json.dumps([
 ]))
 `
 
+// The registry is the same data on every OS, so it is checked on Linux, where
+// CI (janitor-ci.yml and the release workflow's Linux build) has a python3
+// with PyYAML. The Windows and macOS release builds run no Python on purpose
+// (see the `prepare` job): there these tests show as skipped, never as passed.
+// On Linux a Python that cannot import the engine fails the tests.
+const ENGINE_SKIP =
+  process.platform !== 'linux' &&
+  'reads hermes_cli.commands with a python3 that has the engine dependencies; checked on the Linux runners only'
+
+let engineCache
+
 function engineCommands() {
+  if (engineCache) return engineCache
+
   const python = process.env.PYTHON || 'python3'
   const result = spawnSync(python, ['-I', '-c', ENGINE_DUMP, REPO_ROOT], { encoding: 'utf8' })
 
   assert.equal(result.status, 0, `could not read hermes_cli.commands with ${python}: ${result.stderr || result.error}`)
+  engineCache = JSON.parse(result.stdout)
 
-  return JSON.parse(result.stdout)
+  return engineCache
 }
-
-const ENGINE = engineCommands()
 
 function spanishCommandDescs() {
   const es = finalText('src/i18n/es.ts')
@@ -70,7 +83,7 @@ function offeredByRegistry() {
 function engineOffered() {
   const offered = offeredByRegistry()
 
-  return ENGINE.filter(cmd => !cmd.gateway_only && offered.has(cmd.name) && !(cmd.name in NOT_OFFERED_BY_ENGINE_TEXT))
+  return engineCommands().filter(cmd => !cmd.gateway_only && offered.has(cmd.name) && !(cmd.name in NOT_OFFERED_BY_ENGINE_TEXT))
 }
 
 // Minimal reader for janitor/catalog.yaml (`- id:` then `source:` per skill).
@@ -91,8 +104,8 @@ function catalogSkills() {
 
 // ---- group headers -----------------------------------------------------------
 
-test('every palette group the engine or the app can send has a Spanish header', () => {
-  const groups = new Set([...ENGINE.map(cmd => cmd.category), ...ENGINE_EXTRA_GROUPS, ...APP_GROUPS])
+test('every palette group the engine or the app can send has a Spanish header', { skip: ENGINE_SKIP }, () => {
+  const groups = new Set([...engineCommands().map(cmd => cmd.category), ...ENGINE_EXTRA_GROUPS, ...APP_GROUPS])
   const missing = [...groups].filter(group => !PALETTE_GROUP_LABELS[group])
 
   assert.deepEqual(missing, [], 'add these groups to PALETTE_GROUP_LABELS in brand/palette.mjs')
@@ -116,7 +129,7 @@ test('the popover renders the translated header, not the raw group value', () =>
 
 // ---- command descriptions and usage hints -----------------------------------------
 
-test('every engine command the palette offers has a Spanish description', () => {
+test('every engine command the palette offers has a Spanish description', { skip: ENGINE_SKIP }, () => {
   const descs = spanishCommandDescs()
   const missing = engineOffered()
     .filter(cmd => !descs.has(cmd.name))
@@ -125,7 +138,7 @@ test('every engine command the palette offers has a Spanish description', () => 
   assert.deepEqual(missing, [], 'offered with the engine English text — add composer.commandDescs via brand/catalog-overrides.mjs or hide them')
 })
 
-test('every offered usage hint is pinned in USAGE_HINTS, and every pin matches the engine', () => {
+test('every offered usage hint is pinned in USAGE_HINTS, and every pin matches the engine', { skip: ENGINE_SKIP }, () => {
   const byName = new Map(engineOffered().map(cmd => [cmd.name, cmd]))
   const missing = [...byName.values()].filter(cmd => cmd.hint && !USAGE_HINTS[cmd.name]).map(cmd => `${cmd.name} ${cmd.hint}`)
   const stale = Object.entries(USAGE_HINTS)
@@ -175,7 +188,14 @@ test('the skill rows reach es.ts and never shadow a command of the English catal
   for (const [id, text] of Object.entries(SKILL_DESCRIPTIONS)) {
     assert.equal(descs.get(`/${id}`), text.replace(/'/g, "\\'"), id)
     assert.equal(enCommands.has(`/${id}`), false, `/${id} is a command upstream translates`)
-    assert.equal(ENGINE.some(cmd => cmd.name === `/${id}`), false, `/${id} is an engine command`)
+  }
+})
+
+test('no skill row shadows an engine command', { skip: ENGINE_SKIP }, () => {
+  const engine = new Set(engineCommands().map(cmd => cmd.name))
+
+  for (const id of Object.keys(SKILL_DESCRIPTIONS)) {
+    assert.equal(engine.has(`/${id}`), false, `/${id} is an engine command`)
   }
 })
 

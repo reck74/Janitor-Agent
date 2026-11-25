@@ -47,11 +47,20 @@ def apply_to_engine() -> None:
 
 
 def main(argv: list[str]) -> int:
-    """``python -m janitor.release_channel --check-tag <tag>`` (release workflow)."""
+    """``python -m janitor.release_channel --check-tag <tag>`` (release workflow)
+    or ``--expected-tag`` (the tag this tree would be released as, e.g. to name
+    the Arch package locally)."""
+    pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
+    if argv == ["--expected-tag"]:
+        print(expected_tag(pyproject))
+        return 0
     if len(argv) != 2 or argv[0] != "--check-tag":
-        print("usage: python -m janitor.release_channel --check-tag <tag>", file=sys.stderr)
+        print(
+            "usage: python -m janitor.release_channel --check-tag <tag> | --expected-tag",
+            file=sys.stderr,
+        )
         return 2
-    problem = check_tag(argv[1], Path(__file__).resolve().parent.parent / "pyproject.toml")
+    problem = check_tag(argv[1], pyproject)
     if problem:
         print(f"::error::{problem}")
         return 1

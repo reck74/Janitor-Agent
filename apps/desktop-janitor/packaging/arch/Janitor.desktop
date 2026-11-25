@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Janitor
+GenericName=Agente de IA
+Comment=Agente de IA para administrar tus equipos, sistemas, redes y proyectos
+Exec=janitor-desktop %U
+TryExec=janitor-desktop
+Icon=janitor-desktop
+Terminal=false
+StartupWMClass=Janitor
+Categories=Development;
+MimeType=x-scheme-handler/hermes;

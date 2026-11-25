@@ -323,7 +323,7 @@ def _local_stash(git_cmd: list[str], cwd: Path) -> Optional[str]:
         git_cmd + ["status", "--porcelain"],
         cwd=cwd,
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         check=True,
     )
     if not status.stdout.strip():
@@ -333,7 +333,7 @@ def _local_stash(git_cmd: list[str], cwd: Path) -> Optional[str]:
         git_cmd + ["ls-files", "--unmerged"],
         cwd=cwd,
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
     )
     if unmerged.stdout.strip():
         print(" → Limpiando restos de un conflicto anterior...")
@@ -352,7 +352,7 @@ def _local_stash(git_cmd: list[str], cwd: Path) -> Optional[str]:
         git_cmd + ["rev-parse", "--verify", "refs/stash"],
         cwd=cwd,
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         check=True,
     ).stdout.strip()
 
@@ -368,7 +368,7 @@ def _local_restore_stash(
         git_cmd + ["stash", "list", "--format=%gd %H"],
         cwd=cwd,
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         check=True,
     )
     selector = None
@@ -498,7 +498,7 @@ def _check_only(branch: str) -> int:
         git_cmd + ["fetch", "origin"],
         cwd=project_root,
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
     )
     if fetch_result.returncode != 0:
         _report_fetch_failure(fetch_result.stderr.strip())
@@ -512,7 +512,7 @@ def _check_only(branch: str) -> int:
         git_cmd + ["rev-list", f"HEAD..origin/{branch}", "--count"],
         cwd=project_root,
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         check=True,
     )
     behind = int(result.stdout.strip())
@@ -562,7 +562,7 @@ def _fetch(git_cmd: list[str], cwd: Path) -> bool:
         git_cmd + ["fetch", "origin"],
         cwd=cwd,
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
     )
     if fetch_result.returncode == 0:
         return True
@@ -583,14 +583,14 @@ def _channel_published(git_cmd: list[str], cwd: Path, branch: str) -> bool:
     def known() -> bool:
         return subprocess.run(
             git_cmd + ["rev-parse", "--verify", "--quiet", ref],
-            cwd=cwd, capture_output=True, text=True,
+            cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
         ).returncode == 0
 
     if known():
         return True
     subprocess.run(
         git_cmd + ["fetch", "origin", f"+refs/heads/{branch}:{ref}"],
-        cwd=cwd, capture_output=True, text=True,
+        cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     return known()
 
@@ -600,7 +600,7 @@ def _current_branch(git_cmd: list[str], cwd: Path) -> str:
         git_cmd + ["rev-parse", "--abbrev-ref", "HEAD"],
         cwd=cwd,
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         check=True,
     )
     return result.stdout.strip()
@@ -611,7 +611,7 @@ def _behind_count(git_cmd: list[str], cwd: Path, branch: str) -> int:
         git_cmd + ["rev-list", f"HEAD..origin/{branch}", "--count"],
         cwd=cwd,
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         check=True,
     )
     return int(result.stdout.strip())
@@ -635,7 +635,7 @@ def _pull_with_fallback(git_cmd: list[str], cwd: Path, branch: str) -> bool:
         git_cmd + ["pull", "--ff-only", "origin", branch],
         cwd=cwd,
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
     )
 
     if pull_result.returncode != 0:
@@ -647,7 +647,7 @@ def _pull_with_fallback(git_cmd: list[str], cwd: Path, branch: str) -> bool:
             git_cmd + ["reset", "--hard", f"origin/{branch}"],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
         )
         if reset_result.returncode != 0:
             print("✗ No se pudo reemplazar el código del motor por la versión nueva.")
@@ -687,7 +687,7 @@ def _pull_with_fallback(git_cmd: list[str], cwd: Path, branch: str) -> bool:
                 git_cmd + ["reset", "--hard", pre_pull_sha],
                 cwd=cwd,
                 capture_output=True,
-                text=True,
+                text=True, encoding="utf-8", errors="replace",
             )
             if rollback_result.returncode == 0:
                 print("  ✓ Vuelta atrás hecha: tu instalación queda como estaba.")
@@ -880,7 +880,7 @@ def _missing_required_dependencies(project_root: Path) -> Optional[list[str]]:
     try:
         result = subprocess.run(
             [str(python), "-c", _MISSING_DISTRIBUTIONS_SCRIPT, *names],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return [f"(el intérprete {python} no responde: {exc})"]
@@ -1264,7 +1264,7 @@ def _read_persisted_marker() -> Optional[str]:
     if not marker.exists():
         return None
     try:
-        payload = json.loads(marker.read_text())
+        payload = json.loads(marker.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     if not isinstance(payload, dict):
@@ -1324,7 +1324,7 @@ def _write_incomplete_marker(failed_step: str, stash_ref: Optional[str]) -> None
         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     try:
-        marker.write_text(json.dumps(payload))
+        marker.write_text(json.dumps(payload), encoding="utf-8")
     except OSError as exc:
         print(f"  ⚠ No se pudo guardar la marca de actualización incompleta: {exc}")
 
@@ -1334,7 +1334,7 @@ def _read_persisted_marker_raw(marker_path: Path) -> Optional[str]:
     preserve-on-write path. Returns ``None`` if absent or malformed.
     """
     try:
-        payload = json.loads(marker_path.read_text())
+        payload = json.loads(marker_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     if not isinstance(payload, dict):
@@ -1355,7 +1355,7 @@ def _deps_pending_marker(project_root: Path, git_cmd: Optional[list[str]] = None
         try:
             out = subprocess.run(
                 git_cmd + ["rev-parse", "--absolute-git-dir"],
-                cwd=project_root, capture_output=True, text=True, timeout=30,
+                cwd=project_root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
             )
             if out.returncode == 0 and out.stdout.strip():
                 git_dir = Path(out.stdout.strip())
@@ -1380,7 +1380,7 @@ def _set_deps_pending(project_root: Path, pending: bool, git_cmd: Optional[list[
 def _head_sha(git_cmd: list[str], project_root: Path) -> Optional[str]:
     try:
         out = subprocess.run(git_cmd + ["rev-parse", "HEAD"], cwd=project_root,
-                             capture_output=True, text=True, timeout=30)
+                             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
     except (OSError, subprocess.SubprocessError):
         return None
     return out.stdout.strip() or None if out.returncode == 0 else None
@@ -1869,7 +1869,7 @@ def run_janitor_update(args) -> int:
                 git_cmd + ["status", "--porcelain"],
                 cwd=project_root,
                 capture_output=True,
-                text=True,
+                text=True, encoding="utf-8", errors="replace",
                 check=True,
             )
             if worktree_status.stdout.strip():
@@ -1904,7 +1904,7 @@ def run_janitor_update(args) -> int:
                 git_cmd + ["checkout", branch],
                 cwd=project_root,
                 capture_output=True,
-                text=True,
+                text=True, encoding="utf-8", errors="replace",
                 check=True,
             )
         else:

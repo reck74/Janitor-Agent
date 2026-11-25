@@ -64,6 +64,11 @@ def _load_janitor_env() -> None:
 # the home it resolved, and an early load of the root .env would leak its
 # secrets into a ``--profile`` process (the desktop's per-profile backends).
 if len(sys.argv) > 1 and sys.argv[1] == "update":
+    # The banner and errors below print before hermes_cli repairs the console
+    # encoding; a cp1252 pipe on Windows would raise UnicodeEncodeError.
+    from janitor.stdio import ensure_utf8_stdio
+
+    ensure_utf8_stdio()
     _load_janitor_env()
     try:
         from janitor.update_bootstrap import run_update

@@ -18,6 +18,11 @@
 // and never shares single-instance lock, window state or connection settings
 // with a real Hermes Desktop install. Pre-1.0 Janitor desktop builds used
 // ~/.config/Hermes; their window/connection settings are not carried over.
+//
+// extraMetadata.version is Janitor's version in its display form
+// (pyproject.toml → janitor/version.py, brand/app-version.mjs), read without
+// Python: app.getVersion(), the Windows installer/.exe and the macOS bundle
+// carry it instead of upstream's apps/desktop/package.json version.
 
 import fs from 'node:fs'
 import os from 'node:os'
@@ -25,6 +30,7 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
+import { janitorAppVersion } from '../brand/app-version.mjs'
 import { COMPAT_FILE, readDesktopContract } from '../brand/compat.mjs'
 
 import { allPatches } from './brand-patches.mjs'
@@ -36,8 +42,16 @@ export const APP_DIR = path.resolve(OVERLAY_DIR, '..', 'desktop')
 
 // [overlay source, apps/desktop target]. The banner is the J4NITOR-AGENT lettering of the
 // empty chat (F1-18, brand/theme.mjs P12-look-banner).
+//
+// Windows (F6-02): upstream's assets/icon.ico is stamped onto the .exe by
+// scripts/set-exe-identity.mjs (afterExtract), shipped as resources/icon.ico
+// (extraResources) and used as the window icon (electron/app-icon.ts), so the
+// Janitor .ico replaces it for the build and is restored afterwards. The .icns
+// is fork-only: electron-builder.janitor.json points mac.icon at it.
 export const OVERLAY_FILES = [
   ['assets/janitor-mark.png', 'assets/janitor-icon.png'],
+  ['assets/janitor-icon.ico', 'assets/icon.ico'],
+  ['assets/janitor-icon.icns', 'assets/janitor-icon.icns'],
   ['assets/janitor-mark.png', 'public/apple-touch-icon.png'],
   ['assets/janitor-mark.png', 'public/nous-girl.jpg'],
   ['assets/filler-bg0.jpg', 'public/ds-assets/filler-bg0.jpg'],
@@ -45,7 +59,7 @@ export const OVERLAY_FILES = [
 ]
 
 // Targets upstream does not ship: the build creates them and restore() removes them.
-export const FORK_ONLY_TARGETS = new Set(['assets/janitor-icon.png', 'public/janitor-logo-banner.png'])
+export const FORK_ONLY_TARGETS = new Set(['assets/janitor-icon.png', 'assets/janitor-icon.icns', 'public/janitor-logo-banner.png'])
 
 const isPlainObject = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 
@@ -63,11 +77,11 @@ export function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'))
 }
 
-export function janitorBuilderConfig(appDir = APP_DIR, overlayDir = OVERLAY_DIR) {
+export function janitorBuilderConfig(appDir = APP_DIR, overlayDir = OVERLAY_DIR, version = janitorAppVersion()) {
   const upstream = readJson(path.join(appDir, 'package.json')).build
   const overrides = readJson(path.join(overlayDir, 'electron-builder.janitor.json'))
 
-  return mergeBuilderConfig(upstream, overrides)
+  return mergeBuilderConfig(upstream, mergeBuilderConfig(overrides, { extraMetadata: { version } }))
 }
 
 /**
@@ -112,6 +126,7 @@ export function runCheck(appDir = APP_DIR, patches = allPatches(appDir), out = c
   const failed = results.filter(r => !r.ok).length
   out(`${results.length - failed}/${results.length} patches resolve against ${appDir}${transpileOk ? '' : '; transpile FAILED'}`)
   out(`app↔engine contract baked into this build: ${readDesktopContract()} (${COMPAT_FILE}, P13)`)
+  out(`app version (extraMetadata.version, from pyproject.toml): ${janitorAppVersion()}`)
 
   return ok && transpileOk
 }
@@ -145,6 +160,7 @@ function main(argv) {
   fs.writeFileSync(configPath, JSON.stringify(janitorBuilderConfig(), null, 2))
 
   log(`app↔engine contract baked into this build: ${readDesktopContract()} (${COMPAT_FILE})`)
+  log(`app version: ${janitorAppVersion()} (pyproject.toml)`)
 
   const restore = applyOverlay(APP_DIR, OVERLAY_DIR, { patches: allPatches(), log })
 

@@ -112,7 +112,7 @@ test('the build bakes the repo\'s contract; a malformed file stops the build', (
 
 // ---- the boot gate as injected ----------------------------------------------
 
-function loadGate(contract, engineRoot) {
+function loadGate(contract, engineRoot, platform = 'linux') {
   const calls = { dialogs: [], opened: [], quit: 0, openUpdates: 0, logs: [] }
   let onQuit
   const quitCalled = new Promise(resolve => (onQuit = resolve))
@@ -120,6 +120,7 @@ function loadGate(contract, engineRoot) {
 
   const context = {
     URL,
+    process: { platform },
     fs,
     path,
     resolveUpdateRoot: () => engineRoot,
@@ -183,7 +184,7 @@ test('engine newer than the app: blocking Spanish dialog, download opens, app qu
     const [shown] = calls.dialogs
 
     assert.equal(shown.message, COMPAT_DIALOG.message)
-    assert.ok(shown.detail.startsWith(COMPAT_DIALOG.detail))
+    assert.ok(shown.detail.startsWith(COMPAT_DIALOG.details.linux))
     assert.ok(shown.detail.endsWith(FORK_RELEASE_URL))
     assert.deepEqual([...shown.buttons], ['Abrir la descarga', 'Salir'])
     assert.equal(shown.cancelId, 1)
@@ -191,6 +192,31 @@ test('engine newer than the app: blocking Spanish dialog, download opens, app qu
     assert.deepEqual(calls.opened, [FORK_RELEASE_URL], 'an off-fork release_url is never opened')
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+// F6-04d: the update instructions name the file the user downloads on each platform.
+test('the blocking dialog tells each platform how to replace the app, in Spanish', async () => {
+  const expected = { linux: /AppImage/, win32: /instalador \(\.exe\)/, darwin: /\.dmg[\s\S]*Aplicaciones/, freebsd: /AppImage/ }
+
+  for (const [platform, pattern] of Object.entries(expected)) {
+    const root = engineWith(engineFile(3))
+
+    try {
+      const { calls, quitCalled, gate } = loadGate(2, root, platform)
+
+      gate()
+      await quitCalled
+
+      const [shown] = calls.dialogs
+
+      assert.match(shown.detail, pattern, platform)
+      assert.ok(shown.detail.startsWith(COMPAT_DIALOG.details[platform] ?? COMPAT_DIALOG.details.linux), platform)
+      assert.ok(shown.detail.endsWith(`\n\n${FORK_RELEASE_URL}`), platform)
+      assert.doesNotMatch(shown.detail, /Hermes/)
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
   }
 })
 

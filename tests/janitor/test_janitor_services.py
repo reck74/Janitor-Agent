@@ -192,7 +192,7 @@ def test_deploy_runs_the_skill_script_with_janitor_env(monkeypatch):
         return subprocess.CompletedProcess(argv, 0)
 
     firecrawl = services.get_service("firecrawl")
-    assert services.deploy(firecrawl, runner) == 0
+    assert services.deploy(firecrawl, runner, platform="linux") == 0
     assert seen["argv"] == ["bash", str(firecrawl.deploy_script)]
     assert seen["cwd"] == str(firecrawl.skill_dir)
     assert seen["env"]["JANITOR_SOURCE_DIR"] == str(REPO_ROOT)
@@ -242,6 +242,33 @@ def test_status_tells_a_running_container_from_a_service_that_answers(tmp_path, 
     assert len(set(texts.values())) == 3
     assert {name: line.split(": ", 1)[1] for name, line in heads.items()} == texts
     assert docker.mutating() == []
+
+
+def _refusing_runner(argv, **kwargs):
+    raise AssertionError(f"nothing may run on an unsupported OS: {argv}")
+
+
+def test_services_on_windows_are_refused_with_a_spanish_reason_and_run_nothing():
+    """Deploy scripts are bash and Docker is asked nothing: the reason is the answer."""
+    with pytest.raises(services.ServiceError) as exc:
+        services.deploy(services.get_service("firecrawl"), _refusing_runner, platform="win32")
+    assert "Linux o macOS" in str(exc.value)
+    assert services.docker_status(_refusing_runner, platform="win32") == services.DOCKER_UNSUPPORTED
+
+
+@pytest.mark.windows_only
+def test_windows_deploy_and_services_screen_report_why():
+    """On a real Windows host: `janitor services deploy` explains itself, and the app's
+    Servicios screen gets the reason in its payload instead of a Docker error."""
+    from janitor.desktop_plugin import api
+
+    lines: list[str] = []
+    assert services.handle(_args("deploy", "firecrawl"), runner=_refusing_runner, out=lines.append) == 1
+    assert "Linux o macOS" in lines[0]
+
+    view = api.list_view(_refusing_runner)
+    assert view["docker"] == {"available": False, "status": services.DOCKER_UNSUPPORTED}
+    assert view["services"] and all(s["state"] == api.STATE_DOCKER_UNAVAILABLE for s in view["services"])
 
 
 def test_missing_docker_is_a_clean_error():

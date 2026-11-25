@@ -1,0 +1,7 @@
+# Text files of the overlay that the build or its tests read as text. The
+# root .gitattributes forces LF for source files only; without this, a Windows
+# checkout (core.autocrlf=true on the runners) turns these into CRLF and the
+# readers that split on "\n" see a trailing "\r" in every row.
+*.tsv      text eol=lf
+*.in       text eol=lf
+*.desktop  text eol=lf

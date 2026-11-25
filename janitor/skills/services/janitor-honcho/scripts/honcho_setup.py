@@ -56,7 +56,7 @@ LEGACY_COMPOSE_SHA256 = frozenset({
 })
 MIN_FREE_GB = 5.0
 MINIMAX_ANTHROPIC_URL = "https://api.minimax.io/anthropic"
-MINIMAX_MODEL = "MiniMax-M2.7"
+MINIMAX_MODEL = "MiniMax-M3"
 MINIMAX_FEATURES = (
     "DERIVER", "SUMMARY", "DREAM_DEDUCTION", "DREAM_INDUCTION",
     *(f"DIALECTIC_LEVELS__{lvl}" for lvl in ("minimal", "low", "medium", "high", "max")),
