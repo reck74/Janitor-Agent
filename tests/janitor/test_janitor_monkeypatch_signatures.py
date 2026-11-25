@@ -189,3 +189,37 @@ class TestGatewayUpdateSpawner:
         assert "hermes_cli.main" not in shell_command
         # The flags upstream appends are ones the Janitor update understands.
         assert parse_update_args(["--gateway"]).gateway is True
+
+    def test_windows_spawn_runs_the_janitor_launcher_through_upstreams_helper(self, tmp_path):
+        """Upstream's Windows branch ignores the argv it gets; the Janitor spawn keeps upstream's
+        helper (output + exit-code files) but hands it ``janitor update``."""
+        import sys
+
+        import gateway.slash_commands as slash_commands
+        from janitor.plugin.gateway_update import janitor_update_argv, windows_update_argv
+
+        out, code = tmp_path / "out.txt", tmp_path / "code"
+        argv = windows_update_argv(slash_commands._WINDOWS_UPDATE_HELPER, out, code)
+
+        assert argv[:5] == [sys.executable, "-c", slash_commands._WINDOWS_UPDATE_HELPER, str(out), str(code)]
+        assert argv[5:] == [*janitor_update_argv(), "update", "--gateway"]
+        assert "hermes_cli.main" not in argv
+
+    @pytest.mark.windows_only
+    def test_windows_update_command_runs_the_janitor_launcher(self, spawner, monkeypatch, tmp_path):
+        import subprocess
+        import sys
+
+        slash_commands, _original = spawner
+        spawned = []
+        monkeypatch.setattr(subprocess, "Popen", lambda argv, **kw: spawned.append((argv, kw)))
+
+        upstream_argv = [sys.executable, "-m", "hermes_cli.main"]
+        slash_commands._spawn_detached_update(upstream_argv, tmp_path / "out.txt", tmp_path / "code")
+
+        ((argv, kwargs),) = spawned
+        assert argv[-5:] == [sys.executable, "-m", "janitor.cli", "update", "--gateway"]
+        assert "hermes_cli.main" not in argv
+        assert kwargs.get("creationflags")  # detached: survives the gateway restart
+        # The gateway decodes the output file as UTF-8 and the banner is not cp1252.
+        assert kwargs["env"]["PYTHONIOENCODING"] == "utf-8"

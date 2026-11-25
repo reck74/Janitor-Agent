@@ -233,6 +233,21 @@ def test_command_link_replaces_a_dangling_link(tmp_path, venv_script):
     assert os.readlink(link_dir / "janitor") == str(venv_script)
 
 
+def test_command_link_on_windows_touches_nothing(tmp_path, venv_script):
+    """Windows gets its command from install.ps1: no symlink, not even the directory."""
+    link_dir = tmp_path / "bin"
+    result = seed.ensure_command_link(link_dir, venv_script, platform="win32")
+    assert result.startswith("kept")
+    assert not link_dir.exists()
+
+
+@pytest.mark.windows_only
+def test_command_link_on_a_real_windows_host_touches_nothing(tmp_path, venv_script):
+    link_dir = tmp_path / "bin"
+    assert seed.ensure_command_link(link_dir, venv_script).startswith("kept")
+    assert not link_dir.exists()
+
+
 # ── the launcher, end to end ───────────────────────────────────────────────
 
 

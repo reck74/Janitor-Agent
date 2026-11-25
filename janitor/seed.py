@@ -190,14 +190,18 @@ def ensure_home(home: Optional[Path] = None) -> List[str]:
     return changes
 
 
-def ensure_command_link(link_dir: Path, target: Optional[Path] = None) -> str:
+def ensure_command_link(link_dir: Path, target: Optional[Path] = None,
+                        platform: str = sys.platform) -> str:
     """Put ``janitor`` in ``link_dir`` as a symlink to this venv's console script.
 
     Returns ``created``, ``updated``, ``unchanged`` or ``kept: <reason>``.
     A ``janitor`` this installer did not create is left alone, except a
     dangling link, which is replaced (the new target exists, so the command
-    keeps working).
+    keeps working). On Windows nothing is touched: symlinks need privileges
+    there and ``scripts/install.ps1`` puts the command on ``PATH`` itself.
     """
+    if platform == "win32":
+        return "kept: on Windows the janitor command is installed by install.ps1"
     target = Path(target or Path(sys.prefix) / "bin" / COMMAND_NAME)
     if not target.is_file():
         return f"kept: {target} does not exist"
