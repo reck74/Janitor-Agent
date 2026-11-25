@@ -29,6 +29,7 @@ import './palette.test.mjs'
 import './install-boot.test.mjs'
 import './arch-package.test.mjs'
 import './platforms.test.mjs'
+import './smoke-packaged.test.mjs'
 
 test('overrides deep-merge into the upstream config without dropping keys', () => {
   const upstream = readJson(path.join(APP_DIR, 'package.json')).build

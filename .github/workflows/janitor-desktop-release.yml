@@ -1,9 +1,14 @@
 name: Janitor Desktop release
 
-# Builds the Janitor Desktop AppImage from the upstream apps/desktop plus the
-# apps/desktop-janitor build overlay (directive #17) and, for a `v*` tag, moves
-# the release channel branch (`stable`, janitor/release_channel.py) to the tag
-# and attaches the AppImage to the fork's GitHub release, where users download it.
+# Builds the Janitor desktop app from the upstream apps/desktop plus the
+# apps/desktop-janitor build overlay (directive #17) for Linux (AppImage),
+# Windows (NSIS installer, x64) and macOS (dmg, arm64; x64 experimental), plus
+# the Arch Linux package repackaged from the AppImage (F1-31). Every artifact is
+# verified from the INSIDE (install stamp, signature, architecture, identity),
+# launched once with Playwright (F6-09: screenshots as `janitor-smoke-<target>`)
+# and, for a `v*` tag, the `release` job moves the release channel branch
+# (`stable`, janitor/release_channel.py) to the tag and attaches every file to
+# the fork's GitHub release, where users download it.
 #
 # The build is always of the commit this run was triggered for (tag push, a
 # manual run from a branch or tag, or a PR head), never of another ref: the app
@@ -12,7 +17,9 @@ name: Janitor Desktop release
 # GITHUB_REF_NAME) and downloads scripts/install.sh at exactly that SHA on
 # first run, so the commit must exist on GitHub.
 #
-# Linux only. macOS and Windows builds need code signing and are not built here.
+# No signing certificates: macOS is signed ad hoc (`mac.identity: "-"` in
+# electron-builder.janitor.json) and Windows is unsigned. Do not add CSC_LINK
+# or APPLE_* here.
 
 on:
   push:
@@ -21,6 +28,15 @@ on:
     paths:
       - 'apps/desktop/**'
       - 'apps/desktop-janitor/**'
+      - 'apps/shared/**'
+      - 'scripts/install.sh'
+      - 'scripts/install.ps1'
+      - 'scripts/desktop-update/**'
+      - 'janitor/release_channel.py'
+      - 'pyproject.toml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'LICENSE'
       - '.github/workflows/janitor-desktop-release.yml'
   workflow_dispatch:
 
@@ -31,21 +47,100 @@ concurrency:
   group: janitor-desktop-release-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  appimage:
+  # Everything that needs Python runs here once, so the Windows and macOS
+  # builds do not depend on a python3 in the runner.
+  prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 10
+    outputs:
+      stamp_branch: ${{ steps.channel.outputs.stamp_branch }}
+      expected_tag: ${{ steps.channel.outputs.expected_tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      # A release is found by its tag (`v` + the version the user sees): refuse a
+      # tag that disagrees with pyproject.toml before building anything.
+      - name: Tag matches the version
+        if: github.ref_type == 'tag'
+        run: python3 -m janitor.release_channel --check-tag "$GITHUB_REF_NAME"
+      - name: Branch to stamp and expected tag
+        id: channel
+        run: |
+          # A tag build pins install-stamp.json to the tag's commit and follows
+          # the release channel afterwards (RELEASE_BRANCH in
+          # janitor/release_channel.py, `stable`): a tag is not a branch the
+          # installer or the updater can track, and users only get tagged
+          # versions. The `release` job moves that branch to this commit.
+          # Other runs keep GITHUB_REF_NAME (the branch, or `<n>/merge` in a PR).
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            stamp_branch=$(python3 -I -c 'import runpy, sys; print(runpy.run_path(sys.argv[1])["RELEASE_BRANCH"])' janitor/release_channel.py)
+          else
+            stamp_branch="$GITHUB_REF_NAME"
+          fi
+          test -n "$stamp_branch"
+          # The tag this tree would be released as: names the Arch package
+          # (pkgver) also in PRs and manual runs.
+          expected_tag=$(python3 -m janitor.release_channel --expected-tag)
+          test -n "$expected_tag"
+          echo "stamp_branch=$stamp_branch" >> "$GITHUB_OUTPUT"
+          echo "expected_tag=$expected_tag" >> "$GITHUB_OUTPUT"
+          echo "stamp branch: $stamp_branch, expected tag: $expected_tag"
+
+  build:
+    needs: prepare
+    name: build (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    # macOS x64 is best effort (see the matrix): its failure never blocks or
+    # fails the run, and the release attaches its dmg only if it exists.
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux
+            runner: ubuntu-latest
+            build_args: --linux AppImage
+            artifact: Janitor-linux-x86_64.AppImage
+            experimental: false
+          - target: windows-x64
+            runner: windows-latest
+            build_args: --win nsis --x64
+            artifact: Janitor-win-x64.exe
+            experimental: false
+          - target: macos-arm64
+            runner: macos-15
+            build_args: --mac dmg --arm64
+            artifact: Janitor-mac-arm64.dmg
+            lipo_arch: arm64
+            experimental: false
+          # apps/desktop/scripts/run-electron-builder.mjs packages the host's
+          # Electron, so an x64 dmg needs an Intel runner: `--x64` on arm64
+          # would ship an arm64 Electron. If the Intel image is retired the
+          # job never starts; it is still not required by `release`.
+          - target: macos-x64
+            runner: macos-15-intel
+            build_args: --mac dmg --x64
+            artifact: Janitor-mac-x64.dmg
+            lipo_arch: x86_64
+            experimental: true
+    env:
+      STAMP_BRANCH: ${{ needs.prepare.outputs.stamp_branch }}
+      ARTIFACT: ${{ matrix.artifact }}
+      # electron-builder skips signing in pull_request runs unless told
+      # otherwise; the ad hoc signature (`mac.identity: "-"`) is what the
+      # macOS checks below verify.
+      CSC_FOR_PULL_REQUEST: 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version: '26'
           cache: npm
-      # A release is found by its tag (`v` + the version the user sees): refuse a
-      # tag that disagrees with pyproject.toml before building anything.
-      - name: Tag matches the version
-        if: github.ref_type == 'tag'
-        run: python3 -m janitor.release_channel --check-tag "$GITHUB_REF_NAME"
       - name: Install npm 12
         run: npm install --global npm@12.2.2
       - name: Install dependencies
@@ -54,52 +149,257 @@ jobs:
         run: node --test apps/desktop-janitor/scripts/build.test.mjs
       - name: Brand patches resolve against apps/desktop
         run: node apps/desktop-janitor/scripts/build.mjs --check
-      - name: Build AppImage
+      - name: Build
         run: |
-          # A tag build pins install-stamp.json to the tag's commit and follows
-          # the release channel afterwards (RELEASE_BRANCH in
-          # janitor/release_channel.py, `stable`): a tag is not a branch the
-          # installer or the updater can track, and users only get tagged
-          # versions. The `release` job moves that branch to this commit.
-          # Other runs keep GITHUB_REF_NAME (the branch).
-          if [ "$GITHUB_REF_TYPE" = tag ]; then
-            channel=$(python3 -I -c 'import runpy, sys; print(runpy.run_path(sys.argv[1])["RELEASE_BRANCH"])' janitor/release_channel.py)
-            test -n "$channel"
-            export GITHUB_REF_NAME="$channel"
-          fi
+          # On a tag STAMP_BRANCH is the release channel (see `prepare`).
+          export GITHUB_REF_NAME="$STAMP_BRANCH"
           # No `--publish never` here: apps/desktop/scripts/run-electron-builder.mjs
           # already passes it, and a repeated flag reaches electron-builder as
           # a list, which it does not read as "never". On a tag push it then
           # tries to publish by itself and fails for lack of a token (first
           # run of v0.21.5-janitor.1). The `release` job does the publishing.
-          node apps/desktop-janitor/scripts/build.mjs --linux AppImage
-      - name: Verify AppImage and install stamp
+          node apps/desktop-janitor/scripts/build.mjs ${{ matrix.build_args }}
+      - name: Artifact name and checksum
         run: |
+          release=apps/desktop/release
+          if [ ! -f "$release/$ARTIFACT" ]; then
+            echo "::error::electron-builder did not produce $release/$ARTIFACT (artifactName in apps/desktop-janitor/electron-builder.janitor.json). Files it produced:"
+            ls -la "$release" || true
+            exit 1
+          fi
+          ext="${ARTIFACT##*.}"
           shopt -s nullglob
-          files=(apps/desktop/release/Janitor-*.AppImage)
-          test ${#files[@]} -eq 1
-          stamp=apps/desktop/build/install-stamp.json
+          matches=("$release"/Janitor-*."$ext")
+          if [ ${#matches[@]} -ne 1 ]; then
+            echo "::error::Expected exactly one Janitor-*.$ext in $release, found: ${matches[*]}"
+            exit 1
+          fi
+          mkdir -p dist
+          cp "$release/$ARTIFACT" dist/
+          cd dist
+          if command -v sha256sum >/dev/null; then sha256sum "$ARTIFACT"; else shasum -a 256 "$ARTIFACT"; fi > "$ARTIFACT.sha256"
+          cat "$ARTIFACT.sha256"
+      # build.mjs reverts every file it patched: the repo stays upstream's.
+      - name: apps/desktop left untouched
+        run: |
+          changes=$(git status --porcelain --untracked-files=no -- apps/desktop)
+          if [ -n "$changes" ]; then
+            echo "::error::The build left changes in apps/desktop:"
+            echo "$changes"
+            exit 1
+          fi
+
+      # ---- Verification inside the artifact (not apps/desktop/build) ----
+      - name: Verify inside the AppImage
+        if: runner.os == 'Linux'
+        run: |
+          work="$RUNNER_TEMP/appimage"
+          mkdir -p "$work"
+          cp "dist/$ARTIFACT" "$work/"
+          chmod +x "$work/$ARTIFACT"
+          # The AppImage runtime extracts without FUSE.
+          (cd "$work" && "./$ARTIFACT" --appimage-extract >/dev/null)
+          root="$work/squashfs-root"
+          stamp="$root/resources/install-stamp.json"
           cat "$stamp"
           test "$(jq -r .commit "$stamp")" = "$GITHUB_SHA"
-          if [ "$GITHUB_REF_TYPE" = tag ]; then
-            # The installer and the updater of a released app follow the channel.
-            channel=$(python3 -I -c 'import runpy, sys; print(runpy.run_path(sys.argv[1])["RELEASE_BRANCH"])' janitor/release_channel.py)
-            test "$(jq -r .branch "$stamp")" = "$channel"
+          test "$(jq -r .branch "$stamp")" = "$STAMP_BRANCH"
+          test -x "$root/Janitor"
+          echo "APP_EXE=$root/Janitor" >> "$GITHUB_ENV"
+
+      - name: Verify inside the dmg
+        if: runner.os == 'macOS'
+        env:
+          LIPO_ARCH: ${{ matrix.lipo_arch }}
+        run: |
+          mnt="$RUNNER_TEMP/janitor-dmg"
+          mkdir -p "$mnt"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "dist/$ARTIFACT"
+          trap 'hdiutil detach "$mnt" -force >/dev/null 2>&1 || true' EXIT
+          app="$mnt/Janitor.app"
+          test -d "$app"
+
+          stamp="$app/Contents/Resources/install-stamp.json"
+          cat "$stamp"
+          test "$(jq -r .commit "$stamp")" = "$GITHUB_SHA"
+          test "$(jq -r .branch "$stamp")" = "$STAMP_BRANCH"
+
+          # Ad hoc signature (no certificates), valid and complete.
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv "$app" 2> "$RUNNER_TEMP/codesign.txt" || true
+          cat "$RUNNER_TEMP/codesign.txt"
+          grep -qx 'Signature=adhoc' "$RUNNER_TEMP/codesign.txt"
+
+          archs=$(lipo -archs "$app/Contents/MacOS/Janitor")
+          echo "lipo: $archs"
+          test "$archs" = "$LIPO_ARCH"
+
+          plist="$app/Contents/Info.plist"
+          plutil -convert json -o "$RUNNER_TEMP/Info.json" "$plist"
+          bundle_id=$(jq -r .CFBundleIdentifier "$RUNNER_TEMP/Info.json")
+          app_id=$(jq -r .appId apps/desktop-janitor/electron-builder.janitor.json)
+          echo "CFBundleIdentifier: $bundle_id (appId: $app_id)"
+          test "$bundle_id" = "$app_id"
+          # Permission prompts are what the user reads: no «Hermes» there.
+          jq -r 'to_entries[] | select(.key | test("^NS.*UsageDescription$")) | "\(.key)=\(.value)"' "$RUNNER_TEMP/Info.json" | tee "$RUNNER_TEMP/usage.txt"
+          test -s "$RUNNER_TEMP/usage.txt"
+          if grep -i hermes "$RUNNER_TEMP/usage.txt"; then
+            echo "::error::Info.plist usage descriptions mention Hermes"
+            exit 1
           fi
-          test -z "$(git status --porcelain --untracked-files=no -- apps/desktop)"
+
+          # The mounted dmg is read-only: launch a copy.
+          ditto "$app" "$RUNNER_TEMP/Janitor.app"
+          echo "APP_EXE=$RUNNER_TEMP/Janitor.app/Contents/MacOS/Janitor" >> "$GITHUB_ENV"
+
+      - name: Install silently and verify the installed app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Join-Path $PWD "dist\$env:ARTIFACT"
+          $proc = Start-Process -FilePath $installer -ArgumentList '/S', '/currentuser' -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "installer exit code $($proc.ExitCode)" }
+          # Nothing else must hold the app when the smoke test starts.
+          Get-Process -Name Janitor -ErrorAction SilentlyContinue | Stop-Process -Force
+
+          # Per-user NSIS install (perMachine: false) → %LOCALAPPDATA%\Programs\<productName>.
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs\Janitor'
+          if (-not (Test-Path (Join-Path $dir 'Janitor.exe'))) {
+            Write-Host "::warning::Janitor.exe is not in $dir; searching"
+            $found = Get-ChildItem -Path $env:LOCALAPPDATA, $env:ProgramFiles, ${env:ProgramFiles(x86)} -Filter Janitor.exe -Recurse -Depth 4 -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $found) { throw 'Janitor.exe not found after the silent install' }
+            $dir = $found.DirectoryName
+            Write-Host "::warning::Janitor installed in $dir (expected $env:LOCALAPPDATA\Programs\Janitor)"
+          }
+          Write-Host "installed in $dir"
+          $exe = Join-Path $dir 'Janitor.exe'
+
+          $stamp = Get-Content -Raw (Join-Path $dir 'resources\install-stamp.json') | ConvertFrom-Json
+          $stamp | Format-List
+          if ($stamp.commit -ne $env:GITHUB_SHA) { throw "stamp commit $($stamp.commit) != $env:GITHUB_SHA" }
+          if ($stamp.branch -ne $env:STAMP_BRANCH) { throw "stamp branch $($stamp.branch) != $env:STAMP_BRANCH" }
+
+          $info = (Get-Item $exe).VersionInfo
+          $info | Format-List ProductName, CompanyName, FileDescription, ProductVersion, LegalTrademarks
+          if ($info.ProductName -ne 'Janitor') { throw "ProductName is '$($info.ProductName)'" }
+          if ($info.CompanyName -match 'Nous') { throw "CompanyName is '$($info.CompanyName)'" }
+
+          "APP_EXE=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: janitor-desktop-appimage
-          path: apps/desktop/release/Janitor-*.AppImage
+          name: janitor-desktop-${{ matrix.target }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+      # F6-09: launch the packaged app once (never clicks install) and keep a
+      # screenshot and the visible text, the only view of the app on systems
+      # nobody here runs.
+      - name: Launch smoke test
+        timeout-minutes: 8
+        run: node apps/desktop-janitor/scripts/smoke-packaged.mjs "$APP_EXE" "$RUNNER_TEMP/smoke"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: always()
+        with:
+          name: janitor-smoke-${{ matrix.target }}
+          path: ${{ runner.temp }}/smoke/
+          if-no-files-found: warn
+          retention-days: 14
+
+  # F1-31: the Arch package, built and installed in a clean Arch container from
+  # the AppImage this run produced.
+  arch-package:
+    needs: [prepare, build]
+    # Only the Linux build matters here: a Windows or macOS failure must not
+    # hide the result of this job in a PR. Without the AppImage artifact the
+    # download step fails.
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    timeout-minutes: 30
+    env:
+      EXPECTED_TAG: ${{ needs.prepare.outputs.expected_tag }}
+      STAMP_BRANCH: ${{ needs.prepare.outputs.stamp_branch }}
+    steps:
+      - name: Install tools
+        run: pacman -Syu --noconfirm --needed git nodejs jq namcap desktop-file-utils imagemagick
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: janitor-desktop-linux
+          path: appimage
+      - name: Checksum of the AppImage
+        run: cd appimage && sha256sum -c Janitor-linux-x86_64.AppImage.sha256
+      - name: Build the package
+        run: |
+          # makepkg refuses to run as root.
+          useradd --create-home builder
+          pkg=/home/builder/pkg
+          node apps/desktop-janitor/scripts/arch-package.mjs \
+            --appimage appimage/Janitor-linux-x86_64.AppImage --tag "$EXPECTED_TAG" --out "$pkg"
+          chown -R builder: "$pkg"
+          # prepare() runs `<AppImage> --appimage-extract`, which the AppImage
+          # runtime does without FUSE. If a future runtime needs FUSE inside
+          # the container, APPIMAGE_EXTRACT_AND_RUN=1 or `unsquashfs -o
+          # <offset>` (squashfs-tools) are the fallbacks.
+          # --nodeps: the runtime depends (gtk3, nss, ...) are not needed to
+          # repackage, and `pacman -U` below installs them from the repos.
+          # HOME is the container's /github/home otherwise.
+          runuser -u builder -- env HOME=/home/builder bash -c 'cd /home/builder/pkg && makepkg --cleanbuild --noconfirm --nodeps'
+          ls -la "$pkg"
+      - name: namcap
+        run: |
+          cd /home/builder/pkg
+          namcap PKGBUILD | tee namcap.txt
+          namcap ./*.pkg.tar.zst | tee -a namcap.txt
+          # Warnings are reported; only errors fail.
+          if grep -q ' E: ' namcap.txt; then
+            echo "::error::namcap reported errors"
+            exit 1
+          fi
+      - name: Install and inspect the package
+        run: |
+          pacman -U --noconfirm /home/builder/pkg/*.pkg.tar.zst
+          test -x /usr/bin/janitor-desktop
+          desktop-file-validate /usr/share/applications/Janitor.desktop
+          test -f /usr/share/icons/hicolor/256x256/apps/janitor-desktop.png
+          test "$(stat -c '%U %a' /opt/janitor-desktop/chrome-sandbox)" = "root 4755"
+          unreadable=$(find /opt/janitor-desktop -type d ! -perm -o=rx)
+          if [ -n "$unreadable" ]; then
+            echo "::error::Directories not readable by other users:"
+            echo "$unreadable"
+            exit 1
+          fi
+          stamp=/opt/janitor-desktop/resources/install-stamp.json
+          cat "$stamp"
+          test "$(jq -r .commit "$stamp")" = "$GITHUB_SHA"
+          test "$(jq -r .branch "$stamp")" = "$STAMP_BRANCH"
+          pacman -R --noconfirm janitor-desktop-bin
+          test ! -e /opt/janitor-desktop
+      - name: Collect
+        run: |
+          mkdir -p dist
+          cp /home/builder/pkg/*.pkg.tar.zst /home/builder/pkg/PKGBUILD dist/
+          cd dist
+          for f in *.pkg.tar.zst PKGBUILD; do sha256sum "$f" > "$f.sha256"; done
+          cat ./*.sha256
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: janitor-desktop-arch
+          path: dist/
           if-no-files-found: error
           retention-days: 14
 
   release:
     # Publishing runs only for a pushed `v*` tag — never for pull requests or
-    # manual runs.
+    # manual runs. Requires linux, windows-x64, macos-arm64 and the Arch
+    # package; macos-x64 is attached only if it was built.
     if: github.event_name == 'push' && github.ref_type == 'tag'
-    needs: appimage
+    needs: [prepare, build, arch-package]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
       actions: read
@@ -108,10 +408,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
-      # Order matters: first the channel branch, then the AppImage. The app
+      # Order matters: first the channel branch, then the files. The app
       # downloads scripts/install.sh at the commit it was built from and the
       # installer clones the branch in install-stamp.json (the channel), so by
-      # the time anyone can download this AppImage the channel must already
+      # the time anyone can download this release the channel must already
       # contain that commit. A failure here publishes nothing.
       - name: Move the release channel to the tag
         run: |
@@ -127,16 +427,75 @@ jobs:
           # non-fast-forward (an older tag than the channel's tip, or a
           # channel moved by hand), so a release never rewinds users.
           git push origin "$GITHUB_SHA:refs/heads/$channel"
-      - name: Attach AppImage to the release
+      - name: Download and check the files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download "$GITHUB_RUN_ID" --pattern 'janitor-desktop-*' --dir artifacts
+          mkdir -p dist
+          required=(
+            Janitor-linux-x86_64.AppImage
+            Janitor-win-x64.exe
+            Janitor-mac-arm64.dmg
+            PKGBUILD
+          )
+          optional=(Janitor-mac-x64.dmg)
+          shopt -s nullglob
+          for f in "${required[@]}" "${optional[@]}"; do
+            src=(artifacts/*/"$f")
+            [ ${#src[@]} -eq 0 ] && continue
+            cp "${src[0]}" "${src[0]}.sha256" dist/
+          done
+          pkgs=(artifacts/janitor-desktop-arch/*.pkg.tar.zst)
+          if [ ${#pkgs[@]} -ne 1 ]; then
+            echo "::error::Expected one Arch package, found: ${pkgs[*]}"
+            exit 1
+          fi
+          cp "${pkgs[0]}" "${pkgs[0]}.sha256" dist/
+          for f in "${required[@]}"; do
+            if [ ! -f "dist/$f" ]; then
+              echo "::error::Missing $f. Downloaded:"
+              find artifacts -type f
+              exit 1
+            fi
+          done
+          [ -f dist/Janitor-mac-x64.dmg ] || echo "::warning::No macOS x64 dmg in this release (experimental build failed or did not run)"
+          cd dist
+          sha256sum -c ./*.sha256
+          cat ./*.sha256 > SHA256SUMS
+          rm ./*.sha256
+          ls -la
+      - name: Release notes
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          pkg=$(cd dist && ls ./*.pkg.tar.zst | sed 's|^\./||')
+          cat > notes.md <<EOF
+          # Janitor $TAG
+
+          ## Instalar
+
+          **Linux (cualquier distribución):** descarga \`Janitor-linux-x86_64.AppImage\`, dale permiso de ejecución (\`chmod +x Janitor-linux-x86_64.AppImage\`) y ábrelo.
+
+          **Arch Linux:** descarga \`$pkg\` e instálalo con \`sudo pacman -U ./$pkg\`. La app se abre desde el menú o con el comando \`janitor-desktop\`.
+
+          **Windows (x64):** ejecuta \`Janitor-win-x64.exe\`. El instalador no está firmado: si SmartScreen lo detiene, pulsa «Más información» → «Ejecutar de todas formas».
+
+          **macOS (Apple Silicon: \`Janitor-mac-arm64.dmg\`; Intel: \`Janitor-mac-x64.dmg\` si está publicado):** abre el dmg y arrastra Janitor a Aplicaciones. La app no está notarizada: la primera vez macOS la bloquea; ve a Ajustes del Sistema → Privacidad y seguridad → «Abrir igualmente», o ejecuta \`xattr -dr com.apple.quarantine /Applications/Janitor.app\`.
+
+          Al abrirla por primera vez, la app instala el motor de Janitor en tu carpeta personal (\`~/.janitor\`).
+
+          ## Verificar
+
+          \`SHA256SUMS\` contiene la suma SHA-256 de cada archivo: \`sha256sum -c SHA256SUMS --ignore-missing\`.
+          EOF
+          cat notes.md
+      - name: Attach the files to the release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh run download "$GITHUB_RUN_ID" --name janitor-desktop-appimage --dir dist
-          shopt -s nullglob
-          files=(dist/Janitor-*.AppImage)
-          test ${#files[@]} -eq 1
           gh release view "$TAG" >/dev/null 2>&1 || \
-            gh release create "$TAG" --verify-tag --title "Janitor $TAG" --notes "Janitor $TAG"
-          gh release upload "$TAG" "${files[@]}" --clobber
+            gh release create "$TAG" --verify-tag --title "Janitor $TAG" --notes-file notes.md
+          gh release upload "$TAG" dist/* --clobber
