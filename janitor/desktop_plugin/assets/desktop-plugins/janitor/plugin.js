@@ -171,6 +171,15 @@ export function dockerLine(docker) {
     return 'Docker no responde a tiempo.'
   }
 
+  // Same text as janitor/services.py UNSUPPORTED_OS_TEXT: the API payload
+  // carries only the status code, not the reason.
+  if (status === 'unsupported') {
+    return (
+      'Los aplicativos opcionales de Janitor necesitan Linux o macOS con Docker; ' +
+      'en Windows no se pueden instalar ni administrar desde Janitor.'
+    )
+  }
+
   return 'Docker está instalado pero no responde: el servicio está detenido o tu usuario no tiene permiso.'
 }
 

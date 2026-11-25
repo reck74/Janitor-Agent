@@ -187,10 +187,18 @@ test('entries keep backend services and stateless applications, with the WAHA pr
   assert.deepEqual(plugin.stateView(design.state).actions, ['install'])
 })
 
+test('an unsupported system says why instead of blaming Docker', () => {
+  const line = plugin.dockerLine({ status: 'unsupported' })
+
+  assert.match(line, /Windows/)
+  assert.match(line, /Linux o macOS/)
+  assert.notEqual(line, plugin.dockerLine({ status: 'unavailable' }))
+})
+
 test('visible copy never says Hermes', () => {
   const texts = [
     ...Object.values(plugin.APPS).flatMap(a => [a.label, a.description, a.note ?? '']),
-    ...['ok', 'missing', 'unavailable', 'timeout'].map(status => plugin.dockerLine({ status })),
+    ...['ok', 'missing', 'unavailable', 'timeout', 'unsupported'].map(status => plugin.dockerLine({ status })),
     ...['busy', 'docker_unavailable', 'not_installed', 'timeout', 'docker_failed', 'x'].map(plugin.errorText),
     ...['start', 'stop', 'x'].map(plugin.pendingText),
     ...['responding', 'not_responding', 'unchecked'].flatMap(h => {
