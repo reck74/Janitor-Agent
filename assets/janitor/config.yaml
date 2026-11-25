@@ -10,7 +10,7 @@
 # Recommended, preconfigured provider (MINIMAX_API_KEY). Not mandatory: the
 # first graphical start lets the user pick another one.
 model:
-  default: MiniMax-M2.7
+  default: MiniMax-M3
   provider: minimax
   base_url: https://api.minimax.io/anthropic
 janitor:

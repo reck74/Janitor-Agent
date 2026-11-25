@@ -24,7 +24,7 @@ import compose_service as cs  # noqa: E402
 OPENAI_URL = "https://api.openai.com/v1"
 LLMS = {
     "openai": {"host": OPENAI_URL, "model": "gpt-4o-mini", "key": "OPENAI_API_KEY"},
-    "minimax": {"host": "https://api.minimax.io/v1", "model": "MiniMax-M2.7", "key": "MINIMAX_API_KEY"},
+    "minimax": {"host": "https://api.minimax.io/v1", "model": "MiniMax-M3", "key": "MINIMAX_API_KEY"},
 }
 EMBEDDINGS = {"host": OPENAI_URL, "model": "text-embedding-3-small", "dim": "1536", "key": "OPENAI_API_KEY"}
 
