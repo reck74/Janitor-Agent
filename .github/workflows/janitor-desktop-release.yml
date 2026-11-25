@@ -113,7 +113,7 @@ jobs:
             artifact: Janitor-win-x64.exe
             experimental: false
           - target: macos-arm64
-            runner: macos-15
+            runner: macos-latest
             build_args: --mac dmg --arm64
             artifact: Janitor-mac-arm64.dmg
             lipo_arch: arm64
