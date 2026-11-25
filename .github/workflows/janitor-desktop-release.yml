@@ -352,11 +352,25 @@ jobs:
       - name: namcap
         run: |
           cd /home/builder/pkg
+          # namcap maps each linked library to the package that owns it, so the
+          # runtime depends must be installed (the build used --nodeps); with
+          # them missing it reports declared ones as "may not be needed" and
+          # their transitive libraries as missing dependencies.
+          mapfile -t deps < <(bash -c 'source PKGBUILD; printf "%s\n" "${depends[@]}"')
+          pacman -S --noconfirm --needed --asdeps "${deps[@]}"
           namcap PKGBUILD | tee namcap.txt
           namcap ./*.pkg.tar.zst | tee -a namcap.txt
-          # Warnings are reported; only errors fail.
-          if grep -q ' E: ' namcap.txt; then
-            echo "::error::namcap reported errors"
+          # Warnings are reported; only errors fail. One error is inherent to a
+          # repackaged Electron app and tolerated by its exact text: the app
+          # lives in /opt/janitor-desktop (the Arch convention for self-contained
+          # binary apps) and namcap's elfpaths rule only accepts ELF files under
+          # the system paths. Any other error, or ELF files in any other path,
+          # fails. (chrome-sandbox is setuid on purpose; namcap only warns.)
+          tolerated="janitor-desktop-bin E: ELF files outside of a valid path ('opt/')."
+          errors=$(grep ' E: ' namcap.txt | grep -vxF "$tolerated" || true)
+          if [ -n "$errors" ]; then
+            echo "::error::namcap reported errors:"
+            echo "$errors"
             exit 1
           fi
       - name: Install and inspect the package

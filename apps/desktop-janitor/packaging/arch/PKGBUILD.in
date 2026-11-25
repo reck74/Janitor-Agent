@@ -12,9 +12,12 @@ url='https://github.com/reck74/Janitor-Agent'
 license=('MIT')
 provides=('janitor-desktop')
 conflicts=('janitor-desktop')
-depends=('alsa-lib' 'at-spi2-core' 'gtk3' 'libcups' 'libxkbcommon' 'libxcomposite'
-         'libxdamage' 'libxrandr' 'mesa' 'nss' 'systemd-libs' 'hicolor-icon-theme'
-         'xdg-utils' 'git' 'curl')
+# Every library the bundled ELF files link directly (readelf NEEDED → owning
+# package; glibc and gcc's runtime come with base), plus what the app runs.
+depends=('alsa-lib' 'at-spi2-core' 'cairo' 'dbus' 'expat' 'glib2' 'gtk3' 'libcups'
+         'libx11' 'libxcb' 'libxcomposite' 'libxdamage' 'libxext' 'libxfixes'
+         'libxkbcommon' 'libxrandr' 'mesa' 'nspr' 'nss' 'pango' 'systemd-libs'
+         'hicolor-icon-theme' 'xdg-utils' 'git' 'curl')
 optdepends=('libsecret: guardar credenciales en el llavero del sistema'
             'libnotify: notificaciones de escritorio')
 makedepends=('imagemagick')

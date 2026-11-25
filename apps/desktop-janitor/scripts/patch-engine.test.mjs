@@ -52,7 +52,7 @@ function snapshot(dir) {
       const full = path.join(current, entry.name)
 
       if (entry.isDirectory()) visit(full)
-      else out[path.relative(dir, full)] = sha(full)
+      else out[path.relative(dir, full).split(path.sep).join('/')] = sha(full)
     }
   }
 
@@ -151,7 +151,10 @@ test('a build killed with SIGKILL is restored by --restore and by the next build
     )
 
   const first = crash()
-  assert.equal(first.signal, 'SIGKILL', first.stderr)
+  // Windows has no signals: process.kill(pid, 'SIGKILL') terminates the
+  // process with exit code 1 and the parent sees no signal.
+  if (process.platform === 'win32') assert.equal(first.status, 1, first.stderr)
+  else assert.equal(first.signal, 'SIGKILL', first.stderr)
   assert.notDeepEqual(snapshot(appDir), before, 'the killed build left the tree patched')
 
   // `build.mjs --restore`

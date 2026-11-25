@@ -8,7 +8,13 @@ import { test } from 'node:test'
 
 import { ARCH_DIR, pkgverFromTag, renderArchPackage } from './arch-package.mjs'
 
+// The Arch package is built and run on Linux only (the release workflow's
+// arch-package job, an Arch container). Tests that source the PKGBUILD or run
+// the launcher need Linux bash (macOS ships bash 3.2, where an empty array is
+// unbound under `set -u`; Windows has no system bash): elsewhere they skip.
+const LINUX_ONLY = process.platform !== 'linux' && 'Arch packaging runs on Linux only'
 const has = tool => spawnSync('bash', ['-c', `command -v ${tool}`]).status === 0
+const needs = tool => LINUX_ONLY || (!has(tool) && `${tool} not installed`)
 
 function tmpdir(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'janitor-arch-test-'))
@@ -33,7 +39,7 @@ test('pkgver is the release tag without the v and with dots for dashes', () => {
   }
 })
 
-test('the rendered PKGBUILD names the release and pins the real AppImage hash', t => {
+test('the rendered PKGBUILD names the release and pins the real AppImage hash', { skip: LINUX_ONLY }, t => {
   const dir = tmpdir(t)
   const appimage = fakeAppimage(dir)
   const out = path.join(dir, 'pkg')
@@ -81,7 +87,7 @@ test('rendering refuses a malformed tag before writing anything', t => {
   assert.equal(fs.existsSync(out), false)
 })
 
-test('makepkg accepts the rendered PKGBUILD', { skip: !has('makepkg') && 'makepkg not installed' }, t => {
+test('makepkg accepts the rendered PKGBUILD', { skip: needs('makepkg') }, t => {
   const dir = tmpdir(t)
   const out = path.join(dir, 'pkg')
   renderArchPackage({ appimage: fakeAppimage(dir), tag: 'v0.21.5-janitor.1', outDir: out })
@@ -91,7 +97,7 @@ test('makepkg accepts the rendered PKGBUILD', { skip: !has('makepkg') && 'makepk
   assert.match(run.stdout, /pkgname = janitor-desktop-bin/)
 })
 
-test('the launcher runs the app with the user flags file before its own arguments', t => {
+test('the launcher runs the app with the user flags file before its own arguments', { skip: LINUX_ONLY }, t => {
   const dir = tmpdir(t)
   const appdir = path.join(dir, 'app')
   const config = path.join(dir, 'config')
@@ -119,7 +125,7 @@ test('the launcher runs the app with the user flags file before its own argument
   assert.equal(run.stdout, '<--ozone-platform=wayland>\n<--enable-features=A,B>\n<one arg>\n<--two>\n')
 })
 
-test('the desktop entry is valid', { skip: !has('desktop-file-validate') && 'desktop-file-validate not installed' }, () => {
+test('the desktop entry is valid', { skip: needs('desktop-file-validate') }, () => {
   const run = spawnSync('desktop-file-validate', [path.join(ARCH_DIR, 'Janitor.desktop')], { encoding: 'utf8' })
   assert.equal(run.status, 0, run.stdout + run.stderr)
   assert.equal(run.stdout.trim(), '')
