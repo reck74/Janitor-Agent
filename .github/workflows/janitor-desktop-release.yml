@@ -67,7 +67,12 @@ jobs:
             test -n "$channel"
             export GITHUB_REF_NAME="$channel"
           fi
-          node apps/desktop-janitor/scripts/build.mjs --linux AppImage --publish never
+          # No `--publish never` here: apps/desktop/scripts/run-electron-builder.mjs
+          # already passes it, and a repeated flag reaches electron-builder as
+          # a list, which it does not read as "never". On a tag push it then
+          # tries to publish by itself and fails for lack of a token (first
+          # run of v0.21.5-janitor.1). The `release` job does the publishing.
+          node apps/desktop-janitor/scripts/build.mjs --linux AppImage
       - name: Verify AppImage and install stamp
         run: |
           shopt -s nullglob
