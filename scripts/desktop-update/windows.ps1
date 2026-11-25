@@ -62,6 +62,15 @@ if (-not $SelfTestUi -and -not $SelfTestPipeDrain -and -not $InstallRoot) {
 }
 
 $ErrorActionPreference = "Continue"
+# JANITOR: begin -- what this hand-off shows is Spanish and names Janitor (touchpoint
+# JANITOR: desktop-update-windows). New text stays ASCII (PS 5.1 reads a BOM-less
+# JANITOR: .ps1 in the ANSI code page): accents are \uXXXX escapes, and only the
+# JANITOR: template is unescaped -- values (paths) go in through -f untouched.
+function Get-JanitorText {
+    param([string]$Template, [object[]]$Values = @())
+    return ([regex]::Unescape($Template) -f $Values)
+}
+# JANITOR: end
 # Foreground helpers: the script is spawned via `cmd start /b` and inherits
 # the wrapper's hidden console, so its WinForms window comes up backgrounded
 # unless we explicitly claim focus --
@@ -89,7 +98,7 @@ $LogDir = Join-Path $HermesHome "logs"
 $LogPath = Join-Path $LogDir "desktop-update-handoff.log"
 $ResultPath = Join-Path $HermesHome ".hermes-update-result.json"
 $script:Ui = $null
-$script:UiStage = "Hermes will open once done."   # until the first gate; matches ui.html
+$script:UiStage = "Janitor se abre solo al terminar."   # until the first gate; matches ui.html  # JANITOR: Spanish
 $script:UiStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
 function Write-HandoffLog([string]$Message) {
@@ -322,10 +331,10 @@ function Publish-UiEvent([string]$Status, [string]$Message) {
 
 function Get-UiElapsedText {
     $elapsed = [Math]::Floor($script:UiStopwatch.Elapsed.TotalSeconds)
-    if ($elapsed -lt 60) { return "${elapsed}s elapsed" }
+    if ($elapsed -lt 60) { return "${elapsed} s transcurridos" }  # JANITOR: Spanish
     $minutes = [Math]::Floor($elapsed / 60)
     $seconds = $elapsed % 60
-    return "${minutes}m ${seconds}s elapsed"
+    return "${minutes} min ${seconds} s transcurridos"  # JANITOR: Spanish
 }
 
 function Get-UiProgressLine {
@@ -411,7 +420,7 @@ function Show-ProgressWindow {
             $mute = [System.Drawing.ColorTranslator]::FromHtml("#A8A8A8")
         }
         $form = New-Object System.Windows.Forms.Form
-        $form.Text = "Hermes"
+        $form.Text = "Janitor"  # JANITOR:
         $form.FormBorderStyle = "FixedSingle"
         $form.MaximizeBox = $false
         $form.MinimizeBox = $false
@@ -425,7 +434,7 @@ function Show-ProgressWindow {
         $bar.MarqueeAnimationSpeed = 30
         $bar.SetBounds(60, 128, 160, 8)
         $title = New-Object System.Windows.Forms.Label
-        $title.Text = "Updating Hermes"
+        $title.Text = "Actualizando Janitor"  # JANITOR:
         $title.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 12)
         $title.ForeColor = $fore
         $title.TextAlign = "MiddleCenter"
@@ -482,10 +491,10 @@ function Show-ErrorFinale([string]$Message) {
         $ui = $script:Ui
         if ($ui.Timer) { $ui.Timer.Stop() }
         $ui.Bar.Visible = $false
-        $ui.Title.Text = "Failed to update"
-        $ui.Sub.Text = "Run `"hermes debug share`" in a terminal to send a report."
+        $ui.Title.Text = "No se pudo actualizar"  # JANITOR:
+        $ui.Sub.Text = "Ejecuta `"janitor debug share`" en un terminal para enviar un informe."  # JANITOR:
         $close = New-Object System.Windows.Forms.Button
-        $close.Text = "Close"
+        $close.Text = "Cerrar"  # JANITOR:
         $close.SetBounds(100, 252, 80, 28)
         $close.FlatStyle = "Flat"
         $close.ForeColor = $ui.Title.ForeColor
@@ -524,10 +533,10 @@ function Show-ManualFinale([string]$Message) {
         $ui = $script:Ui
         if ($ui.Timer) { $ui.Timer.Stop() }
         $ui.Bar.Visible = $false
-        $ui.Title.Text = "Update complete"
+        $ui.Title.Text = (Get-JanitorText "Actualizaci\u00f3n completa")  # JANITOR:
         $ui.Sub.Text = $Message
         $close = New-Object System.Windows.Forms.Button
-        $close.Text = "Close"
+        $close.Text = "Cerrar"  # JANITOR:
         $close.SetBounds(100, 252, 80, 28)
         $close.FlatStyle = "Flat"
         $close.ForeColor = $ui.Title.ForeColor
@@ -1200,7 +1209,7 @@ function Resolve-HermesVenvDir([string]$Root) {
 $finalCode = 1
 $manualAction = $false
 $manualMsg = ""
-$finalMsg = "update did not complete"
+$finalMsg = (Get-JanitorText "La actualizaci\u00f3n no termin\u00f3.")  # JANITOR: Spanish
 $script:TreeSafeToFinalize = $true
 
 # ── -SelfTestUi: drive the shim to both terminal states, no update ─────────
@@ -1474,12 +1483,16 @@ try {
         Write-HandoffLog "process cwd set to install root: $resolvedInstallRoot"
     } catch {
         $finalCode = 3
-        $finalMsg = "Update aborted: cannot enter the install root ($InstallRoot). Nothing was changed."
+        $finalMsg = (Get-JanitorText "Actualizaci\u00f3n cancelada: no se puede entrar en la carpeta de instalaci\u00f3n ({0}). No se cambi\u00f3 nada." @($InstallRoot))  # JANITOR:
         Write-HandoffLog $finalMsg
         exit $finalCode
     }
 
     $VenvDir = Resolve-HermesVenvDir $InstallRoot
+    # JANITOR: a Janitor checkout (its venv has janitor.exe) updates through `janitor
+    # JANITOR: update` (AGENTS.md directive 13) and restarts gateways through the launcher.
+    $janitorCheckout = Test-Path -LiteralPath (Join-Path $VenvDir "Scripts\janitor.exe") -PathType Leaf
+    $janitorGatewayArgs = @("-m", "janitor.cli", "gateway", "start", "--all")  # JANITOR:
 
     # Exercise the production cwd setup and native launcher without updating.
     if ($SelfTestWorkingDirectory) {
@@ -1502,13 +1515,13 @@ try {
     $pythonExe = Join-Path $VenvDir "Scripts\python.exe"
     if (-not (Test-Path -LiteralPath $pythonExe -PathType Leaf)) {
         $finalCode = 3
-        $finalMsg = "Update aborted: $pythonExe is missing. Repair the installation and review antivirus quarantine before retrying."
+        $finalMsg = (Get-JanitorText "Actualizaci\u00f3n cancelada: falta {0}. Repara la instalaci\u00f3n y revisa la cuarentena del antivirus antes de reintentarlo." @($pythonExe))  # JANITOR:
         Write-HandoffLog $finalMsg
         exit $finalCode
     }
 
     # -- 1. Wait for the Desktop to exit (FAIL CLOSED) ----------------------
-    Publish-UiProgress "Waiting for Hermes to close"
+    Publish-UiProgress "Esperando a que Janitor se cierre"  # JANITOR:
     if ($DesktopPid -gt 0) {
         $deadline = (Get-Date).AddSeconds(30)
         while ((Get-Date) -lt $deadline) {
@@ -1521,7 +1534,7 @@ try {
             # A live Desktop means a live backend re-locking the venv at any
             # moment. Updating under it is how installs brick. Abort.
             $finalCode = 4
-            $finalMsg = "Update aborted: the Hermes window (pid $DesktopPid) did not exit within 30s. Nothing was changed. Close Hermes fully and try again."
+            $finalMsg = (Get-JanitorText "Actualizaci\u00f3n cancelada: la ventana de Janitor (pid {0}) no se cerr\u00f3 en 30 s. No se cambi\u00f3 nada. Cierra Janitor del todo y vuelve a intentarlo." @($DesktopPid))  # JANITOR:
             Write-HandoffLog $finalMsg
             exit $finalCode
         }
@@ -1529,8 +1542,9 @@ try {
     }
 
     # -- 2. Wait for the venv shim to unlock (FAIL CLOSED) ------------------
-    Publish-UiProgress "Preparing Hermes files"
+    Publish-UiProgress "Preparando los archivos de Janitor"  # JANITOR:
     $shim = Join-Path $VenvDir "Scripts\hermes.exe"
+    if ($janitorCheckout) { $shim = Join-Path $VenvDir "Scripts\janitor.exe" }  # JANITOR: the shim a Janitor install runs
     if (Test-Path -LiteralPath $shim) {
         $unlocked = $false
         $deadline = (Get-Date).AddSeconds(20)
@@ -1549,7 +1563,7 @@ try {
             # Something still maps the venv. --force-ing past it guarantees a
             # half-updated venv (the exact 2026-08-09 Access-denied brick).
             $finalCode = 5
-            $finalMsg = "Update aborted: another process is still holding the Hermes install open ($shim locked after 20s). Nothing was changed. Close other Hermes windows/terminals and try again."
+            $finalMsg = (Get-JanitorText "Actualizaci\u00f3n cancelada: otro proceso mantiene abierta la instalaci\u00f3n de Janitor ({0} sigue bloqueado tras 20 s). No se cambi\u00f3 nada. Cierra las otras ventanas o terminales de Janitor y vuelve a intentarlo." @($shim))  # JANITOR:
             Write-HandoffLog $finalMsg
             exit $finalCode
         }
@@ -1596,7 +1610,7 @@ try {
     $pythonExe = Join-Path $VenvDir "Scripts\python.exe"
     if (-not (Test-Path -LiteralPath $pythonExe)) {
         $finalCode = 3
-        $finalMsg = "Update aborted: $pythonExe is missing. The install needs repair (run the Hermes installer or `hermes doctor`)."
+        $finalMsg = (Get-JanitorText "Actualizaci\u00f3n cancelada: falta {0}. La instalaci\u00f3n est\u00e1 rota: rep\u00e1rala con el instalador de Janitor o con ``janitor doctor``." @($pythonExe))  # JANITOR:
         Write-HandoffLog $finalMsg
         exit $finalCode
     }
@@ -1612,10 +1626,14 @@ try {
         Write-HandoffLog "update requested without --gateway (remote-served Desktop)"
     }
     $updateArgs = @("-m", "hermes_cli.main", "update", "--yes") + $gatewayArg + @("--force", "--branch", $Branch)
+    # JANITOR: `janitor update` rejects a flag it does not know (exit 2), so no --force
+    # JANITOR: (step 2 already proved the shim unlocked); it always has --keep-stash.
+    if ($janitorCheckout) { $updateArgs = @("-m", "janitor.cli", "update", "--yes") + $gatewayArg + @("--branch", $Branch, "--keep-stash") }
     # --keep-stash: never re-apply local source edits after the update (they
     # stay parked in git stash). Probe --help first: the flag ships with newer
     # backends and an unknown flag would abort argparse with exit 2, which
     # collides with the "close all Hermes windows" sentinel.
+    if (-not $janitorCheckout) {  # JANITOR: the --help probe is for upstream's update only
     try {
         $updateHelp = & $pythonExe -m hermes_cli.main update --help 2>$null | Out-String
         if ($updateHelp -match "--keep-stash") {
@@ -1626,8 +1644,9 @@ try {
     } catch {
         Write-HandoffLog "could not probe update --help; running without --keep-stash"
     }
+    }  # JANITOR: end of the upstream-only probe
     Write-HandoffLog ("running: python " + ($updateArgs -join " "))
-    Publish-UiProgress "Updating code and dependencies"
+    Publish-UiProgress (Get-JanitorText "Actualizando c\u00f3digo y dependencias")  # JANITOR:
     $res = Invoke-HermesStep $pythonExe $updateArgs "update"
     Write-HandoffLog "hermes update exit code: $($res.Code)"
 
@@ -1650,7 +1669,7 @@ try {
         # dependency sync before native modules load, then `update` continues
         # the remaining Desktop/skills stages of the full pipeline.
         Write-HandoffLog "first attempt left retryable update state; retrying once in a fresh process"
-        Publish-UiProgress "Retrying update"
+        Publish-UiProgress (Get-JanitorText "Reintentando la actualizaci\u00f3n")  # JANITOR:
         $res = Invoke-HermesStep $pythonExe $updateArgs "update"
         Write-HandoffLog "retry exit code: $($res.Code)"
     }
@@ -1663,19 +1682,21 @@ try {
     $desktopBuildFailed = $false
     if ($res.Code -eq 0 -and $res.Output -match "Desktop build failed") {
         Write-HandoffLog "hermes update reported a desktop build failure (non-fatal there, fatal here); retrying build"
-        Publish-UiProgress "Rebuilding Desktop"
+        Publish-UiProgress "Recompilando la app"  # JANITOR:
         $rebuild = Invoke-HermesStep $pythonExe @("-m", "hermes_cli.main", "desktop", "--force-build", "--build-only") "rebuild"
         Write-HandoffLog "desktop rebuild exit code: $($rebuild.Code)"
         if ($rebuild.Code -ne 0) { $desktopBuildFailed = $true }
     }
 
     # A zero-exit update is not proof that the runtime survived the update.
-    if ($res.Code -eq 0 -and -not $desktopBuildFailed) {
+    # JANITOR: the Janitor app is installed from its release, not built in the checkout:
+    # JANITOR: there is no apps/desktop build here to verify.
+    if ($res.Code -eq 0 -and -not $desktopBuildFailed -and -not $janitorCheckout) {
         $verifyCode = "import hermes_cli.main; from hermes_cli.desktop_update_verify import verify_windows_desktop_update; verify_windows_desktop_update()"
         $verify = Invoke-HermesStep $pythonExe @("-c", $verifyCode) "verify"
         if ($verify.Code -ne 0) {
             $finalCode = 8
-            $finalMsg = "The updated Hermes runtime or Desktop build failed verification. Repair the installation and review antivirus quarantine before retrying."
+            $finalMsg = (Get-JanitorText "El motor actualizado o la compilaci\u00f3n de la app no pasaron la verificaci\u00f3n. Repara la instalaci\u00f3n y revisa la cuarentena del antivirus antes de reintentarlo.")  # JANITOR:
             Write-HandoffLog $finalMsg
             exit $finalCode
         }
@@ -1688,27 +1709,31 @@ try {
     # all-profile fleet only after the updated runtime verifies. A remote-served
     # Desktop must stay passive: its -NoGateway hand-off owns no local poller.
     if ($res.Code -eq 0 -and -not $desktopBuildFailed -and -not $NoGateway) {
+        if ($janitorCheckout) { $gatewayRestart = Invoke-HermesStep $pythonExe $janitorGatewayArgs "gateway restart" } else {  # JANITOR:
         $gatewayRestart = Invoke-HermesStep $pythonExe @("-m", "hermes_cli.main", "gateway", "start", "--all") "gateway restart"
+        }  # JANITOR:
         if ($gatewayRestart.Code -ne 0) {
             # The update itself succeeded; a restart miss is a manual follow-up
             # (Write-Result's manual flag -> Desktop boot dialog), never a failed
             # update: a non-zero exit here would run the error finale and hide
             # the fact that the new runtime is installed and verified.
             $manualAction = $true
-            $manualMsg = "Update complete, but Hermes could not restart every messaging gateway. Run `hermes gateway start --all` in a terminal."
+            $manualMsg = (Get-JanitorText "Actualizaci\u00f3n completa, pero Janitor no pudo reiniciar todos los gateways de mensajer\u00eda. Ejecuta ``janitor gateway start --all`` en un terminal.")  # JANITOR:
             Write-HandoffLog $manualMsg
         }
     }
 
     if ($res.Code -eq 0 -and -not $desktopBuildFailed) {
         $finalCode = 0
-        $finalMsg = "Update complete."
+        $finalMsg = (Get-JanitorText "Actualizaci\u00f3n completa.")  # JANITOR:
     } elseif ($desktopBuildFailed) {
         $finalCode = 6
-        $finalMsg = "Code and dependencies updated, but the Desktop app REBUILD FAILED - you are running the previous build. Run `hermes desktop --force-build` from a terminal to retry."
+        $finalMsg = (Get-JanitorText "C\u00f3digo y dependencias actualizados, pero la app no se pudo recompilar: sigues con la compilaci\u00f3n anterior. Ejecuta ``janitor desktop --force-build`` en un terminal para reintentarlo.")  # JANITOR:
     } else {
         $finalCode = $res.Code
-        $finalMsg = "Update failed (exit $($res.Code)). Run `hermes debug share` in a terminal to send a report."
+        $finalMsg = (Get-JanitorText "La actualizaci\u00f3n fall\u00f3 (salida {0}). Ejecuta ``janitor debug share`` en un terminal para enviar un informe." @($res.Code))  # JANITOR:
+        # JANITOR: exit 2 = `janitor update` refused because another live update holds the lock (directive 13).
+        if ($janitorCheckout -and $res.Code -eq 2) { $finalMsg = (Get-JanitorText "No se actualiz\u00f3: ya hay otra actualizaci\u00f3n de Janitor en curso. Espera a que termine y vuelve a intentarlo.") }
     }
     exit $finalCode
 } finally {
@@ -1725,7 +1750,7 @@ try {
         # that unknown state. This is intentionally fail-closed; the marker's
         # dead-owner recovery remains the next-start escape hatch.
         $finalCode = 7
-        $finalMsg = "Update recovery could not stop every updater process. Hermes was not restarted to avoid overlapping the active install. Wait for it to finish or restart Windows, then reopen Hermes."
+        $finalMsg = (Get-JanitorText "La recuperaci\u00f3n de la actualizaci\u00f3n no pudo detener todos sus procesos. Janitor no se reinici\u00f3 para no pisar la instalaci\u00f3n en curso. Espera a que termine o reinicia Windows, y vuelve a abrir Janitor.")  # JANITOR:
         Write-Result $false $finalCode $finalMsg
         Write-HandoffLog $finalMsg
         Show-ErrorFinale $finalMsg
@@ -1739,12 +1764,12 @@ try {
             Close-ProgressWindow
             [void](Start-DesktopRelaunch)
         } else {
-            Publish-UiProgress "Opening Hermes"
+            Publish-UiProgress "Abriendo Janitor"  # JANITOR:
             $cameBack = Start-DesktopRelaunch
             if (-not $cameBack -and $RelaunchExe) {
                 # Launch was due and did not verifiably land: truthful result
                 # for the next boot, manual state held on screen now.
-                $finalMsg = "Update complete. Reopen Hermes to finish (it could not restart itself)."
+                $finalMsg = (Get-JanitorText "Actualizaci\u00f3n completa, pero Janitor no pudo volver a abrirse solo. \u00c1brelo t\u00fa para terminar.")  # JANITOR:
                 Write-Result $true 0 $finalMsg $true
                 Show-ManualFinale $finalMsg
             }
