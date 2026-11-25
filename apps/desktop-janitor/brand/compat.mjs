@@ -30,7 +30,8 @@ export const FORK_RELEASE_URL = 'https://github.com/reck74/Janitor-Agent/release
 export const COMPAT_DIALOG = {
   title: 'Janitor',
   message: 'Esta app es más vieja que el motor que acabas de instalar.',
-  detail: 'Descarga la nueva desde el enlace, reemplaza el AppImage y ábrela. Tus chats y ajustes no se tocan.',
+  detail:
+    'Instala la versión nueva de la app: descarga el AppImage desde el enlace y reemplaza el anterior, o actualiza el paquete con tu gestor de paquetes si la instalaste así. Tus chats y ajustes no se tocan.',
   buttons: ['Abrir la descarga', 'Salir']
 }
 
