@@ -131,8 +131,11 @@ def test_manifest_is_json_and_writes_nothing(tmp_path):
     install = tmp_path / "install"
     result = run_install_ps1(tmp_path, home, "-Manifest", "-InstallDir", str(install))
     assert result.returncode == 0, result.stdout + result.stderr
-    names = [stage["name"] for stage in last_json(result.stdout)["stages"]]
+    stages = last_json(result.stdout)["stages"]
+    names = [stage["name"] for stage in stages]
     assert {"repository", "venv", "dependencies", "path", "config-templates"} <= set(names), names
+    titles = {stage["name"]: stage["title"] for stage in stages}
+    assert "Hermes" not in titles["repository"] and "Hermes" not in titles["path"], titles
     assert not home.exists() and not install.exists()
 
 
@@ -230,9 +233,12 @@ def _link_venv(install: Path) -> Path:
     return link
 
 
-def run_config_stage(tmp_path: Path) -> tuple[subprocess.CompletedProcess, Path]:
-    """The config-templates stage the app runs, on a fresh home with a real venv."""
+def run_config_stage(tmp_path: Path, home_setup=None) -> tuple[subprocess.CompletedProcess, Path]:
+    """The config-templates stage the app runs, on a fresh home with a real venv.
+    ``home_setup(home)`` prepares the home first."""
     home = tmp_path / ".janitor"
+    if home_setup is not None:
+        home_setup(home)
     install = tmp_path / "install"
     link = _link_venv(install)
     try:
@@ -256,3 +262,77 @@ def test_config_stage_seeds_a_janitor_home_without_upstream_skills(tmp_path):
     assert soul == (ASSETS_ROOT / "SOUL.md").read_text(encoding="utf-8").replace("\r\n", "\n").strip()
     assert (home / ".no-bundled-skills").is_file()
     assert not any((home / "skills").iterdir()), "upstream's bundled skills must not be synced"
+
+
+def assert_stage_failed(result: subprocess.CompletedProcess, stage: str, *phrases: str) -> None:
+    output = result.stdout + result.stderr
+    assert result.returncode == 1, output
+    frame = last_json(result.stdout)
+    assert frame is not None and frame["stage"] == stage and frame["ok"] is False, output
+    for phrase in phrases:
+        assert phrase in frame["reason"], frame
+
+
+@pytest.mark.windows_only
+def test_config_stage_fails_without_the_venv_python(tmp_path):
+    """An unseeded home would keep upstream's SOUL.md: the stage reports the failure."""
+    home = tmp_path / ".janitor"
+    result = run_install_ps1(tmp_path, home, "-Stage", "config-templates", "-NonInteractive", "-Json",
+                             "-InstallDir", str(tmp_path / "install"))
+    assert_stage_failed(result, "config-templates", "home de Janitor", "python.exe")
+
+
+@pytest.mark.windows_only
+def test_config_stage_fails_when_the_seed_fails(tmp_path):
+    """A file where the seed needs the skins directory makes janitor.seed exit non-zero."""
+    def block_skins(home: Path) -> None:
+        home.mkdir(parents=True)
+        (home / "skins").write_text("not a directory", encoding="utf-8")
+
+    result, _home = run_config_stage(tmp_path, block_skins)
+    assert_stage_failed(result, "config-templates", "janitor.seed")
+
+
+@pytest.mark.windows_only
+def test_origin_check_accepts_only_the_fork(tmp_path):
+    urls = {
+        "https://github.com/reck74/Janitor-Agent.git": True,
+        "https://github.com/reck74/janitor-agent": True,
+        "git@github.com:reck74/Janitor-Agent.git": True,
+        "ssh://git@github.com/reck74/Janitor-Agent.git": True,
+        "HTTPS://GITHUB.COM/RECK74/JANITOR-AGENT/": True,
+        "https://github.com/NousResearch/hermes-agent.git": False,
+        "https://github.com/someone/reck74-janitor-agent.git": False,
+        "": False,
+    }
+    script = "@(" + ", ".join("'" + u.replace("'", "''") + "'" for u in urls) + ") | ForEach-Object {"
+    script += " if (Test-JanitorOrigin $_) { 'Y' } else { 'N' } } | Out-String | ForEach-Object {"
+    script += " @{ got = ($_ -replace '\\s', '') } | ConvertTo-Json -Compress }"
+    got = _dot_source(tmp_path, script, _env(tmp_path / ".janitor"))
+    assert got["got"] == "".join("Y" if ok else "N" for ok in urls.values()), got
+
+
+@pytest.mark.windows_only
+def test_repository_stage_refuses_a_checkout_of_another_repo(tmp_path):
+    """An existing checkout whose origin is not the fork is never stashed, fetched or reset."""
+    install = tmp_path / "install"
+    install.mkdir()
+
+    def git(*args: str) -> str:
+        return subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *args], cwd=install,
+                              check=True, capture_output=True, text=True).stdout.strip()
+
+    git("init", "-q", "-b", "main")
+    (install / "README.md").write_text("hermes\n", encoding="utf-8")
+    git("add", "README.md")
+    git("commit", "-q", "-m", "init")
+    git("remote", "add", "origin", "https://github.com/NousResearch/hermes-agent.git")
+    (install / "local-edit.txt").write_text("mine\n", encoding="utf-8")
+    head = git("rev-parse", "HEAD")
+
+    result = run_install_ps1(tmp_path, tmp_path / ".janitor", "-Stage", "repository", "-NonInteractive", "-Json",
+                             "-InstallDir", str(install))
+    assert_stage_failed(result, "repository", "reck74/Janitor-Agent", "NousResearch/hermes-agent")
+    assert git("rev-parse", "HEAD") == head
+    assert git("stash", "list") == ""
+    assert (install / "local-edit.txt").is_file()

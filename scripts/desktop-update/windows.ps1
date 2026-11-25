@@ -1489,9 +1489,14 @@ try {
     }
 
     $VenvDir = Resolve-HermesVenvDir $InstallRoot
-    # JANITOR: a Janitor checkout (its venv has janitor.exe) updates through `janitor
-    # JANITOR: update` (AGENTS.md directive 13) and restarts gateways through the launcher.
-    $janitorCheckout = Test-Path -LiteralPath (Join-Path $VenvDir "Scripts\janitor.exe") -PathType Leaf
+    # JANITOR: a Janitor checkout (it holds janitor\cli.py, whatever the venv's launchers)
+    # JANITOR: updates through `janitor update` (AGENTS.md directive 13) and restarts gateways
+    # JANITOR: through the launcher; upstream's updater never runs on it.
+    $janitorCheckout = Test-Path -LiteralPath (Join-Path $InstallRoot "janitor\cli.py") -PathType Leaf
+    # JANITOR: without -Branch the engine follows its release channel: no --branch (the
+    # JANITOR: parameter's "main" default is upstream's and would leave the channel).
+    $janitorBranchArgs = @()  # JANITOR:
+    if ($PSBoundParameters.ContainsKey('Branch')) { $janitorBranchArgs = @("--branch", $Branch) }  # JANITOR:
     $janitorGatewayArgs = @("-m", "janitor.cli", "gateway", "start", "--all")  # JANITOR:
 
     # Exercise the production cwd setup and native launcher without updating.
@@ -1628,7 +1633,9 @@ try {
     $updateArgs = @("-m", "hermes_cli.main", "update", "--yes") + $gatewayArg + @("--force", "--branch", $Branch)
     # JANITOR: `janitor update` rejects a flag it does not know (exit 2), so no --force
     # JANITOR: (step 2 already proved the shim unlocked); it always has --keep-stash.
-    if ($janitorCheckout) { $updateArgs = @("-m", "janitor.cli", "update", "--yes") + $gatewayArg + @("--branch", $Branch, "--keep-stash") }
+    if ($janitorCheckout) { $updateArgs = @("-m", "janitor.cli", "update", "--yes") + $gatewayArg + $janitorBranchArgs + @("--keep-stash") }
+    # JANITOR: a remote-served Desktop owns no local gateway: janitor update must not restart running ones either.
+    if ($janitorCheckout -and $NoGateway) { $updateArgs += "--no-gateway-restart" }
     # --keep-stash: never re-apply local source edits after the update (they
     # stay parked in git stash). Probe --help first: the flag ships with newer
     # backends and an unknown flag would abort argparse with exit 2, which

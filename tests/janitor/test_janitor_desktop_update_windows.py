@@ -16,6 +16,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Optional
 
 import pytest
 
@@ -87,22 +88,30 @@ def _compile_fake_python(output: Path) -> None:
     )
 
 
-def run_windows_handoff(tmp_path: Path, *extra: str, update_exit: int = 0) -> dict:
-    """Run the hand-off on a fake Janitor install; return its exit, result file and the argv seen."""
+def run_windows_handoff(
+    tmp_path: Path, *extra: str, update_exit: int = 0, branch: Optional[str] = "stable", launcher: bool = True
+) -> dict:
+    """Run the hand-off on a fake Janitor checkout (``janitor\\cli.py``); return its exit,
+    result file and the argv seen. ``branch=None`` omits -Branch; ``launcher=False``
+    leaves the venv without janitor.exe (an incomplete install)."""
     home = tmp_path / "home"
-    scripts = home / "hermes-agent" / "venv" / "Scripts"
+    checkout = home / "hermes-agent"
+    scripts = checkout / "venv" / "Scripts"
     scripts.mkdir(parents=True)
+    (checkout / "janitor").mkdir()
+    (checkout / "janitor" / "cli.py").write_text("", encoding="utf-8")
     fake = tmp_path / "fake-python.exe"
     _compile_fake_python(fake)
     shutil.copyfile(fake, scripts / "python.exe")
-    shutil.copyfile(fake, scripts / "janitor.exe")
+    if launcher:
+        shutil.copyfile(fake, scripts / "janitor.exe")
     log = tmp_path / "argv.log"
 
     env = {k: v for k, v in os.environ.items() if not k.startswith("HERMES_")}
     env.update({"JANITOR_FAKE_PY_LOG": str(log), "JANITOR_FAKE_UPDATE_EXIT": str(update_exit)})
     proc = subprocess.run(
         [_powershell(), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(WINDOWS_PS1),
-         "-InstallRoot", str(home / "hermes-agent"), "-Branch", "stable", "-NoUi", *extra],
+         "-InstallRoot", str(checkout), *(["-Branch", branch] if branch else []), "-NoUi", *extra],
         cwd=tmp_path, env=env, capture_output=True, timeout=180, check=False,
     )
     output = proc.stdout.decode("utf-8", errors="replace") + proc.stderr.decode("utf-8", errors="replace")
@@ -141,7 +150,9 @@ def test_remote_served_desktop_updates_without_gateway(tmp_path):
     seen = run_windows_handoff(tmp_path, "-NoGateway")
     assert seen["code"] == 0, seen["output"]
     (update,) = update_calls(seen)
-    assert parse_update_args(update[3:]).gateway is False, update
+    args = parse_update_args(update[3:])
+    # No --gateway, and the gateways already running are left alone too.
+    assert args.gateway is False and args.no_gateway_restart is True, update
     assert not any("gateway" in call[2:3] for call in seen["calls"]), seen["calls"]
 
 
@@ -154,3 +165,22 @@ def test_lock_refusal_reads_as_another_update_in_progress(tmp_path):
     result = seen["result"]
     assert result["ok"] is False and result["exit_code"] == 2, result
     assert "otra actualización de Janitor en curso" in result["message"], result
+
+
+@pytest.mark.windows_only
+def test_without_branch_the_engine_follows_its_channel(tmp_path):
+    """The parameter's "main" default is upstream's: without -Branch no --branch is passed."""
+    seen = run_windows_handoff(tmp_path, branch=None)
+    assert seen["code"] == 0, seen["output"]
+    (update,) = update_calls(seen)
+    args = parse_update_args(update[3:])
+    assert "--branch" not in update and args.branch is None, update
+
+
+@pytest.mark.windows_only
+def test_incomplete_janitor_install_never_runs_upstreams_updater(tmp_path):
+    """No janitor.exe in the venv is still a Janitor checkout: janitor.cli, never hermes_cli.main --force."""
+    seen = run_windows_handoff(tmp_path, launcher=False)
+    assert seen["code"] == 0, seen["output"]
+    assert not any("hermes_cli.main" in call or "--force" in call for call in seen["calls"]), seen["calls"]
+    assert len(update_calls(seen)) == 1, seen["calls"]

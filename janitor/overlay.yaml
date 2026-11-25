@@ -205,7 +205,13 @@ touchpoints:
       the app reads. New visible text is Spanish; the file stays pure ASCII
       (accents as \uXXXX through Get-JanitorText). Upstream's dead second
       autostash-restore block (old `installers` touchpoint) is gone. Every
-      changed hunk carries a `# JANITOR:` comment.
+      changed hunk carries a `# JANITOR:` comment. Review fixes: a seed that
+      cannot run (no venv python, janitor.seed exit != 0) fails the
+      config-templates stage; an existing checkout whose origin is not the fork
+      is refused before any stash/fetch/reset; recreating the venv stops only
+      processes running from THAT venv and only gateway tasks whose action
+      points into this home (no system-wide `taskkill /IM hermes.exe`); the
+      repository/path stage titles are Spanish; -IncludeDesktop is refused.
     verify: test:install-ps1
     merge: reapply
 
@@ -273,7 +279,10 @@ touchpoints:
       after (`if ($janitorCheckout)`). Result messages, stage names and the
       WinForms card are Spanish, with a message of its own for exit 2
       (another update holds the lock). New text is ASCII (Get-JanitorText).
-      Each changed line carries `# JANITOR:`.
+      Each changed line carries `# JANITOR:`. A Janitor checkout is recognised
+      by janitor\cli.py (not by its launcher), so upstream's updater never runs
+      on one; without -Branch no --branch is passed (the engine follows its
+      channel); -NoGateway adds --no-gateway-restart.
     verify: test:desktop-update-windows
     merge: reapply
 

@@ -430,6 +430,15 @@ function Get-JanitorLegacyHomeMessage {
     return (Get-JanitorText "Alto ah\u00ed: en {0} hay una instalaci\u00f3n antigua de Janitor por terminal (janitor-core). Esta versi\u00f3n parte de cero y no adopta nada viejo, as\u00ed que no toqu\u00e9 nada. Desinstala lo antiguo primero (docs/janitor/desinstalar-instalacion-antigua.md en el repositorio) y vuelve a abrir la app." @($HermesHome))
 }
 
+# JANITOR: an existing checkout is only reused when its origin is the fork: the
+# JANITOR: installer never stashes, fetches or resets another repository (a Hermes one).
+function Test-JanitorOrigin {
+    param([string]$Url)
+    $u = "$Url".Trim().ToLowerInvariant().TrimEnd('/')
+    if ($u.EndsWith(".git")) { $u = $u.Substring(0, $u.Length - 4) }
+    return ($u -match 'github\.com[:/]reck74/janitor-agent$')
+}
+
 function Test-JanitorLegacyHome {
     return (Test-Path -LiteralPath (Join-Path $HermesHome "janitor-core"))
 }
@@ -439,25 +448,25 @@ function Test-JanitorLegacyHome {
 # JANITOR: seed never touches .env nor a file the user edited.
 function Invoke-JanitorSeed {
     $pythonExe = "$InstallDir\venv\Scripts\python.exe"
-    if (Test-Path -LiteralPath $pythonExe) {
-        Write-Info (Get-JanitorText "Preparando el home de Janitor en {0}..." @($HermesHome))
-        $prevPythonioencoding = $env:PYTHONIOENCODING
-        $prevPythonutf8 = $env:PYTHONUTF8
-        $env:PYTHONIOENCODING = "utf-8"
-        $env:PYTHONUTF8 = "1"
-        try {
-            Invoke-NativeWithRelaxedErrorAction {
-                & $pythonExe -m janitor.seed --home $HermesHome 2>&1 | ForEach-Object { Write-Host "  $_" }
-            }
-            if ($LASTEXITCODE -ne 0) {
-                Write-Warn (Get-JanitorText "janitor.seed fall\u00f3 (c\u00f3digo {0}); el comando janitor lo reintenta al arrancar" @($LASTEXITCODE))
-            }
-        } finally {
-            $env:PYTHONIOENCODING = $prevPythonioencoding
-            $env:PYTHONUTF8 = $prevPythonutf8
+    # JANITOR: an unseeded home would keep upstream's SOUL.md and config: the stage fails.
+    if (-not (Test-Path -LiteralPath $pythonExe)) {
+        throw (Get-JanitorText "No se pudo preparar el home de Janitor: falta {0}. Repite la instalaci\u00f3n desde la app." @($pythonExe))
+    }
+    Write-Info (Get-JanitorText "Preparando el home de Janitor en {0}..." @($HermesHome))
+    $prevPythonioencoding = $env:PYTHONIOENCODING
+    $prevPythonutf8 = $env:PYTHONUTF8
+    $env:PYTHONIOENCODING = "utf-8"
+    $env:PYTHONUTF8 = "1"
+    try {
+        Invoke-NativeWithRelaxedErrorAction {
+            & $pythonExe -m janitor.seed --home $HermesHome 2>&1 | ForEach-Object { Write-Host "  $_" }
         }
-    } else {
-        Write-Warn (Get-JanitorText "No encuentro {0}: el comando janitor siembra el home al arrancar" @($pythonExe))
+        if ($LASTEXITCODE -ne 0) {
+            throw (Get-JanitorText "No se pudo preparar el home de Janitor: janitor.seed fall\u00f3 (c\u00f3digo {0}). Revisa la salida del instalador." @($LASTEXITCODE))
+        }
+    } finally {
+        $env:PYTHONIOENCODING = $prevPythonioencoding
+        $env:PYTHONUTF8 = $prevPythonutf8
     }
     $marker = Join-Path $HermesHome ".no-bundled-skills"
     if (-not (Test-Path -LiteralPath $marker)) {
@@ -2344,6 +2353,10 @@ function Install-Repository {
         }
 
         if ($repoValid) {
+            $janitorOrigin = Invoke-NativeWithRelaxedErrorAction { (& git -C $InstallDir remote get-url origin 2>$null | Out-String).Trim() }  # JANITOR:
+            if (-not (Test-JanitorOrigin $janitorOrigin)) {  # JANITOR: before any stash/fetch/reset
+                throw (Get-JanitorText "Alto ah\u00ed: {0} es un repositorio de git cuyo origin es '{1}', no el de Janitor (reck74/Janitor-Agent). No toqu\u00e9 nada. Elige otra carpeta de instalaci\u00f3n o mueve esa." @($InstallDir, $janitorOrigin))  # JANITOR:
+            }  # JANITOR:
             Write-Info "Existing installation found, updating..."
             Push-Location $InstallDir
             # Wrap the entire fetch+checkout block in EAP=Continue so git's
@@ -2788,9 +2801,13 @@ function Install-Venv {
             # on failure -- but only for tasks that were enabled to begin with.
             # Best-effort: a missing task just errors quietly.
             try {
-                schtasks /Query /FO CSV 2>$null | ConvertFrom-Csv | Where-Object { $_.TaskName -like '*Hermes_Gateway*' } | ForEach-Object {
-                    $tn = $_.TaskName
-                    if ($_.Status -eq 'Disabled') {
+                # JANITOR: only the gateway tasks of THIS home (their action runs a launcher under
+                # JANITOR: $HermesHome\gateway-service): a separate Hermes install keeps its own.
+                Get-ScheduledTask -TaskName '*Hermes_Gateway*' -ErrorAction SilentlyContinue | Where-Object {
+                    (($_.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)" }) -join ' ').IndexOf($HermesHome, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+                } | ForEach-Object {  # JANITOR:
+                    $tn = "$($_.TaskPath)$($_.TaskName)"  # JANITOR:
+                    if ("$($_.State)" -eq 'Disabled') {  # JANITOR:
                         Write-Info "  gateway autostart task $tn is already disabled; leaving it that way"
                         return
                     }
@@ -2802,8 +2819,8 @@ function Install-Venv {
             } catch {
                 Write-Warn "Could not enumerate gateway scheduled tasks: $($_.Exception.Message)"
             }
-            # The launcher CLI (hermes.exe) plus its child tree.
-            & taskkill /F /T /IM hermes.exe /FI "PID ne $myPid" 2>$null | Out-Null
+            # JANITOR: no system-wide `taskkill /IM hermes.exe` (it would kill a separate Hermes):
+            # JANITOR: the path-filtered sweep below stops janitor.exe / hermes.exe / python.exe of THIS venv.
             # taskkill /IM hermes.exe is NOT enough: the gateway/agent that a
             # scheduled task or watchdog autostarts runs as
             # `pythonw.exe -m hermes_cli.main gateway run` straight out of
@@ -4941,7 +4958,7 @@ $InstallStages = @(
     @{ Name = "git";              Title = "Installing Git";                       Category = "prereqs";      NeedsUserInput = $false; Worker = "Stage-Git" }
     @{ Name = "node";             Title = "Detecting Node.js";                    Category = "prereqs";      NeedsUserInput = $false; Worker = "Stage-Node" }
     @{ Name = "system-packages";  Title = "Installing ripgrep and ffmpeg";        Category = "prereqs";      NeedsUserInput = $false; Worker = "Stage-SystemPackages" }
-    @{ Name = "repository";       Title = "Cloning Hermes repository";            Category = "install";      NeedsUserInput = $false; Worker = "Stage-Repository" }
+    @{ Name = "repository";       Title = "Descargando Janitor";                   Category = "install";      NeedsUserInput = $false; Worker = "Stage-Repository" }  # JANITOR: Spanish title
     # Managed Python lives under $InstallDir\.hermes-runtime, so the checkout
     # must exist before this stage creates that directory. Otherwise the later
     # repository stage treats the runtime-only directory as a broken checkout,
@@ -4958,7 +4975,7 @@ if ($IncludeDesktop) {
     $InstallStages += @{ Name = "desktop"; Title = "Building desktop app"; Category = "install"; NeedsUserInput = $false; Worker = "Stage-Desktop" }
 }
 $InstallStages += @(
-    @{ Name = "path";             Title = "Adding Hermes to PATH";                Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-Path" }
+    @{ Name = "path";             Title = "Instalando el comando janitor";        Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-Path" }  # JANITOR: Spanish title
     @{ Name = "config-templates"; Title = "Writing configuration templates";      Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-ConfigTemplates" }
     @{ Name = "platform-sdks";    Title = "Installing messaging platform SDKs";   Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-PlatformSdks" }
     @{ Name = "bootstrap-marker"; Title = "Marking install complete";              Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-BootstrapMarker" }
@@ -5174,6 +5191,10 @@ if ($MyInvocation.InvocationName -eq ".") {
 }
 
 try {
+    if ($IncludeDesktop) {  # JANITOR: the Janitor app is installed from its release, never built here
+        Write-Err (Get-JanitorText "-IncludeDesktop no est\u00e1 disponible en Janitor: la app se instala desde su versi\u00f3n publicada.")  # JANITOR:
+        exit 1  # JANITOR:
+    }  # JANITOR:
     if ($Ensure -ne "") {
         if ($PSBoundParameters.ContainsKey("Stage")) {
             Write-Err "Cannot use -Ensure and -Stage simultaneously"
