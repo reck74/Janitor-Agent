@@ -30,8 +30,15 @@ export const FORK_RELEASE_URL = 'https://github.com/reck74/Janitor-Agent/release
 export const COMPAT_DIALOG = {
   title: 'Janitor',
   message: 'Esta app es más vieja que el motor que acabas de instalar.',
-  detail:
-    'Instala la versión nueva de la app: descarga el AppImage desde el enlace y reemplaza el anterior, o actualiza el paquete con tu gestor de paquetes si la instalaste así. Tus chats y ajustes no se tocan.',
+  // Per process.platform (F6-04d); any other platform gets the Linux text.
+  details: {
+    linux:
+      'Instala la versión nueva de la app: descarga el AppImage desde el enlace y reemplaza el anterior, o actualiza el paquete con tu gestor de paquetes si la instalaste así. Tus chats y ajustes no se tocan.',
+    win32:
+      'Instala la versión nueva de la app: descarga el instalador (.exe) desde el enlace y ejecútalo; se instala encima de la anterior. Tus chats y ajustes no se tocan.',
+    darwin:
+      'Instala la versión nueva de la app: descarga el .dmg desde el enlace y arrastra Janitor a Aplicaciones para reemplazar la anterior. Tus chats y ajustes no se tocan.'
+  },
   buttons: ['Abrir la descarga', 'Salir']
 }
 
@@ -110,7 +117,7 @@ export function readDesktopContract(repoRoot = REPO_ROOT) {
  * TypeScript injected into electron/main.ts: the baked constant, the verdict
  * function and the boot gate. Free names it relies on, all module scope in
  * main.ts: app, dialog, shell, fs, path, resolveUpdateRoot, rememberLog,
- * sendOpenUpdatesRequested.
+ * sendOpenUpdatesRequested; plus the global process (dialog text per platform).
  */
 export function compatGateSource(contract) {
   if (!Number.isInteger(contract) || contract < 1) {
@@ -173,7 +180,7 @@ export function compatGateSource(contract) {
     "    type: 'error',",
     `    title: ${JSON.stringify(COMPAT_DIALOG.title)},`,
     `    message: ${JSON.stringify(COMPAT_DIALOG.message)},`,
-    `    detail: ${JSON.stringify(COMPAT_DIALOG.detail + '\n\n')} + verdict.releaseUrl,`,
+    `    detail: (${JSON.stringify(COMPAT_DIALOG.details)}[process.platform] ?? ${JSON.stringify(COMPAT_DIALOG.details.linux)}) + '\\n\\n' + verdict.releaseUrl,`,
     `    buttons: ${JSON.stringify(COMPAT_DIALOG.buttons)},`,
     '    defaultId: 0,',
     '    cancelId: 1,',

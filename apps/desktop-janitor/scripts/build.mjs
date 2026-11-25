@@ -36,8 +36,16 @@ export const APP_DIR = path.resolve(OVERLAY_DIR, '..', 'desktop')
 
 // [overlay source, apps/desktop target]. The banner is the J4NITOR-AGENT lettering of the
 // empty chat (F1-18, brand/theme.mjs P12-look-banner).
+//
+// Windows (F6-02): upstream's assets/icon.ico is stamped onto the .exe by
+// scripts/set-exe-identity.mjs (afterExtract), shipped as resources/icon.ico
+// (extraResources) and used as the window icon (electron/app-icon.ts), so the
+// Janitor .ico replaces it for the build and is restored afterwards. The .icns
+// is fork-only: electron-builder.janitor.json points mac.icon at it.
 export const OVERLAY_FILES = [
   ['assets/janitor-mark.png', 'assets/janitor-icon.png'],
+  ['assets/janitor-icon.ico', 'assets/icon.ico'],
+  ['assets/janitor-icon.icns', 'assets/janitor-icon.icns'],
   ['assets/janitor-mark.png', 'public/apple-touch-icon.png'],
   ['assets/janitor-mark.png', 'public/nous-girl.jpg'],
   ['assets/filler-bg0.jpg', 'public/ds-assets/filler-bg0.jpg'],
@@ -45,7 +53,7 @@ export const OVERLAY_FILES = [
 ]
 
 // Targets upstream does not ship: the build creates them and restore() removes them.
-export const FORK_ONLY_TARGETS = new Set(['assets/janitor-icon.png', 'public/janitor-logo-banner.png'])
+export const FORK_ONLY_TARGETS = new Set(['assets/janitor-icon.png', 'assets/janitor-icon.icns', 'public/janitor-logo-banner.png'])
 
 const isPlainObject = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 

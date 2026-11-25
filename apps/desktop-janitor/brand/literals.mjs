@@ -381,7 +381,6 @@ export const KEPT_LITERALS = [
   ['electron/main.ts', "label: `existing Hermes CLI at ${hermesCommand}`", 'PATH adoption is disabled by P3 (only HERMES_DESKTOP_HERMES reaches it)'],
   ['electron/main.ts', "label: 'Hermes Agent not installed yet; bootstrap required'", 'sentinel label, logs only'],
   ['electron/main.ts', "label: `Hermes backend for profile \"${profile}\"`", 'pool backend label, logs only'],
-  ['electron/main.ts', "app.setAppUserModelId('com.nousresearch.hermes')", 'Windows-only AUMID; Windows is out of scope for phase 1'],
   ['electron/terminal-ipc.ts', "env.TERM_PROGRAM = 'Hermes'", 'environment value read by shells, not shown'],
   ['electron/bootstrap-failure-copy.ts', 'Details:', 'parse marker split by src/components/desktop-install-overlay.tsx'],
   ['src/components/chat/intro.tsx', "headline: 'What should Hermes look at?'", 'headline copy is parsed but never rendered (only the wordmark and the i18n body are)']

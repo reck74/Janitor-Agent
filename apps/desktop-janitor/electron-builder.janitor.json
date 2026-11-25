@@ -6,29 +6,46 @@
   "icon": "assets/janitor-icon.png",
   "extraMetadata": {
     "productName": "Janitor",
-    "description": "Native desktop shell for Janitor Agent."
+    "description": "App de escritorio de Janitor."
   },
   "mac": {
-    "icon": "assets/janitor-icon.png",
+    "icon": "assets/janitor-icon.icns",
+    "identity": "-",
+    "target": ["dmg"],
     "extendInfo": {
       "CFBundleDisplayName": "Janitor",
       "CFBundleExecutable": "Janitor",
-      "CFBundleName": "Janitor"
+      "CFBundleName": "Janitor",
+      "NSAudioCaptureUsageDescription": "Janitor captura el audio para las conversaciones por voz.",
+      "NSCameraUsageDescription": "Janitor usa la cámara cuando un plugin o una función que activaste la pide.",
+      "NSMicrophoneUsageDescription": "Janitor usa el micrófono para el dictado y las conversaciones por voz.",
+      "NSCalendarsUsageDescription": "Janitor necesita acceso al Calendario para las reuniones y la agenda que le pidas.",
+      "NSCalendarsFullAccessUsageDescription": "Janitor necesita acceso completo al Calendario para leer y gestionar eventos cuando se lo pidas.",
+      "NSRemindersUsageDescription": "Janitor necesita acceso a Recordatorios para la agenda y las tareas que le pidas.",
+      "NSRemindersFullAccessUsageDescription": "Janitor necesita acceso completo a Recordatorios para leerlos y gestionarlos cuando se lo pidas.",
+      "NSScreenCaptureUsageDescription": "Janitor captura la pantalla cuando le pides una captura o una grabación.",
+      "NSLocalNetworkUsageDescription": "Janitor se conecta a equipos de tu red local cuando un plugin o una función que activaste lo pide.",
+      "NSAppleMusicUsageDescription": "Janitor accede a tu biblioteca de música cuando un plugin o una función que activaste lo pide."
     }
   },
   "dmg": {
-    "title": "Install Janitor"
+    "title": "Instalar Janitor"
   },
   "win": {
-    "icon": "assets/janitor-icon.png",
-    "legalTrademarks": "Janitor"
+    "icon": "assets/icon.ico",
+    "legalTrademarks": "Janitor",
+    "target": [{ "target": "nsis", "arch": ["x64"] }]
   },
   "linux": {
     "icon": "assets/janitor-icon.png",
     "maintainer": "Janitor Agent",
-    "synopsis": "Native desktop shell for Janitor Agent."
+    "synopsis": "App de escritorio de Janitor."
   },
   "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "installerLanguages": ["es_ES"],
+    "language": "3082",
     "shortcutName": "Janitor",
     "uninstallDisplayName": "Janitor"
   }
