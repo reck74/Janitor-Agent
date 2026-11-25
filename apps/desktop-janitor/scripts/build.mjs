@@ -18,6 +18,11 @@
 // and never shares single-instance lock, window state or connection settings
 // with a real Hermes Desktop install. Pre-1.0 Janitor desktop builds used
 // ~/.config/Hermes; their window/connection settings are not carried over.
+//
+// extraMetadata.version is Janitor's version in its display form
+// (pyproject.toml → janitor/version.py, brand/app-version.mjs), read without
+// Python: app.getVersion(), the Windows installer/.exe and the macOS bundle
+// carry it instead of upstream's apps/desktop/package.json version.
 
 import fs from 'node:fs'
 import os from 'node:os'
@@ -25,6 +30,7 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
+import { janitorAppVersion } from '../brand/app-version.mjs'
 import { COMPAT_FILE, readDesktopContract } from '../brand/compat.mjs'
 
 import { allPatches } from './brand-patches.mjs'
@@ -71,11 +77,11 @@ export function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'))
 }
 
-export function janitorBuilderConfig(appDir = APP_DIR, overlayDir = OVERLAY_DIR) {
+export function janitorBuilderConfig(appDir = APP_DIR, overlayDir = OVERLAY_DIR, version = janitorAppVersion()) {
   const upstream = readJson(path.join(appDir, 'package.json')).build
   const overrides = readJson(path.join(overlayDir, 'electron-builder.janitor.json'))
 
-  return mergeBuilderConfig(upstream, overrides)
+  return mergeBuilderConfig(upstream, mergeBuilderConfig(overrides, { extraMetadata: { version } }))
 }
 
 /**
@@ -120,6 +126,7 @@ export function runCheck(appDir = APP_DIR, patches = allPatches(appDir), out = c
   const failed = results.filter(r => !r.ok).length
   out(`${results.length - failed}/${results.length} patches resolve against ${appDir}${transpileOk ? '' : '; transpile FAILED'}`)
   out(`app↔engine contract baked into this build: ${readDesktopContract()} (${COMPAT_FILE}, P13)`)
+  out(`app version (extraMetadata.version, from pyproject.toml): ${janitorAppVersion()}`)
 
   return ok && transpileOk
 }
@@ -153,6 +160,7 @@ function main(argv) {
   fs.writeFileSync(configPath, JSON.stringify(janitorBuilderConfig(), null, 2))
 
   log(`app↔engine contract baked into this build: ${readDesktopContract()} (${COMPAT_FILE})`)
+  log(`app version: ${janitorAppVersion()} (pyproject.toml)`)
 
   const restore = applyOverlay(APP_DIR, OVERLAY_DIR, { patches: allPatches(), log })
 

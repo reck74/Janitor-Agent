@@ -6,7 +6,7 @@ proveedor de IA. No hace falta Docker ni ninguna clave para la instalación base
 
 > **Pendiente de confirmar en la primera versión publicada.** A fecha de esta guía
 > la última versión publicada solo trae el AppImage de Linux. Los nombres de los
-> demás archivos (Windows, macOS, Arch, `PKGBUILD`, `SHA256SUMS`) salen del flujo
+> demás archivos (Windows, macOS, Arch, fuentes de Arch, `SHA256SUMS`) salen del flujo
 > de publicación (`.github/workflows/janitor-desktop-release.yml`) y todavía no se
 > han visto en una versión publicada. Si no coinciden, manda lo que veas en la
 > página de versiones.
@@ -23,7 +23,7 @@ Todo está en la página de versiones del proyecto:
 | Sistema | Archivo |
 |---|---|
 | Linux (cualquier distribución, x86_64) | `Janitor-linux-x86_64.AppImage` |
-| Arch Linux | `janitor-desktop-bin-<versión>-1-x86_64.pkg.tar.zst` (y su `PKGBUILD`) |
+| Arch Linux | `janitor-desktop-bin-<versión>-1-x86_64.pkg.tar.zst` (y sus fuentes para `makepkg`: `janitor-desktop-bin-<versión>.src.tar.gz`) |
 | Windows (x64) | `Janitor-win-x64.exe` |
 | macOS (Apple Silicon) | `Janitor-mac-arm64.dmg` |
 | macOS (Intel, experimental) | `Janitor-mac-x64.dmg`, solo si aparece en la versión |
@@ -65,25 +65,21 @@ sudo pacman -U ./janitor-desktop-bin-<versión>-1-x86_64.pkg.tar.zst
 
 - Desinstalar: `sudo pacman -R janitor-desktop-bin`.
 
-**Alternativa: construirlo tú con `makepkg`.** El `PKGBUILD` de la versión
-descarga el AppImage publicado y lo reempaqueta, pero también necesita a su lado
-tres archivos del repositorio **de la misma etiqueta** (sus sumas están fijadas en
-el `PKGBUILD`), que la versión no adjunta:
+**Alternativa: construirlo tú con `makepkg`.** La versión adjunta
+`janitor-desktop-bin-<versión>.src.tar.gz`, con el `PKGBUILD` y los tres
+archivos que lista a su lado (`janitor-desktop.sh`, `Janitor.desktop`,
+`LICENSE`). No trae el AppImage: `makepkg` lo descarga de la misma versión y
+comprueba su suma, fijada en el `PKGBUILD`:
 
 ```bash
-tag=v0.21.5-janitor.1   # la etiqueta de la versión que instalas
-mkdir janitor-desktop-bin && cd janitor-desktop-bin
-# Copia aquí el PKGBUILD descargado de la versión y después:
-base="https://raw.githubusercontent.com/reck74/Janitor-Agent/$tag"
-curl -fLO "$base/apps/desktop-janitor/packaging/arch/janitor-desktop.sh"
-curl -fLO "$base/apps/desktop-janitor/packaging/arch/Janitor.desktop"
-curl -fLO "$base/LICENSE"
+tar xzf janitor-desktop-bin-<versión>.src.tar.gz
+cd janitor-desktop-bin-<versión>
 makepkg -si
 ```
 
-> Pendiente de confirmar: en CI el paquete se construye con todos los archivos ya
-> presentes; esta vía con la descarga del AppImage desde la versión no se ha
-> ensayado.
+> Pendiente de confirmar: en CI se comprueba que el tarball extraído solo, con el
+> AppImage ya presente, verifica todas sus sumas (`makepkg --verifysource`); la
+> descarga del AppImage desde una versión publicada no se ha ensayado.
 
 ## 4. Windows
 

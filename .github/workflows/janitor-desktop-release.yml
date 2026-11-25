@@ -392,12 +392,36 @@ jobs:
           test "$(jq -r .branch "$stamp")" = "$STAMP_BRANCH"
           pacman -R --noconfirm janitor-desktop-bin
           test ! -e /opt/janitor-desktop
+      # The makepkg sources for users who build the package themselves: PKGBUILD
+      # plus the local sources it lists (arch-package.mjs), without the AppImage,
+      # which makepkg downloads from the release by the URL in `source`.
+      - name: Source tarball
+        run: |
+          pkg=/home/builder/pkg
+          pkgver=$(bash -c 'source "$1/PKGBUILD"; printf %s "$pkgver"' _ "$pkg")
+          test -n "$pkgver"
+          name="janitor-desktop-bin-$pkgver"
+          stage="$RUNNER_TEMP/src/$name"
+          mkdir -p "$stage" dist
+          cp -p "$pkg/PKGBUILD" "$pkg/janitor-desktop.sh" "$pkg/Janitor.desktop" "$pkg/LICENSE" "$stage/"
+          tar -C "$RUNNER_TEMP/src" --sort=name --owner=0 --group=0 --numeric-owner \
+            -czf "dist/$name.src.tar.gz" "$name"
+          tar -tzvf "dist/$name.src.tar.gz"
+          # Check it the way a user gets it: extracted alone, plus the AppImage
+          # under the local name makepkg would download it to (so nothing is
+          # downloaded here), every sha256sum in the PKGBUILD must verify.
+          check=/home/builder/srccheck
+          mkdir -p "$check"
+          tar -C "$check" -xzf "dist/$name.src.tar.gz"
+          cp appimage/Janitor-linux-x86_64.AppImage "$check/$name/janitor-desktop-$pkgver.AppImage"
+          chown -R builder: "$check"
+          runuser -u builder -- env HOME=/home/builder bash -c "cd '$check/$name' && makepkg --verifysource --noconfirm"
       - name: Collect
         run: |
           mkdir -p dist
-          cp /home/builder/pkg/*.pkg.tar.zst /home/builder/pkg/PKGBUILD dist/
+          cp /home/builder/pkg/*.pkg.tar.zst dist/
           cd dist
-          for f in *.pkg.tar.zst PKGBUILD; do sha256sum "$f" > "$f.sha256"; done
+          for f in *.pkg.tar.zst *.src.tar.gz; do sha256sum "$f" > "$f.sha256"; done
           cat ./*.sha256
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
@@ -451,7 +475,6 @@ jobs:
             Janitor-linux-x86_64.AppImage
             Janitor-win-x64.exe
             Janitor-mac-arm64.dmg
-            PKGBUILD
           )
           optional=(Janitor-mac-x64.dmg)
           shopt -s nullglob
@@ -460,12 +483,15 @@ jobs:
             [ ${#src[@]} -eq 0 ] && continue
             cp "${src[0]}" "${src[0]}.sha256" dist/
           done
-          pkgs=(artifacts/janitor-desktop-arch/*.pkg.tar.zst)
-          if [ ${#pkgs[@]} -ne 1 ]; then
-            echo "::error::Expected one Arch package, found: ${pkgs[*]}"
-            exit 1
-          fi
-          cp "${pkgs[0]}" "${pkgs[0]}.sha256" dist/
+          # The Arch package and its makepkg sources (janitor-desktop-bin-<pkgver>.src.tar.gz).
+          for pattern in '*.pkg.tar.zst' '*.src.tar.gz'; do
+            found=(artifacts/janitor-desktop-arch/$pattern)
+            if [ ${#found[@]} -ne 1 ]; then
+              echo "::error::Expected one Arch $pattern, found: ${found[*]}"
+              exit 1
+            fi
+            cp "${found[0]}" "${found[0]}.sha256" dist/
+          done
           for f in "${required[@]}"; do
             if [ ! -f "dist/$f" ]; then
               echo "::error::Missing $f. Downloaded:"
@@ -484,6 +510,8 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           pkg=$(cd dist && ls ./*.pkg.tar.zst | sed 's|^\./||')
+          src=$(cd dist && ls ./*.src.tar.gz | sed 's|^\./||')
+          srcdir=${src%.src.tar.gz}
           cat > notes.md <<EOF
           # Janitor $TAG
 
@@ -491,7 +519,7 @@ jobs:
 
           **Linux (cualquier distribución):** descarga \`Janitor-linux-x86_64.AppImage\`, dale permiso de ejecución (\`chmod +x Janitor-linux-x86_64.AppImage\`) y ábrelo.
 
-          **Arch Linux:** descarga \`$pkg\` e instálalo con \`sudo pacman -U ./$pkg\`. La app se abre desde el menú o con el comando \`janitor-desktop\`.
+          **Arch Linux:** descarga \`$pkg\` e instálalo con \`sudo pacman -U ./$pkg\`. La app se abre desde el menú o con el comando \`janitor-desktop\`. Si prefieres construir el paquete tú: descarga \`$src\`, extráelo (\`tar xzf $src\`) y en \`$srcdir\` ejecuta \`makepkg -si\` (descarga el AppImage de esta versión y comprueba su suma).
 
           **Windows (x64):** ejecuta \`Janitor-win-x64.exe\`. El instalador no está firmado: si SmartScreen lo detiene, pulsa «Más información» → «Ejecutar de todas formas».
 
