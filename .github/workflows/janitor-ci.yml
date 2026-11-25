@@ -1,5 +1,11 @@
 name: Janitor CI
-on: [push, pull_request]
+# workflow_dispatch was added for install-e2e (F6-10); every other job keeps
+# running on push and pull_request exactly as before (a manual run also runs
+# them).
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
 
 jobs:
   python-tests:
@@ -603,3 +609,519 @@ jobs:
           # with "no installed distributions" on hosted runners).
           export PATH="/c/Program Files/Git/bin:$PATH"
           .venv/Scripts/python.exe -m pytest tests/janitor/ --tb=short -v
+
+  # F6-10 (docs/janitor/plans/janitor-desktop-app.md, Fase 6): whether
+  # install-e2e has to run, and which branch + commit it installs. The
+  # installers clone reck74/Janitor-Agent (REPO_URL_* in scripts/install.sh,
+  # $RepoUrl* in scripts/install.ps1) with `--branch`, then pin `--commit`, so
+  # the branch must exist there: a PR from another repository, a run in a
+  # copy of this repository and a plain push are skipped (a push of these
+  # paths was already covered by its PR). Runs on workflow_dispatch, and on a
+  # pull_request that touches the installer, the engine or the seed.
+  install-e2e-changes:
+    name: install-e2e (needed?)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+      branch: ${{ steps.decide.outputs.branch }}
+      commit: ${{ steps.decide.outputs.commit }}
+    steps:
+      - name: Checkout the PR merge commit (only its parents are needed)
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # refs/pull/N/merge: HEAD^1 is the base tip, so HEAD^1..HEAD is what
+          # the PR changes. Trees only; no working tree beyond .github.
+          fetch-depth: 2
+          filter: blob:none
+          sparse-checkout: .github
+          persist-credentials: false
+      - name: Decide
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_HEAD_REF: ${{ github.head_ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          run=false
+          branch=""
+          commit=""
+          if [ "$REPO" != "reck74/Janitor-Agent" ]; then
+            echo "::notice::install-e2e skipped: the installers clone reck74/Janitor-Agent, not $REPO"
+          else
+            case "$EVENT" in
+              workflow_dispatch)
+                run=true
+                branch="$REF_NAME"
+                commit="$SHA"
+                ;;
+              pull_request)
+                if [ "$PR_HEAD_REPO" != "$REPO" ]; then
+                  echo "::notice::install-e2e skipped: the PR branch lives in $PR_HEAD_REPO, which the installers do not clone"
+                else
+                  changed="$(git diff --name-only HEAD^1 HEAD)"
+                  printf '%s\n' "$changed"
+                  if grep -qE '^(scripts/install\.(sh|ps1)$|scripts/desktop-update/|janitor/|assets/janitor/|pyproject\.toml$|uv\.lock$|\.github/workflows/janitor-ci\.yml$)' <<<"$changed"; then
+                    run=true
+                  else
+                    echo "::notice::install-e2e skipped: no installer, engine or seed file changed"
+                  fi
+                  # Not the merge commit: it exists only under refs/pull/, and
+                  # the installer clones the PR branch and pins its head.
+                  branch="$PR_HEAD_REF"
+                  commit="$PR_HEAD_SHA"
+                fi
+                ;;
+              *)
+                echo "::notice::install-e2e runs on pull_request and workflow_dispatch only"
+                ;;
+            esac
+          fi
+          {
+            echo "run=$run"
+            echo "branch=$branch"
+            echo "commit=$commit"
+          } >> "$GITHUB_OUTPUT"
+          echo "run=$run branch=$branch commit=$commit"
+
+  # F6-10: the REAL engine install on Windows and macOS, driven exactly like
+  # the desktop app's first run (apps/desktop/electron/bootstrap-runner.ts):
+  # the platform installer is asked for its stage manifest and every stage runs
+  # in its own process with the non-interactive + JSON flags and the pin args
+  # (branch, and the commit only on a fresh install), each stage judged by its
+  # JSON result frame. The home is a temporary ~/.janitor: HOME (macOS) and
+  # USERPROFILE (Windows) point at $RUNNER_TEMP/home, because the `janitor`
+  # launcher always runs on ~/.janitor (janitor/home.py) and nothing here may
+  # touch the runner's real home. HERMES_HOME is never inherited: the drivers
+  # set it the way the app does (spawnBash / spawnPowerShell) and the checks
+  # unset it. Afterwards: venv + launcher + `janitor --version` (THE JANITOR,
+  # directive #12), the seeded home (directive #8), no Playwright browser
+  # (decision 2.10), `janitor update --check`, and a second installer pass that
+  # must leave config.yaml and SOUL.md byte-identical. Windows runs everything
+  # under Windows PowerShell 5.1 (what the app spawns) with PYTHONUTF8 unset, so
+  # encoding bugs surface instead of being masked as in os-compat.
+  install-e2e:
+    name: install-e2e (${{ matrix.os }})
+    needs: install-e2e-changes
+    if: needs.install-e2e-changes.outputs.run == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - macos-latest
+    env:
+      E2E_BRANCH: ${{ needs.install-e2e-changes.outputs.branch }}
+      E2E_COMMIT: ${{ needs.install-e2e-changes.outputs.commit }}
+    steps:
+      - name: Checkout the commit under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # The same commit the installer clones, so the scripts run here and
+          # the assets compared below are the installed ones.
+          ref: ${{ needs.install-e2e-changes.outputs.commit }}
+          filter: blob:none
+          sparse-checkout: |
+            scripts
+            assets/janitor
+          persist-credentials: false
+
+      - name: Parse install.ps1 and desktop-update/windows.ps1 with Windows PowerShell 5.1
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          Write-Host "PowerShell $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition))"
+          if ($PSVersionTable.PSVersion.Major -ne 5) {
+            Write-Host "::error::expected Windows PowerShell 5.1, got $($PSVersionTable.PSVersion)"
+            exit 1
+          }
+          $failed = $false
+          foreach ($rel in @('scripts\install.ps1', 'scripts\desktop-update\windows.ps1')) {
+            $path = Join-Path $env:GITHUB_WORKSPACE $rel
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors -and $errors.Count -gt 0) {
+              $failed = $true
+              foreach ($e in $errors) {
+                Write-Host ("::error file={0},line={1},col={2}::{3}" -f ($rel -replace '\\', '/'), $e.Extent.StartLineNumber, $e.Extent.StartColumnNumber, $e.Message)
+              }
+              Write-Host "${rel}: $($errors.Count) syntax error(s)"
+            } else {
+              Write-Host "${rel}: OK"
+            }
+          }
+          if ($failed) { exit 1 }
+          exit 0
+
+      - name: Write the app-like installer drivers
+        shell: bash
+        run: |
+          set -euo pipefail
+          rt="$RUNNER_TEMP"
+          [ "$RUNNER_OS" != "Windows" ] || rt="$(cygpath -u "$RUNNER_TEMP")"
+          d="$rt/e2e"
+          mkdir -p "$d" "$rt/home" "$rt/install-e2e-logs"
+          # POSIX: what bootstrap-runner.ts runs for install.sh. Usage:
+          #   install-like-app.sh <pass> [--commit SHA]
+          cat > "$d/install-like-app.sh" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          pass="$1"; shift
+          export HOME="$RUNNER_TEMP/home"
+          unset HERMES_HOME HERMES_INSTALL_DIR PYTHONPATH PYTHONHOME
+          JH="$HOME/.janitor"
+          logs="$RUNNER_TEMP/install-e2e-logs"
+          mkdir -p "$logs"
+          # buildPosixPinArgs: --dir, --hermes-home, --branch, then --commit on a fresh install.
+          pin=(--dir "$JH/hermes-agent" --hermes-home "$JH" --branch "$E2E_BRANCH" "$@")
+          installer="$GITHUB_WORKSPACE/scripts/install.sh"
+          command -v jq >/dev/null || { echo "::error::jq is not installed on this runner"; exit 1; }
+          if ! HERMES_HOME="$JH" bash "$installer" --manifest "${pin[@]}" </dev/null > "$logs/$pass-manifest.log" 2>&1; then
+            echo "::error::$pass: install.sh --manifest failed"
+            cat "$logs/$pass-manifest.log"
+            exit 1
+          fi
+          manifest="$(grep '^{' "$logs/$pass-manifest.log" | tail -n 1 || true)"
+          stages="$(jq -r '.stages[].name' <<<"$manifest" || true)"
+          if [ -z "$stages" ]; then
+            echo "::error::$pass: install.sh --manifest returned no stages"
+            cat "$logs/$pass-manifest.log"
+            exit 1
+          fi
+          echo "$pass: stages:" $stages
+          for stage in $stages; do
+            out="$logs/$pass-$stage.log"
+            echo "::group::$pass: install.sh --stage $stage"
+            set +e
+            HERMES_HOME="$JH" bash "$installer" --stage "$stage" --non-interactive --json "${pin[@]}" </dev/null > "$out" 2>&1
+            code=$?
+            set -e
+            cat "$out"
+            echo "::endgroup::"
+            frame="$(grep '^{"ok":' "$out" | tail -n 1 || true)"
+            if [ -z "$frame" ]; then
+              echo "::error::$pass: stage $stage produced no JSON result frame (exit $code)"
+              exit 1
+            fi
+            if [ "$(jq -r '.ok' <<<"$frame")" != "true" ] || [ "$code" -ne 0 ]; then
+              echo "::error::$pass: stage $stage failed (exit $code): $frame"
+              exit 1
+            fi
+            if [ "$(jq -r '.skipped' <<<"$frame")" = "true" ]; then
+              echo "::notice::$pass: stage $stage skipped: $(jq -r '.reason // "no reason"' <<<"$frame")"
+            fi
+          done
+          echo "$pass: every stage succeeded"
+          EOF
+          # Windows: what bootstrap-runner.ts runs for install.ps1, from Windows
+          # PowerShell 5.1. Usage: install-like-app.ps1 -Pass <pass> [-Commit SHA]
+          cat > "$d/install-like-app.ps1" <<'EOF'
+          param([Parameter(Mandatory = $true)][string]$Pass, [string]$Commit = '')
+          $ErrorActionPreference = 'Continue'
+          $homeDir = Join-Path $env:RUNNER_TEMP 'home'
+          $env:USERPROFILE = $homeDir
+          $env:HOME = $homeDir
+          foreach ($name in @('HERMES_HOME', 'PYTHONUTF8', 'PYTHONIOENCODING', 'PYTHONPATH', 'PYTHONHOME')) {
+            Remove-Item -Path "Env:$name" -ErrorAction SilentlyContinue
+          }
+          $jh = Join-Path $homeDir '.janitor'
+          $logs = Join-Path $env:RUNNER_TEMP 'install-e2e-logs'
+          New-Item -ItemType Directory -Force -Path $logs | Out-Null
+          $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          $installer = Join-Path $env:GITHUB_WORKSPACE 'scripts\install.ps1'
+          # buildPinArgs: -Commit only on a fresh install, then -Branch. The app
+          # passes the home as HERMES_HOME (spawnPowerShell), not -HermesHome.
+          $pin = @()
+          if ($Commit) { $pin += @('-Commit', $Commit) }
+          $pin += @('-Branch', $env:E2E_BRANCH)
+          $env:HERMES_HOME = $jh
+
+          function Invoke-Installer([string]$Label, [string[]]$InstallerArgs) {
+            $all = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $installer) + $InstallerArgs
+            $lines = @(& $ps @all 2>&1 | ForEach-Object { "$_" })
+            $code = $LASTEXITCODE
+            [System.IO.File]::WriteAllLines((Join-Path $logs "$Pass-$Label.log"), [string[]]$lines)
+            return @{ Lines = $lines; Code = $code }
+          }
+
+          function Get-LastJson([string[]]$Lines, [string]$Property) {
+            for ($i = $Lines.Count - 1; $i -ge 0; $i--) {
+              $l = $Lines[$i].Trim()
+              if (-not $l.StartsWith('{')) { continue }
+              try { $o = $l | ConvertFrom-Json -ErrorAction Stop } catch { continue }
+              if ($o.PSObject.Properties.Name -contains $Property) { return $o }
+            }
+            return $null
+          }
+
+          $m = Invoke-Installer 'manifest' (@('-Manifest') + $pin)
+          $manifest = Get-LastJson $m.Lines 'stages'
+          if (-not $manifest -or @($manifest.stages).Count -eq 0) {
+            Write-Host "::error::${Pass}: install.ps1 -Manifest returned no stages (exit $($m.Code))"
+            $m.Lines | ForEach-Object { Write-Host $_ }
+            exit 1
+          }
+          Write-Host ("${Pass}: stages: " + ((@($manifest.stages) | ForEach-Object { $_.name }) -join ' '))
+          foreach ($stage in @($manifest.stages)) {
+            $name = [string]$stage.name
+            Write-Host "::group::${Pass}: install.ps1 -Stage $name"
+            $r = Invoke-Installer $name (@('-Stage', $name, '-NonInteractive', '-Json') + $pin)
+            $r.Lines | ForEach-Object { Write-Host $_ }
+            Write-Host '::endgroup::'
+            $frame = Get-LastJson $r.Lines 'ok'
+            if (-not $frame) {
+              Write-Host "::error::${Pass}: stage $name produced no JSON result frame (exit $($r.Code))"
+              exit 1
+            }
+            if ($frame.ok -ne $true -or $r.Code -ne 0) {
+              Write-Host "::error::${Pass}: stage $name failed (exit $($r.Code)): $($frame.reason)"
+              exit 1
+            }
+            if ($frame.skipped -eq $true) {
+              Write-Host "::notice::${Pass}: stage $name skipped: $($frame.reason)"
+            }
+          }
+          Write-Host "${Pass}: every stage succeeded"
+          exit 0
+          EOF
+          ls -la "$d"
+
+      - name: Snapshot the Playwright browser caches (before)
+        shell: bash
+        run: |
+          set -euo pipefail
+          rt="$RUNNER_TEMP"
+          [ "$RUNNER_OS" != "Windows" ] || rt="$(cygpath -u "$RUNNER_TEMP")"
+          logs="$rt/install-e2e-logs"
+          # The runner's real Playwright cache (this step does not move HOME):
+          # a browser download that ignored the temporary home would land here.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            real="$(cygpath -u "$LOCALAPPDATA")/ms-playwright"
+          else
+            real="$HOME/Library/Caches/ms-playwright"
+          fi
+          echo "$real" > "$logs/playwright-real-cache.path"
+          if [ -d "$real" ]; then
+            (cd "$real" && find . -maxdepth 1 | LC_ALL=C sort) > "$logs/playwright-real-cache.before"
+          else
+            echo ABSENT > "$logs/playwright-real-cache.before"
+          fi
+          cat "$logs/playwright-real-cache.before"
+
+      - name: Install the engine like the app (macOS, install.sh by stages)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: bash "$RUNNER_TEMP/e2e/install-like-app.sh" first --commit "$E2E_COMMIT"
+
+      - name: Install the engine like the app (Windows, install.ps1 by stages)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $env:RUNNER_TEMP 'e2e\install-like-app.ps1') -Pass first -Commit $env:E2E_COMMIT
+          exit $LASTEXITCODE
+
+      - name: Check the installation (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/home"
+          unset HERMES_HOME
+          JH="$HOME/.janitor"
+          ROOT="$JH/hermes-agent"
+          logs="$RUNNER_TEMP/install-e2e-logs"
+          fail=0
+          err() { echo "::error::$*"; fail=1; }
+          head_sha="$(git -C "$ROOT" rev-parse HEAD)"
+          echo "installed commit: $head_sha"
+          [ "$head_sha" = "$E2E_COMMIT" ] || echo "::warning::installed $head_sha, expected $E2E_COMMIT (the branch moved during the run?)"
+          [ -x "$ROOT/venv/bin/python" ] || err "no venv at $ROOT/venv"
+          [ -x "$ROOT/venv/bin/janitor" ] || err "no venv/bin/janitor"
+          launcher="$HOME/.local/bin/janitor"
+          [ -x "$launcher" ] || { err "the path stage left no launcher at $launcher"; launcher="$ROOT/venv/bin/janitor"; }
+          out="$("$launcher" --version 2>&1)" || err "janitor --version exited $?"
+          printf '%s\n' "$out" | tee "$logs/janitor-version.txt"
+          grep -qE '^THE JANITOR v' <<<"$out" || err "janitor --version does not print THE JANITOR v"
+          [ -f "$JH/config.yaml" ] || err "no $JH/config.yaml"
+          [ -f "$JH/.no-bundled-skills" ] || err "no $JH/.no-bundled-skills"
+          if [ ! -f "$JH/SOUL.md" ]; then
+            err "no $JH/SOUL.md"
+          elif ! cmp -s "$JH/SOUL.md" "$GITHUB_WORKSPACE/assets/janitor/SOUL.md"; then
+            err "SOUL.md is not assets/janitor/SOUL.md"
+            diff "$GITHUB_WORKSPACE/assets/janitor/SOUL.md" "$JH/SOUL.md" | head -20 || true
+          fi
+          set +e
+          out="$("$launcher" update --check 2>&1)"
+          code=$?
+          set -e
+          printf '%s\n' "$out" | tee "$logs/janitor-update-check.txt"
+          [ "$code" -eq 0 ] || err "janitor update --check exited $code"
+          grep -qE 'Ya tienes la|Todav|Hay una versi' <<<"$out" || err "janitor update --check printed none of its known results"
+          exit "$fail"
+
+      - name: Check the installation (Windows, PYTHONUTF8 unset)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new() } catch { }
+          $homeDir = Join-Path $env:RUNNER_TEMP 'home'
+          $env:USERPROFILE = $homeDir
+          $env:HOME = $homeDir
+          foreach ($name in @('HERMES_HOME', 'PYTHONUTF8', 'PYTHONIOENCODING')) {
+            Remove-Item -Path "Env:$name" -ErrorAction SilentlyContinue
+          }
+          $jh = Join-Path $homeDir '.janitor'
+          $root = Join-Path $jh 'hermes-agent'
+          $logs = Join-Path $env:RUNNER_TEMP 'install-e2e-logs'
+          # A list, not a flag: GitHub dot-sources this script, so scope
+          # modifiers on a plain variable are easy to get wrong.
+          $failures = New-Object System.Collections.ArrayList
+          function Fail([string]$Message) { Write-Host "::error::$Message"; [void]$failures.Add($Message) }
+
+          $headSha = (& git -C $root rev-parse HEAD 2>$null | Out-String).Trim()
+          Write-Host "installed commit: $headSha"
+          if ($headSha -ne $env:E2E_COMMIT) { Write-Host "::warning::installed $headSha, expected $($env:E2E_COMMIT) (the branch moved during the run?)" }
+          if (-not (Test-Path -LiteralPath (Join-Path $root 'venv\Scripts\python.exe'))) { Fail "no venv at $root\venv" }
+          if (-not (Test-Path -LiteralPath (Join-Path $root 'venv\Scripts\janitor.exe'))) { Fail 'no venv\Scripts\janitor.exe' }
+          # Set-PathVariable stages the launcher in $HermesHome\bin (.exe, or .cmd for a relocatable venv).
+          $launcher = @('janitor.exe', 'janitor.cmd') | ForEach-Object { Join-Path $jh "bin\$_" } | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (-not $launcher) {
+            Fail "the path stage left no launcher in $jh\bin"
+            $launcher = Join-Path $root 'venv\Scripts\janitor.exe'
+          }
+          Write-Host "launcher: $launcher"
+
+          $out = @(& $launcher --version 2>&1 | ForEach-Object { "$_" })
+          $code = $LASTEXITCODE
+          $text = $out -join "`n"
+          Write-Host $text
+          [System.IO.File]::WriteAllText((Join-Path $logs 'janitor-version.txt'), $text)
+          if ($code -ne 0) { Fail "janitor --version exited $code" }
+          if ($text -notmatch '(?m)^THE JANITOR v') { Fail 'janitor --version does not print THE JANITOR v' }
+
+          if (-not (Test-Path -LiteralPath (Join-Path $jh 'config.yaml'))) { Fail "no $jh\config.yaml" }
+          if (-not (Test-Path -LiteralPath (Join-Path $jh '.no-bundled-skills'))) { Fail "no $jh\.no-bundled-skills" }
+          $soul = Join-Path $jh 'SOUL.md'
+          if (-not (Test-Path -LiteralPath $soul)) {
+            Fail "no $soul"
+          } else {
+            $expected = [System.IO.File]::ReadAllBytes((Join-Path $env:GITHUB_WORKSPACE 'assets\janitor\SOUL.md'))
+            $actual = [System.IO.File]::ReadAllBytes($soul)
+            if ([Convert]::ToBase64String($expected) -ne [Convert]::ToBase64String($actual)) { Fail 'SOUL.md is not assets/janitor/SOUL.md' }
+          }
+
+          $out = @(& $launcher update --check 2>&1 | ForEach-Object { "$_" })
+          $code = $LASTEXITCODE
+          $text = $out -join "`n"
+          Write-Host $text
+          [System.IO.File]::WriteAllText((Join-Path $logs 'janitor-update-check.txt'), $text)
+          if ($code -ne 0) { Fail "janitor update --check exited $code" }
+          if ($text -notmatch 'Ya tienes la|Todav|Hay una versi') { Fail 'janitor update --check printed none of its known results' }
+
+          if ($failures.Count -gt 0) { exit 1 }
+          exit 0
+
+      - name: No Playwright browser was installed
+        # Decision 2.10 / F1-29: the base install ships no browser. Nothing
+        # named ms-playwright under the temporary home (node_modules aside: a
+        # package may carry the name, a browser download never lands there),
+        # and the runner's real cache unchanged.
+        shell: bash
+        run: |
+          set -euo pipefail
+          rt="$RUNNER_TEMP"
+          [ "$RUNNER_OS" != "Windows" ] || rt="$(cygpath -u "$RUNNER_TEMP")"
+          logs="$rt/install-e2e-logs"
+          fail=0
+          found="$(find "$rt/home" -path '*/node_modules' -prune -o -type d -name ms-playwright -print)"
+          if [ -n "$found" ]; then
+            echo "::error::ms-playwright directories under the temporary home: $found"
+            fail=1
+          fi
+          real="$(cat "$logs/playwright-real-cache.path")"
+          if [ -d "$real" ]; then
+            (cd "$real" && find . -maxdepth 1 | LC_ALL=C sort) > "$logs/playwright-real-cache.after"
+          else
+            echo ABSENT > "$logs/playwright-real-cache.after"
+          fi
+          if ! cmp -s "$logs/playwright-real-cache.before" "$logs/playwright-real-cache.after"; then
+            echo "::error::the runner's Playwright cache changed: $real"
+            diff "$logs/playwright-real-cache.before" "$logs/playwright-real-cache.after" || true
+            fail=1
+          fi
+          exit "$fail"
+
+      - name: Second installer pass on the installed home (idempotency, macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          JH="$RUNNER_TEMP/home/.janitor"
+          before="$(shasum -a 256 "$JH/config.yaml" "$JH/SOUL.md")"
+          # An existing checkout: the app no longer passes --commit (pinCommit=false).
+          bash "$RUNNER_TEMP/e2e/install-like-app.sh" second
+          after="$(shasum -a 256 "$JH/config.yaml" "$JH/SOUL.md")"
+          printf 'before:\n%s\nafter:\n%s\n' "$before" "$after"
+          if [ "$before" != "$after" ]; then
+            echo "::error::the second install pass changed config.yaml or SOUL.md"
+            exit 1
+          fi
+          [ -f "$JH/.no-bundled-skills" ] || { echo "::error::.no-bundled-skills disappeared"; exit 1; }
+          version="$(env -u HERMES_HOME HOME="$RUNNER_TEMP/home" "$RUNNER_TEMP/home/.local/bin/janitor" --version 2>&1)"
+          printf '%s\n' "$version"
+          grep -qE '^THE JANITOR v' <<<"$version" || { echo "::error::janitor --version broke after the second pass"; exit 1; }
+
+      - name: Second installer pass on the installed home (idempotency, Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $jh = Join-Path $env:RUNNER_TEMP 'home\.janitor'
+          $files = @('config.yaml', 'SOUL.md') | ForEach-Object { Join-Path $jh $_ }
+          $before = ($files | ForEach-Object { (Get-FileHash -Algorithm SHA256 -LiteralPath $_).Hash }) -join ' '
+          # An existing checkout: the app no longer passes -Commit (pinCommit=false).
+          $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $env:RUNNER_TEMP 'e2e\install-like-app.ps1') -Pass second
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $after = ($files | ForEach-Object { (Get-FileHash -Algorithm SHA256 -LiteralPath $_).Hash }) -join ' '
+          Write-Host "before: $before"
+          Write-Host "after:  $after"
+          if ($before -ne $after) {
+            Write-Host '::error::the second install pass changed config.yaml or SOUL.md'
+            exit 1
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $jh '.no-bundled-skills'))) {
+            Write-Host '::error::.no-bundled-skills disappeared'
+            exit 1
+          }
+          exit 0
+
+      - name: Upload the installer output
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: install-e2e-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/install-e2e-logs
+            ${{ runner.temp }}/home/.janitor/logs
+          # The engine's logs live under the hidden .janitor; only that logs
+          # directory is listed (never .env or config).
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 14

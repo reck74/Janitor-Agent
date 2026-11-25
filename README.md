@@ -25,7 +25,9 @@ Janitor se instala desde su **app de escritorio** (Linux AppImage primero; ver
 `scripts/install.sh` de este fork por etapas: el motor queda en
 `~/.janitor/hermes-agent`, el comando `janitor` en `~/.local/bin` y el
 proveedor de IA se elige en pantalla (MiniMax es el recomendado). No hace
-falta Docker ni ninguna clave para la instalación base.
+falta Docker ni ninguna clave para la instalación base. Descarga, avisos de
+SmartScreen y Gatekeeper, Arch, actualizar y desinstalar:
+[`docs/janitor/instalar-app.md`](docs/janitor/instalar-app.md).
 
 ¿Tienes un Janitor antiguo instalado por terminal (`~/.janitor/janitor-core`)?
 No se adopta ni se migra: desinstálalo siguiendo
