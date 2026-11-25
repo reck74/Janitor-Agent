@@ -14,7 +14,9 @@ from janitor.stdio import utf8_stream
 
 def test_a_cp1252_stream_prints_the_banner_glyphs_as_utf8():
     raw = io.BytesIO()
-    stream = io.TextIOWrapper(raw, encoding="cp1252")
+    # newline="\n": the default (None) writes os.linesep, so the bytes would be
+    # host-dependent (CRLF on Windows); this test is about the encoding only.
+    stream = io.TextIOWrapper(raw, encoding="cp1252", newline="\n")
 
     fixed = utf8_stream(stream)
     print("🔥 → ✓ ✗ actualización", file=fixed)
