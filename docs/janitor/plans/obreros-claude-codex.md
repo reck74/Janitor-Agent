@@ -272,6 +272,38 @@ un primer F7-11 en solo lectura. La construcción (F7-04) va en la segunda entre
 F7-11 repetido sobre un conflicto real, y la app (F7-09) cierra. Cada entrega lleva
 pruebas en `tests/janitor/` y un revisor distinto (directiva #20).
 
+### 6.1 Estado (2026-11-25)
+
+| Id | Estado | Evidencia |
+|---|---|---|
+| F7-00 | hecho (ensayo de solo lectura, subagente Opus) | Ver 6.2 |
+| F7-01 | hecho; **sin auditar por un revisor distinto**; sin probar en Windows ni macOS, ni con un programa sin sesión | `scripts/run_tests.sh tests/janitor/test_janitor_obreros_deteccion.py` → 20 pasan. En este equipo detecta los dos, con sesión, sin correo ni organización en el resultado |
+| F7-02 | hecho; **sin auditar**; sin probar en Windows ni macOS; modo revisión sin probar contra un modelo | `scripts/run_tests.sh tests/janitor/test_janitor_obreros_adaptadores.py` → 60 pasan. Cada opción comprobada en `--help` de Claude Code 2.1.332 y Codex 0.172.0. **Prueba real** en una carpeta vacía (`/var/tmp/janitor-obreros-smoke/`): una consulta y una reanudación con cada programa; los dos contestaron, el analizador obtuvo respuesta, id de sesión y tokens (y coste en Claude), y al reanudar recordaron el turno anterior |
+| F7-03 a F7-13 | sin empezar | — |
+
+Observado en la prueba real: Codex no informa qué modelo contestó, y una consulta mínima
+le cuesta unos 16.000 tokens de entrada (32.000 acumulados al reanudar); a Claude, unos
+3.900 y 0,05 USD estimados. El tope de gasto tiene que contar con ese mínimo.
+
+### 6.2 Resultado del ensayo F7-00
+
+Ni el registro de procesos ni el kanban de upstream sirven de supervisor:
+
+- **Registro de procesos**: la salida del hijo es una tubería hacia Janitor (si Janitor
+  cae, el obrero muere al escribir); el punto de control no guarda salida; el aviso de
+  fin vive en memoria y se pierde al reiniciar; la recuperación solo la llama la pasarela
+  de mensajería, no la app ni el TUI.
+- **Kanban**: el lanzador solo se cambia desde Python; la pasarela siempre usa el suyo.
+  No hay ajuste ni hook para inyectar otro: usarlo exigiría tocar el core.
+- **Delegación asíncrona**: es el único camino duradero de «turno nuevo al quedar libre»,
+  pero no tiene interfaz pública.
+
+**Conclusión: supervisor propio y pequeño** (F7-03): proceso desligado que escribe su
+salida y su resultado en `obreros/<id>/` del home del perfil, PID más hora de arranque
+contra la reutilización de PID, y reconciliación al cargar el plugin y en cada orden.
+
+Queda abierto **cómo avisar a la conversación cuando un trabajo termina** (decisión 7.8).
+
 ## 7. Decisiones del dueño (tomadas el 2026-11-25: se acepta cada propuesta)
 
 1. **Nombre** de la función y del comando. Propuesta: «obreros» (`janitor obreros`).
@@ -293,6 +325,15 @@ pruebas en `tests/janitor/` y un revisor distinto (directiva #20).
    orden; el orquestador entiende que esta fase se empieza ya, porque el dueño la pidió
    como importante y lo demás depende de equipos que no están a mano. Si no es así,
    basta decirlo.
+
+8. **Aviso de fin de trabajo** (nueva, sin decidir). Dos caminos:
+   - *Tarjeta en el tablero kanban*: cada trabajo crea una tarjeta y su suscripción de
+     aviso; upstream entrega el aviso una sola vez y abre un turno aunque Janitor se haya
+     reiniciado, en app, terminal y mensajería. Coste: los trabajos aparecen como
+     tarjetas en el tablero.
+   - *Sin tarjetas*: el resultado se entrega en el siguiente mensaje del usuario (no abre
+     un turno solo) y se ve en la pantalla de obreros. Para que abra un turno haría falta
+     un hook nuevo en upstream.
 
 ## 8. Revisión de Codex (2026-11-25)
 
