@@ -27,6 +27,8 @@ class Ajustes:
     trabajos_a_la_vez: int
     minutos_por_trabajo: float
     tope_tokens_dia: int | None
+    # Carpetas que el usuario autorizó para el modo revisión, guardadas ya resueltas.
+    carpetas: tuple[str, ...] = ()
 
 
 def _positivo_entero(valor) -> int | None:
@@ -36,6 +38,22 @@ def _positivo_entero(valor) -> int | None:
 def _positivo(valor) -> float | None:
     # Se admiten decimales en los minutos (p. ej. 0.5): el tope real se guarda en segundos.
     return valor if type(valor) in (int, float) and valor > 0 else None
+
+
+def _carpetas(valor) -> tuple[str, ...]:
+    if not isinstance(valor, list):
+        return ()
+    from janitor.obreros.encargo import comprobar_carpeta
+
+    vistas = []
+    for ruta in valor:
+        try:
+            comprobar_carpeta(ruta)
+        except ValueError:
+            continue  # escrita a mano y mal: no autoriza nada
+        if ruta not in vistas:
+            vistas.append(ruta)
+    return tuple(vistas)
 
 
 def _seccion(config) -> dict:
@@ -58,6 +76,7 @@ def leer(home: Path) -> Ajustes:
         trabajos_a_la_vez=_positivo_entero(seccion.get("trabajos_a_la_vez")) or POR_DEFECTO_A_LA_VEZ,
         minutos_por_trabajo=_positivo(seccion.get("minutos_por_trabajo")) or POR_DEFECTO_MINUTOS,
         tope_tokens_dia=_positivo_entero(seccion.get("tope_tokens_dia")),
+        carpetas=_carpetas(seccion.get("carpetas")),
     )
 
 

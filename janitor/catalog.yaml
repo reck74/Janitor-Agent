@@ -147,6 +147,15 @@ skills:
     platforms: [linux]
     templates: [creador-proyectos]
 
+  # Solo aparece con las herramientas obreros_enviar/obreros_ver (requires_tools):
+  # sin obreros activados, el perfil trabaja como siempre.
+  - id: janitor-obreros
+    source: janitor
+    path: projects/janitor-obreros
+    purpose: proyectos
+    platforms: [linux, macos, windows]
+    templates: [creador-proyectos]
+
   - id: github
     source: upstream-bundled
     path: software-development/github

@@ -281,7 +281,8 @@ pruebas en `tests/janitor/` y un revisor distinto (directiva #20).
 | F7-02 | hecho; **sin auditar**; sin probar en Windows ni macOS; modo revisión sin probar contra un modelo | `scripts/run_tests.sh tests/janitor/test_janitor_obreros_adaptadores.py` → 60 pasan. Cada opción comprobada en `--help` de Claude Code 2.1.332 y Codex 0.172.0. **Prueba real** en una carpeta vacía (`/var/tmp/janitor-obreros-smoke/`): una consulta y una reanudación con cada programa; los dos contestaron, el analizador obtuvo respuesta, id de sesión y tokens (y coste en Claude), y al reanudar recordaron el turno anterior |
 | F7-03, F7-13, F7-05 | hecho (2026-11-26); **revisado por Codex en lectura estática, sin auditar por un revisor que repita las pruebas**; sin probar en Windows ni macOS | Supervisor (`trabajos.py`, `ejecutor.py`, `procesos.py`, `registro.py`), ajustes y comando `janitor obreros` (`orden.py`). `scripts/run_tests.sh -j 4 tests/janitor/` → 830 pasan, 24 saltadas. **Prueba real** en un home temporal (`/var/tmp/janitor-obreros-smoke2/`): rechazo sin activar; consulta con cada programa; reanudación con Claude; revisión de una carpeta con los dos (ambos encontraron el defecto sembrado y no tocaron el archivo); rechazo de `~/.ssh`; cancelación, sin procesos colgados |
 | F7-10 | a medias: aviso de activación y ajustes `janitor.obreros` en `config.yaml` hechos dentro del comando; falta la semilla y el aviso en la app | Misma evidencia |
-| F7-04, F7-06 a F7-09, F7-11, F7-12 | sin empezar | — |
+| F7-06, F7-07, F7-08 | hecho (2026-11-26); **revisado por Codex en lectura estática, sin auditar por un revisor que repita las pruebas**; sin probar con un modelo conduciendo las herramientas | Herramientas `obreros_enviar` y `obreros_ver` con `check_fn` y aviso de fin por `pre_llm_call` (`janitor/plugin/obreros.py`); skill `janitor-obreros` (visible solo con las herramientas, `requires_tools`) en el catálogo; Creador de proyectos la usa por defecto. Carpetas autorizadas por el usuario (`janitor obreros autorizar`). `scripts/run_tests.sh -j 4 tests/janitor/` → 880 pasan, 24 saltadas. **Prueba real** por el cargador de plugins en un home temporal: herramientas ocultas sin activar y visibles al activar; envío a los dos programas con una conversación como origen; el aviso llegó una vez y solo a esa conversación; revisión rechazada sin autorizar la carpeta y aceptada tras autorizarla |
+| F7-04, F7-09, F7-11, F7-12 | sin empezar | — |
 
 Observado en la prueba real: Codex no informa qué modelo contestó, y una consulta mínima
 le cuesta unos 16.000 tokens de entrada (32.000 acumulados al reanudar); a Claude, unos
@@ -315,6 +316,32 @@ Ocho hallazgos, contrastados con el código. **Corregidos, con prueba salvo el p
 
 Además: en modo consulta, el aislamiento de solo lectura de Codex no le impide leer el
 resto del disco; la carpeta vacía no es una garantía de ese lado.
+
+### 6.4 Revisión de Codex de la herramienta, el aviso y la skill (2026-11-26)
+
+Seis hallazgos. **Corregidos, con prueba**:
+
+- El agente podía mandar a revisión cualquier carpeta no protegida: ahora solo las que
+  el usuario autoriza (`janitor.obreros.carpetas`; `janitor obreros autorizar DIR`).
+- El aviso metía la respuesta del obrero en el mensaje del usuario: ahora lleva solo
+  id, programa, modo y estado; el contenido se lee con `obreros_ver`.
+- `obreros_ver` leía con la función desactivada, y otra conversación podía consumir un
+  aviso ajeno.
+- Un envío sin conversación identificable prometía un aviso que no iba a llegar.
+
+**Límites conocidos, sin corregir**:
+
+- **Activación reciente.** El core guarda la lista de herramientas por firma de
+  `config.yaml` sin caducidad, y el resultado de `check_fn` 30 s. Una sesión abierta en
+  ese margen tras activar puede quedarse sin las herramientas hasta reiniciar Janitor.
+  Verificado en `model_tools.py::get_tool_definitions`. Se resuelve cuando la app
+  active desde dentro del proceso (F7-09) e invalide la caché.
+- **Aviso perdido.** El aviso se reserva antes de la llamada al modelo: si ese turno
+  falla, no se repite. Tampoco llega en el modo `codex_app_server` del core.
+- **Subagentes, compresión y `/reset`.** El aviso va a la conversación que envió el
+  trabajo; si cambia su identificador, el trabajo solo se ve con `obreros_ver`.
+- `activar` y `autorizar` son órdenes de terminal: nada impide a un agente
+  ejecutarlas salvo la instrucción de la skill, igual que el resto de órdenes.
 
 ### 6.2 Resultado del ensayo F7-00
 

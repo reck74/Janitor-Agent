@@ -58,6 +58,7 @@ with its own skills, keys and empty memory — nothing is shared with the main a
 | App state / stop / start | `janitor services status [name]`, `janitor services stop <name>`, `janitor services start <name>` |
 | Remove an app (keeps data volumes) | `janitor services uninstall <name>` |
 | Update Janitor | `janitor update` |
+| Workers ("obreros"): Claude Code / Codex already signed in on this machine plan and review projects for the project creator | `janitor obreros estado`; the user turns them on with `janitor obreros activar` and allows a project folder for reviews with `janitor obreros autorizar <carpeta>` (never on their behalf) |
 
 **Where things live** (main agent; a specialist uses `~/.janitor/profiles/<perfil>/`;
 on Windows `~` is `%USERPROFILE%`):

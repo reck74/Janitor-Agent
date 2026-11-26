@@ -44,6 +44,12 @@ def setup_parser(parser) -> None:
                          help="Tokens (entrada + salida) permitidos en 24 horas")
     sub.add_parser("desactivar", help="Desactiva los obreros en este perfil")
 
+    con_json(sub.add_parser("carpetas", help="Carpetas autorizadas para el modo revisión"))
+    autorizar = con_json(sub.add_parser("autorizar", help="Autoriza una carpeta de proyecto para el modo revisión"))
+    autorizar.add_argument("carpeta", help="Ruta absoluta de la carpeta del proyecto")
+    retirar = con_json(sub.add_parser("retirar", help="Retira la autorización de una carpeta"))
+    retirar.add_argument("carpeta", help="Ruta absoluta de la carpeta autorizada")
+
     enviar = con_json(sub.add_parser("enviar", help="Encarga un trabajo a un obrero, en segundo plano"))
     enviar.add_argument("--programa", required=True, choices=PROGRAMAS)
     enviar.add_argument("--modo", required=True, choices=MODOS)
@@ -148,6 +154,7 @@ def _estado(ctx: _Contexto) -> int:
                 "disponible": p.disponible, "detalle": p.detalle}
             for n, p in programas.items()
         },
+        "carpetas_autorizadas": len(conf.carpetas),
         "en_curso": [t.a_dict() for t in en_curso],
     }
     if ctx.json:
@@ -161,6 +168,7 @@ def _estado(ctx: _Contexto) -> int:
         f"Topes: {topes['trabajos_a_la_vez']} a la vez, {topes['minutos_por_trabajo']:g} minutos por trabajo, "
         f"{topes['tope_tokens_dia'] or 'sin fijar'} tokens al día ({topes['tokens_ultimas_24h']} usados en 24 h)"
     )
+    ctx.out(f"Carpetas autorizadas para revisión: {len(conf.carpetas)} (janitor obreros carpetas)")
     ctx.out(f"En curso: {len(en_curso)}")
     for t in en_curso:
         ctx.out("  " + _linea(t))
@@ -193,6 +201,39 @@ def _activar(ctx: _Contexto) -> int:
 def _desactivar(ctx: _Contexto) -> int:
     trabajos.desactivar(ctx.home)
     ctx.out("Obreros desactivados. Los trabajos en curso siguen hasta terminar o cancelarse.")
+    return 0
+
+
+def _mostrar_carpetas(ctx: _Contexto, lista) -> None:
+    if ctx.json:
+        ctx.emitir(list(lista))
+    elif not lista:
+        ctx.out("No hay carpetas autorizadas. Autoriza una con «janitor obreros autorizar CARPETA».")
+    else:
+        ctx.out("Carpetas autorizadas para el modo revisión:")
+        for carpeta in lista:
+            ctx.out(f"  {carpeta}")
+
+
+def _carpetas(ctx: _Contexto) -> int:
+    _mostrar_carpetas(ctx, trabajos.carpetas(ctx.home))
+    return 0
+
+
+def _autorizar(ctx: _Contexto) -> int:
+    lista = trabajos.autorizar(ctx.args.carpeta, ctx.home)
+    if not ctx.json:
+        ctx.out("Carpeta autorizada. Los obreros podrán leerla (solo lectura) en el modo revisión, "
+                "y su contenido saldrá hacia el proveedor del obrero.")
+    _mostrar_carpetas(ctx, lista)
+    return 0
+
+
+def _retirar(ctx: _Contexto) -> int:
+    lista = trabajos.retirar(ctx.args.carpeta, ctx.home)
+    if not ctx.json:
+        ctx.out("Autorización retirada. Los trabajos ya en marcha siguen hasta terminar o cancelarse.")
+    _mostrar_carpetas(ctx, lista)
     return 0
 
 
@@ -262,6 +303,9 @@ _ORDENES = {
     "estado": _estado,
     "activar": _activar,
     "desactivar": _desactivar,
+    "carpetas": _carpetas,
+    "autorizar": _autorizar,
+    "retirar": _retirar,
     "enviar": _enviar,
     "reanudar": _reanudar,
     "lista": _lista,

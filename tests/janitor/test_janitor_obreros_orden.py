@@ -100,8 +100,10 @@ def test_analizador_acepta_cada_orden():
     assert args.esperar and args.json
     assert p.parse_args(["activar", "--si", "--tope-tokens-dia", "500"]).tope_tokens_dia == 500
     assert p.parse_args(["reanudar", "20261126-000000-abcdef01", "--encargo", "e.json"]).id
+    assert p.parse_args(["autorizar", "/srv/p"]).carpeta == "/srv/p"
+    assert p.parse_args(["retirar", "/srv/p", "--json"]).carpeta == "/srv/p"
     for orden_simple in (["estado"], ["desactivar"], ["lista", "--json"], ["ver", "x"],
-                         ["seguir", "x"], ["cancelar", "x", "--json"]):
+                         ["seguir", "x"], ["cancelar", "x", "--json"], ["carpetas", "--json"]):
         assert p.parse_args(orden_simple).obreros_orden == orden_simple[0]
 
 
@@ -111,6 +113,8 @@ def test_analizador_acepta_cada_orden():
     ["enviar", "--programa", "gemini", "--modo", "consulta", "--encargo", "-"],
     ["activar", "--tope-tokens-dia", "mucho"],
     ["ver"],
+    ["autorizar"],
+    ["retirar"],
 ])
 def test_analizador_rechaza_lo_mal_formado(argv, capsys):
     with pytest.raises(SystemExit) as salida:
@@ -134,6 +138,7 @@ def test_estado_en_json(home):
     assert datos["topes"]["trabajos_a_la_vez"] == 2 and datos["topes"]["tope_tokens_dia"] == 10000
     assert datos["topes"]["tokens_ultimas_24h"] == 2
     assert set(datos["programas"]) == {"claude", "codex"} and datos["en_curso"] == []
+    assert datos["carpetas_autorizadas"] == 0
 
 
 def test_activar_pide_confirmacion_y_tope(home):
@@ -263,3 +268,53 @@ def test_el_plugin_registra_la_orden(tmp_path, monkeypatch):
     codigo = comando["handler_fn"](p.parse_args(["lista", "--json"]), out=consola)
     assert codigo == 0 and consola.json() == []
     assert not trabajos.ajustes_mod.leer(root).activo
+
+
+# ── Carpetas autorizadas ───────────────────────────────────────────────────
+
+
+def test_autorizar_listar_y_retirar_carpetas(home, tmp_path):
+    proyecto = tmp_path / "proyecto"
+    proyecto.mkdir()
+    real = str(proyecto.resolve())
+
+    codigo, consola = correr(home, ["carpetas"])
+    assert codigo == 0 and "janitor obreros autorizar" in consola.texto
+
+    codigo, consola = correr(home, ["autorizar", str(proyecto), "--json"])
+    assert codigo == 0 and consola.json() == [real]
+    assert correr(home, ["carpetas", "--json"])[1].json() == [real]
+    assert correr(home, ["estado", "--json"])[1].json()["carpetas_autorizadas"] == 1
+    codigo, consola = correr(home, ["estado"])
+    assert "Carpetas autorizadas para revisión: 1" in consola.texto
+
+    # Activar y desactivar no tocan la lista.
+    correr(home, ["desactivar"])
+    correr(home, ["activar", "--si"])
+    assert correr(home, ["carpetas", "--json"])[1].json() == [real]
+
+    codigo, consola = correr(home, ["retirar", str(proyecto), "--json"])
+    assert codigo == 0 and consola.json() == []
+    codigo, consola = correr(home, ["retirar", str(proyecto), "--json"])
+    assert codigo == 1 and "no estaba autorizada" in consola.json()["error"]
+
+
+def test_no_se_autoriza_una_carpeta_protegida(home):
+    codigo, consola = correr(home, ["autorizar", str(home), "--json"])
+    assert codigo == 1 and "error" in consola.json()
+    codigo, _ = correr(home, ["autorizar", str(Path.home().parent)])
+    assert codigo == 1
+    assert trabajos.carpetas(home) == ()
+
+
+def test_enviar_en_revision_sin_autorizar_dice_que_comando_ejecutar(home, tmp_path):
+    proyecto = tmp_path / "proyecto"
+    proyecto.mkdir()
+    encargo = tmp_path / "encargo.json"
+    encargo.write_text(json.dumps(ENCARGO), encoding="utf-8")
+
+    codigo, consola = correr(home, ["enviar", "--programa", "codex", "--modo", "revision",
+                                    "--carpeta", str(proyecto), "--encargo", str(encargo), "--json"])
+
+    assert codigo == 1 and "janitor obreros autorizar" in consola.json()["error"]
+    assert trabajos.listar(home) == []

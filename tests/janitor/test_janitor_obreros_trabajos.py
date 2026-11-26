@@ -189,6 +189,7 @@ def test_revision_con_codex_en_la_carpeta_del_proyecto(home, tmp_path):
     anotacion = tmp_path / "anotacion.json"
     jsonl = "".join(json.dumps(e) + "\n" for e in SALIDA_CODEX)
     ruta = programa_falso(tmp_path / "bin", anota_y_responde(anotacion, jsonl))
+    trabajos.autorizar(str(proyecto), home)
 
     enviado = trabajos.enviar(programa="codex", modo="revision", encargo=ENCARGO,
                               carpeta=str(proyecto), home=home, detectar=detector(ruta))
@@ -499,3 +500,125 @@ def test_activar_y_desactivar_conservan_el_resto_del_config(home):
     assert texto.startswith("# mi cabecera") and "backend: local" in texto
     assert trabajos.desactivar(home).activo is False
     assert trabajos.activar(None, home).tope_tokens_dia == 5000
+
+
+# ── Carpetas autorizadas por el usuario (regla 4.5) ────────────────────────
+
+
+@pytest.fixture
+def sin_lanzar(monkeypatch):
+    """El envío se acepta sin lanzar el ejecutor: el trabajo queda en cola, sin procesos."""
+    monkeypatch.setattr(trabajos, "_lanzar_ejecutor", lambda ruta, adaptador: None)
+
+
+def _proyectos(tmp_path: Path) -> tuple[Path, Path]:
+    a, b = tmp_path / "proyectos" / "a", tmp_path / "proyectos" / "b"
+    (a / "src").mkdir(parents=True)
+    b.mkdir(parents=True)
+    return a, b
+
+
+def test_carpeta_no_autorizada_se_rechaza_con_el_comando_para_el_usuario(home, tmp_path, sin_lanzar):
+    a, b = _proyectos(tmp_path)
+    with pytest.raises(Rechazo, match="janitor obreros autorizar") as rechazo:
+        _enviar(home, modo="revision", carpeta=str(a))
+    assert str(a.resolve()) in str(rechazo.value)
+
+    trabajos.autorizar(str(a), home)
+    with pytest.raises(Rechazo, match="no está autorizada"):
+        _enviar(home, modo="revision", carpeta=str(b))
+    assert trabajos.listar(home) == []
+
+
+def test_autorizada_y_sus_subcarpetas_se_aceptan(home, tmp_path, sin_lanzar):
+    a, _ = _proyectos(tmp_path)
+    trabajos.autorizar(str(a), home)
+
+    for carpeta in (a, a / "src"):
+        enviado = _enviar(home, modo="revision", carpeta=str(carpeta))
+        assert Path(enviado.datos["carpeta"]) == carpeta.resolve()
+    assert len(trabajos.listar(home)) == 2
+
+
+def test_reanudar_en_revision_tambien_exige_la_autorizacion(home, tmp_path, sin_lanzar):
+    a, b = _proyectos(tmp_path)
+    trabajos.autorizar(str(a), home)
+    en_a = fabricar(home, modo="revision", carpeta=str(a.resolve()), resultado=resultado_ok())
+    en_b = fabricar(home, modo="revision", carpeta=str(b.resolve()), resultado=resultado_ok())
+
+    with pytest.raises(Rechazo, match="janitor obreros autorizar"):
+        trabajos.reanudar(en_b, encargo=ENCARGO, home=home, detectar=detector("/no/se/lanza"))
+    nuevo = trabajos.reanudar(en_a, encargo=ENCARGO, home=home, detectar=detector("/no/se/lanza"))
+    assert nuevo.datos["anterior"] == en_a
+
+    trabajos.retirar(str(a), home)
+    with pytest.raises(Rechazo, match="no está autorizada"):
+        trabajos.reanudar(en_a, encargo=ENCARGO, home=home, detectar=detector("/no/se/lanza"))
+
+
+def test_retirar_mientras_se_prepara_el_envio_tambien_cuenta(home, tmp_path, sin_lanzar):
+    a, _ = _proyectos(tmp_path)
+    trabajos.autorizar(str(a), home)
+
+    def detecta_y_retira(nombre):
+        trabajos.retirar(str(a), home)
+        return detector("/no/se/lanza")(nombre)
+
+    with pytest.raises(Rechazo, match="no está autorizada"):
+        _enviar(home, modo="revision", carpeta=str(a), detectar=detecta_y_retira)
+    assert trabajos.listar(home) == []
+
+
+def test_una_carpeta_protegida_no_se_puede_autorizar(home, tmp_path):
+    personal = Path.home()
+    (personal / ".ssh").mkdir(parents=True)
+    (personal / "proyectos").mkdir()
+    for carpeta in (str(personal), str(personal / ".ssh"), str(home), str(home / "obreros"),
+                    str(tmp_path), tmp_path.anchor, "relativa/carpeta", str(tmp_path / "no-existe")):
+        with pytest.raises(Rechazo):
+            trabajos.autorizar(carpeta, home)
+    assert trabajos.carpetas(home) == ()
+
+
+def test_la_lista_se_guarda_resuelta_y_conserva_el_resto_del_config(home, tmp_path):
+    a, b = _proyectos(tmp_path)
+    rodeo = str(a / ".." / "a")
+
+    assert trabajos.autorizar(rodeo, home) == (str(a.resolve()),)
+    assert trabajos.autorizar(str(a), home) == (str(a.resolve()),)  # sin duplicados
+    assert trabajos.autorizar(str(b), home) == (str(a.resolve()), str(b.resolve()))
+
+    texto = (home / "config.yaml").read_text(encoding="utf-8")
+    assert texto.startswith("# cabecera del usuario") and "modelo-x" in texto
+    conf = trabajos.ajustes_mod.leer(home)
+    assert conf.activo and conf.tope_tokens_dia == 100000
+    # Activar y desactivar no tocan la lista.
+    trabajos.desactivar(home)
+    trabajos.activar(None, home)
+    assert trabajos.carpetas(home) == (str(a.resolve()), str(b.resolve()))
+
+
+def test_retirar(home, tmp_path):
+    a, b = _proyectos(tmp_path)
+    trabajos.autorizar(str(a), home)
+    trabajos.autorizar(str(b), home)
+
+    assert trabajos.retirar(str(a / ".." / "a"), home) == (str(b.resolve()),)
+    with pytest.raises(Rechazo, match="no estaba autorizada"):
+        trabajos.retirar(str(a), home)
+    with pytest.raises(Rechazo):
+        trabajos.retirar("relativa", home)
+    assert trabajos.retirar(str(b), home) == ()
+    assert "modelo-x" in (home / "config.yaml").read_text(encoding="utf-8")
+
+
+def test_entradas_mal_escritas_a_mano_no_autorizan_nada(home, tmp_path, sin_lanzar):
+    a, _ = _proyectos(tmp_path)
+    (home / "config.yaml").write_text(
+        "janitor:\n  obreros:\n    activo: true\n    tope_tokens_dia: 1000\n"
+        "    carpetas: [proyectos/a, 7, null]\n",
+        encoding="utf-8",
+    )
+    assert trabajos.carpetas(home) == ()
+    with pytest.raises(Rechazo, match="no está autorizada"):
+        _enviar(home, modo="revision", carpeta=str(a))

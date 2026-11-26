@@ -2,8 +2,9 @@
 
 Cada trabajo es un intento: se crea en ``<home>/obreros/<id>/`` y lo ejecuta un proceso
 desligado (``janitor.obreros.ejecutor``) que no depende de que Janitor siga abierto.
-Aquí está todo lo demás: autorización y topes en cada envío, reanudar con una sesión
-explícita, cancelar, reconciliar lo que quedó a medias y el aviso de fin, una sola vez.
+Aquí está todo lo demás: autorización (activación y carpetas que el usuario eligió) y
+topes en cada envío, reanudar con una sesión explícita, cancelar, reconciliar lo que
+quedó a medias y el aviso de fin, una sola vez.
 
 El home se resuelve en cada llamada (``get_hermes_home()``) y toda función acepta uno
 explícito: un mismo proceso puede servir a varios perfiles.
@@ -307,6 +308,19 @@ def comprobar_carpeta_revision(carpeta: str | None, home=None) -> Path:
     return real
 
 
+def _autorizada(real: Path, ajustes: ajustes_mod.Ajustes) -> bool:
+    # Por ruta resuelta y por identidad en disco, como las carpetas protegidas.
+    return any(_dentro(real, Path(base).resolve()) for base in ajustes.carpetas)
+
+
+def _comprobar_autorizada(real: Path, ajustes: ajustes_mod.Ajustes) -> None:
+    if not _autorizada(real, ajustes):
+        raise Rechazo(
+            f"La carpeta «{real}» no está autorizada para los obreros. Solo el usuario puede "
+            f'autorizarla, ejecutando en su terminal: janitor obreros autorizar "{real}"'
+        )
+
+
 def _comprobar_origen(origen) -> str | None:
     if origen is None:
         return None
@@ -320,9 +334,25 @@ def _comprobar_origen(origen) -> str | None:
     return origen
 
 
+DESACTIVADOS = "Los obreros están desactivados en este perfil. Actívalos con «janitor obreros activar»."
+
+
+def _leer_ajustes(home: Path) -> ajustes_mod.Ajustes:
+    try:
+        return ajustes_mod.leer(home)
+    except ValueError as exc:
+        raise Rechazo(str(exc)) from exc
+
+
+def comprobar_activo(home=None) -> None:
+    """Rechaza con el mismo mensaje que un envío si la función está desactivada."""
+    if not _leer_ajustes(_home(home)).activo:
+        raise Rechazo(DESACTIVADOS)
+
+
 def _comprobar_activado(ajustes: ajustes_mod.Ajustes) -> None:
     if not ajustes.activo:
-        raise Rechazo("Los obreros están desactivados en este perfil. Actívalos con «janitor obreros activar».")
+        raise Rechazo(DESACTIVADOS)
     if ajustes.tope_tokens_dia is None:
         raise Rechazo(
             "Falta el tope de tokens por día. Fíjalo con «janitor obreros activar --tope-tokens-dia N»."
@@ -448,16 +478,15 @@ def _enviar(
     origen = _comprobar_origen(origen)
     encargo = _a_encargo(encargo)
     home = _home(home)
-    try:
-        ajustes = ajustes_mod.leer(home)
-    except ValueError as exc:
-        raise Rechazo(str(exc)) from exc
+    ajustes = _leer_ajustes(home)
     _comprobar_activado(ajustes)
 
+    revision = carpeta_reanudada is None and modo == "revision"
     if carpeta_reanudada is not None:
         carpeta_proyecto = carpeta_reanudada
-    elif modo == "revision":
+    elif revision:
         carpeta_proyecto = comprobar_carpeta_revision(carpeta, home)
+        _comprobar_autorizada(carpeta_proyecto, ajustes)
     elif carpeta:
         raise Rechazo("En modo consulta el obrero no ve ninguna carpeta: quita --carpeta o usa el modo revisión")
     else:
@@ -469,13 +498,12 @@ def _enviar(
 
     base = raiz(home)
     with _cerrojo_envio(base):
-        # Releídos con el cerrojo tomado: una desactivación o un tope más bajo que
-        # llegaron mientras se esperaba también cuentan.
-        try:
-            ajustes = ajustes_mod.leer(home)
-        except ValueError as exc:
-            raise Rechazo(str(exc)) from exc
+        # Releídos con el cerrojo tomado: una desactivación, una carpeta retirada o un
+        # tope más bajo que llegaron mientras se esperaba también cuentan.
+        ajustes = _leer_ajustes(home)
         _comprobar_activado(ajustes)
+        if revision:
+            _comprobar_autorizada(carpeta_proyecto, ajustes)
         reconciliar(home)
         _comprobar_topes(ajustes, home)
         id_trabajo = nuevo_id()
@@ -653,10 +681,7 @@ def marcar_avisado(id_trabajo: str, home=None) -> bool:
 
 def activar(tope_tokens_dia: int | None = None, home=None) -> ajustes_mod.Ajustes:
     home = _home(home)
-    try:
-        actuales = ajustes_mod.leer(home)
-    except ValueError as exc:
-        raise Rechazo(str(exc)) from exc
+    actuales = _leer_ajustes(home)
     tope = tope_tokens_dia if tope_tokens_dia is not None else actuales.tope_tokens_dia
     if type(tope) is not int or tope <= 0:
         raise Rechazo("Hace falta un tope de tokens por día (un entero mayor que 0)")
@@ -668,6 +693,40 @@ def desactivar(home=None) -> ajustes_mod.Ajustes:
     home = _home(home)
     _guardar(home, activo=False)
     return ajustes_mod.leer(home)
+
+
+# ── Carpetas autorizadas (modo revisión) ───────────────────────────────────
+
+
+def carpetas(home=None) -> tuple[str, ...]:
+    return _leer_ajustes(_home(home)).carpetas
+
+
+def autorizar(carpeta: str, home=None) -> tuple[str, ...]:
+    """Añade ``carpeta`` (resuelta) a las autorizadas. Se rechaza con el mismo criterio que
+    un envío en revisión: ni la raíz, ni la carpeta personal, ni configuración o credenciales."""
+    home = _home(home)
+    real = str(comprobar_carpeta_revision(carpeta, home))
+    actuales = _leer_ajustes(home).carpetas
+    if real not in actuales:
+        _guardar(home, carpetas=[*actuales, real])
+    return carpetas(home)
+
+
+def retirar(carpeta: str, home=None) -> tuple[str, ...]:
+    """Quita ``carpeta`` de las autorizadas (por ruta resuelta o por identidad en disco)."""
+    try:
+        comprobar_carpeta(carpeta)
+    except ValueError as exc:
+        raise Rechazo(str(exc)) from exc
+    home = _home(home)
+    buscada = Path(carpeta).resolve()
+    actuales = _leer_ajustes(home).carpetas
+    quedan = [c for c in actuales if not (Path(c).resolve() == buscada or _misma(Path(c), buscada))]
+    if len(quedan) == len(actuales):
+        raise Rechazo(f"La carpeta «{carpeta}» no estaba autorizada")
+    _guardar(home, carpetas=quedan)
+    return carpetas(home)
 
 
 def _guardar(home: Path, **cambios) -> None:

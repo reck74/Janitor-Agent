@@ -101,3 +101,6 @@ def register(ctx: Any) -> None:
         description="Activa la función, envía encargos en segundo plano, síguelos, "
         "reanúdalos o cancélalos. Desactivada hasta que la actives.",
     )
+    from janitor.plugin import obreros as obreros_plugin
+
+    obreros_plugin.registrar(ctx)
