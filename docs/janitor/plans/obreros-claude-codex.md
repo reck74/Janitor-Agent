@@ -31,7 +31,9 @@ no se comprobó aquí; lo demás se comprobó en el equipo de desarrollo o en el
 - Las skills de upstream `claude-code`, `codex` y `opencode`
   (`skills/autonomous-ai-agents/`) ya están en `janitor/catalog.yaml` para la plantilla
   **Creador de proyectos**. Son recetas en prosa: el agente escribe a mano el comando
-  (`claude -p …`, `codex exec …`) en la terminal. No guardan estado ni reanudan nada.
+  (`claude -p …`, `codex exec …`) en la terminal. La de Claude enseña a guardar el id de
+  sesión y reanudar (`SKILL.md:224`), pero el estado queda en manos del modelo: no hay
+  registro de trabajos.
 - **Nada comprueba hoy que un programa exista.** El campo `prerequisites.commands` de
   las skills no se aplica (`tools/skills_tool.py` lo deja vacío). Lo que sí funciona:
   `check_fn` de una herramienta (`tools/registry.py`) y `requires_tools` en la skill
@@ -39,10 +41,15 @@ no se comprobó aquí; lo demás se comprobó en el equipo de desarrollo o en el
 - Para trabajo largo upstream ofrece: terminal en segundo plano con
   `notify_on_complete`, `watch_patterns` y `heartbeat`; `delegate_task` (hijos que son
   agentes Hermes, en segundo plano); cron; y **kanban**, cuyo trabajador tiene que ser
-  un perfil (`hermes -p <perfil> chat -q`), no un programa externo. El kanban ya está
-  traducido en la app.
-- `approvals.mode: manual` hace que cada comando peligroso pida permiso; lanzar `claude`
-  o `codex` desde la terminal cae ahí.
+  un perfil (`hermes -p <perfil> chat -q`) con el lanzador por defecto; el lanzador
+  (`spawn_fn(task, workspace, board)`, `hermes_cli/kanban_db_dispatch.py:1978`) se puede
+  sustituir desde Python y registra el PID. El kanban ya está traducido en la app.
+- `approvals.mode: manual` pide permiso solo para los comandos que el terminal reconoce
+  como peligrosos. **Lanzar `claude` o `codex` no es uno de ellos** (`tools/approval*.py`
+  no tiene regla para esos programas), y un subproceso lanzado por el plugin ni siquiera
+  pasa por ese control. La autorización tiene que ponerla este diseño (4.5).
+- El registro de procesos de upstream puede recuperar un proceso tras un reinicio, pero
+  sin su historial de salida (`tools/process_registry.py`).
 - `janitor/opencode/` (retirado en F2-04) era lo más parecido a esto: un cliente de
   `opencode serve` con un registro de sesiones y reintentos.
 - El plan vigente (§2, líneas de «Especialista y subagente») dice que el principal no
@@ -155,9 +162,18 @@ lado, y Janitor avisa de que no hay segunda opinión independiente.
   - detección: `shutil.which` + `--version` + estado de sesión, sin leer credenciales;
   - un adaptador por programa que construye la línea de comando y analiza la salida;
     las opciones se comprueban contra `--help` al arrancar, porque cambian;
-  - registro de trabajos en `~/.janitor/obreros/` (por perfil): encargo, estado, id de
-    sesión para reanudar, salida, tokens y coste;
-  - trabajos en segundo plano, con consulta, reanudación y cancelación;
+  - registro de trabajos en el home efectivo del perfil (`obreros/`): por cada
+    **intento**, el encargo, el id de sesión explícito (nunca «la última»), la carpeta,
+    la política de permisos, el estado, la salida, los tokens y el coste;
+  - trabajos en segundo plano que **no dependen del proceso de Janitor**: el obrero
+    escribe su salida y su resultado en disco; al arrancar, Janitor reconcilia lo que
+    quedó a medias sin repetir escrituras y entrega el aviso de «terminó» a la
+    conversación que lo pidió, una sola vez;
+  - reanudar es **otro turno** de la misma conversación, no recuperar un trabajo caído:
+    son dos operaciones distintas, y al reanudar se vuelve a fijar la política de
+    permisos (Codex no la acepta en `resume`; hay que comprobar cuál queda en efecto);
+  - consulta, reanudación y cancelación siguen disponibles aunque la sesión haya
+    caducado;
   - tres modos: consulta (sin herramientas), revisión (solo lectura) y construcción
     (escribe en su copia de trabajo);
   - topes: tiempo por trabajo, trabajos a la vez, rondas de revisión y gasto.
@@ -165,7 +181,10 @@ lado, y Janitor avisa de que no hay segunda opinión independiente.
   `cancelar`. Lo usan el agente, el usuario en el terminal y la app.
 - **Herramienta fina del plugin Janitor** con `check_fn` (hay al menos un programa con
   sesión): solo «enviar» y «ver». Es lo que permite que la skill aparezca o no
-  (`requires_tools`) sin tocar el core.
+  (`requires_tools`) sin tocar el core. `check_fn` va con caché y solo dice si la
+  función está **disponible**; la **autorización** se comprueba en cada envío. Un cambio
+  de disponibilidad se aplica en la sesión siguiente, para no romper la caché del
+  prompt.
 - **Skill `janitor-obreros`** (grupo `projects/`): el método de 4.2 y cuándo no usarlo.
 - **Agentes.** Dos caminos, a decidir (7.3):
   - que **Creador de proyectos** use los obreros por defecto cuando estén disponibles;
@@ -190,6 +209,15 @@ plano, reanudar, Codex escribiendo).
   enciende, tras un aviso en español: su código sale hacia Anthropic u OpenAI y consume
   su plan o su saldo.
 - **Solo en carpetas que el usuario eligió** como proyecto.
+- **La autorización es propia, no la del terminal.** Aprobar el plan autoriza un
+  proyecto, un commit base y un alcance concretos; cada envío se comprueba contra eso.
+- **Permisos explícitos en cada lanzamiento**: aislamiento y política de aprobación
+  fijados en la línea de comando, sin heredar los del usuario. Si el obrero necesita un
+  permiso que no tiene, el trabajo queda **bloqueado** y vuelve al director; nadie
+  aprueba por él.
+- **Copias de trabajo**: commit base fijado, una rama por intento y un cerrojo por
+  copia (las copias comparten objetos y referencias de Git). La revisión se hace sobre
+  un diff identificado, y es ese diff el que se entrega.
 - **Nada se integra solo.** Los obreros escriben en copias de trabajo; fusionar, subir o
   borrar lo confirma el usuario (regla de `SOUL.md`, directiva #19).
 - **Sin recursión**: un obrero no puede llamar a Janitor ni a otro obrero.
@@ -206,7 +234,10 @@ plano, reanudar, Codex escribiendo).
   comprobación contra `--help`, pruebas con un programa falso y una prueba real manual
   por versión.
 - **Gasto.** Planificar con dos modelos caros y revisar en cruz multiplica el consumo.
-  Topes por defecto conservadores.
+  Topes por defecto conservadores. Codex solo informa tokens, así que un tope en dinero
+  no se puede garantizar de ese lado: allí el tope es de tokens y de tiempo.
+- **«Sin herramientas» y «sin recursión» hay que demostrarlos**, no declararlos: hooks,
+  servidores MCP y procesos hijos del obrero necesitan una prueba cada uno.
 - **Directiva #19.** Esto introduce trabajadores que no son perfiles. Hay que
   registrarlo como excepción explícita, o como decisión nueva, antes de escribir código
   (7.4).
@@ -222,6 +253,7 @@ Ninguna empieza hasta que el dueño decida la sección 7.
 
 | Id | Tarea | Alcance | Verificación |
 |---|---|---|---|
+| F7-00 | Ensayo: cuánto resuelven el kanban (`spawn_fn` externo) y el registro de procesos de upstream antes de escribir un supervisor propio | solo lectura + prototipo desechable | informe con evidencia |
 | F7-01 | Detección de los dos programas y de su sesión | `janitor/obreros/deteccion.py` | pruebas con binarios falsos; salida real en Linux |
 | F7-02 | Adaptadores: línea de comando, análisis de salida, comprobación de opciones | `janitor/obreros/claude.py`, `codex.py` | pruebas con programa falso |
 | F7-03 | Registro de trabajos, segundo plano, reanudar, cancelar, topes | `janitor/obreros/trabajos.py` | pruebas; un trabajo real de consulta por lado |
@@ -233,10 +265,14 @@ Ninguna empieza hasta que el dueño decida la sección 7.
 | F7-09 | Pantalla en la app: estado y trabajos | `janitor/desktop_plugin/` | captura con la app compilada |
 | F7-10 | Aviso de activación y ajustes en `config.yaml` | semilla + plugin | prueba |
 | F7-11 | Recorrido real: un objetivo pequeño de punta a punta con los dos programas | — | evidencia en la bitácora |
-| F7-12 | Prueba en Windows y macOS | CI + equipo real | — |
+| F7-12 | Prueba en Windows y macOS: resolución del ejecutable y sus lanzadores, rutas con espacios, cancelación del árbol de procesos | CI + equipo real | — |
+| F7-13 | Recuperación y aviso al director: caída antes y después de guardar el resultado, entrega duplicada, perfiles A→B→A | `janitor/obreros/trabajos.py` | pruebas en `tests/janitor/` |
 
-Orden: F7-01 a F7-03 primero (dan valor por sí solas: consulta y revisión cruzada);
-después F7-05 a F7-07; construcción (F7-04) y app (F7-09) al final.
+Orden (ajustado tras la revisión de Codex): F7-00 y F7-10 primero; F7-01 y F7-02 con
+F7-12 desde el principio, no al final; F7-03 con F7-13 y F7-05; después F7-06 a F7-08 y
+un primer F7-11 en solo lectura. La construcción (F7-04) va en la segunda entrega, con
+F7-11 repetido sobre un conflicto real, y la app (F7-09) cierra. Cada entrega lleva
+pruebas en `tests/janitor/` y un revisor distinto (directiva #20).
 
 ## 7. Decisiones del dueño
 
@@ -256,3 +292,24 @@ después F7-05 a F7-07; construcción (F7-04) y app (F7-09) al final.
    fija al activar.
 7. **Prioridad** frente a lo pendiente: probar la `.2` en equipos reales, los defectos
    pequeños ya anotados y la sincronización con upstream (PR #90).
+
+## 8. Revisión de Codex (2026-11-25)
+
+Revisión de solo lectura con `gpt-6.2-astra` (modelo solicitado; el puente no verifica
+cuál contestó). Veredicto: **de acuerdo con B como base y C como capa opcional**, con la
+condición de ensayar antes el kanban y el registro de procesos (F7-00). Cinco hallazgos,
+todos contrastados por el orquestador contra el código e incorporados arriba:
+
+1. **Crítico.** El documento daba por hecho que el modo manual pediría permiso al lanzar
+   los programas. Es falso (comprobado: no hay regla). Corregido en 2.1 y 4.5.
+2. **Alto.** Se confundía reanudar una conversación con recuperar un trabajo caído.
+   Corregido en 4.3; tarea nueva F7-13.
+3. **Alto.** La concurrencia con copias de trabajo estaba sin definir. Corregido en 4.5.
+4. **Alto.** Se mezclaban disponibilidad, autorización y perfil. Corregido en 4.3.
+5. **Medio.** Garantías exageradas: la receta de Claude sí reanuda; el tope en dinero no
+   es demostrable con Codex. Corregido en 2.1 y 5.
+
+Codex no comprobó: Windows ni macOS, los estados con y sin sesión, el acceso a modelos,
+las condiciones de uso ni el puente. Sobre `codex app-server`: lo considera útil si se
+quieren aprobaciones interactivas y eventos estructurados, pero prefiere `exec` para el
+primer obrero.
