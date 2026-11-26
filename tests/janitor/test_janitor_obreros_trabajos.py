@@ -58,7 +58,7 @@ def programa_falso(carpeta: Path, cuerpo: str) -> str:
     carpeta.mkdir(parents=True, exist_ok=True)
     codigo = (
         "import json, os, subprocess, sys, time\n"
-        "entrada = sys.stdin.read()\n" + cuerpo
+        "entrada = sys.stdin.buffer.read().decode('utf-8')\n" + cuerpo
     )
     if sys.platform == "win32":
         script = carpeta / "falso.py"
