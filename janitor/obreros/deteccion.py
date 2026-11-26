@@ -37,7 +37,6 @@ _VERSION = re.compile(r"\d+\.\d+(?:\.\d+)*(?:-[0-9A-Za-z.]+)?")
 # authMethod de Claude se copia solo si tiene forma de etiqueta; cualquier otra
 # cosa podría ser un identificador y se descarta.
 _ETIQUETA = re.compile(r"[A-Za-z][A-Za-z0-9._-]{0,23}")
-from janitor.obreros.encargo import entorno_comun
 
 
 @dataclass(frozen=True)

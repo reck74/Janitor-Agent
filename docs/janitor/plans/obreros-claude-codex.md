@@ -279,11 +279,42 @@ pruebas en `tests/janitor/` y un revisor distinto (directiva #20).
 | F7-00 | hecho (ensayo de solo lectura, subagente Opus) | Ver 6.2 |
 | F7-01 | hecho; **sin auditar por un revisor distinto**; sin probar en Windows ni macOS, ni con un programa sin sesión | `scripts/run_tests.sh tests/janitor/test_janitor_obreros_deteccion.py` → 20 pasan. En este equipo detecta los dos, con sesión, sin correo ni organización en el resultado |
 | F7-02 | hecho; **sin auditar**; sin probar en Windows ni macOS; modo revisión sin probar contra un modelo | `scripts/run_tests.sh tests/janitor/test_janitor_obreros_adaptadores.py` → 60 pasan. Cada opción comprobada en `--help` de Claude Code 2.1.332 y Codex 0.172.0. **Prueba real** en una carpeta vacía (`/var/tmp/janitor-obreros-smoke/`): una consulta y una reanudación con cada programa; los dos contestaron, el analizador obtuvo respuesta, id de sesión y tokens (y coste en Claude), y al reanudar recordaron el turno anterior |
-| F7-03 a F7-13 | sin empezar | — |
+| F7-03, F7-13, F7-05 | hecho (2026-11-26); **revisado por Codex en lectura estática, sin auditar por un revisor que repita las pruebas**; sin probar en Windows ni macOS | Supervisor (`trabajos.py`, `ejecutor.py`, `procesos.py`, `registro.py`), ajustes y comando `janitor obreros` (`orden.py`). `scripts/run_tests.sh -j 4 tests/janitor/` → 830 pasan, 24 saltadas. **Prueba real** en un home temporal (`/var/tmp/janitor-obreros-smoke2/`): rechazo sin activar; consulta con cada programa; reanudación con Claude; revisión de una carpeta con los dos (ambos encontraron el defecto sembrado y no tocaron el archivo); rechazo de `~/.ssh`; cancelación, sin procesos colgados |
+| F7-10 | a medias: aviso de activación y ajustes `janitor.obreros` en `config.yaml` hechos dentro del comando; falta la semilla y el aviso en la app | Misma evidencia |
+| F7-04, F7-06 a F7-09, F7-11, F7-12 | sin empezar | — |
 
 Observado en la prueba real: Codex no informa qué modelo contestó, y una consulta mínima
 le cuesta unos 16.000 tokens de entrada (32.000 acumulados al reanudar); a Claude, unos
 3.900 y 0,05 USD estimados. El tope de gasto tiene que contar con ese mínimo.
+
+### 6.3 Revisión de Codex del supervisor (2026-11-26)
+
+Ocho hallazgos, contrastados con el código. **Corregidos, con prueba salvo el primero**:
+
+- Cancelar mientras el programa arrancaba podía dejarlo vivo: ahora se espera a que el
+  ejecutor anote el PID o cierre el trabajo antes de matarlo. Sin prueba automática de
+  esa ventana.
+- Reconciliar podía pisar con `perdido` un resultado publicado mientras miraba: relee
+  tras confirmar que el ejecutor murió.
+- La carpeta protegida se comparaba por grafía: ahora también por identidad en disco
+  (`.SSH` en un volumen que no distingue mayúsculas). Prueba solo en macOS.
+- La activación y los topes se releen con el cerrojo de envío tomado.
+
+**Aceptados como límite conocido, sin corregir**:
+
+- El tope de tokens del día solo cuenta trabajos terminados con métricas: uno cancelado
+  cuenta cero y dos a la vez pueden rebasarlo. Los programas no informan tokens hasta
+  el final, así que no hay dato que sumar.
+- El cerrojo de envío se da por abandonado a los 60 s; un equipo suspendido en mitad de
+  un envío podría dejar pasar dos a la vez.
+- Activar o desactivar reescribe `config.yaml` entero, como el resto de Janitor: una
+  edición simultánea del usuario se pierde.
+- Margen de 1 s al comparar la hora de arranque de un PID: exige que el PID se
+  reutilice en el mismo segundo en que nació el original.
+- Un enlace simbólico cambiado entre la comprobación de la carpeta y el lanzamiento.
+
+Además: en modo consulta, el aislamiento de solo lectura de Codex no le impide leer el
+resto del disco; la carpeta vacía no es una garantía de ese lado.
 
 ### 6.2 Resultado del ensayo F7-00
 
@@ -302,7 +333,7 @@ Ni el registro de procesos ni el kanban de upstream sirven de supervisor:
 salida y su resultado en `obreros/<id>/` del home del perfil, PID más hora de arranque
 contra la reutilización de PID, y reconciliación al cargar el plugin y en cada orden.
 
-Queda abierto **cómo avisar a la conversación cuando un trabajo termina** (decisión 7.8).
+El aviso de fin de trabajo se decidió en 7.8: sin tarjetas.
 
 ## 7. Decisiones del dueño (tomadas el 2026-11-25: se acepta cada propuesta)
 
@@ -326,7 +357,11 @@ Queda abierto **cómo avisar a la conversación cuando un trabajo termina** (dec
    como importante y lo demás depende de equipos que no están a mano. Si no es así,
    basta decirlo.
 
-8. **Aviso de fin de trabajo** (nueva, sin decidir). Dos caminos:
+8. **Aviso de fin de trabajo.** **Decidido por el dueño el 2026-11-26: sin tarjetas.**
+   El resultado se ve en `janitor obreros` y en la pantalla de obreros, y Janitor lo
+   cuenta en el siguiente mensaje del usuario; no abre un turno por su cuenta. La
+   tarjeta de kanban queda como mejora posible tras el recorrido real. Los dos caminos
+   que se valoraron:
    - *Tarjeta en el tablero kanban*: cada trabajo crea una tarjeta y su suscripción de
      aviso; upstream entrega el aviso una sola vez y abre un turno aunque Janitor se haya
      reiniciado, en app, terminal y mensajería. Coste: los trabajos aparecen como
