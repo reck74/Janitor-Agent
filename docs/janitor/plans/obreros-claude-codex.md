@@ -1,11 +1,9 @@
 # Janitor dirige a Claude Code y a Codex («obreros»)
 
-> **Estado: PROPUESTA (2026-11-25). Nada de esto está decidido ni implementado.**
-> Lo pidió el dueño el 2026-11-25. Este documento compara las opciones, recomienda una y
-> propone las tareas. Las decisiones de la sección 7 son del dueño (directiva #20); hasta
-> que las tome, ninguna tarea de la sección 6 se empieza.
+> **Estado: APROBADA por el dueño el 2026-11-25** («Sí, acéptalas»): las siete decisiones de
+> la sección 7 quedan como estaban propuestas. Lo pidió el dueño ese mismo día. El tablero de
+> la sección 6 dice qué está hecho.
 > El plan general sigue siendo [`janitor-desktop-app.md`](janitor-desktop-app.md).
-> «Obreros» es un nombre provisional (decisión 7.1).
 
 ## 1. Objetivo
 
@@ -249,7 +247,7 @@ plano, reanudar, Codex escribiendo).
 
 ## 6. Tareas propuestas (Fase 7)
 
-Ninguna empieza hasta que el dueño decida la sección 7.
+Primera entrega: solo consulta y revisión (decisión 7.5).
 
 | Id | Tarea | Alcance | Verificación |
 |---|---|---|---|
@@ -274,7 +272,7 @@ un primer F7-11 en solo lectura. La construcción (F7-04) va en la segunda entre
 F7-11 repetido sobre un conflicto real, y la app (F7-09) cierra. Cada entrega lleva
 pruebas en `tests/janitor/` y un revisor distinto (directiva #20).
 
-## 7. Decisiones del dueño
+## 7. Decisiones del dueño (tomadas el 2026-11-25: se acepta cada propuesta)
 
 1. **Nombre** de la función y del comando. Propuesta: «obreros» (`janitor obreros`).
 2. **Suscripción o clave de API.** Propuesta: permitir la sesión del usuario con
@@ -291,7 +289,10 @@ pruebas en `tests/janitor/` y un revisor distinto (directiva #20).
    gasto. Propuesta: 2 a la vez, 2 rondas, 30 minutos, y un tope de gasto que el usuario
    fija al activar.
 7. **Prioridad** frente a lo pendiente: probar la `.2` en equipos reales, los defectos
-   pequeños ya anotados y la sincronización con upstream (PR #90).
+   pequeños ya anotados y la sincronización con upstream (PR #90). El dueño no fijó un
+   orden; el orquestador entiende que esta fase se empieza ya, porque el dueño la pidió
+   como importante y lo demás depende de equipos que no están a mano. Si no es así,
+   basta decirlo.
 
 ## 8. Revisión de Codex (2026-11-25)
 
