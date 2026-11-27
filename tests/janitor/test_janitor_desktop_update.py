@@ -112,7 +112,8 @@ def test_without_appimage_a_foreign_binary_keeps_the_skew_outcome(tmp_path, appi
     assert not record.exists()
     result = seen["result"]
     assert result["ok"] is True and result["manual"] is True, result
-    assert "AppImage/deb/rpm" in result["message"], result
+    assert "no se puede actualizar sola" in result["message"], result
+    assert "AppImage/deb/rpm" not in result["message"], result
 
 
 @pytest.mark.linux_only
@@ -137,7 +138,8 @@ def test_an_untrustworthy_appimage_value_is_ignored(tmp_path, appimage, kind):
     assert not record.exists()
     result = seen["result"]
     assert result["ok"] is True and result["manual"] is True, result
-    assert "AppImage/deb/rpm" in result["message"], result
+    assert "no se puede actualizar sola" in result["message"], result
+    assert "AppImage/deb/rpm" not in result["message"], result
 
 
 @pytest.mark.linux_only

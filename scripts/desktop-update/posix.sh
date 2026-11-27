@@ -37,6 +37,7 @@
 set -u
 
 ORIGINAL_ARGS=("$@")
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/janitor-app.sh" || exit 70  # JANITOR: app-first update (fork-only file, plan F9-06)
 INSTALL_ROOT="" BRANCH="main" DESKTOP_PID=0 RELAUNCH_TARGET=""
 RELAUNCH_CWD="" SANDBOX_FALLBACK=0 RELAUNCH_ARGS=()
 NO_GATEWAY=0
@@ -52,6 +53,14 @@ while [ $# -gt 0 ]; do
     --relaunch-cwd) RELAUNCH_CWD="$2"; shift 2 ;;
     --sandbox-fallback) SANDBOX_FALLBACK=1; shift ;;
     --no-gateway) NO_GATEWAY=1; shift ;;
+    --target-commit) JANITOR_TARGET_COMMIT="$2"; shift 2 ;;  # JANITOR: signed manifest's engine commit
+    --app-kind) JANITOR_APP_KIND="$2"; shift 2 ;;  # JANITOR:
+    --app-version) JANITOR_APP_VERSION="$2"; shift 2 ;;  # JANITOR:
+    --app-installer) JANITOR_APP_INSTALLER="$2"; shift 2 ;;  # JANITOR: verified installer of the new app
+    --app-sha256) JANITOR_APP_SHA256="$2"; shift 2 ;;  # JANITOR:
+    --app-size) JANITOR_APP_SIZE="$2"; shift 2 ;;  # JANITOR:
+    --app-manifest) JANITOR_APP_MANIFEST="$2"; shift 2 ;;  # JANITOR:
+    --app-manifest-sig) JANITOR_APP_MANIFEST_SIG="$2"; shift 2 ;;  # JANITOR:
     --no-ui) NO_UI=1; shift ;;
     --no-marker-cleanup) NO_MARKER_CLEANUP=1; shift ;;
     --self-test-ui) SELF_TEST_UI=1; shift ;;
@@ -64,6 +73,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ "$SELF_TEST_UI" -eq 1 ] || [ -n "$INSTALL_ROOT" ] || { echo "--install-root is required" >&2; exit 64; }
+janitor_args_valid || { echo "invalid --target-commit/--app-* arguments" >&2; exit 64; }  # JANITOR:
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HERMES_HOME="${INSTALL_ROOT:+$(dirname "$INSTALL_ROOT")}"
@@ -312,6 +322,7 @@ appimage_relaunch_target() {  # JANITOR:
 }  # JANITOR:
 linux_gate() {
   local unpacked="$INSTALL_ROOT/apps/desktop/release/linux-unpacked" sb arg
+  janitor_gate && return  # JANITOR: an install kind the app vouched for always reopens (plan F9-06)
   # Canonicalise both sides before the prefix compare. On some distros
   # (e.g. Fedora/ostree) /home is a symlink to /var/home; the relaunch
   # target is read from /proc/<pid>/exe, which the kernel canonicalises
@@ -325,7 +336,7 @@ linux_gate() {
   case "$RELAUNCH_TARGET" in
     "$unpacked"/*) ;;
     *) appimage_relaunch_target && { GATE=relaunch GATE_MSG="Motor actualizado. Janitor se vuelve a abrir solo; si necesita la app nueva, te lo dirá ahí mismo con el enlace de descarga."; return; }  # JANITOR: AppImage relaunch
-       GATE=skew GATE_MSG="El motor quedó actualizado, pero el paquete de la app (AppImage/deb/rpm) sigue siendo el viejo. Actualízalo o reinstálalo para que coincidan."; return ;;  # JANITOR: Spanish copy (shown verbatim by the app)
+       GATE=skew GATE_MSG="El motor quedó actualizado, pero esta copia de la app no se puede actualizar sola. Descarga la versión nueva desde $JANITOR_RELEASES_URL e instálala."; return ;;  # JANITOR: Spanish copy (shown verbatim by the app)
   esac
 
   sb="$unpacked/chrome-sandbox"
@@ -740,6 +751,10 @@ if [ "$(uname)" = "Darwin" ]; then
     log "TCC anchor self-heal could not repair the venv ($TCC_HEAL_STATE)"
   fi
 fi
+# JANITOR: the app first (plan 4.1). If it was due and did not install, the engine is not touched.
+if ! janitor_install_app; then  # JANITOR:
+  FINAL_CODE="$JANITOR_APP_FAIL_CODE" FINAL_MSG="$JANITOR_APP_FAIL_MSG"; exit "$FINAL_CODE"  # JANITOR:
+fi  # JANITOR:
 tcc_pick_update_invoke "$INSTALL_ROOT/venv/bin"
 if [ "${UPDATE_INVOKE[0]}" != "$HERMES_BIN" ]; then
   log "venv/bin/python3 still unbootable; invoking the update via ${UPDATE_INVOKE[*]}"
@@ -780,9 +795,16 @@ if [ "$NO_GATEWAY" -eq 1 ]; then
   GATEWAY_FLAG=""
   log "update requested without --gateway (remote-served Desktop)"
 fi
-log "running: ${UPDATE_INVOKE[*]} update --yes $GATEWAY_FLAG $KEEP_STASH --branch $BRANCH"
+# JANITOR: pin the engine to the signed manifest's commit. Fail closed: an engine
+# JANITOR: that cannot pin must not follow the branch tip in a signed update.
+COMMIT_FLAG=""  # JANITOR:
+if [ -n "$JANITOR_TARGET_COMMIT" ]; then  # JANITOR:
+  if "${UPDATE_INVOKE[@]}" update --help 2>/dev/null | grep -q -- '--commit'; then COMMIT_FLAG="--commit $JANITOR_TARGET_COMMIT"  # JANITOR:
+  else FINAL_CODE=9 FINAL_MSG="El motor instalado no sabe actualizarse a una versión exacta. No se cambió el motor."; janitor_final_message 9; log "$FINAL_MSG"; exit 9; fi  # JANITOR:
+fi  # JANITOR:
+log "running: ${UPDATE_INVOKE[*]} update --yes $GATEWAY_FLAG $KEEP_STASH --branch $BRANCH $COMMIT_FLAG"  # JANITOR: + commit pin
 publish_stage "Actualizando código y dependencias"  # JANITOR: Spanish stage (shim window)
-OUT="$("${UPDATE_INVOKE[@]}" update --yes $GATEWAY_FLAG $KEEP_STASH --branch "$BRANCH" 2>&1)"; CODE=$?
+OUT="$("${UPDATE_INVOKE[@]}" update --yes $GATEWAY_FLAG $KEEP_STASH --branch "$BRANCH" $COMMIT_FLAG 2>&1)"; CODE=$?  # JANITOR: + commit pin
 printf '%s\n' "$OUT" >> "$LOG" 2>/dev/null
 log "hermes update exit code: $CODE"
 
@@ -804,7 +826,7 @@ if [ "$CODE" -ne 0 ] && [ "$CODE" -ne 2 ]; then
   fi
   log "retrying once (freshly pulled fix loads on the second run)"
   publish_stage "Reintentando la actualización"  # JANITOR: Spanish stage (shim window)
-  OUT="$("${UPDATE_INVOKE[@]}" update --yes $GATEWAY_FLAG $KEEP_STASH --branch "$BRANCH" 2>&1)"; CODE=$?
+  OUT="$("${UPDATE_INVOKE[@]}" update --yes $GATEWAY_FLAG $KEEP_STASH --branch "$BRANCH" $COMMIT_FLAG 2>&1)"; CODE=$?  # JANITOR: + commit pin
   printf '%s\n' "$OUT" >> "$LOG" 2>/dev/null
   log "retry exit code: $CODE"
 fi
@@ -835,4 +857,5 @@ else
     FINAL_MSG="La actualización falló: el intérprete de Python de $INSTALL_ROOT/venv no arranca (estado de reparación: $TCC_HEAL_STATE). Reinstala el motor con el instalador de Janitor, o ejecuta janitor doctor --fix en un terminal si algún comando de janitor todavía funciona."  # JANITOR: Spanish copy
   fi
 fi
+janitor_final_message "$FINAL_CODE"  # JANITOR: app+engine outcome of a signed delivery
 exit "$FINAL_CODE"

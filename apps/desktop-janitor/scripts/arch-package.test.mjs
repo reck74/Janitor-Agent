@@ -73,10 +73,45 @@ test('the rendered PKGBUILD names the release and pins the real AppImage hash', 
     cwd: out,
     encoding: 'utf8'
   }).stdout.trim().split('\n')
-  const local = ['janitor-desktop.sh', 'Janitor.desktop', 'LICENSE'].map(name =>
+  const local = [
+    'janitor-desktop.sh',
+    'Janitor.desktop',
+    'LICENSE',
+    'janitor-update-helper',
+    'ai.janitor.desktop.update.policy',
+    'update-key.pem'
+  ].map(name =>
     crypto.createHash('sha256').update(fs.readFileSync(path.join(out, name))).digest('hex')
   )
   assert.deepEqual(sums, local)
+})
+
+test('the package carries the updater with the release public key, or an empty key the helper refuses', t => {
+  const dir = tmpdir(t)
+  const appimage = fakeAppimage(dir)
+  const pem = crypto.generateKeyPairSync('ed25519').publicKey.export({ type: 'spki', format: 'pem' })
+  const keyFile = path.join(dir, 'test-key.pem')
+
+  fs.writeFileSync(keyFile, pem)
+
+  const withKey = renderArchPackage({ appimage, tag: 'v0.21.5-janitor.1', outDir: path.join(dir, 'con'), updateKey: keyFile })
+  const withoutKey = renderArchPackage({ appimage, tag: 'v0.21.5-janitor.1', outDir: path.join(dir, 'sin'), updateKey: path.join(dir, 'no-existe.pem') })
+
+  assert.equal(withKey.hasUpdateKey, true)
+  assert.equal(fs.readFileSync(path.join(dir, 'con', 'update-key.pem'), 'utf8'), pem)
+  assert.equal(withoutKey.hasUpdateKey, false)
+  assert.equal(fs.statSync(path.join(dir, 'sin', 'update-key.pem')).size, 0)
+  assert.equal(fs.statSync(path.join(dir, 'con', 'janitor-update-helper')).mode & 0o777, 0o755)
+
+  fs.writeFileSync(keyFile, 'esto no es una clave')
+  assert.throws(() => renderArchPackage({ appimage, tag: 'v0.21.5-janitor.1', outDir: path.join(dir, 'mal'), updateKey: keyFile }), /not a PEM public key/)
+
+  // The helper is only ever reachable through its own polkit action, password every time.
+  const policy = fs.readFileSync(path.join(dir, 'con', 'ai.janitor.desktop.update.policy'), 'utf8')
+
+  assert.match(policy, /<allow_active>auth_admin<\/allow_active>/)
+  assert.match(policy, /<allow_any>no<\/allow_any>/)
+  assert.match(policy, /exec\.path">\/usr\/lib\/janitor-desktop\/janitor-update-helper</)
 })
 
 test('rendering refuses a malformed tag before writing anything', t => {
