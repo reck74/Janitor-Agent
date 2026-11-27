@@ -323,7 +323,7 @@ def test_enviar_en_revision_sin_autorizar_dice_que_comando_ejecutar(home, tmp_pa
 @pytest.mark.parametrize("contenido", [
     "[" * 200_000,                       # anidado hasta agotar la pila del analizador
     json.dumps({"objetivo": "x" * 70_000, "contexto": "", "entregables": ["y"], "restricciones": []}),
-])
+], ids=["anidado", "enorme"])
 def test_un_encargo_enorme_o_retorcido_es_un_rechazo_y_no_una_traza(home, tmp_path, contenido):
     archivo = tmp_path / "encargo.json"
     archivo.write_text(contenido, encoding="utf-8")
