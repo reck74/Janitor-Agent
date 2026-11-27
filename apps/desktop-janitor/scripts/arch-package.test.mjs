@@ -101,7 +101,8 @@ test('the package carries the updater with the release public key, or an empty k
   assert.equal(fs.readFileSync(path.join(dir, 'con', 'update-key.pem'), 'utf8'), pem)
   assert.equal(withoutKey.hasUpdateKey, false)
   assert.equal(fs.statSync(path.join(dir, 'sin', 'update-key.pem')).size, 0)
-  assert.equal(fs.statSync(path.join(dir, 'con', 'janitor-update-helper')).mode & 0o777, 0o755)
+  // Windows has no POSIX modes; the package is only ever built on Linux.
+  if (process.platform !== 'win32') assert.equal(fs.statSync(path.join(dir, 'con', 'janitor-update-helper')).mode & 0o777, 0o755)
 
   fs.writeFileSync(keyFile, 'esto no es una clave')
   assert.throws(() => renderArchPackage({ appimage, tag: 'v0.21.5-janitor.1', outDir: path.join(dir, 'mal'), updateKey: keyFile }), /not a PEM public key/)

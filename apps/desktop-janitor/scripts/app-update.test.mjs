@@ -508,6 +508,10 @@ function updater(name, extra = {}) {
   return { instance, logs, progress, owners }
 }
 
+// These read a real $APPIMAGE from disk (POSIX path, executable bit): an AppImage only
+// exists on Linux, and Windows has neither. The pure decision is tested above on every OS.
+const NEEDS_POSIX = process.platform === 'win32' && 'reads a real AppImage file: POSIX paths and modes'
+
 /** An AppImage install: a real executable file in a folder the test owns. */
 function appImageEnv(name) {
   const file = path.join(tmp, 'apps', name, 'Janitor.AppImage')
@@ -520,7 +524,7 @@ function appImageEnv(name) {
 
 const ENGINE_CURRENT = { supported: true, updateAvailable: false, behind: 0, targetSha: COMMIT, currentSha: COMMIT }
 
-test('startup check: engine current but app old is an update, and says which version is published', async () => {
+test('startup check: engine current but app old is an update, and says which version is published', { skip: NEEDS_POSIX }, async () => {
   serve(await makeRelease('arranque'))
 
   const { instance } = updater('arranque', { env: appImageEnv('arranque') })
@@ -534,7 +538,7 @@ test('startup check: engine current but app old is an update, and says which ver
   )
 })
 
-test('startup check: an app already on the published version adds nothing, and a failed check never hides the engine', async () => {
+test('startup check: an app already on the published version adds nothing, and a failed check never hides the engine', { skip: NEEDS_POSIX }, async () => {
   serve(await makeRelease('al-dia'))
 
   const current = updater('al-dia', { env: appImageEnv('al-dia'), appVersion: N1 })
@@ -562,7 +566,7 @@ test('a cached status is only reused by the app version that produced it', () =>
   assert.equal(instance.cacheMatchesApp(null), false)
 })
 
-test('before closing: the delivery is verified and downloaded, with progress, and handed over as arguments', async () => {
+test('before closing: the delivery is verified and downloaded, with progress, and handed over as arguments', { skip: NEEDS_POSIX }, async () => {
   serve(await makeRelease('entrega'))
 
   const { instance, progress } = updater('entrega', { env: appImageEnv('entrega') })
@@ -573,7 +577,7 @@ test('before closing: the delivery is verified and downloaded, with progress, an
   assert.deepEqual(progress.at(-1), { stage: 'fetch', message: 'Descargando la app nueva…', percent: 100 })
 })
 
-test('before closing: a refusal returns a result for the user and no arguments — nothing is spawned', async () => {
+test('before closing: a refusal returns a result for the user and no arguments — nothing is spawned', { skip: NEEDS_POSIX }, async () => {
   const dir = await makeRelease('rechazo')
 
   serve(dir)
