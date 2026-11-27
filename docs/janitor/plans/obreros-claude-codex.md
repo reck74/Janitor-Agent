@@ -27,8 +27,8 @@ no se comprobó aquí; lo demás se comprobó en el equipo de desarrollo o en el
 ### 2.1 Qué hay ya en Janitor
 
 - Las skills de upstream `claude-code`, `codex` y `opencode`
-  (`skills/autonomous-ai-agents/`) ya están en `janitor/catalog.yaml` para la plantilla
-  **Creador de proyectos**. Son recetas en prosa: el agente escribe a mano el comando
+  (`skills/autonomous-ai-agents/`) estaban en `janitor/catalog.yaml` para la plantilla
+  **Creador de proyectos** (las dos primeras se retiraron el 2026-11-27, sección 6.6). Son recetas en prosa: el agente escribe a mano el comando
   (`claude -p …`, `codex exec …`) en la terminal. La de Claude enseña a guardar el id de
   sesión y reanudar (`SKILL.md:224`), pero el estado queda en manos del modelo: no hay
   registro de trabajos.
@@ -384,8 +384,8 @@ Observado:
 - El agente llegó a las herramientas directamente y una vez por `tool_call`; las dos
   vías conservaron la conversación de origen.
 - El perfil lleva también las skills de upstream `claude-code` y `codex`, que enseñan
-  a lanzar esos programas a mano; en este recorrido no las usó. Queda por decidir si
-  se retiran de la plantilla.
+  a lanzar esos programas a mano; en este recorrido no las usó. Se retiraron después
+  (sección 6.6).
 - El agente amplió el alcance por su cuenta (deuda del proyecto, 67 pruebas para dos
   funciones). Es conducta del modelo director, no del motor.
 - Texto del modelo con algunos caracteres en chino mezclados (MiniMax-M2.7).
@@ -419,9 +419,12 @@ F7-05 y F7-08 **auditadas con reparos**. Los reparos y qué se hizo:
 - «Sin recursión» depende de una variable de entorno más el aislamiento: con Codex sin
   comandos (consulta) o sin red ni escritura (revisión), y Claude solo con lectura, un
   obrero no puede lanzar nada. Sin prueba automática de eso.
-- El perfil Creador de proyectos sigue llevando las skills de upstream `claude-code` y
+- El perfil Creador de proyectos llevaba las skills de upstream `claude-code` y
   `codex`, que enseñan a lanzar los programas a mano y se saltan activación, topes y
-  carpetas. **Pendiente de decisión del dueño.**
+  carpetas. **Retiradas del catálogo por decisión del dueño (2026-11-27)**: un perfil
+  ya creado las pierde la próxima vez que se aplica el catálogo. Queda `opencode`, que
+  la decisión no cubría. La terminal del agente sigue pudiendo lanzar esos programas
+  si el modelo lo decide por su cuenta: quitar la receta no es un bloqueo.
 - Sin corregir, menores: con Codex no existe el estado `bloqueado`; reanudar sin
   conversación dice que no habrá aviso y sí llega a la original; cancelar justo cuando
   el trabajo termina se queda sin aviso; el obrero recibe `DBUS_SESSION_BUS_ADDRESS`.
