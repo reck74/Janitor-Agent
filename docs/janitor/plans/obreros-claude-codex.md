@@ -281,7 +281,7 @@ pruebas en `tests/janitor/` y un revisor distinto (directiva #20).
 | F7-02 | hecho; **sin auditar**; sin probar en Windows ni macOS; modo revisión sin probar contra un modelo | `scripts/run_tests.sh tests/janitor/test_janitor_obreros_adaptadores.py` → 60 pasan. Cada opción comprobada en `--help` de Claude Code 2.1.332 y Codex 0.172.0. **Prueba real** en una carpeta vacía (`/var/tmp/janitor-obreros-smoke/`): una consulta y una reanudación con cada programa; los dos contestaron, el analizador obtuvo respuesta, id de sesión y tokens (y coste en Claude), y al reanudar recordaron el turno anterior |
 | F7-03, F7-13, F7-05 | hecho (2026-11-26); **revisado por Codex en lectura estática, sin auditar por un revisor que repita las pruebas**; sin probar en Windows ni macOS | Supervisor (`trabajos.py`, `ejecutor.py`, `procesos.py`, `registro.py`), ajustes y comando `janitor obreros` (`orden.py`). `scripts/run_tests.sh -j 4 tests/janitor/` → 830 pasan, 24 saltadas. **Prueba real** en un home temporal (`/var/tmp/janitor-obreros-smoke2/`): rechazo sin activar; consulta con cada programa; reanudación con Claude; revisión de una carpeta con los dos (ambos encontraron el defecto sembrado y no tocaron el archivo); rechazo de `~/.ssh`; cancelación, sin procesos colgados |
 | F7-10 | a medias: aviso de activación y ajustes `janitor.obreros` en `config.yaml` hechos dentro del comando; falta la semilla y el aviso en la app | Misma evidencia |
-| F7-06, F7-07, F7-08 | hecho (2026-11-26); **revisado por Codex en lectura estática, sin auditar por un revisor que repita las pruebas**; sin probar con un modelo conduciendo las herramientas | Herramientas `obreros_enviar` y `obreros_ver` con `check_fn` y aviso de fin por `pre_llm_call` (`janitor/plugin/obreros.py`); skill `janitor-obreros` (visible solo con las herramientas, `requires_tools`) en el catálogo; Creador de proyectos la usa por defecto. Carpetas autorizadas por el usuario (`janitor obreros autorizar`). `scripts/run_tests.sh -j 4 tests/janitor/` → 880 pasan, 24 saltadas. **Prueba real** por el cargador de plugins en un home temporal: herramientas ocultas sin activar y visibles al activar; envío a los dos programas con una conversación como origen; el aviso llegó una vez y solo a esa conversación; revisión rechazada sin autorizar la carpeta y aceptada tras autorizarla |
+| F7-06, F7-07, F7-08 | hecho (2026-11-26); **revisado por Codex en lectura estática, sin auditar por un revisor que repita las pruebas**; sin probar con un modelo conduciendo las herramientas | Herramientas `obreros_enviar` y `obreros_ver` con `check_fn` y aviso de fin por `pre_llm_call` (`janitor/plugin/obreros.py`); skill `janitor-obreros` en el catálogo (sin `requires_tools`, ver 6.4); Creador de proyectos la usa por defecto. Carpetas autorizadas por el usuario (`janitor obreros autorizar`). `scripts/run_tests.sh -j 4 tests/janitor/` → 880 pasan, 24 saltadas. **Prueba real** por el cargador de plugins en un home temporal: herramientas ocultas sin activar y visibles al activar; envío a los dos programas con una conversación como origen; el aviso llegó una vez y solo a esa conversación; revisión rechazada sin autorizar la carpeta y aceptada tras autorizarla |
 | F7-04, F7-09, F7-11, F7-12 | sin empezar | — |
 
 Observado en la prueba real: Codex no informa qué modelo contestó, y una consulta mínima
@@ -328,6 +328,13 @@ Seis hallazgos. **Corregidos, con prueba**:
 - `obreros_ver` leía con la función desactivada, y otra conversación podía consumir un
   aviso ajeno.
 - Un envío sin conversación identificable prometía un aviso que no iba a llegar.
+
+**Encontrado por el CI, no por la revisión**: el core difiere toda herramienta de plugin
+tras `tool_search`/`tool_call`, así que nunca está en la lista directa del agente y una
+skill con `requires_tools` sobre ellas no aparecería jamás. El entorno local no lo mostró
+porque le faltaba una dependencia del buscador. La skill va sin esa condición: la ve
+siempre el perfil que la tiene en su catálogo, y explica qué hacer si no hay obreros. El
+propósito de 4.3 («que la skill aparezca o no») queda sin cumplir.
 
 **Límites conocidos, sin corregir**:
 

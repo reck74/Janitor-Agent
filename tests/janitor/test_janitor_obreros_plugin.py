@@ -361,7 +361,10 @@ def cargado(tmp_path, monkeypatch):
 def _nombres_visibles() -> set[str]:
     from model_tools import get_tool_definitions
 
-    return {t["function"]["name"] for t in get_tool_definitions(enabled_toolsets=[plugin.TOOLSET])}
+    return {t["function"]["name"] for t in get_tool_definitions(
+        # Sin el buscador: en una instalación real el core difiere las herramientas de
+        # plugin tras tool_search, y aquí se pregunta si existen, no cómo se presentan.
+        enabled_toolsets=[plugin.TOOLSET], skip_tool_search_assembly=True)}
 
 
 def test_cargador_real_oculta_las_herramientas_hasta_activar(cargado, monkeypatch):

@@ -147,8 +147,8 @@ skills:
     platforms: [linux]
     templates: [creador-proyectos]
 
-  # Solo aparece con las herramientas obreros_enviar/obreros_ver (requires_tools):
-  # sin obreros activados, el perfil trabaja como siempre.
+  # Sin requires_tools: el core difiere las herramientas de plugin tras tool_search y
+  # la condición no se cumpliría nunca. La skill dice qué hacer si no hay obreros.
   - id: janitor-obreros
     source: janitor
     path: projects/janitor-obreros

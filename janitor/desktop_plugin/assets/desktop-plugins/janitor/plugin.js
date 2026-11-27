@@ -301,6 +301,7 @@ export const SKILLS = {
   'youtube-content': { label: 'Contenido de YouTube', description: 'Convierte transcripciones de vídeos en resúmenes, hilos o artículos.' },
   'janitor-repo-research': { label: 'Investigar repositorios', description: 'Analiza un repositorio de GitHub de principio a fin.' },
   'janitor-project-create': { label: 'Crear proyectos', description: 'Monta un proyecto nuevo que compila y pasa sus pruebas.' },
+  'janitor-obreros': { label: 'Obreros', description: 'Planifica y revisa proyectos con los programas de código que ya tienes.' },
   github: { label: 'GitHub', description: 'Pull requests, issues, revisiones y repositorios con la CLI gh.' },
   spike: { label: 'Prototipos de prueba', description: 'Experimentos desechables para validar una idea antes de construirla.' },
   'systematic-debugging': { label: 'Depuración sistemática', description: 'Encuentra la causa real de un fallo antes de tocar el código.' },

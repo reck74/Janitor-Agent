@@ -11,7 +11,6 @@ metadata:
     tags: [obreros, planificacion, revision, proyectos, segunda-opinion]
     category: software-development
     related_skills: [janitor-project-create, spike, systematic-debugging]
-    requires_tools: [obreros_enviar, obreros_ver]
 ---
 
 # Skill de obreros
@@ -36,8 +35,10 @@ del usuario (solo arrancar, Codex gasta unos 16.000 de entrada) y tarda minutos.
 ## Requisitos
 
 - Las herramientas `obreros_enviar` y `obreros_ver`. Solo existen cuando el usuario
-  activó los obreros en este perfil y hay al menos un programa con sesión; si no las
-  tienes, esta skill no aplica y trabajas como siempre.
+  activó los obreros en este perfil y hay al menos un programa con sesión. Pueden no
+  estar en tu lista directa: si tienes `tool_search`, búscalas ahí («obreros») y
+  llámalas con `tool_call`. Si no existen de ninguna de las dos formas, esta skill no
+  aplica y trabajas como siempre.
 - Si el usuario pide usar obreros y no tienes las herramientas, dile que las active
   él con `janitor obreros activar` en su terminal (le muestra un aviso: su código sale
   hacia Anthropic u OpenAI y gasta su plan; le pide un tope de tokens al día). Las

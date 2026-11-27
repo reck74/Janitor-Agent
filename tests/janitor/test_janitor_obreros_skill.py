@@ -55,18 +55,18 @@ def test_la_entrada_del_catalogo_resuelve_y_va_en_creador_de_proyectos():
     assert SKILL not in cat.skills_for_template("main", catalog=catalog)
 
 
-def test_el_creador_de_proyectos_la_ve_solo_con_las_herramientas_de_obreros(root, monkeypatch):
+def test_el_creador_de_proyectos_la_ve_aunque_las_herramientas_vayan_tras_el_buscador(root, monkeypatch):
     creado = pt.create_from_template("creador-proyectos", home_root=root)
     assert SKILL in creado.skills
 
-    con_obreros = _indice(creado.path, monkeypatch, HERRAMIENTAS | {"terminal"})
-    sin_obreros = _indice(creado.path, monkeypatch, {"terminal"})
+    # El core difiere las herramientas de plugin tras tool_search: el agente no las
+    # tiene en su lista directa, y la skill debe seguir a la vista.
+    con_buscador = _indice(creado.path, monkeypatch, {"terminal", "tool_search", "tool_call"})
+    directas = _indice(creado.path, monkeypatch, HERRAMIENTAS | {"terminal"})
     principal = _indice(root, monkeypatch, HERRAMIENTAS | {"terminal"})
 
-    assert SKILL in con_obreros
-    assert SKILL not in sin_obreros
-    # Sin obreros, el perfil conserva el resto de sus skills: trabaja como siempre.
-    assert sin_obreros == con_obreros - {SKILL}
+    assert SKILL in con_buscador
+    assert con_buscador == directas
     assert SKILL not in principal
 
 
