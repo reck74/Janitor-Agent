@@ -71,6 +71,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -606,9 +607,9 @@ def _current_branch(git_cmd: list[str], cwd: Path) -> str:
     return result.stdout.strip()
 
 
-def _behind_count(git_cmd: list[str], cwd: Path, branch: str) -> int:
+def _behind_count(git_cmd: list[str], cwd: Path, branch: str, *, commit: Optional[str] = None) -> int:
     result = subprocess.run(
-        git_cmd + ["rev-list", f"HEAD..origin/{branch}", "--count"],
+        git_cmd + ["rev-list", f"HEAD..{commit or f'origin/{branch}'}", "--count"],
         cwd=cwd,
         capture_output=True,
         text=True, encoding="utf-8", errors="replace",
@@ -617,8 +618,57 @@ def _behind_count(git_cmd: list[str], cwd: Path, branch: str) -> int:
     return int(result.stdout.strip())
 
 
-def _pull_with_fallback(git_cmd: list[str], cwd: Path, branch: str) -> bool:
+# The requested version is not one the channel published (or cannot be told).
+_COMMIT_NOT_PUBLISHED_MESSAGE = (
+    "✗ La versión pedida ({short}) no está publicada en '{branch}'.\n"
+    "  No se cambió nada. Vuelve a comprobar si hay actualizaciones."
+)
+_COMMIT_OLDER_MESSAGE = (
+    "✓ El motor ya está en una versión igual o más nueva que la pedida ({short}).\n"
+    "  No se baja de versión."
+)
+
+
+def _git_ok(git_cmd: list[str], cwd: Path, *args: str) -> bool:
+    return subprocess.run(
+        git_cmd + list(args),
+        cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+    ).returncode == 0
+
+
+def _commit_published(git_cmd: list[str], cwd: Path, branch: str, commit: str) -> bool:
+    """Whether ``commit`` is a commit ``origin/<branch>`` contains.
+
+    The pin comes from outside (the app's signed manifest), so it is checked
+    against what the channel really published before any code is activated: a
+    commit of another branch, an unknown object or a tag never passes. A
+    single-branch clone may hold a stale ``origin/<branch>``; it is fetched by
+    name once before refusing.
+    """
+    ref = f"refs/remotes/origin/{branch}"
+
+    def published() -> bool:
+        return _git_ok(git_cmd, cwd, "cat-file", "-e", f"{commit}^{{commit}}") and _git_ok(
+            git_cmd, cwd, "merge-base", "--is-ancestor", commit, ref
+        )
+
+    if published():
+        return True
+    subprocess.run(
+        git_cmd + ["fetch", "origin", f"+refs/heads/{branch}:{ref}"],
+        cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    return published()
+
+
+def _pull_with_fallback(
+    git_cmd: list[str], cwd: Path, branch: str, *, commit: Optional[str] = None
+) -> bool:
     """Run git pull --ff-only; on divergence reset --hard origin/<branch>.
+
+    With ``commit`` (already checked by ``_commit_published``) the tree moves
+    to exactly that commit instead of the branch tip: ``merge --ff-only`` of
+    the fetched object, then the same ``reset --hard`` fallback.
 
     Returns True on success, False on hard failure. Performs post-pull
     syntax validation with auto-rollback to the pre-pull SHA on error.
@@ -632,7 +682,7 @@ def _pull_with_fallback(git_cmd: list[str], cwd: Path, branch: str) -> bool:
 
     print("→ Instalando la versión nueva...")
     pull_result = subprocess.run(
-        git_cmd + ["pull", "--ff-only", "origin", branch],
+        git_cmd + (["merge", "--ff-only", commit] if commit else ["pull", "--ff-only", "origin", branch]),
         cwd=cwd,
         capture_output=True,
         text=True, encoding="utf-8", errors="replace",
@@ -644,7 +694,7 @@ def _pull_with_fallback(git_cmd: list[str], cwd: Path, branch: str) -> bool:
             "se reemplaza por la versión oficial..."
         )
         reset_result = subprocess.run(
-            git_cmd + ["reset", "--hard", f"origin/{branch}"],
+            git_cmd + ["reset", "--hard", commit or f"origin/{branch}"],
             cwd=cwd,
             capture_output=True,
             text=True, encoding="utf-8", errors="replace",
@@ -1417,6 +1467,19 @@ _UNSUPPORTED_READ_ONLY_FLAGS = {
 }
 
 
+_COMMIT_RE = re.compile(r"[0-9a-f]{40}")
+
+
+def _commit_argument(value: str) -> str:
+    """argparse type of ``--commit``: a full lowercase SHA-1, nothing git could
+    read as a ref name, an option or a revision expression."""
+    import argparse
+
+    if not _COMMIT_RE.fullmatch(value):
+        raise argparse.ArgumentTypeError("debe ser un commit completo: 40 hexadecimales en minúscula")
+    return value
+
+
 def parse_update_args(argv: list[str]):
     """Parse ``janitor update`` arguments for the early intercept.
 
@@ -1459,6 +1522,11 @@ def parse_update_args(argv: list[str]):
     parser.add_argument(
         "--keep-stash", action="store_true",
         help="No reaplica los cambios locales tras actualizar; quedan apartados en git stash",
+    )
+    parser.add_argument(
+        "--commit", default=None, metavar="SHA", type=_commit_argument,
+        help="Instala exactamente esta versión (40 hexadecimales), no la punta de la rama; "
+             "lo pasa la app con el commit de su manifiesto firmado",
     )
     parser.add_argument(
         "--no-gateway-restart", action="store_true",
@@ -1768,6 +1836,10 @@ def run_janitor_update(args) -> int:
             no_backup (bool): skips pre-update backup even if config has it on.
             branch (str|None): target branch (default: the release channel,
                 ``janitor.release_channel.RELEASE_BRANCH``).
+            commit (str|None): exact commit to install instead of the branch
+                tip (the app's signed manifest names it, plan F9-12). It must
+                be one ``origin/<branch>`` contains, checked before anything
+                changes; a commit HEAD is already past is never gone back to.
             keep_stash (bool): leave the autostash parked instead of
                 re-applying it (the desktop updater's mode).
             no_gateway_restart (bool): leave running gateways on the old code.
@@ -1801,6 +1873,12 @@ def run_janitor_update(args) -> int:
     branch = getattr(args, "branch", None) or RELEASE_BRANCH
     keep_stash = bool(getattr(args, "keep_stash", False))
     check_only = bool(getattr(args, "check", False))
+    commit = getattr(args, "commit", None) or None
+    if commit is not None and not _COMMIT_RE.fullmatch(str(commit)):
+        print("✗ `--commit` debe ser un commit completo: 40 hexadecimales en minúscula.")
+        return 2
+    # Only passed on when set, so the stubs of the unpinned flow keep their shape.
+    pin = {"commit": commit} if commit else {}
     gateway_exit_code_written = False
 
     _update_io_state = _call(
@@ -1862,6 +1940,22 @@ def run_janitor_update(args) -> int:
                 gateway_exit_code_written = True
             return 0
 
+        if commit:
+            # Before the stash, the branch switch and the pull: a pin the
+            # channel did not publish changes nothing at all.
+            if not _commit_published(git_cmd, project_root, branch, commit):
+                print(_COMMIT_NOT_PUBLISHED_MESSAGE.format(short=commit[:10], branch=branch))
+                return 1
+            if _git_ok(git_cmd, project_root, "merge-base", "--is-ancestor", commit, "HEAD") and (
+                _head_sha(git_cmd, project_root) != commit
+            ):
+                # HEAD already contains it and is past it: never go back.
+                print(_COMMIT_OLDER_MESSAGE.format(short=commit[:10]))
+                if gateway_mode:
+                    _write_gateway_exit_code(True)
+                    gateway_exit_code_written = True
+                return 0
+
         current_branch = _current_branch(git_cmd, project_root)
 
         if persisted_stash_ref:
@@ -1915,7 +2009,7 @@ def run_janitor_update(args) -> int:
                 fallback=lambda *a, **kw: _local_stash(git_cmd, a[1]),
             )
 
-        commit_count = _behind_count(git_cmd, project_root, branch)
+        commit_count = _behind_count(git_cmd, project_root, branch, **pin)
         already_current = (commit_count == 0)
         contract_before: Optional[int] = None
 
@@ -1932,7 +2026,7 @@ def run_janitor_update(args) -> int:
             head_before_pull = _head_sha(git_cmd, project_root)
             contract_before, _url = _read_desktop_compat(project_root)
             _set_deps_pending(project_root, True, git_cmd)
-            update_succeeded = _pull_with_fallback(git_cmd, project_root, branch)
+            update_succeeded = _pull_with_fallback(git_cmd, project_root, branch, **pin)
             if not update_succeeded:
                 # Rolled back to where it started: nothing new to install.
                 if head_before_pull and _head_sha(git_cmd, project_root) == head_before_pull:
