@@ -1729,7 +1729,7 @@ wheels = [
 
 [[package]]
 name = "hermes-agent"
-version = "0.21.5+janitor.2"
+version = "0.21.5+janitor.3"
 source = { editable = "." }
 dependencies = [
     { name = "certifi" },
