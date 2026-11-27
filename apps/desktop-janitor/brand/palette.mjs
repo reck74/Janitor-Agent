@@ -138,8 +138,6 @@ export const SKILL_DESCRIPTIONS = {
   spike: 'Experimentos desechables para validar una idea antes de construirla.',
   'systematic-debugging': 'Encuentra la causa real de un fallo antes de tocar el código.',
   'test-driven-development': 'Primero la prueba que falla, luego el código, luego la limpieza.',
-  'claude-code': 'Delega trabajo de programación en la CLI de Claude Code.',
-  codex: 'Delega trabajo de programación en la CLI de Codex.',
   opencode: 'Delega programación y revisiones en la CLI de OpenCode.',
   'google-workspace': 'Gmail, Calendar, Drive, Docs y Sheets.',
   'email-inbox-triage': 'Prioriza la bandeja de entrada y prepara borradores sin enviar nada solo.',
