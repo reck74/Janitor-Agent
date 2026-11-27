@@ -7,7 +7,7 @@ fusión a `main` no se entrega. Las entradas anteriores a la app de escritorio
 se conservan tal como se escribieron, en inglés, y describen código que ya se
 retiró.
 
-## Sin publicar (en `main`, sin etiqueta)
+## `0.21.5+janitor.3` — etiqueta `v0.21.5-janitor.3` (2026-11-27)
 
 ### Añadido
 - **Obreros** (`janitor obreros`, skill `janitor-obreros`): un perfil puede
@@ -17,8 +17,10 @@ retiró.
   `docs/janitor/plans/obreros-claude-codex.md`.
 
 ### Corregido
-- El Creador de proyectos ya no recibe las skills `claude-code` y `codex` de
-  upstream; la paleta y la pantalla de skills ya no muestran skills retiradas.
+- El Creador de proyectos ya no recibe las skills `claude-code`, `codex` ni
+  `opencode` de upstream (enseñaban a lanzar esos programas a mano, sin los
+  topes ni las carpetas de los obreros); la paleta y la pantalla de skills ya
+  no muestran skills retiradas.
 
 ## `0.21.5+janitor.2` — etiqueta `v0.21.5-janitor.2` (2026-11-25)
 
