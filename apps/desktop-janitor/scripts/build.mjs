@@ -55,11 +55,18 @@ export const OVERLAY_FILES = [
   ['assets/janitor-mark.png', 'public/apple-touch-icon.png'],
   ['assets/janitor-mark.png', 'public/nous-girl.jpg'],
   ['assets/filler-bg0.jpg', 'public/ds-assets/filler-bg0.jpg'],
-  ['assets/janitor-logo-banner.png', 'public/janitor-logo-banner.png']
+  ['assets/janitor-logo-banner.png', 'public/janitor-logo-banner.png'],
+  // P22 (Fase 9): the signed-update logic, byte for byte what the tests import.
+  ['brand/app-update.mjs', 'electron/janitor-app-update.mjs']
 ]
 
 // Targets upstream does not ship: the build creates them and restore() removes them.
-export const FORK_ONLY_TARGETS = new Set(['assets/janitor-icon.png', 'assets/janitor-icon.icns', 'public/janitor-logo-banner.png'])
+export const FORK_ONLY_TARGETS = new Set([
+  'assets/janitor-icon.png',
+  'assets/janitor-icon.icns',
+  'public/janitor-logo-banner.png',
+  'electron/janitor-app-update.mjs'
+])
 
 const isPlainObject = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 

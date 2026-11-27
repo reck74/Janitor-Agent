@@ -561,3 +561,173 @@ export async function checkAppUpdate({ install, targetCommit, appVersion, public
     return { ...base, error: error instanceof JanitorUpdateError ? error.message : String(error?.message ?? error) }
   }
 }
+
+// ---- wiring for the Electron main process --------------------------------------
+// electron/main.ts builds ONE updater with its own primitives (P22 glue,
+// brand/app-update-patches.mjs). Everything Electron-specific arrives as a
+// dependency, so the same wiring runs under `node --test`.
+
+/** Facts about $APPIMAGE and the Arch updater, read from disk. */
+export function readInstallFacts({ env, execPath, fsImpl = fs, pathLookup = () => null }) {
+  const check = (file, mode) => {
+    try {
+      fsImpl.accessSync(file, mode)
+
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  const stat = file => {
+    try {
+      return fsImpl.statSync(file)
+    } catch {
+      return null
+    }
+  }
+
+  let appImage = null
+
+  if (typeof env.APPIMAGE === 'string' && env.APPIMAGE) {
+    const info = stat(env.APPIMAGE)
+
+    appImage = {
+      path: env.APPIMAGE,
+      isFile: Boolean(info?.isFile()),
+      executable: check(env.APPIMAGE, fs.constants.X_OK),
+      dirWritable: check(path.dirname(env.APPIMAGE), fs.constants.W_OK)
+    }
+  }
+
+  return {
+    appImage,
+    execPath,
+    helper: {
+      present: Boolean(stat(ARCH_HELPER_PATH)?.isFile()) && check(ARCH_HELPER_PATH, fs.constants.X_OK),
+      keyPresent: (stat(ARCH_HELPER_KEY_PATH)?.size ?? 0) > 0,
+      pkexec: Boolean(pathLookup('pkexec'))
+    }
+  }
+}
+
+/**
+ * deps:
+ *   appVersion, platform, arch, env, execPath, hermesHome, publicKeyPem
+ *   fetchImpl(url, init)            the transport (global fetch in the app)
+ *   packageOwner(file) → Promise<string|null>   pacman -Qqo, or null
+ *   pathLookup(command) → string|null
+ *   log(message), progress({ stage, message, percent })
+ */
+export function createDesktopUpdater(deps) {
+  const stateDir = path.join(deps.hermesHome, 'desktop-update')
+  let installPromise = null
+
+  const install = () => {
+    installPromise ??= (async () => {
+      const facts = readInstallFacts({ env: deps.env, execPath: deps.execPath, pathLookup: deps.pathLookup })
+      const usableAppImage = facts.appImage?.isFile && facts.appImage.executable
+      const packageOwner = deps.platform === 'linux' && !usableAppImage ? await deps.packageOwner(deps.execPath).catch(() => null) : null
+      const verdict = detectInstallKind({ platform: deps.platform, arch: deps.arch, appImage: facts.appImage, packageOwner, helper: facts.helper })
+
+      deps.log(`[janitor-update] install kind: ${verdict.kind}, self-update: ${verdict.selfUpdate}${verdict.reason ? ` (${verdict.reason})` : ''}`)
+
+      return verdict
+    })()
+
+    return installPromise
+  }
+
+  return {
+    install,
+
+    /** Add the app's side to the engine's update status (check at startup). Never throws. */
+    async augmentStatus(status) {
+      try {
+        const usable = status?.supported && !status.error && typeof status.targetSha === 'string'
+
+        const info = await checkAppUpdate({
+          install: await install(),
+          targetCommit: usable ? status.targetSha : null,
+          appVersion: deps.appVersion,
+          publicKeyPem: deps.publicKeyPem,
+          stateDir,
+          fetchImpl: deps.fetchImpl
+        })
+
+        if (info.error) deps.log(`[janitor-update] app check: ${info.error}`)
+
+        return { ...status, janitorApp: info, updateAvailable: Boolean(status?.updateAvailable || info.needsApp) }
+      } catch (error) {
+        deps.log(`[janitor-update] app check failed: ${error?.message ?? error}`)
+
+        return status
+      }
+    },
+
+    /** A cached status answers for this app only if this app's version produced it. */
+    cacheMatchesApp(cached) {
+      return cached?.status?.janitorApp?.appVersion === deps.appVersion
+    },
+
+    /**
+     * Before the app closes: verify the release and download the installer.
+     * `freshStatus()` is the engine check, forced. Returns { args } to append to
+     * the relay's command line ([] = today's hand-off), or { failure } with the
+     * result the renderer shows; nothing was changed in that case.
+     */
+    async prepareHandoff({ freshStatus, relayScriptText }) {
+      try {
+        const kind = await install()
+
+        if (!kind.selfUpdate || !deps.publicKeyPem) return { args: [] }
+
+        const status = await freshStatus()
+
+        if (!status?.supported || status.error || !status.targetSha) {
+          fail('red', `No se pudo consultar el canal de versiones${status?.message ? ` (${status.message})` : ''}.`)
+        }
+
+        deps.progress({ stage: 'fetch', message: 'Comprobando la versión publicada…', percent: 0 })
+
+        let lastPercent = -1
+
+        const plan = await prepareUpdate({
+          install: kind,
+          targetCommit: status.targetSha,
+          appVersion: deps.appVersion,
+          publicKeyPem: deps.publicKeyPem,
+          stateDir,
+          relayScriptText,
+          fetchImpl: deps.fetchImpl,
+          onProgress: fraction => {
+            const percent = Math.min(100, Math.floor(fraction * 100))
+
+            if (percent !== lastPercent) {
+              lastPercent = percent
+              deps.progress({ stage: 'fetch', message: 'Descargando la app nueva…', percent })
+            }
+          }
+        })
+
+        if (plan.action === 'legacy') {
+          deps.log(`[janitor-update] engine-only hand-off: ${plan.reason}`)
+
+          return { args: [] }
+        }
+
+        deps.log(`[janitor-update] ${plan.action}: ${plan.manifest.tag} @ ${plan.manifest.commit}`)
+
+        return { args: plan.args }
+      } catch (error) {
+        const reason = error instanceof JanitorUpdateError ? error.message : `No se pudo preparar la actualización (${error?.message ?? error}).`
+        const message = `${reason} No se cambió nada.`
+
+        deps.log(`[janitor-update] refused before closing: ${message}`)
+        deps.progress({ stage: 'error', message, percent: null })
+
+        return { args: [], failure: { ok: false, error: 'janitor-app-update', message } }
+      }
+    }
+  }
+}

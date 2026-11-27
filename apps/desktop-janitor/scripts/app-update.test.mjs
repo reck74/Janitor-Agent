@@ -19,6 +19,7 @@ import {
   SIGNATURE_NAME,
   UPDATE_ORIGIN,
   checkAppUpdate,
+  createDesktopUpdater,
   decideUpdate,
   detectInstallKind,
   installerFor,
@@ -475,4 +476,152 @@ test('the check at startup reports «engine current, app old» and never throws'
 
   assert.equal(failed.needsApp, false)
   assert.match(failed.error, /no está publicado/)
+})
+
+// ---- F9-04 / F9-05: the wiring the Electron main process uses -------------------
+
+function updater(name, extra = {}) {
+  const logs = []
+  const progress = []
+  const owners = []
+
+  const instance = createDesktopUpdater({
+    appVersion: N,
+    platform: 'linux',
+    arch: 'x64',
+    env: {},
+    execPath: '/opt/janitor-desktop/Janitor',
+    hermesHome: path.join(tmp, 'home', name),
+    publicKeyPem: keys.publicKeyPem,
+    fetchImpl,
+    packageOwner: async file => {
+      owners.push(file)
+
+      return 'janitor-desktop-bin'
+    },
+    pathLookup: () => '/usr/bin/pkexec',
+    log: message => logs.push(message),
+    progress: payload => progress.push(payload),
+    ...extra
+  })
+
+  return { instance, logs, progress, owners }
+}
+
+/** An AppImage install: a real executable file in a folder the test owns. */
+function appImageEnv(name) {
+  const file = path.join(tmp, 'apps', name, 'Janitor.AppImage')
+
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, '#!/bin/sh\n', { mode: 0o755 })
+
+  return { APPIMAGE: file }
+}
+
+const ENGINE_CURRENT = { supported: true, updateAvailable: false, behind: 0, targetSha: COMMIT, currentSha: COMMIT }
+
+test('startup check: engine current but app old is an update, and says which version is published', async () => {
+  serve(await makeRelease('arranque'))
+
+  const { instance } = updater('arranque', { env: appImageEnv('arranque') })
+  const status = await instance.augmentStatus(ENGINE_CURRENT)
+
+  assert.equal(status.updateAvailable, true)
+  assert.equal(status.behind, 0)
+  assert.deepEqual(
+    [status.janitorApp.kind, status.janitorApp.needsApp, status.janitorApp.publishedVersion, status.janitorApp.appVersion],
+    ['appimage', true, N1, N]
+  )
+})
+
+test('startup check: an app already on the published version adds nothing, and a failed check never hides the engine', async () => {
+  serve(await makeRelease('al-dia'))
+
+  const current = updater('al-dia', { env: appImageEnv('al-dia'), appVersion: N1 })
+
+  assert.equal((await current.instance.augmentStatus(ENGINE_CURRENT)).updateAvailable, false)
+
+  served = {}
+
+  const offline = updater('sin-red', { env: appImageEnv('sin-red') })
+  const behind = await offline.instance.augmentStatus({ ...ENGINE_CURRENT, updateAvailable: true, behind: 3 })
+
+  assert.equal(behind.updateAvailable, true)
+  assert.equal(behind.behind, 3)
+  assert.equal(behind.janitorApp.needsApp, false)
+  assert.ok(offline.logs.some(line => line.includes('app check')))
+})
+
+test('a cached status is only reused by the app version that produced it', () => {
+  const { instance } = updater('cache')
+
+  assert.equal(instance.cacheMatchesApp({ status: { janitorApp: { appVersion: N } } }), true)
+  // The app was just replaced by N+1: yesterday's «update available» must not survive.
+  assert.equal(instance.cacheMatchesApp({ status: { janitorApp: { appVersion: '0.21.5-janitor.3' } } }), false)
+  assert.equal(instance.cacheMatchesApp({ status: {} }), false)
+  assert.equal(instance.cacheMatchesApp(null), false)
+})
+
+test('before closing: the delivery is verified and downloaded, with progress, and handed over as arguments', async () => {
+  serve(await makeRelease('entrega'))
+
+  const { instance, progress } = updater('entrega', { env: appImageEnv('entrega') })
+  const delivery = await instance.prepareHandoff({ freshStatus: async () => ENGINE_CURRENT, relayScriptText: RELAY })
+
+  assert.equal(delivery.failure, undefined)
+  assert.ok(delivery.args.includes('--app-installer') && delivery.args.includes(COMMIT))
+  assert.deepEqual(progress.at(-1), { stage: 'fetch', message: 'Descargando la app nueva…', percent: 100 })
+})
+
+test('before closing: a refusal returns a result for the user and no arguments — nothing is spawned', async () => {
+  const dir = await makeRelease('rechazo')
+
+  serve(dir)
+  served[`/releases/download/v${N1}/${SIGNATURE_NAME}`] = Buffer.from(crypto.randomBytes(64).toString('base64'))
+
+  const { instance, progress } = updater('rechazo', { env: appImageEnv('rechazo') })
+  const delivery = await instance.prepareHandoff({ freshStatus: async () => ENGINE_CURRENT, relayScriptText: RELAY })
+
+  assert.deepEqual(delivery.args, [])
+  assert.equal(delivery.failure.ok, false)
+  assert.match(delivery.failure.message, /firma.*no es válida.*No se cambió nada\.$/)
+  assert.equal(progress.at(-1).stage, 'error')
+
+  const offline = await instance.prepareHandoff({
+    freshStatus: async () => ({ supported: true, error: 'fetch-failed', message: 'sin red' }),
+    relayScriptText: RELAY
+  })
+
+  assert.match(offline.failure.message, /canal de versiones.*sin red/)
+})
+
+test('an install the app cannot classify hands over nothing and never asks the network', async () => {
+  serve(await makeRelease('desconocido'))
+
+  for (const extra of [
+    { packageOwner: async () => null }, // a local build, a deb, a tarball
+    { platform: 'darwin' },
+    { platform: 'win32' },
+    { publicKeyPem: null }
+  ]) {
+    requests = []
+
+    const { instance } = updater('desconocido', extra)
+    const delivery = await instance.prepareHandoff({ freshStatus: async () => assert.fail('must not check'), relayScriptText: RELAY })
+
+    assert.deepEqual(delivery, { args: [] })
+    assert.deepEqual(requests, [])
+  }
+})
+
+test('the Arch package is recognised by who owns the running binary, asked once', async () => {
+  serve(await makeRelease('arch-cableado'))
+
+  // On this machine the helper is not installed: a package older than the updater.
+  const { instance, owners } = updater('arch-cableado')
+  const first = await instance.install()
+
+  await instance.install()
+  assert.equal(first.kind, 'pacman')
+  assert.deepEqual(owners, ['/opt/janitor-desktop/Janitor'])
 })
