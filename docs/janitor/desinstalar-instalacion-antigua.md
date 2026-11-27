@@ -11,12 +11,30 @@ retirar lo antiguo primero y empezar limpio.
 
 ## 1. Apaga lo que esté corriendo
 
+El bot de mensajería (Telegram) corre como unidad de systemd de usuario. Su nombre
+depende del home: con `~/.janitor` suele ser `hermes-gateway-<código>.service`, no
+`hermes-gateway.service` a secas (ese es el de un Hermes en `~/.hermes`). No adivines:
+lista las que tengas.
+
 ```bash
-systemctl --user disable --now hermes-gateway.service
+systemctl --user list-unit-files 'hermes-gateway*' 'janitor-*'
 ```
 
-Es el bot (Telegram). Si el comando dice que la unidad no existe, no la tenías.
-Cierra también cualquier `janitor` abierto en un terminal.
+Para cada `hermes-gateway…` que aparezca, comprueba que es la de Janitor:
+
+```bash
+systemctl --user cat <unidad> | grep HERMES_HOME
+```
+
+Si dice `.janitor`, apágala y desactívala:
+
+```bash
+systemctl --user disable --now <unidad>
+```
+
+Una `hermes-gateway…` cuyo `HERMES_HOME` no sea `.janitor` es de otro Hermes: no
+la toques. Si la lista sale vacía, no tenías bot. Cierra también cualquier
+`janitor` abierto en un terminal.
 
 ## 2. Aplicativos con Docker (solo si los usabas)
 
@@ -27,13 +45,18 @@ Docker, que **no** se borran con estos pasos.
 docker ps -a --filter name=janitor-
 ```
 
-Para cada servicio que aparezca, detén sus contenedores:
+Detén los que sean de Janitor. El filtro busca `janitor-` en cualquier parte del
+nombre: si la lista anterior muestra algún contenedor que no instaló Janitor,
+detén los de Janitor uno a uno (`docker stop <nombre>`) en lugar de usar este
+comando. Sirve con cualquier versión antigua (el `janitor services` de las más
+viejas puede no existir):
 
 ```bash
-janitor services stop honcho
+docker ps -q --filter name=janitor- | xargs -r docker stop
 ```
 
-Si tenías Honcho instalado como servicio del sistema:
+Si tenías Honcho como servicio de usuario de systemd, aparece en la lista del
+paso 1 como `janitor-honcho.service`; desactívalo igual:
 
 ```bash
 systemctl --user disable --now janitor-honcho.service
@@ -41,7 +64,10 @@ systemctl --user disable --now janitor-honcho.service
 
 Los archivos de despliegue viven en `~/.janitor/docker`. Al apartar el home (paso 3)
 los contenedores quedan sin ellos: después de instalar la app nueva se vuelven a
-desplegar con `janitor services deploy <nombre>`, y reencuentran sus volúmenes.
+desplegar con `janitor services deploy <nombre>`. **Sin verificar:** que el despliegue
+nuevo reencuentre los volúmenes antiguos depende de que coincidan sus nombres, y eso
+no se ha comprobado servicio por servicio. Los volúmenes no se borran en ningún caso
+(`docker volume ls --filter name=honcho`, por ejemplo, te dice si siguen ahí).
 
 ## 3. Aparta el home antiguo
 
@@ -73,8 +99,8 @@ Abre un terminal nuevo después de quitarla.
 
 ## 6. Instala la app nueva
 
-Descarga el AppImage desde los releases del repositorio, ábrelo y elige proveedor.
-Las claves se vuelven a introducir en la app.
+Instala la app siguiendo [`instalar-app.md`](instalar-app.md) (Linux, Arch, Windows
+o macOS), ábrela y elige proveedor. Las claves se vuelven a introducir en la app.
 
 ## Qué puedes rescatar de `~/.janitor.antiguo`
 
@@ -85,10 +111,11 @@ Las claves se vuelven a introducir en la app.
 | Memoria (`memories/MEMORY.md`, `memories/USER.md`) | Se puede copiar a `~/.janitor/memories/`; **sin verificar** entre versiones |
 | Sesiones antiguas (`state.db`) | No se trasladan. Quedan en el home apartado |
 
-Cuando estés seguro de que no necesitas nada más:
+Cuando estés seguro de que no necesitas nada más, mándalo a la papelera:
 
 ```bash
-rm -rf ~/.janitor.antiguo
+gio trash ~/.janitor.antiguo
 ```
 
-Esto último sí es definitivo.
+Si no tienes `gio`, `trash-put ~/.janitor.antiguo` hace lo mismo. Vaciar la papelera
+después, o usar `rm -rf ~/.janitor.antiguo` en su lugar, sí es definitivo.

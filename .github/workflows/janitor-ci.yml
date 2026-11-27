@@ -1,17 +1,29 @@
 name: Janitor CI
-# workflow_dispatch was added for install-e2e (F6-10); every other job keeps
-# running on push and pull_request exactly as before (a manual run also runs
-# them).
+# Pull requests run every gate once; a push runs them only on main (the PR
+# already ran them for the branch, and a push+pull_request pair doubled every
+# run). workflow_dispatch was added for install-e2e (F6-10) and also runs the
+# rest on the chosen branch.
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: janitor-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   python-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
         with:
@@ -33,15 +45,19 @@ jobs:
 
   react-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version: '22'
       - name: Install dependencies
-        working-directory: ./ui-tui
-        run: npm install
+        # From the root lockfile (ui-tui is an npm workspace): exact versions,
+        # nothing rewritten.
+        run: npm ci --workspace ui-tui --workspace ui-tui/packages/hermes-ink --no-audit --no-fund
       - name: Build local packages (hermes-ink)
         working-directory: ./ui-tui
         run: npm run build --prefix packages/hermes-ink
@@ -56,8 +72,11 @@ jobs:
 
   desktop-overlay:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
@@ -88,15 +107,18 @@ jobs:
   web-tests:
     name: web-tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version: '26'
           cache: npm
       - name: Install npm 12
-        run: npm install --global npm@12
+        run: npm install --global npm@12.2.2
       - name: Install dependencies
         run: npm ci
       - name: Check web workspace
@@ -111,9 +133,10 @@ jobs:
 
   installer-e2e:
     # Minimal-install smoke for the checked-out Janitor branch. Adapted from
-    # upstream tag v2026.8.13's install-e2e.yml — Janitor does not publish
-    # release tags, so the upstream "install from N prior releases" matrix is
-    # dropped. We instead point at the current branch, assert janitor --version
+    # upstream tag v2026.8.13's install-e2e.yml — the upstream "install from
+    # N prior releases" matrix is dropped (Janitor releases are installed by
+    # the desktop app, see janitor-desktop-release.yml). We instead point at
+    # the current branch, assert janitor --version
     # prints THE JANITOR banner (per AGENTS.md directive #12), seed a Janitor
     # home with `python -m janitor.seed` (what scripts/install.sh's config
     # stage runs for the desktop app) against an isolated HOME scratch dir,
@@ -128,10 +151,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # 8.2.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
         with:
           # Pinned for the same reason as upstream tests-os.yml: unpinned,
           # setup-uv resolves "latest" by fetching a manifest on every job
@@ -545,10 +570,12 @@ jobs:
           - windows-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # 8.2.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
         with:
           # Pinned for the same reason as upstream tests-os.yml.
           version: "0.9.28"

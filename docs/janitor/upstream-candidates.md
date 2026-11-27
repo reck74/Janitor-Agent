@@ -7,7 +7,7 @@ editado sobre el core de Hermes está declarado como *touchpoint* en
 costo recurrente: en cada `chore(sync)` hay que re-aplicarlo o verificarlo.
 
 Este documento lista los touchpoints marcados `upstream_candidate: true` y los
-monkey-patches que siguen en `janitor/cli.py`, con la propuesta concreta para
+monkey-patches que siguen en `janitor/cli.py` y en el plugin, con la propuesta concreta para
 upstream y qué borra Janitor cuando se acepte. El objetivo es llevar los
 touchpoints a casi cero; la última sección evalúa qué hacer entonces.
 
@@ -66,6 +66,22 @@ Son fixes independientes de Janitor; upstream los quiere por el rubric
 - **PR propuesto:** subir el timeout **solo de ese test** (tercer argumento de
   `it(...)`) en lugar del global; es lo que upstream aceptaría y le basta a
   Janitor.
+
+### 1.4 `update-single-flight` — un segundo `/update` anuncia un fallo falso
+
+- **Síntoma upstream:** el handler de `/update` en mensajería
+  (`gateway/slash_commands.py`) reescribe `.update_pending.json` y borra
+  `.update_exit_code` antes de lanzar el proceso. Un segundo `/update` (o uno
+  enviado mientras la app o un terminal tienen el bloqueo de actualización)
+  hace que el vigilante del primero anuncie un fallo con la actualización real
+  todavía en marcha.
+- **Edición Janitor:** `_update_already_running` responde «ya en marcha» antes
+  de tocar ningún marcador: el bloqueo compartido está tomado, o queda un
+  marcador pendiente o reclamado más joven que el tope de 30 minutos del
+  vigilante. Cada línea lleva `# JANITOR:`.
+- **PR propuesto:** `fix(gateway): single-flight /update`, con el test de
+  comportamiento del contrato (`test:update-single-flight`) movido a
+  `tests/gateway/`. Es un defecto de upstream, sin nada propio de Janitor.
 
 ## 2. Hooks de white-label
 
@@ -142,7 +158,7 @@ skin.
 
 ### 2.5 Flujo de `update` con remoto y hooks configurables
 
-- **Hoy:** el patch más grande. `janitor/update_core.py` (~1.4k líneas)
+- **Hoy:** el patch más grande. `janitor/update_core.py` (~2.1k líneas)
   reimplementa `_cmd_update_impl` de `hermes_cli/update_cmd*.py` para usar el
   remoto del fork, el fallback `reset --hard origin/<branch>` y la validación
   post-pull (directiva #13). Desde v2026.9.24 también respeta el lock de
@@ -157,15 +173,52 @@ skin.
      de sintaxis falla. Ya no hay nada que proponer aquí.
   2. `feat(update): post-update hook` — punto de extensión por plugin
      (`ctx.register_hook("post_update", ...)` o similar) para que una distro
-     ejecute sus migraciones tras el pull. Consumidor concreto:
-     `janitor.migrations`.
+     haga su trabajo tras el pull. **Falta un consumidor concreto:** las
+     migraciones de `~/.janitor` no sirven, porque la directiva #13 las saca
+     del flujo de update (las ejecuta el lanzador nuevo en su primer
+     arranque). Sin otro consumidor real, este paso es infraestructura
+     especulativa y no se propone.
   El remoto ya lo resuelve git (`origin` apunta al fork en una instalación
   Janitor); no hace falta configuración nueva.
+- **Además:** `update_core.py` sigue el canal `stable` (directiva #13), y el
+  plugin envuelve `gateway.slash_commands._spawn_detached_update`
+  (`janitor/plugin/gateway_update.py`) para que `/update` en mensajería lance
+  `python -m janitor.cli update --gateway` en lugar del update de upstream. Un
+  hook de argv del update en upstream permitiría borrar ese wrapper.
 - **Al aceptarse:** `janitor update` pasa a ser un wrapper de pocas líneas que
-  imprime el banner y llama a `cmd_update` upstream; `update_core.py` y el
-  patch de `cmd_update` se eliminan.
+  imprime el banner y llama a `cmd_update` upstream; `update_core.py`, el
+  patch de `cmd_update` y el wrapper de `_spawn_detached_update` se eliminan.
 
-### 2.6 `mcp-dashboard-endpoints`
+### 2.6 `update-channel` — rama del sondeo pasivo de actualizaciones
+
+- **Hoy:** el sondeo pasivo de un checkout local (`_check_via_local_git`,
+  `_compute_git_banner_state` en `hermes_cli/banner.py`) compara contra
+  `main` fijo. Janitor lo lleva a la constante de módulo `_UPDATE_BRANCH`
+  (por defecto `"main"`, así que upstream no cambia) y el lanzador y el plugin
+  la ponen en `stable` (`janitor/release_channel.py`): es otro monkey-patch,
+  sobre una constante.
+- **PR propuesto:** `feat(update): configurable update branch for the
+  banner probe`, leyendo la rama de `config.yaml` o de la rama que sigue el
+  checkout, sin variables `HERMES_*` nuevas.
+- **Al aceptarse:** se borran el touchpoint y `apply_to_engine()`.
+
+### 2.7 `backend-user-copy` y `runtime-copy` — textos al usuario por catálogo
+
+- **Hoy:** literales en inglés que el motor envía al usuario sin clave en el
+  `en.yaml` de upstream (errores de sesión y turno en
+  `tui_gateway/user_messages.py`; aviso de canal, notificaciones del
+  `/update`, descripciones de comandos, errores del emparejamiento QR de
+  Telegram y líneas de `--version` en los archivos de `runtime-copy`)
+  consultan primero el catálogo i18n (`agent.i18n.t_default(key, english)`)
+  y caen al inglés de siempre. Con los catálogos de upstream la salida es
+  idéntica byte a byte; Janitor aporta el español en `janitor/locales/es.yaml`.
+- **PR propuesto:** `feat(i18n): route remaining user-facing literals through
+  the catalog`, con las claves en `locales/en.yaml` de upstream. Beneficia a
+  cualquier traducción de Hermes, no solo a Janitor.
+- **Al aceptarse:** se borran ambos touchpoints y las claves pasan a
+  traducirse en el catálogo español de upstream.
+
+### 2.8 `mcp-dashboard-endpoints`
 
 - **Hoy:** `POST /api/mcp/servers/{name}/discover` y
   `GET /api/mcp/servers/{name}/logs` en `hermes_cli/web_routers/mcp.py` +
@@ -185,7 +238,7 @@ skin.
 | Touchpoint | Motivo |
 |------------|--------|
 | `version`, `packaging` | Identidad de la distro (`+janitor.N`, script `janitor`, entry point del plugin). Siempre serán propios; en una distro separada viven en su propio `pyproject.toml`. |
-| `installers` | Instalan desde el fork en `~/.janitor` y exigen Docker/Honcho (directiva #8). |
+| `install-sh`, `install-ps1`, `desktop-update-posix`, `desktop-update-windows`, `desktop-update-ui` | Instalan y actualizan desde el fork en `~/.janitor`, por la rama `stable`; identidad de la distro. |
 | `fork-docs`, `fork-ci` | Documentación y CI de la distro. |
 
 ## 4. Estado
@@ -199,8 +252,11 @@ skin.
 | 2.2 banner (refactor + product_name) | hook | — | paso 1 parcial upstream; quedan 2 literales y `product_name` |
 | 2.3 argparse `prog` | hook | — | por proponer |
 | 2.4 tips por idioma | feature | — | por proponer |
-| 2.5 update (fallback + post_update) | fix + hook | — | paso 1 hecho upstream; falta `post_update` |
-| 2.6 MCP discover/logs | feature | — | por proponer |
+| 1.4 update-single-flight | fix | — | por proponer |
+| 2.5 update (fallback + post_update) | fix + hook | — | paso 1 hecho upstream; `post_update` sin consumidor, no se propone |
+| 2.6 update-channel | hook | — | por proponer |
+| 2.7 backend-user-copy + runtime-copy | feature | — | por proponer |
+| 2.8 MCP discover/logs | feature | — | por proponer |
 
 Actualizar esta tabla con el link al PR y el resultado (aceptado / rechazado /
 plan B). Un rechazo no es un fracaso: el touchpoint queda declarado y el gate
@@ -255,14 +311,16 @@ El layout de `~/.janitor` no cambia: `skills.external_dirs` y
 `plugins.enabled` ya apuntan al paquete `janitor`, no a rutas del fork. El
 cambio para el usuario sería de método de instalación (`pip`/`uv tool` en vez
 de checkout git), y debe venir con su `scripts/migrate-*.sh` con backup
-(directiva #10) que convierta el checkout en `~/.janitor/janitor-core` en una
+(directiva #10) que convierta el checkout en `~/.janitor/hermes-agent` en una
 instalación de paquete sin tocar `config.yaml`, `SOUL.md`, `skills/`,
 `state.db` ni los volúmenes `janitor-*`.
 
 ### Conclusión actual
 
-Quedarse en el fork delgado. Con 10 touchpoints (5 candidatos a upstream) y
-tres monkey-patches, separar hoy significaría vendorizar esas ediciones en
+Quedarse en el fork delgado. Con 18 touchpoints (9 candidatos a upstream) y
+cinco monkey-patches (`argparse`, `cmd_update`, tips, `_UPDATE_BRANCH` y
+`_spawn_detached_update`; cifras de noviembre de 2026, `janitor/overlay.yaml`
+manda), separar hoy significaría vendorizar esas ediciones en
 otro sitio sin reducir trabajo. Revisar esta evaluación cada vez que se
 acepte un candidato; el disparador concreto es que la tabla de la sección 4
 quede completa y `overlay.yaml` solo contenga los touchpoints de la sección 3.

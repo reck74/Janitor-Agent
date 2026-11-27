@@ -273,7 +273,7 @@ Referencias reales (`git grep`, excluido `docs/janitor/plans/`) [leído]:
 | Inventario del overlay | `janitor/overlay.yaml:36` (`setup-honcho.sh` en `fork_paths`), `:157-161` (touchpoint `installers` con `bootstrap.sh` + `install.ps1`; `bootstrap.sh` no existe en `upstream.base`) |
 | Compatibilidad en código | `janitor/seed.py:11,125` (config copiado tal cual es reemplazable), `janitor/update_core.py:428` (`.venv`) |
 | Mensajes y comentarios | `scripts/migrate-janitor-update-flow.sh:24`, `janitor/skills/services/janitor-firecrawl/scripts/deploy.sh:9,29`, `janitor-ci.yml:110,322-327`, `tests/janitor/legacy_home.py:3`, `test_janitor_cli.py:75`, `test_janitor_firecrawl_skill.py:7`, `test_janitor_overlay_contract.py:234` |
-| Documentación histórica | `AGENTS.md:17,75`, `docs/janitor/RESTRUCTURE_v5.md`, `master_plan.md`, `project.md`, `next-upstream-sync.md:66` |
+| Documentación histórica | `AGENTS.md:17,75`, `docs/janitor/RESTRUCTURE_v5.md`, `master_plan.md`, `project.md`, `next-upstream-sync.md:66` (movidos a `docs/janitor/archivo/` el 2026-11-27) |
 
 La skill `janitor-honcho` no llama a `setup-honcho.sh`; la unidad `janitor-honcho.service`
 ya instalada no depende del script (§1.1).

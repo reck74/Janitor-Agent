@@ -4,6 +4,13 @@ name: 🔄 Upstream Sync (NousResearch/hermes-agent)
 # tags can break the Janitor gates with no release notes to explain them),
 # points janitor/overlay.yaml at it, runs scripts/janitor-sync-verify.sh and
 # opens a PR that carries the verify result.
+#
+# Two jobs on purpose. `merge` runs the freshly merged upstream code (uv sync,
+# the verify script) and so holds no write credential: read-only
+# GITHUB_TOKEN, nothing persisted in .git/config, no PAT. It hands the merged
+# branch over as a git bundle uploaded BEFORE any upstream code runs.
+# `publish` holds PAT_WORKFLOW (pushing a branch that changes workflows needs
+# it) and only runs git/gh on the fork's own main plus that bundle.
 
 on:
   schedule:
@@ -11,35 +18,53 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
-  issues: write
+  contents: read
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
 
 jobs:
-  sync:
+  merge:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      skip: ${{ steps.tag.outputs.skip }}
+      tag: ${{ steps.tag.outputs.tag }}
+      sha: ${{ steps.tag.outputs.sha }}
+      branch: ${{ steps.tag.outputs.branch }}
+      base: ${{ steps.tag.outputs.base }}
+      conflict: ${{ steps.merge.outputs.conflict }}
+      verify: ${{ steps.verify.outputs.status }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          token: ${{ secrets.PAT_WORKFLOW }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Find newest upstream release
         id: tag
         run: |
           set -euo pipefail
           git remote add upstream https://github.com/NousResearch/hermes-agent.git || true
-          git fetch --quiet upstream --tags
+          # Upstream tags go to their own namespace: the fork publishes its own
+          # v* release tags (v1.0.0, v0.21.5-janitor.N), which must neither
+          # compete as sync targets nor make the fetch fail on a same name.
+          git fetch --quiet --no-tags upstream '+refs/tags/*:refs/upstream-tags/*'
           git fetch --quiet origin main
-          TAG=$(git tag -l 'v20*' --sort=-v:refname | head -1)
-          SHA=$(git rev-parse "${TAG}^{commit}")
-          BRANCH="upstream-sync-${TAG}"
-          if git merge-base --is-ancestor "$SHA" origin/main; then
-            echo "✅ origin/main already contains ${TAG}."
+          # Newest stable vMAJOR.MINOR.PATCH upstream tag (numeric order, no
+          # date-era v20xx.*, no rc/canary); empty when origin/main already
+          # contains it; fails when upstream has no stable tag at all.
+          TAG=$(scripts/janitor-upstream-target.sh --tags-ref refs/upstream-tags --branch origin/main)
+          if [ -z "$TAG" ]; then
+            echo "✅ origin/main already contains the newest upstream release."
             echo "skip=true" >> "$GITHUB_OUTPUT"
-          elif git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
+            exit 0
+          fi
+          SHA=$(git rev-parse "refs/upstream-tags/${TAG}^{commit}")
+          BRANCH="upstream-sync-${TAG}"
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
             echo "ℹ️ ${BRANCH} already exists — its PR is pending review."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
@@ -48,41 +73,59 @@ jobs:
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
           echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
+          echo "base=$(git rev-parse origin/main)" >> "$GITHUB_OUTPUT"
 
       - name: Merge
+        id: merge
         if: steps.tag.outputs.skip == 'false'
         env:
-          GH_TOKEN: ${{ secrets.PAT_WORKFLOW }}
           TAG: ${{ steps.tag.outputs.tag }}
           SHA: ${{ steps.tag.outputs.sha }}
           BRANCH: ${{ steps.tag.outputs.branch }}
+          BASE: ${{ steps.tag.outputs.base }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$BRANCH" origin/main
+          git checkout -b "$BRANCH" "$BASE"
+          mkdir -p sync-out
 
-          if ! git merge "$TAG" --no-edit -m "chore(sync): merge upstream ${TAG}"; then
-            CONFLICT_FILES=$(git diff --name-only --diff-filter=U 2>/dev/null || echo "No se pudieron listar los archivos")
-            git merge --abort 2>/dev/null || true
-            ISSUE_BODY=$(printf "El bot intentó sincronizar con upstream \`%s\` pero encontró conflictos de merge.\n\n**Archivos en conflicto**:\n\`\`\`\n%s\n\`\`\`\n\nResuélvelos localmente (\`git merge %s\`) siguiendo MERGE_GUIDE.md y valida con \`scripts/janitor-sync-verify.sh --base %s\`." "$TAG" "$CONFLICT_FILES" "$TAG" "$SHA")
-            gh issue create \
-              --repo "${{ github.repository }}" \
-              --title "🚨 Sincronización Fallida: Conflictos Upstream ${TAG}" \
-              --body "$ISSUE_BODY" \
-              --assignee reck74 \
-              --label "upstream-sync"
-            exit 1
+          # Workflows the fork keeps; every other upstream workflow is pruned.
+          keep='^\.github/workflows/(tests\.yml|upstream-sync\.yml|janitor-ci\.yml|janitor-desktop-release\.yml)$'
+
+          if ! git merge "refs/upstream-tags/${TAG}" --no-edit -m "chore(sync): merge upstream ${TAG}"; then
+            # Conflicts the fork always resolves the same way (janitor/overlay.yaml
+            # touchpoint fork-ci / fork-github-meta, merge: ours): under .github/
+            # a pruned upstream workflow stays deleted and anything else keeps
+            # the fork's side (or stays deleted if the fork deleted it).
+            # Each file resolved here is listed in the PR body (autoresolved.txt)
+            # so the reviewer sees which upstream .github/ changes were dropped.
+            { git diff --name-only --diff-filter=U | grep '^\.github/' || true; } | while IFS= read -r f; do
+              if ! printf '%s\n' "$f" | grep -qE "$keep" && printf '%s\n' "$f" | grep -q '^\.github/workflows/'; then
+                git rm -q -f -- "$f"
+                echo "$f (workflow de upstream podado)" >> sync-out/autoresolved.txt
+              elif git cat-file -e ":2:$f" 2>/dev/null; then
+                git checkout --ours -- "$f" && git add -- "$f"
+                echo "$f (versión del fork)" >> sync-out/autoresolved.txt
+              else
+                git rm -q -f -- "$f"
+                echo "$f (borrado en el fork)" >> sync-out/autoresolved.txt
+              fi
+            done
+            if [ -n "$(git diff --name-only --diff-filter=U)" ]; then
+              git diff --name-only --diff-filter=U > sync-out/conflicts.txt
+              git merge --abort
+              echo "conflict=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            git commit -q --no-edit
           fi
+          echo "conflict=false" >> "$GITHUB_OUTPUT"
 
-          # Upstream's own workflows are pruned in a separate commit so the
-          # merge commit stays a pure merge.
-          find .github/workflows -type f \
-            ! -name 'tests.yml' \
-            ! -name 'upstream-sync.yml' \
-            ! -name 'janitor-ci.yml' \
-            ! -name 'janitor-desktop-release.yml' \
-            -exec git rm -q -f {} + || true
+          # Upstream workflows that merged cleanly (new ones, or ones the fork
+          # never had) are pruned in a separate commit so the merge commit
+          # stays a pure merge.
+          { git ls-files .github/workflows | grep -vE "$keep" || true; } | xargs -r git rm -q -f --
           git commit -q -m "chore(sync): prune upstream workflows" || true
 
           sed -i -E \
@@ -91,49 +134,141 @@ jobs:
             janitor/overlay.yaml
           git commit -q -am "chore(sync): track upstream ${TAG} in janitor/overlay.yaml"
 
-      - name: Install uv
+          # Hand-off for `publish`, taken before any merged code runs.
+          git bundle create sync-out/sync.bundle "$BRANCH" "^$BASE"
+
+      - name: Upload merged branch
         if: steps.tag.outputs.skip == 'false'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: upstream-sync-branch
+          path: sync-out/
+          retention-days: 7
+
+      - name: Install uv
+        if: steps.tag.outputs.skip == 'false' && steps.merge.outputs.conflict == 'false'
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            pyproject.toml
-            uv.lock
+          # No cache: this job runs code that is not yet reviewed, and a cache
+          # saved here (main's scope) would be restored by later runs on main.
+          enable-cache: false
 
       - name: Install dependencies
-        if: steps.tag.outputs.skip == 'false'
+        if: steps.tag.outputs.skip == 'false' && steps.merge.outputs.conflict == 'false'
         run: uv python install 3.11 && uv sync --locked --python 3.11 --extra all --extra dev
 
       - name: Verify (scripts/janitor-sync-verify.sh)
         id: verify
-        if: steps.tag.outputs.skip == 'false'
+        if: steps.tag.outputs.skip == 'false' && steps.merge.outputs.conflict == 'false'
         env:
           OPENROUTER_API_KEY: ""
           OPENAI_API_KEY: ""
           NOUS_API_KEY: ""
         run: |
           set -uo pipefail
-          # The TUI gate runs on the PR itself (Janitor CI / react-tests).
-          scripts/janitor-sync-verify.sh --skip-tui 2>&1 | tee verify.log
+          # The TUI and desktop-overlay gates run on the PR itself
+          # (Janitor CI / react-tests, desktop-overlay), which sets up Node.
+          scripts/janitor-sync-verify.sh --skip-tui --skip-desktop 2>&1 | tee verify.log
           echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
-      - name: Push and open PR
-        if: steps.tag.outputs.skip == 'false'
+      - name: Upload verify log
+        if: always() && steps.verify.outcome != 'skipped'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: upstream-sync-verify-log
+          path: verify.log
+          retention-days: 7
+
+  publish:
+    needs: merge
+    # Also after a failed `merge` job once the merge itself is decided (e.g. uv
+    # sync broke on the new release): the PR then carries the failed verify
+    # instead of the sync going silent. The bundle was uploaded before that.
+    if: >-
+      always() && needs.merge.outputs.skip == 'false' &&
+      (needs.merge.outputs.conflict == 'true' || needs.merge.outputs.conflict == 'false')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout fork main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: main
+          token: ${{ secrets.PAT_WORKFLOW }}
+          fetch-depth: 0
+
+      - name: Download merged branch
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: upstream-sync-branch
+          path: ${{ runner.temp }}/sync-out
+
+      - name: Download verify log
+        if: needs.merge.outputs.conflict == 'false'
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: upstream-sync-verify-log
+          path: ${{ runner.temp }}/verify
+
+      - name: Ensure the upstream-sync label
         env:
           GH_TOKEN: ${{ secrets.PAT_WORKFLOW }}
-          TAG: ${{ steps.tag.outputs.tag }}
-          BRANCH: ${{ steps.tag.outputs.branch }}
-          VERIFY_STATUS: ${{ steps.verify.outputs.status }}
+        run: |
+          gh label create upstream-sync --repo "${{ github.repository }}" \
+            --color D93F0B --description "Sincronización con upstream" --force \
+            || echo "::warning::No se pudo crear la etiqueta upstream-sync"
+
+      - name: Report conflicts
+        if: needs.merge.outputs.conflict == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PAT_WORKFLOW }}
+          TAG: ${{ needs.merge.outputs.tag }}
+          SHA: ${{ needs.merge.outputs.sha }}
+          OUT: ${{ runner.temp }}/sync-out
         run: |
           set -euo pipefail
-          git push -u origin "$BRANCH"
+          CONFLICT_FILES=$(cat "$OUT/conflicts.txt" 2>/dev/null || echo "No se pudieron listar los archivos")
+          ISSUE_BODY=$(printf "El bot intentó sincronizar con upstream \`%s\` pero encontró conflictos de merge (los de \`.github/\` ya se resuelven solos).\n\n**Archivos en conflicto**:\n\`\`\`\n%s\n\`\`\`\n\nResuélvelos localmente siguiendo MERGE_GUIDE.md:\n\`\`\`\ngit fetch --no-tags upstream \"refs/tags/%s:refs/upstream-tags/%s\"\ngit merge refs/upstream-tags/%s\n\`\`\`\ny valida con \`scripts/janitor-sync-verify.sh --base %s\`." "$TAG" "$CONFLICT_FILES" "$TAG" "$TAG" "$TAG" "$SHA")
+          gh issue create \
+            --repo "${{ github.repository }}" \
+            --title "🚨 Sincronización Fallida: Conflictos Upstream ${TAG}" \
+            --body "$ISSUE_BODY" \
+            --assignee reck74 \
+            --label "upstream-sync"
+          exit 1
+
+      - name: Push and open PR
+        if: needs.merge.outputs.conflict == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.PAT_WORKFLOW }}
+          TAG: ${{ needs.merge.outputs.tag }}
+          BRANCH: ${{ needs.merge.outputs.branch }}
+          BASE: ${{ needs.merge.outputs.base }}
+          VERIFY_STATUS: ${{ needs.merge.outputs.verify }}
+          OUT: ${{ runner.temp }}/sync-out
+          LOG: ${{ runner.temp }}/verify/verify.log
+        run: |
+          set -euo pipefail
+          git bundle verify "$OUT/sync.bundle"
+          git fetch --quiet "$OUT/sync.bundle" "refs/heads/${BRANCH}:refs/heads/${BRANCH}"
+          # The bundle must sit on top of a commit of the fork's main (the one
+          # `merge` started from), never replace it.
+          git merge-base --is-ancestor "$BASE" origin/main
+          git merge-base --is-ancestor "$BASE" "refs/heads/${BRANCH}"
+          git push -u origin "refs/heads/${BRANCH}:refs/heads/${BRANCH}"
           if [ "$VERIFY_STATUS" = "0" ]; then
-            RESULT="✅ \`scripts/janitor-sync-verify.sh\` passed."
+            RESULT="✅ \`scripts/janitor-sync-verify.sh\` passed (diagnóstico de la corrida del sync; lo que cuenta para fusionar son los checks de este PR)."
           else
-            RESULT="❌ \`scripts/janitor-sync-verify.sh\` failed (exit ${VERIFY_STATUS}). Fix on this branch before merging — see MERGE_GUIDE.md."
+            RESULT="❌ \`scripts/janitor-sync-verify.sh\` failed (exit ${VERIFY_STATUS:-?}). Fix on this branch before merging — see MERGE_GUIDE.md."
           fi
-          BODY=$(printf "Merge of upstream release \`%s\`.\n\n%s\n\n<details><summary>verify log (tail)</summary>\n\n\`\`\`\n%s\n\`\`\`\n</details>\n" \
-            "$TAG" "$RESULT" "$(grep -vE '^\[ *[0-9.]+%' verify.log | tail -60)")
+          TAIL=$( (grep -vE '^\[ *[0-9.]+%' "$LOG" 2>/dev/null || echo "verify.log no disponible") | tail -60)
+          AUTO=""
+          if [ -s "$OUT/autoresolved.txt" ]; then
+            AUTO=$(printf "Conflictos bajo \`.github/\` resueltos solos (se descartó el cambio de upstream; revisa si el fork lo quiere):\n\`\`\`\n%s\n\`\`\`\n" "$(cat "$OUT/autoresolved.txt")")
+          fi
+          BODY=$(printf "Merge of upstream release \`%s\`.\n\n%s\n\n%s\n<details><summary>verify log (tail)</summary>\n\n\`\`\`\n%s\n\`\`\`\n</details>\n" \
+            "$TAG" "$RESULT" "$AUTO" "$TAIL")
           gh pr create \
             --repo "${{ github.repository }}" \
             --base main \

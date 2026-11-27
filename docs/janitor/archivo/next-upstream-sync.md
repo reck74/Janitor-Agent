@@ -1,10 +1,12 @@
 # Próximo sync upstream: Hermes v2026.8.13 → v2026.9.24
 
+> **Histórico: no describe el estado actual.** Se conserva como registro. Lo que cita (instaladores por terminal, `janitor-core`, alias pre-1.0, Infisical, OpenCode, el sync v2026.8.13 → v2026.9.24) está retirado o ya hecho. Estado vigente: [`../plans/janitor-desktop-app.md`](../plans/janitor-desktop-app.md); instalar: [`../instalar-app.md`](../instalar-app.md).
+
 Traspaso para una sesión nueva. Janitor 1.0 (`0.20.1+janitor.2`) está en
 `main` sobre Hermes **v2026.8.13**; upstream publicó 11 releases desde
 entonces. Este documento junta lo que ya se sabe del salto para que el sync se
 haga sin redescubrirlo. El procedimiento general está en
-[`MERGE_GUIDE.md`](../../MERGE_GUIDE.md); aquí solo va lo específico de este
+[`MERGE_GUIDE.md`](../../../MERGE_GUIDE.md); aquí solo va lo específico de este
 salto. Al terminar el sync, borrar este archivo o reescribirlo para el
 siguiente.
 

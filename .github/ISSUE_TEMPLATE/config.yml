@@ -1,11 +1,11 @@
 blank_issues_enabled: true
 contact_links:
-  - name: 💬 Nous Research Discord
-    url: https://discord.gg/NousResearch
-    about: For quick questions, showcasing projects, sharing skills, and community chat.
-  - name: 📖 Documentation
-    url: https://github.com/NousResearch/hermes-agent/blob/main/README.md
-    about: Check the README and docs before opening an issue.
-  - name: 🤝 Contributing Guide
-    url: https://github.com/NousResearch/hermes-agent/blob/main/CONTRIBUTING.md
-    about: Read this before submitting a PR.
+  - name: 📖 Instalar la app
+    url: https://github.com/reck74/Janitor-Agent/blob/main/docs/janitor/instalar-app.md
+    about: Cómo instalar Janitor y elegir el proveedor de IA. Léelo antes de abrir una incidencia de instalación.
+  - name: 🧹 Desinstalar una instalación antigua por terminal
+    url: https://github.com/reck74/Janitor-Agent/blob/main/docs/janitor/desinstalar-instalacion-antigua.md
+    about: Las instalaciones antiguas por terminal no se migran; se desinstalan y se empieza desde la app.
+  - name: 🚀 Versiones publicadas
+    url: https://github.com/reck74/Janitor-Agent/releases
+    about: Descarga la última versión de la app antes de informar de un fallo.

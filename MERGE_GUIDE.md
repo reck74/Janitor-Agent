@@ -17,8 +17,8 @@ scripts/janitor-sync-verify.sh --help     # opciones (--base, --skip-tui, --skip
 
 | Zona | Contenido | Merge |
 |------|-----------|-------|
-| `janitor/` | Lanzador (`janitor/cli.py`), update (`update_core.py`), versión, tips, migraciones de `~/.janitor`, plugin, servicios, inventario `overlay.yaml` | fork-only |
-| `janitor/skills/{core,services,agents,integrations}/` | Skills Janitor, cargadas vía `skills.external_dirs` | fork-only |
+| `janitor/` | Lanzador (`janitor/cli.py`), update (`update_core.py`), canal `stable` (`release_channel.py`), versión, tips, migraciones de `~/.janitor`, plugin, plugin de la app, servicios, catálogo de skills, obreros, inventario `overlay.yaml` | fork-only |
+| `janitor/skills/{core,system,projects,research,services,integrations}/` | Skills Janitor, leídas en su sitio: `janitor.catalog` escribe en `skills.external_dirs` una ruta por skill elegida | fork-only |
 | `assets/janitor/` | Config, SOUL, skin `sentry-janitor`, assets de Telegram | fork-only |
 | `apps/desktop-janitor/` | Overlay de build del desktop (appId, nombre, iconos) | fork-only |
 | `tests/janitor/` | Toda la suite Janitor | fork-only |
@@ -39,14 +39,22 @@ declarada, así que un merge ya no puede dejar código zombie en silencio.
 
 `.github/workflows/upstream-sync.yml` (semanal o manual):
 
-1. Toma el tag de release upstream más reciente (`v20*`), nunca `upstream/main`.
-2. `git merge <tag>` en una rama `upstream-sync-<tag>`. Si hay conflictos, abre
-   un issue con la lista y se detiene.
+1. Trae las etiquetas de upstream a su propio espacio (`refs/upstream-tags/*`,
+   para que no choquen con las `v…` del fork) y elige la release estable más
+   reciente con `scripts/janitor-upstream-target.sh`: solo `vMAYOR.MENOR.PARCHE`
+   en orden numérico, sin las antiguas de fecha (`v2026.*`), `rc` ni `+canary`.
+   Nunca `upstream/main`. Si `main` ya la contiene, no hace nada.
+2. `git merge <tag>` en una rama `upstream-sync-<tag>`. Los conflictos bajo
+   `.github/` se resuelven solos con el lado del fork (un workflow de upstream
+   que el fork no conserva se borra); la lista sale en el cuerpo del PR. Si queda
+   algún conflicto fuera de `.github/`, abre un issue con la lista y se detiene.
 3. Poda los workflows de upstream (conserva `tests.yml`, `janitor-ci.yml`,
    `upstream-sync.yml`, `janitor-desktop-release.yml`).
 4. Actualiza `upstream.base` en `janitor/overlay.yaml` al commit del tag.
-5. Corre `scripts/janitor-sync-verify.sh --skip-tui` y abre el PR con el
-   resultado. El TUI gate corre en el CI del propio PR.
+5. Corre `scripts/janitor-sync-verify.sh --skip-tui --skip-desktop` y abre el PR
+   con el resultado. Los gates del TUI y del overlay desktop corren en el CI del
+   propio PR. El job que fusiona y verifica no tiene credenciales de escritura;
+   otro job, con `PAT_WORKFLOW`, solo empuja la rama y abre el PR o el issue.
 
 Al mergear el PR (mensaje `chore(sync):` o rama `upstream-sync-*`), los jobs
 `e2e` (la suite `tests/e2e/` de upstream) y `upstream-sync-verify` de
@@ -76,10 +84,10 @@ Lo mismo para los extras de `janitor-ci.yml` frente a `tests-os.yml`.
 
 ```bash
 git remote add upstream https://github.com/NousResearch/hermes-agent.git 2>/dev/null || true
-git fetch upstream --tags
-TAG=v2026.X.Y
+git fetch --no-tags upstream '+refs/tags/*:refs/upstream-tags/*'
+TAG=$(scripts/janitor-upstream-target.sh --tags-ref refs/upstream-tags --branch origin/main)   # p. ej. v0.23.4
 git checkout -b upstream-sync-$TAG origin/main
-git merge $TAG --no-edit          # 3-way; prohibido -X theirs / -X ours global
+git merge refs/upstream-tags/$TAG --no-edit   # 3-way; prohibido -X theirs / -X ours global
 ```
 
 Resolución por archivo:
@@ -95,7 +103,7 @@ Resolución por archivo:
 Después del merge:
 
 ```bash
-sed -i "s|^  base: .*|  base: $(git rev-parse $TAG^{commit})|" janitor/overlay.yaml
+sed -i "s|^  base: .*|  base: $(git rev-parse refs/upstream-tags/$TAG^{commit})|" janitor/overlay.yaml
 scripts/janitor-sync-verify.sh
 ```
 
@@ -107,7 +115,7 @@ scripts/janitor-sync-verify.sh
 |------|---------------|---------|
 | Marcadores de conflicto | quedan `<<<<<<<` / `>>>>>>>` en archivos que difieren de upstream | resolver |
 | `python -m janitor.overlay check` | un archivo difiere de upstream sin estar declarado | volver a upstream, o declararlo como touchpoint con su `why` |
-| `tests/janitor/` | contrato de touchpoints (versión `+janitor.N`, banner, packaging, cache refresh, endpoints MCP), firmas de monkey-patch (#14), definiciones duplicadas (#15), sello de layout de `~/.janitor`, plugin, servicios, skills, skin | actualizar el código Janitor, **nunca** debilitar el test |
+| `tests/janitor/` | contrato de touchpoints (versión `+janitor.N`, banner, packaging, canal de publicación `update-channel`, endpoints MCP, textos en español del backend y del motor, actualización en exclusiva desde mensajería, instaladores y actualizadores de la app), firmas de monkey-patch (#14), definiciones duplicadas (#15), sello de layout de `~/.janitor`, plugin, servicios, skills, skin | actualizar el código Janitor, **nunca** debilitar el test |
 | Overlay desktop | un asset destino ya no existe upstream, o el `productName` empaquetado deja de coincidir (rompería el `userData` de los usuarios) | ajustar `apps/desktop-janitor/` |
 | Parches de marca (`node apps/desktop-janitor/scripts/build.mjs --check`, directiva #17) | upstream movió o cambió el texto ancla de un parche en `apps/desktop/` (la salida nombra el parche con `FAIL <id>`), o un archivo parcheado deja de transpilar | rehacer el ancla de ese parche en `apps/desktop-janitor/brand/`; nunca editar `apps/desktop/`. Sin `node_modules` los `.tsx` no se transpilan (`skip transpile`); el job `desktop-overlay` de `janitor-ci.yml` sí los cubre |
 | `tests/janitor/` → touchpoint `desktop-update-posix` | upstream cambió `scripts/desktop-update/posix.sh` y la actualización desde la app vuelve a llamar a `hermes update` | re-aplicar el bloque `# JANITOR:` tras la elección de `UPDATE_INVOKE` (directiva #13) |

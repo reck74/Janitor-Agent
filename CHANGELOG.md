@@ -1,20 +1,108 @@
 # Janitor Fork Changelog
 
-Notable changes specific to the Janitor fork of hermes-agent. Upstream
-changes are documented in the upstream release notes.
+Cambios propios del fork Janitor de hermes-agent. Los de upstream están en sus
+notas de release. Una versión solo llega a los usuarios cuando se etiqueta
+(`v…`) y el workflow de release mueve la rama `stable` (directiva #13); una
+fusión a `main` no se entrega. Las entradas anteriores a la app de escritorio
+se conservan tal como se escribieron, en inglés, y describen código que ya se
+retiró.
 
-## Unreleased
+## `0.21.5+janitor.3` — etiqueta `v0.21.5-janitor.3` (2026-11-27)
 
-### Fixed
-- `janitor update` failed at "Restoring local changes" with `package-lock.json`
-  would be overwritten. The TUI step ran a plain `npm install` in `ui-tui/`,
-  which rewrote the root `package-lock.json` on every update, and the next
-  update stashed that change and could not restore it. The update now discards
-  npm lockfile and CRLF-only churn before stashing, like `hermes update`, and
-  the TUI step only repairs a stale `node_modules` with Hermes' deterministic
-  install, which never writes the lockfile.
+### Añadido
+- **Obreros** (`janitor obreros`, skill `janitor-obreros`): un perfil puede
+  encargar trabajo en segundo plano a Claude Code o Codex ya instalados y con
+  sesión del usuario, en carpetas que el usuario autoriza. Desactivado hasta
+  que se activa (`janitor obreros activar`). Plan:
+  `docs/janitor/plans/obreros-claude-codex.md`.
 
-## `0.21.5+janitor.1` (Hermes v2026.9.24)
+### Corregido
+- El Creador de proyectos ya no recibe las skills `claude-code`, `codex` ni
+  `opencode` de upstream (enseñaban a lanzar esos programas a mano, sin los
+  topes ni las carpetas de los obreros); la paleta y la pantalla de skills ya
+  no muestran skills retiradas.
+
+## `0.21.5+janitor.2` — etiqueta `v0.21.5-janitor.2` (2026-11-25)
+
+Primera versión publicada para Windows, macOS y Arch Linux.
+
+### Añadido
+- App para **Windows x64** (`Janitor-win-x64.exe`, NSIS, sin firmar) y
+  **macOS** (`Janitor-mac-arm64.dmg`, `Janitor-mac-x64.dmg`, firma ad hoc, sin
+  notarizar). El motor se instala en Windows con `scripts/install.ps1` en
+  `%USERPROFILE%\.janitor`, y el comando `janitor` en `%USERPROFILE%\.janitor\bin`.
+- Paquete de **Arch Linux** `janitor-desktop-bin` (y sus fuentes para
+  `makepkg`), reempaquetado desde el AppImage; se abre con `janitor-desktop`.
+- `SHA256SUMS` en cada versión y prueba de arranque de la app empaquetada en
+  CI para cada sistema. Guía: `docs/janitor/instalar-app.md`.
+- La app muestra la versión de Janitor, no la de upstream.
+
+### Cambiado
+- Modelo por defecto `MiniMax-M3`.
+- Los aplicativos con Docker no están disponibles en Windows: `janitor
+  services` lo dice en lugar de fallar.
+
+### Corregido
+- Un saludo ya no dispara herramientas: sin orden no hay trabajo.
+
+### Sin verificar
+- Nada se ha probado aún en un Windows o un Mac reales (SmartScreen,
+  Gatekeeper, chatear). La actualización real de `.1` a `.2` se hizo por
+  terminal (`janitor update`), no desde la app.
+
+## `0.21.5+janitor.1` — etiqueta `v0.21.5-janitor.1` (2026-11-25)
+
+Primera versión de Janitor como **app de escritorio** (AppImage de Linux) y
+**punto cero**: las instalaciones antiguas por terminal no se adoptan ni se
+migran. Incluye el sync a Hermes v2026.9.24 descrito en la entrada en inglés de
+abajo. La versión se publicó con `Janitor-linux-x86_64.AppImage`; su página de
+GitHub ya no existe (la etiqueta sí).
+
+### Añadido
+- La app de escritorio instala el motor por etapas con `scripts/install.sh` en
+  `~/.janitor/hermes-agent` y deja `janitor` en `~/.local/bin`. Primer arranque
+  con MiniMax recomendado, todo en español y con la marca Janitor aplicada al
+  compilar (`apps/desktop-janitor/`, directiva #17).
+- Canal de publicación por etiquetas: la rama `stable`
+  (`janitor/release_channel.py`); `janitor update`, `/update` de mensajería, el
+  aviso del banner y la app la siguen.
+- `janitor update` en español, con comprobación de dependencias, reinicio de
+  gateways y bloqueo compartido con los demás actualizadores; la app actualiza
+  por el mismo flujo y comprueba la compatibilidad app–motor.
+- Catálogo de skills por propósito (`janitor/catalog.yaml`); agente principal y
+  especialistas por plantilla (`janitor plantillas`, pantalla **Agentes**).
+- Skills del sistema (`janitor-system-health`, `janitor-maintenance`,
+  `janitor-cleanup`, `janitor-file-organizer`) y de proyectos
+  (`janitor-project-create`).
+- Instalación guiada por conversación de Honcho, n8n, NocoDB, LightRAG,
+  Firecrawl y Open Design; WAHA como auditoría de solo lectura del WhatsApp
+  personal; pantallas **Servicios** y **Skills** en la app.
+- Textos del motor en español por catálogo (`janitor/locales/es.yaml`).
+
+### Cambiado
+- La identidad cubre toda la tecnología, no solo código.
+- La base ya no instala el navegador: se descarga la primera vez que el agente
+  navega. La app oculta el Skills Hub y el catálogo de plugins de Hermes.
+
+### Retirado
+- Los instaladores y migradores por terminal (`scripts/bootstrap.sh`,
+  `scripts/janitor-install.sh`, `scripts/setup-honcho.sh`,
+  `scripts/migrate-janitor-*.sh`), los alias pre-1.0 (`janitor_cli.py`,
+  `janitor_update_*.py`, `janitor_ext/`; queda `janitor_version.py`), el
+  sistema paralelo de agentes (`janitor agents`, `janitor/opencode/`) y las
+  migraciones v1 y v2 (un home nuevo nace en el layout v2). `scripts/install.sh` se niega a instalar sobre
+  `~/.janitor/janitor-core`: ver `docs/janitor/desinstalar-instalacion-antigua.md`.
+
+### Corregido
+- `janitor update` fallaba en «Restoring local changes» porque
+  `package-lock.json` iba a sobrescribirse: el paso del TUI hacía un
+  `npm install` que reescribía el lockfile en cada actualización, y la
+  siguiente lo guardaba en el stash y no podía restaurarlo. Ahora descarta los
+  cambios del lockfile de npm y los de solo CRLF antes del stash, como
+  `hermes update`, y el paso del TUI solo repara un `node_modules` desfasado con
+  la instalación determinista de Hermes, que nunca escribe el lockfile.
+
+## Sync a Hermes v2026.9.24 (incluido en `0.21.5+janitor.1`)
 
 Upstream sync from Hermes v2026.8.13 to v2026.9.24. No `~/.janitor` layout
 change, so no new migration runs on first start.
@@ -111,8 +199,7 @@ are migrated automatically on the first `janitor` start, with a backup first.
   to `config.yaml`. The auth gap between workspace and dashboard (workspace
   sends `HERMES_API_TOKEN` as bearer; dashboard requires `_SESSION_TOKEN`) is
   tracked separately — these endpoints are reachable today via browser cookie
-  or `X-Hermes-Session-Token` header. See
-  `docs/superpowers/specs/2026-08-09-mcp-discover-logs-endpoints-design.md`.
+  or `X-Hermes-Session-Token` header.
 
 ### Removed
 - Merge residue in the core: duplicate definitions and files upstream had
