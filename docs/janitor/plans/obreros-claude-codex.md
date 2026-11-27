@@ -10,13 +10,18 @@
 Para quien retome la fase 7 en una sesión nueva. Esta sección manda sobre la tabla 6.1,
 que se escribió antes de la auditoría de 6.6 y conserva frases ya superadas.
 
-**Qué hay en `main`** (nada publicado: sin etiqueta nueva, `stable` sin tocar):
+**Qué hay en `main`, publicado como `v0.21.5-janitor.3`** por orden del dueño el
+2026-11-27 (corrida de publicación 46073205800 en verde en sus siete trabajos; `stable`
+en `76cd7cc47b`, igual que `main`; instaladores de Linux, Windows, macOS y paquete de
+Arch adjuntos). El dueño la va a probar en la app instalada en su equipo; **esa prueba
+no está hecha**:
 
 | PR | Contenido |
 |---|---|
 | #100, #101 | Supervisor de trabajos, comando `janitor obreros`, herramientas `obreros_enviar` / `obreros_ver`, aviso de fin, skill `janitor-obreros`, primer recorrido real |
 | #102 | Codex contenido a la carpeta del proyecto (sin comandos en consulta; perfil de permisos en revisión), detección de sesión, robustez del comando, reintento del arranque vacío, auditoría independiente |
 | #103 | Fuera del catálogo las skills de upstream `claude-code` y `codex` (decisión del dueño) |
+| #105 | Fuera también `opencode`; versión `0.21.5+janitor.3` |
 
 **Estado por tarea:**
 
@@ -43,10 +48,10 @@ que se escribió antes de la auditoría de 6.6 y conserva frases ya superadas.
 
 **Pendiente de decisión del dueño:**
 
-- `opencode` sigue en la plantilla Creador de proyectos. Es el mismo caso que las dos
-  retiradas (enseña a lanzar otro programa a mano). El dueño pidió la lista de skills
-  para decidir qué más quitar y no ha contestado.
-- Cuándo se publica: hace falta una etiqueta `v…`, que solo ordena el dueño.
+- `opencode` también se retiró del catálogo (decisión del dueño, 2026-11-27). El dueño
+  dijo que más adelante verá qué más quitar; tiene la lista de skills del catálogo.
+- La versión `.3` salió a todos los que siguen `stable` con el perfil de Codex sin
+  verificar en macOS y Windows: F7-12 pasa a ser lo primero.
 
 **Siguiente paso recomendado, en orden:** F7-12 (cerrar la duda del perfil de Codex en
 macOS y Windows, que es de seguridad), F7-09 con el resto de F7-10 (la pantalla resuelve
@@ -76,7 +81,9 @@ dice «Nous Research».
 
 **Estado del repositorio al cerrar:** el checkout principal está en
 `janitor-app/proyectos-1` con trabajo sin confirmar de la fase Proyectos (F8), que salió
-de `main` antes del PR #103 y tendrá que traerlo. Ramas `janitor-app/*` ya fusionadas,
+de `main` antes del PR #103 y tendrá que traerlo. Su entorno `.venv` tiene instalado el
+paquete como `.2`: tras traer `main`, la prueba `test_touchpoint_contract[version]`
+falla hasta reinstalar (`uv sync` o `pip install -e .`). Ramas `janitor-app/*` ya fusionadas,
 borradas. Los archivos `recomendaciones-codex-para-claude.md` y
 `transicion-equipo-del-dueno.md` de esta carpeta no están en el repositorio a propósito.
 
@@ -497,8 +504,8 @@ F7-05 y F7-08 **auditadas con reparos**. Los reparos y qué se hizo:
 - El perfil Creador de proyectos llevaba las skills de upstream `claude-code` y
   `codex`, que enseñan a lanzar los programas a mano y se saltan activación, topes y
   carpetas. **Retiradas del catálogo por decisión del dueño (2026-11-27)**: un perfil
-  ya creado las pierde la próxima vez que se aplica el catálogo. Queda `opencode`, que
-  la decisión no cubría. La terminal del agente sigue pudiendo lanzar esos programas
+  ya creado las pierde la próxima vez que se aplica el catálogo. `opencode` se retiró
+  el mismo día, por una segunda decisión. La terminal del agente sigue pudiendo lanzar esos programas
   si el modelo lo decide por su cuenta: quitar la receta no es un bloqueo.
 - Sin corregir, menores: con Codex no existe el estado `bloqueado`; reanudar sin
   conversación dice que no habrá aviso y sí llega a la original; cancelar justo cuando

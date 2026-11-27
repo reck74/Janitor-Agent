@@ -138,7 +138,6 @@ export const SKILL_DESCRIPTIONS = {
   spike: 'Experimentos desechables para validar una idea antes de construirla.',
   'systematic-debugging': 'Encuentra la causa real de un fallo antes de tocar el código.',
   'test-driven-development': 'Primero la prueba que falla, luego el código, luego la limpieza.',
-  opencode: 'Delega programación y revisiones en la CLI de OpenCode.',
   'google-workspace': 'Gmail, Calendar, Drive, Docs y Sheets.',
   'email-inbox-triage': 'Prioriza la bandeja de entrada y prepara borradores sin enviar nada solo.',
   notion: 'Páginas y bases de datos de Notion.',
