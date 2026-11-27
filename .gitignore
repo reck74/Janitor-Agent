@@ -312,8 +312,11 @@ native/fts5_cjk/*.so
 .sisyphus/
 .omo/
 
-# Per-user local tool settings (tracked .claude agent configs stay).
+# Per-user local tool settings, and the worktrees and bridge state that agent
+# sessions create inside the checkout (a `git add -A` once committed them).
 .claude/settings.local.json
+.claude/worktrees/
+.bridge/
 
 # Windows Zone.Identifier download sidecars.
 *:Zone.Identifier

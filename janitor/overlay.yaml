@@ -41,8 +41,6 @@ fork_paths:
   - .github/workflows/janitor-ci.yml
   - .github/workflows/janitor-desktop-release.yml
   - .github/workflows/upstream-sync.yml
-  - .claude/**
-  - .opencode/**
 
 touchpoints:
   - id: version
@@ -299,8 +297,11 @@ touchpoints:
     merge: reapply
 
   - id: fork-docs
-    files: [AGENTS.md, README.md, CHANGELOG.md, MERGE_GUIDE.md, .env.example, .gitignore]
-    why: Fork directives, docs and ignore rules.
+    files: [AGENTS.md, README.md, README.es.md, CHANGELOG.md, MERGE_GUIDE.md, .gitignore]
+    why: >-
+      Fork directives, docs and ignore rules. README.es.md only points to
+      README.md, which is already in Spanish: upstream's Spanish README tells
+      the reader to install Hermes into ~/.hermes.
     verify: ci:janitor-ci
     merge: ours
 
@@ -310,5 +311,19 @@ touchpoints:
       Two-tier CI (directive #11): the PR gate runs the Janitor suite, the
       full upstream suite runs on sync. Upstream workflows are adjusted for
       the fork's runners and secrets.
+    verify: ci:janitor-ci
+    merge: ours
+
+  - id: fork-github-meta
+    files:
+      - .github/ISSUE_TEMPLATE/*.yml
+      - .github/PULL_REQUEST_TEMPLATE.md
+      - .github/dependabot.yml
+    why: >-
+      Issue and PR templates in Spanish that point to this fork, its install
+      guides and the Janitor checks (directives #17/#18), not to upstream's
+      Discord, README or `hermes` commands. Dependabot drops labels the repo
+      does not have. upstream-sync.yml resolves a sync conflict here with the
+      fork's side.
     verify: ci:janitor-ci
     merge: ours
