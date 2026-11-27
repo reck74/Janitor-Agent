@@ -306,7 +306,6 @@ export const SKILLS = {
   spike: { label: 'Prototipos de prueba', description: 'Experimentos desechables para validar una idea antes de construirla.' },
   'systematic-debugging': { label: 'Depuración sistemática', description: 'Encuentra la causa real de un fallo antes de tocar el código.' },
   'test-driven-development': { label: 'Desarrollo guiado por pruebas', description: 'Primero la prueba que falla, luego el código, luego la limpieza.' },
-  opencode: { label: 'OpenCode', description: 'Delega programación y revisiones en la CLI de OpenCode.' },
   'google-workspace': { label: 'Google Workspace', description: 'Gmail, Calendar, Drive, Docs y Sheets.' },
   'email-inbox-triage': { label: 'Ordenar el correo', description: 'Prioriza la bandeja de entrada y prepara borradores sin enviar nada solo.' },
   notion: { label: 'Notion', description: 'Páginas y bases de datos de Notion.' },

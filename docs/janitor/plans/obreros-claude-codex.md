@@ -43,9 +43,8 @@ que se escribió antes de la auditoría de 6.6 y conserva frases ya superadas.
 
 **Pendiente de decisión del dueño:**
 
-- `opencode` sigue en la plantilla Creador de proyectos. Es el mismo caso que las dos
-  retiradas (enseña a lanzar otro programa a mano). El dueño pidió la lista de skills
-  para decidir qué más quitar y no ha contestado.
+- `opencode` también se retiró del catálogo (decisión del dueño, 2026-11-27). El dueño
+  dijo que más adelante verá qué más quitar; tiene la lista de skills del catálogo.
 - Cuándo se publica: hace falta una etiqueta `v…`, que solo ordena el dueño.
 
 **Siguiente paso recomendado, en orden:** F7-12 (cerrar la duda del perfil de Codex en
@@ -497,8 +496,8 @@ F7-05 y F7-08 **auditadas con reparos**. Los reparos y qué se hizo:
 - El perfil Creador de proyectos llevaba las skills de upstream `claude-code` y
   `codex`, que enseñan a lanzar los programas a mano y se saltan activación, topes y
   carpetas. **Retiradas del catálogo por decisión del dueño (2026-11-27)**: un perfil
-  ya creado las pierde la próxima vez que se aplica el catálogo. Queda `opencode`, que
-  la decisión no cubría. La terminal del agente sigue pudiendo lanzar esos programas
+  ya creado las pierde la próxima vez que se aplica el catálogo. `opencode` se retiró
+  el mismo día, por una segunda decisión. La terminal del agente sigue pudiendo lanzar esos programas
   si el modelo lo decide por su cuenta: quitar la receta no es un bloqueo.
 - Sin corregir, menores: con Codex no existe el estado `bloqueado`; reanudar sin
   conversación dice que no habrá aviso y sí llega a la original; cancelar justo cuando
