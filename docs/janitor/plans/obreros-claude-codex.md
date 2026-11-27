@@ -5,6 +5,81 @@
 > la sección 6 dice qué está hecho.
 > El plan general sigue siendo [`janitor-desktop-app.md`](janitor-desktop-app.md).
 
+## 0. Estado y relevo (cierre de sesión, 2026-11-27)
+
+Para quien retome la fase 7 en una sesión nueva. Esta sección manda sobre la tabla 6.1,
+que se escribió antes de la auditoría de 6.6 y conserva frases ya superadas.
+
+**Qué hay en `main`** (nada publicado: sin etiqueta nueva, `stable` sin tocar):
+
+| PR | Contenido |
+|---|---|
+| #100, #101 | Supervisor de trabajos, comando `janitor obreros`, herramientas `obreros_enviar` / `obreros_ver`, aviso de fin, skill `janitor-obreros`, primer recorrido real |
+| #102 | Codex contenido a la carpeta del proyecto (sin comandos en consulta; perfil de permisos en revisión), detección de sesión, robustez del comando, reintento del arranque vacío, auditoría independiente |
+| #103 | Fuera del catálogo las skills de upstream `claude-code` y `codex` (decisión del dueño) |
+
+**Estado por tarea:**
+
+| Id | Estado |
+|---|---|
+| F7-00 | hecho |
+| F7-01, F7-02, F7-03, F7-13, F7-05, F7-08 | hecho y auditado por un revisor distinto, con reparos; los reparos corregidos o anotados en 6.6. Solo Linux |
+| F7-06, F7-07 | hecho y auditado sin reparos |
+| F7-10 | a medias: falta la semilla y el aviso de activación en la app |
+| F7-11 | recorrido de solo lectura hecho en el terminal (6.5) y aprobación con usuario respondiendo (6.6); falta en la app y con construcción. **Sin auditar** |
+| F7-04 (construcción en copias de trabajo) | sin empezar |
+| F7-09 (pantalla en la app) | sin empezar |
+| F7-12 (Windows y macOS con los programas reales) | sin empezar |
+
+**Sin verificar, dicho sin rodeos:**
+
+- El perfil de permisos de Codex (`janitor/obreros/codex.py`) solo se probó en Linux. En
+  macOS y Windows no se sabe si contiene la lectura; si el perfil no sirve, el trabajo
+  falla en vez de quedar abierto, pero eso tampoco se probó allí.
+- Nada de obreros se ejecutó en Windows ni macOS con los programas reales: el CI de esos
+  sistemas corre las pruebas con programas falsos.
+- Nada se probó dentro de la app de escritorio.
+- Las skills de upstream del catálogo no se leyeron una por una.
+
+**Pendiente de decisión del dueño:**
+
+- `opencode` sigue en la plantilla Creador de proyectos. Es el mismo caso que las dos
+  retiradas (enseña a lanzar otro programa a mano). El dueño pidió la lista de skills
+  para decidir qué más quitar y no ha contestado.
+- Cuándo se publica: hace falta una etiqueta `v…`, que solo ordena el dueño.
+
+**Siguiente paso recomendado, en orden:** F7-12 (cerrar la duda del perfil de Codex en
+macOS y Windows, que es de seguridad), F7-09 con el resto de F7-10 (la pantalla resuelve
+además el límite de «activación reciente» de 6.4), repetir F7-11 en la app, y F7-04.
+
+**Límites conocidos que siguen abiertos** (detalle en 6.3, 6.4 y 6.6): el tope de tokens
+cuenta solo trabajos terminados; las herramientas pueden no aparecer si la sesión se abre
+justo después de activar; el aviso se pierde si el turno falla; el tope de rondas de
+revisión es solo una instrucción de la skill; no hay tope en dinero; quitar las skills no
+impide que el modelo lance `claude` o `codex` por la terminal. Fuera de esta fase: en el
+terminal clásico la pregunta al usuario se titula «Hermes needs your input» y el banner
+dice «Nous Research».
+
+**Cómo repetir las pruebas reales en este equipo:**
+
+- Instalación de prueba (no es la del dueño): `/var/tmp/janitor-a4/home`, con proveedor
+  ya configurado y el perfil `obra` (Creador de proyectos). No se lee su `.env`.
+- Guion: `/var/tmp/janitor-f7-11/j.sh <argumentos de janitor>` corre `janitor.cli` del
+  checkout contra ese home usando la sesión real de Claude Code y Codex del dueño.
+  Ejemplo: `j.sh -p obra chat -Q -q "…"`; para un usuario que responde, `--cli` en tmux.
+  Las salidas del recorrido de 6.5 siguen en esa carpeta.
+- `janitor obreros estado` ejecuta los programas reales (`--version` y estado de sesión).
+- Pruebas: `scripts/run_tests.sh tests/janitor/` (886 pasan el 2026-11-27) y
+  `node --test apps/desktop-janitor/scripts/build.test.mjs`. Esta última falla si se
+  quita una skill de upstream del catálogo sin quitar su fila en
+  `apps/desktop-janitor/brand/palette.mjs` y en el `plugin.js` del plugin de escritorio.
+
+**Estado del repositorio al cerrar:** el checkout principal está en
+`janitor-app/proyectos-1` con trabajo sin confirmar de la fase Proyectos (F8), que salió
+de `main` antes del PR #103 y tendrá que traerlo. Ramas `janitor-app/*` ya fusionadas,
+borradas. Los archivos `recomendaciones-codex-para-claude.md` y
+`transicion-equipo-del-dueno.md` de esta carpeta no están en el repositorio a propósito.
+
 ## 1. Objetivo
 
 Que Janitor pueda mandar sobre los dos programas de código que el usuario ya tiene
