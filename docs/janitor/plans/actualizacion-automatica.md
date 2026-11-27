@@ -3,7 +3,12 @@
 > **Estado: APROBADA por el dueño el 2026-11-27** («Sí, apruébalo»), con las seis
 > propuestas de la sección 7 tal como están. La pidió ese mismo día, tras actualizar la
 > instalación de su equipo a `v0.21.5-janitor.3`: el motor se actualizó, la app (paquete
-> de Arch) quedó en la `.2` y el aviso le pidió reinstalar a mano. **Nada implementado.**
+> de Arch) quedó en la `.2` y el aviso le pidió reinstalar a mano.
+> **Primera entrega (Linux: AppImage y paquete de Arch) implementada el 2026-11-27**, sin
+> auditar todavía por un revisor distinto y **sin probar en un equipo real**: tablero en
+> la sección 6, detalle en la 9. Windows y macOS, sin empezar. Para el usuario nada
+> cambia hasta que el dueño cree la clave de firma
+> ([`../actualizacion-firma.md`](../actualizacion-firma.md)) y se publique una versión.
 > El plan general sigue siendo [`janitor-desktop-app.md`](janitor-desktop-app.md).
 > **Sustituye una decisión registrada**: ese plan decía (2026-11-22) «el AppImage nuevo
 > llega por descarga guiada desde los releases del fork; no hay actualización
@@ -183,21 +188,21 @@ app se cierra para actualizar el motor.
 | Id | Tarea | Dónde | Verificación |
 |---|---|---|---|
 | F9-00 | **Hecho (2026-11-27).** Registrar el cambio de decisión en el plan general y en `actualizacion-diseno.md` | `docs/janitor/plans/` | lectura |
-| F9-01 | Manifiesto y firma en la publicación; `.zip` de macOS; Windows solo por usuario | flujo de publicación, `electron-builder.janitor.json`, guion nuevo en `apps/desktop-janitor/scripts/` | prueba del guion; corrida manual del flujo sin etiqueta |
-| F9-02 | Verificación en la app: firma Ed25519, suma, tamaño, no bajar de versión, origen fijo | módulo nuevo en `apps/desktop-janitor/brand/` | pruebas con manifiestos alterados, firma falsa, versión menor |
-| F9-03 | Tipo de instalación, función única | mismo sitio | pruebas por tipo, con la plataforma como dato |
-| F9-04 | Comprobación de la versión de la app al abrir, aviso único motor+app | parche de compilación sobre `main.ts` y `updates.ts` | prueba del parche; caso «motor al día, app vieja» |
-| F9-05 | Descarga previa y entrega al guion | parche de compilación | pruebas con servidor local |
-| F9-06 | Guion POSIX: AppImage, Arch con `pkexec`, macOS; reabrir siempre; resultados | `scripts/desktop-update/posix.sh` (ya declarado en el inventario) | `tests/janitor/` con el arnés que ya existe; contenedor de Arch en CI |
-| F9-07 | Guion de Windows: instalador silencioso, reabrir, resultados | `scripts/desktop-update/windows.ps1` | pruebas en el ejecutor de Windows |
-| F9-08 | Textos en español y retirada del aviso «AppImage/deb/rpm» | `apps/desktop-janitor/brand/`, guiones | la prueba de marca e idioma |
-| F9-09 | Prueba de punta a punta por sistema en CI: instalar la versión N, actualizar a una N+1 de prueba, comprobar que arranca la nueva | flujo de publicación | corrida en verde en los cuatro tipos |
-| F9-10 | Prueba real: equipo del dueño (Arch) y, si hay equipos, Windows y Mac | — | evidencia anotada; lo no probado se anota como no probado |
-| F9-11 | Revisión por un revisor distinto y consulta a Codex del código de seguridad (F9-02, F9-06, F9-07) | — | directiva #20 |
+| F9-01 | **Hecho en parte (2026-11-27), sin auditar.** Manifiesto y firma: `apps/desktop-janitor/scripts/update-manifest.mjs` (`build`, `sign` con la clave leída de una variable de entorno, `verify`) y los pasos «Signed update manifest», «Sign the manifest» y «Verify the signed manifest against the files» del flujo. Clave privada: secreto `JANITOR_UPDATE_SIGNING_KEY` del entorno `janitor-release`; pública: `apps/desktop-janitor/brand/update-key.pem` (las pone el dueño; sin la pública no se firma ni se actualiza sola). **Pendiente (segunda entrega):** `.zip` de macOS y Windows solo por usuario. | flujo de publicación, guion nuevo en `apps/desktop-janitor/scripts/` | `node --test apps/desktop-janitor/scripts/app-update.test.mjs` → 32 pruebas, 0 fallos. **No verificado:** el flujo con una etiqueta real y el secreto real (no hay clave todavía) |
+| F9-02 | **Hecho (2026-11-27), sin auditar.** `apps/desktop-janitor/brand/app-update.mjs`: firma Ed25519 sobre los bytes exactos, esquema, suma, tamaño, origen fijo (`https://github.com/reck74/Janitor-Agent`, sin variable ni ajuste que lo cambie), número de entrega derivado de la versión (creciente; la misma entrega se repite), manifiesto atado al commit del canal | módulo nuevo en `apps/desktop-janitor/brand/` | misma corrida: manifiesto alterado, otra clave, firma truncada, clave RSA, contenido firmado pero inválido, versión más vieja, repetición de entrega, nombres con `../` |
+| F9-03 | **Hecho (2026-11-27), sin auditar.** `detectInstallKind` en el mismo módulo: AppImage, paquete de pacman, desconocido; plataforma y hechos del disco como datos. Windows y macOS dan «desconocido» en esta entrega | mismo sitio | misma corrida: tres pruebas «install kind» |
+| F9-04 | **Hecho (2026-11-27), sin auditar ni ver en pantalla.** Parche P22 (`brand/app-update-patches.mjs`): `checkUpdates` añade `janitorApp` y marca actualización también con «motor al día, app vieja»; la caché se ata a la versión de la app; aviso único «Hay una versión nueva de Janitor» con «Actualizar ahora» / «Más tarde»; «Actualizar siempre sin preguntar» en Ajustes → Acerca de (apagado por defecto, un arranque desatendido por sesión) | parche de compilación sobre `main.ts`, `updates.ts`, `about-settings.tsx`, `global.d.ts` | `node apps/desktop-janitor/scripts/build.mjs --check` → `280/280 patches resolve`; `node --test apps/desktop-janitor/scripts/app-update-patches.test.mjs` → 10 pruebas, 0 fallos. **No verificado:** la app compilada en pantalla (lo cubre la compilación de CI y F9-10) |
+| F9-05 | **Hecho (2026-11-27), sin auditar.** `prepareUpdate` / `createDesktopUpdater`: baja y verifica manifiesto e instalador en `~/.janitor/desktop-update/<entrega>/` antes de cerrar; un rechazo vuelve antes de lanzar el relevo («No se cambió nada»); tipo desconocido, compilación sin clave o motor anterior al relevo nuevo → relevo de siempre, sin tocar la red | parche de compilación | pruebas con servidor local en `app-update.test.mjs`: N→N+1, repetición, solo motor, instalador sustituido, descarga corta o larga, `stable` que cambia durante la descarga, versión incompleta, repetición de una antigua |
+| F9-06 | **Hecho para Linux (2026-11-27), sin auditar.** `scripts/desktop-update/janitor-app.sh` (propio del fork) enganchado en `posix.sh`: app primero, motor después con `--commit`; AppImage por copia verificada y renombrado; Arch por `pkexec` del auxiliar del paquete; reabre siempre; paso anotado en `~/.janitor/desktop-update/paso.json`. macOS, sin tocar | `scripts/desktop-update/posix.sh` (ya declarado en el inventario) y `janitor-app.sh` (declarado en `fork_paths`) | `scripts/run_tests.sh tests/janitor/test_janitor_desktop_update_app.py` → 20 pruebas, 0 fallos (N→N+1, archivo sustituido tras verificarlo, carpeta sin permiso, corte a mitad y reintento, contraseña cancelada, sin agente de polkit, rechazos del auxiliar). `pkexec` es un sustituto en esas pruebas |
+| F9-07 | **Sin empezar (segunda entrega).** Guion de Windows: instalador silencioso, reabrir, resultados | `scripts/desktop-update/windows.ps1` | pruebas en el ejecutor de Windows |
+| F9-08 | **Hecho para Linux (2026-11-27), sin auditar.** Textos nuevos en español; el aviso «AppImage/deb/rpm» ya no existe: para una instalación desconocida dice que esa copia no se actualiza sola y da el enlace a las versiones | `apps/desktop-janitor/brand/`, guiones | prueba «the relay no longer tells anyone to reinstall «AppImage/deb/rpm» by hand»; `test_janitor_overlay_contract.py::test_touchpoint_contract[desktop-update-posix]` |
+| F9-09 | **Hecho en parte para Linux (2026-11-27).** Arch: paso «Updater end to end (N → N+1, throwaway keys)» del trabajo `arch-package` (instala el paquete N real, compila N+1, ejecuta el auxiliar real como root con claves de ensayo). AppImage: pruebas del relevo con ejecutables sustitutos y de la descarga con servidor local. **No cubierto en CI:** la app Electron real cerrándose y reabriendo la N+1, el diálogo de polkit y el camino `systemd-run` del auxiliar (el contenedor no tiene systemd) | flujo de publicación | ensayo local del paso de Arch en un contenedor `archlinux:base-devel` con un AppImage de mentira: `== Arch updater e2e: all checks passed (0.21.5.janitor.4-1 → 0.21.5.janitor.5-1)`. Corrida de CI: ver el PR |
+| F9-10 | **Sin hacer.** Prueba real: equipo del dueño (Arch) y, si hay equipos, Windows y Mac. Necesita la clave del dueño y una versión publicada | — | evidencia anotada; lo no probado se anota como no probado |
+| F9-11 | **Primera mitad hecha (2026-11-27):** revisión del DISEÑO del auxiliar por un subagente distinto y consulta a Codex, antes de escribirlo (sección 9.2). **Pendiente:** la revisión del código final por un revisor distinto | — | directiva #20 |
 
-| F9-12 | `janitor update` con destino por commit, validado antes de activar | `janitor/update_core.py` | `tests/janitor/` |
-| F9-13 | Auxiliar con permisos para Arch (acción de polkit, verificación como root) | `apps/desktop-janitor/packaging/arch/` | contenedor de Arch en CI; sesión gráfica real para el diálogo |
-| F9-14 | Flujo de publicación: archivos primero, `stable` al final | flujo de publicación | corrida manual sin etiqueta |
+| F9-12 | **Hecho (2026-11-27), sin auditar.** `janitor update --commit <sha>`: 40 hexadecimales; el commit debe estar contenido en `origin/<rama>` (se comprueba antes del stash, del cambio de rama y de activar código); nunca vuelve a un commit que HEAD ya superó; `merge --ff-only` y el mismo `reset --hard` de respaldo | `janitor/update_core.py` | `scripts/run_tests.sh tests/janitor/test_janitor_update_commit_pin.py` → 12 pruebas, 0 fallos, con git real |
+| F9-13 | **Hecho (2026-11-27), sin auditar el código.** `janitor-update-helper` (root), acción `ai.janitor.desktop.update` (`auth_admin`, sin «keep»), clave pública y carpeta privada `/var/cache/janitor-desktop`, todo dentro del paquete. Diseño y revisiones en la sección 9 | `apps/desktop-janitor/packaging/arch/` | ensayo en contenedor de Arch (F9-09): 11 rechazos sin cambiar nada, N→N+1, repetición y paquete más viejo. **No verificado:** el diálogo de polkit en una sesión gráfica real, ni que polkit considere activa la sesión cuando el relevo corre bajo `user@.service` (Hyprland) |
+| F9-14 | **Hecho (2026-11-27), sin ejecutar.** Orden nuevo del trabajo `release`: comprobar que el canal podrá avanzar (sin empujar nada) → descargar y comprobar archivos → manifiesto, firma y verificación → publicar (los archivos se suben con la versión en borrador) → verificar lo publicado → mover `stable` al final | flujo de publicación | lectura del YAML. **No verificado:** el trabajo `release` solo corre con una etiqueta `v…`, que solo ordena el dueño |
 
 Orden (ajustado tras la revisión de Codex): F9-00; **ensayos tempranos en equipos
 reales** de lo que puede tumbar el diseño (reemplazo del `.app` en macOS con firma ad
@@ -273,3 +278,91 @@ Límites que Codex declaró: revisión estática, sin equipos macOS ni Windows, 
 gráfica de Arch, sin ejecutar CI. Siguen sin verificar la conservación de permisos en
 macOS, el Control inteligente de aplicaciones y la transición de instalaciones «para
 todos» en Windows.
+
+## 9. Primera entrega: Linux (2026-11-27)
+
+Hecha por Claude en la rama `janitor-app/actualizacion-automatica-linux`. Alcance:
+AppImage y paquete de Arch. Fuera: Windows, macOS y cualquier cambio de comportamiento
+para instalaciones «desconocidas» (solo cambió el texto de su aviso).
+
+### 9.1 Cómo quedó
+
+- **Manifiesto** `janitor-update.json` + `janitor-update.json.sig` por versión. El número
+  de entrega se calcula de la versión (`0.21.5-janitor.4` → `21005004`): crece con cada
+  versión y no necesita historial de git ni contador aparte. Regla que lo sostiene: nunca
+  dos compilaciones con la misma versión (la etiqueta ya la impone `check_tag`).
+- **La app** localiza la versión del canal leyendo `pyproject.toml` en el commit de
+  `stable`, baja manifiesto y firma de esa versión y exige que nombren ese commit. Nada
+  se cree hasta que la firma vale.
+- **Relevo**: el guion que corre es el del motor instalado (el anterior a la
+  actualización). Por eso la app comprueba que ese guion sabe instalar la app antes de
+  pasarle nada; si no, hace el relevo de siempre. Consecuencia: la primera actualización
+  del motor tras la última instalación manual todavía muestra el aviso antiguo una vez.
+- **Sin clave no hay cambio**: sin `brand/update-key.pem` la app se compila con clave
+  `null`, el paquete de Arch lleva la clave vacía y el auxiliar se niega, y el flujo de
+  publicación avisa y publica sin manifiesto.
+
+### 9.2 Auxiliar de Arch: diseño revisado antes de escribirlo (directiva #20)
+
+Dos revisiones de solo lectura del diseño, las dos antes del código: un subagente Opus
+distinto (con comprobaciones locales: `openssl pkeyutl` con Ed25519, `vercmp`, qué
+conserva `pkexec`) y Codex por el puente (modelo solicitado `gpt-6.2-astra`). Ambas: el
+diseño cierra el hallazgo 1 de la sección 8 y no hay camino a root ni a instalar algo
+sin firma. Lo que encontraron y se adoptó:
+
+| Hallazgo | Quién | Qué se hizo |
+|---|---|---|
+| El auxiliar hereda de quien lo llama el cgroup, los límites, las señales ignoradas y el terminal: un programa del usuario puede congelar o matar `pacman` a mitad | subagente | `pacman` corre como unidad transitoria del sistema (`systemd-run --wait --pipe --collect`); sin systemd, sesión nueva, entorno vacío, señales y límites restablecidos |
+| El lector sin privilegios conserva descriptores heredados y se puede trazar | ambos | subproceso que cierra todo descriptor ≥ 3, entrada y errores a `/dev/null`, `setpriv --no-new-privs --inh-caps=-all --bounding-set=-all`, plazo con `KILL` también sobre el receptor de root |
+| Se copiaba hasta 1 GiB antes de saber si el manifiesto valía; dos auxiliares a la vez podían bajar de versión | ambos | manifiesto y firma primero; el tope del paquete es el tamaño firmado; un solo auxiliar a la vez (`flock`); limpieza de restos y comprobación de espacio bajo el bloqueo |
+| Buscar una línea del manifiesto aceptaría esa línea en cualquier sitio | Codex | tras verificar la firma se exige UNA sola entrada con el nombre del paquete y de ella salen tamaño y suma |
+| Versión | ambos | se rechaza si el paquete no está instalado; se compara la versión completa (`pkgver-pkgrel`) |
+| `pacman` reemplaza el guion mientras corre | subagente | todo el cuerpo dentro de `main` |
+
+No adoptado: guardar en `/var/lib` el mayor número de entrega aceptado por root (lo cubre
+la regla «una compilación por versión»). No cubierto: otro gestor de paquetes bajando la
+versión a la vez que el auxiliar (no es el atacante del modelo).
+
+Pasos del auxiliar, en orden: argumentos y `PKEXEC_UID`; bloqueo; copia del manifiesto y
+la firma leídos con la identidad del usuario; firma Ed25519 con la clave que instaló el
+paquete; entrada única del paquete en el manifiesto; copia del paquete con el tamaño
+firmado como tope; tamaño y SHA-256 de la copia; solo entonces `.PKGINFO` (nombre,
+versión, arquitectura); nunca más viejo que el instalado; `pacman -U --noconfirm
+--noprogressbar -- <copia>`.
+
+Corridas del 2026-11-27 en el equipo de desarrollo (worktree, con el entorno de Python
+del checkout principal): `scripts/run_tests.sh tests/janitor/` → 51 archivos, 916
+pruebas pasan, 2 fallan en `test_janitor_overlay_contract.py` (una, la del relevo, se
+corrigió después y pasa a solas; la otra es la de la versión instalada, ver 9.3);
+`node --test apps/desktop-janitor/scripts/*.test.mjs` → 404 pruebas, 0 fallos;
+`node apps/desktop-janitor/scripts/build.mjs --check` → `280/280 patches resolve`;
+`python -m janitor.overlay check` → `every divergence is fork-owned or a declared
+touchpoint`; `python -m janitor.catalog check` → `40/40 catalog entries resolve`.
+
+### 9.3 Lo que NO está verificado
+
+- **El diálogo de polkit en una sesión gráfica real** (CI no tiene sesión ni agente), y
+  que polkit considere «activa» la sesión cuando el relevo corre desacoplado bajo
+  `user@.service` en Hyprland. Si no la considera activa, `pkexec` devuelve 127 y el
+  usuario ve el aviso con el comando manual: no se rompe nada, pero no sería automático.
+- El camino `systemd-run` del auxiliar (el contenedor de CI no tiene systemd; ahí corre el
+  camino alternativo).
+- La app Electron real: ver el aviso, descargar, cerrarse y reabrir la versión nueva.
+  Las pruebas cubren la lógica y el relevo por separado, con sustitutos entre medias.
+- El trabajo `release` con una etiqueta y con el secreto de firma reales.
+- En el equipo de desarrollo, `test_touchpoint_contract[version]` falla porque el entorno
+  de Python prestado del checkout principal tiene instalada la `.2`; no depende de este
+  cambio (comprobar en CI).
+- El código no lo ha leído un revisor distinto (segunda mitad de F9-11).
+
+### 9.4 Lo que tiene que hacer el dueño a mano
+
+1. Crear el par de claves, guardar la privada como secreto `JANITOR_UPDATE_SIGNING_KEY`
+   del entorno `janitor-release` y subir la pública a
+   `apps/desktop-janitor/brand/update-key.pem`: pasos exactos en
+   [`../actualizacion-firma.md`](../actualizacion-firma.md).
+2. Ordenar la etiqueta de la primera versión con actualizador.
+3. Instalar esa versión a mano por última vez en su equipo (`sudo pacman -U`) y
+   actualizar el motor una vez (verá el aviso antiguo una última vez).
+4. Con la versión siguiente, hacer la prueba real (F9-10): aviso al abrir, contraseña del
+   sistema, reapertura sola; y probar a cancelar la contraseña.

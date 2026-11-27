@@ -30,6 +30,8 @@ import './install-boot.test.mjs'
 import './arch-package.test.mjs'
 import './platforms.test.mjs'
 import './smoke-packaged.test.mjs'
+import './app-update.test.mjs'
+import './app-update-patches.test.mjs'
 import './release-channel.test.mjs'
 import './app-version.test.mjs'
 
