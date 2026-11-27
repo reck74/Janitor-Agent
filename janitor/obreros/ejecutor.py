@@ -13,6 +13,7 @@ import dataclasses
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from janitor.obreros import claude, codex
@@ -34,6 +35,10 @@ from janitor.obreros.registro import (
 )
 
 ADAPTADORES = {"claude": claude, "codex": codex}
+
+
+_INTENTOS = 2
+_PAUSA_REINTENTO = 3.0
 
 
 def _trabajo_valido(carpeta: Path) -> dict | None:
@@ -101,15 +106,23 @@ def ejecutar(carpeta: Path) -> int:
     actualizar_estado(carpeta, estado="en_curso", inicio=ahora(), proceso_ejecutor=identidad_propia())
 
     adaptador = ADAPTADORES[datos["programa"]]
-    codigo, caducado = _lanzar(datos, carpeta, adaptador)
-    if codigo is None:
-        resultado = Resultado(
-            "error", "", None, (), None, None, None,
-            f"No se pudo ejecutar «{datos['programa']}»",
-        )
-    else:
+    for intento in range(_INTENTOS):
+        codigo, caducado = _lanzar(datos, carpeta, adaptador)
+        if codigo is None:
+            resultado = Resultado(
+                "error", "", None, (), None, None, None,
+                f"No se pudo ejecutar «{datos['programa']}»",
+            )
+            break
         stdout = (carpeta / SALIDA).read_text(encoding="utf-8", errors="replace")
         resultado = adaptador.analizar_salida(stdout, codigo)
+        # El programa a veces sale sin escribir nada mientras termina de arrancar (visto con
+        # Claude cargando los ajustes de la organización): no gastó nada y se repite una vez.
+        arranque_fallido = resultado.estado == "salida_invalida" and not stdout.strip()
+        if not arranque_fallido or caducado or (carpeta / MARCA_CANCELAR).exists():
+            break
+        if intento + 1 < _INTENTOS:
+            time.sleep(_PAUSA_REINTENTO)
 
     minutos = datos["tope_segundos"] / 60
     if (carpeta / MARCA_CANCELAR).exists():

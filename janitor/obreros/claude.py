@@ -21,7 +21,7 @@ from .encargo import (
     entorno_comun,
 )
 
-__all__ = ["MODOS", "Resultado", "construir_argv", "entorno", "analizar_salida"]
+__all__ = ["MODOS", "Resultado", "construir_argv", "entorno", "analizar_salida", "preparar"]
 
 _HERRAMIENTAS = {
     "consulta": (),
@@ -68,6 +68,11 @@ def construir_argv(
     if sesion is not None:
         argv += ["--resume", comprobar_sesion(sesion)]
     return argv
+
+
+def preparar(ejecutable: str) -> dict:
+    """Claude no necesita nada más que su línea de comando."""
+    return {}
 
 
 def entorno(base: Mapping[str, str]) -> dict[str, str]:

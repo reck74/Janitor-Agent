@@ -282,7 +282,7 @@ pruebas en `tests/janitor/` y un revisor distinto (directiva #20).
 | F7-03, F7-13, F7-05 | hecho (2026-11-26); **revisado por Codex en lectura estática, sin auditar por un revisor que repita las pruebas**; sin probar en Windows ni macOS | Supervisor (`trabajos.py`, `ejecutor.py`, `procesos.py`, `registro.py`), ajustes y comando `janitor obreros` (`orden.py`). `scripts/run_tests.sh -j 4 tests/janitor/` → 830 pasan, 24 saltadas. **Prueba real** en un home temporal (`/var/tmp/janitor-obreros-smoke2/`): rechazo sin activar; consulta con cada programa; reanudación con Claude; revisión de una carpeta con los dos (ambos encontraron el defecto sembrado y no tocaron el archivo); rechazo de `~/.ssh`; cancelación, sin procesos colgados |
 | F7-10 | a medias: aviso de activación y ajustes `janitor.obreros` en `config.yaml` hechos dentro del comando; falta la semilla y el aviso en la app | Misma evidencia |
 | F7-06, F7-07, F7-08 | hecho (2026-11-26); **revisado por Codex en lectura estática, sin auditar por un revisor que repita las pruebas**; sin probar con un modelo conduciendo las herramientas | Herramientas `obreros_enviar` y `obreros_ver` con `check_fn` y aviso de fin por `pre_llm_call` (`janitor/plugin/obreros.py`); skill `janitor-obreros` en el catálogo (sin `requires_tools`, ver 6.4); Creador de proyectos la usa por defecto. Carpetas autorizadas por el usuario (`janitor obreros autorizar`). `scripts/run_tests.sh -j 4 tests/janitor/` → 880 pasan, 24 saltadas. **Prueba real** por el cargador de plugins en un home temporal: herramientas ocultas sin activar y visibles al activar; envío a los dos programas con una conversación como origen; el aviso llegó una vez y solo a esa conversación; revisión rechazada sin autorizar la carpeta y aceptada tras autorizarla |
-| F7-11 | primer recorrido en solo lectura hecho (2026-11-27), ver 6.5; falta repetirlo en la app con un usuario respondiendo, y con el modo construcción | 6.5 |
+| F7-11 | primer recorrido en solo lectura hecho (2026-11-27), ver 6.5; aprobación con un usuario respondiendo probada en el terminal (6.6); falta en la app y con el modo construcción | 6.5, 6.6 |
 | F7-04, F7-09, F7-12 | sin empezar | — |
 
 Observado en la prueba real: Codex no informa qué modelo contestó, y una consulta mínima
@@ -316,7 +316,9 @@ Ocho hallazgos, contrastados con el código. **Corregidos, con prueba salvo el p
 - Un enlace simbólico cambiado entre la comprobación de la carpeta y el lanzamiento.
 
 Además: en modo consulta, el aislamiento de solo lectura de Codex no le impide leer el
-resto del disco; la carpeta vacía no es una garantía de ese lado.
+resto del disco; la carpeta vacía no es una garantía de ese lado. **Esto estaba mal
+clasificado como límite: era un agujero en los dos modos y se corrigió el 2026-11-27
+(ver 6.6).**
 
 ### 6.4 Revisión de Codex de la herramienta, el aviso y la skill (2026-11-26)
 
@@ -387,6 +389,63 @@ Observado:
 - El agente amplió el alcance por su cuenta (deuda del proyecto, 67 pruebas para dos
   funciones). Es conducta del modelo director, no del motor.
 - Texto del modelo con algunos caracteres en chino mezclados (MiniMax-M2.7).
+
+### 6.6 Auditoría independiente y pruebas del 2026-11-27
+
+**Auditoría (directiva #20).** Un revisor distinto (subagente Opus, solo lectura)
+repitió `scripts/run_tests.sh -j 4 tests/janitor/` (880 pasan, 24 saltadas), el overlay
+check y el catálogo, y comprobó que ocho pruebas clave fallan si se rompe la regla que
+protegen. Veredicto: F7-06 y F7-07 **auditadas sin reparos**; F7-01, F7-02, F7-03/13,
+F7-05 y F7-08 **auditadas con reparos**. Los reparos y qué se hizo:
+
+- **Codex podía leer todo el disco** en los dos modos: su aislamiento `read-only` solo
+  impide escribir. Confirmado con un archivo señuelo fuera de la carpeta (con el
+  preámbulo de Janitor Codex se negó; con una instrucción directa lo leyó). **Corregido**:
+  en consulta se le quita la herramienta de comandos; en revisión corre con un perfil de
+  permisos que solo deja leer la carpeta del proyecto, lo mínimo del sistema y la
+  instalación del propio Codex, sin escritura ni red. Repetida la prueba del señuelo en
+  consulta, revisión y reanudación: bloqueado en las tres; `~/.ssh` y el home de Janitor
+  no existen para el obrero. **Solo verificado en Linux** (el perfil usa bubblewrap; en
+  macOS y Windows queda para F7-12, y si el perfil no sirve allí el trabajo falla, no
+  queda abierto). Claude ya estaba contenido (`--restricted`): negó la lectura.
+- La orden `janitor obreros` daba traza con un encargo enorme o muy anidado y con cifras
+  no ASCII en el tope: **corregido**, con pruebas.
+- La detección de Codex miraba solo la primera línea: **corregido**; una salida que no
+  dice nada queda «desconocido».
+- **El plan afirmaba cosas que el código no hace** (se corrige aquí): las opciones no se
+  comprueban contra `--help` al arrancar (fue una comprobación manual por versión); el
+  tope de rondas de revisión solo es una instrucción de la skill; no hay tope en dinero,
+  solo en tokens al día.
+- «Sin recursión» depende de una variable de entorno más el aislamiento: con Codex sin
+  comandos (consulta) o sin red ni escritura (revisión), y Claude solo con lectura, un
+  obrero no puede lanzar nada. Sin prueba automática de eso.
+- El perfil Creador de proyectos sigue llevando las skills de upstream `claude-code` y
+  `codex`, que enseñan a lanzar los programas a mano y se saltan activación, topes y
+  carpetas. **Pendiente de decisión del dueño.**
+- Sin corregir, menores: con Codex no existe el estado `bloqueado`; reanudar sin
+  conversación dice que no habrá aviso y sí llega a la original; cancelar justo cuando
+  el trabajo termina se queda sin aviso; el obrero recibe `DBUS_SESSION_BUS_ADDRESS`.
+
+**Programas sin sesión** (carpetas de configuración vacías, sin tocar las reales): los
+dos se detectan como «instalado, pero sin sesión», el envío se rechaza con el comando
+para iniciarla y las herramientas del agente no aparecen.
+
+**Aprobación del plan, con un usuario respondiendo.** Sesión interactiva del perfil
+`obra` en el home de prueba, conducida por tmux sobre un clon limpio del proyecto de
+ejemplo. El agente lanzó un plan a cada obrero, presentó el plan único y se detuvo en
+la pregunta de aprobación con cero archivos cambiados; ante «No, quiero cambiar algo
+antes» no aplicó nada y preguntó qué cambiar. Cero archivos cambiados al final.
+
+**Visto de paso**:
+
+- Una consulta de Claude falló una vez con salida vacía mientras «cargaba los ajustes
+  de la organización». El ejecutor repite ahora una vez un arranque que sale sin
+  escribir nada (con prueba).
+- En el terminal clásico (`--cli`), la pregunta al usuario se titula «Hermes needs your
+  input» y el banner dice «Nous Research»: marca e inglés a la vista (directiva #17).
+  No es de esta fase; queda anotado.
+- El agente, tras el recorrido, creó por su cuenta una skill propia
+  (`extend-existing-project`) en el perfil: es la autoaprendizaje de upstream.
 
 ### 6.2 Resultado del ensayo F7-00
 

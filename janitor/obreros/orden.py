@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 from janitor.obreros import trabajos
-from janitor.obreros.encargo import MODOS
+from janitor.obreros.encargo import LIMITE_ENCARGO_BYTES, MODOS
 from janitor.obreros.trabajos import Rechazo
 
 PROGRAMAS = ("claude", "codex")
@@ -93,13 +93,21 @@ class _Contexto:
 
 
 def _leer_encargo(origen: str, entrada) -> dict:
+    # Un carácter más que el límite basta para saber que sobra, sin leer un archivo sin fin.
+    tope = LIMITE_ENCARGO_BYTES + 1
     try:
-        texto = entrada.read() if origen == "-" else Path(origen).read_text(encoding="utf-8")
-    except OSError as exc:
-        raise Rechazo(f"No se pudo leer el encargo «{origen}»: {exc.strerror or exc}") from exc
+        if origen == "-":
+            texto = entrada.read(tope)
+        else:
+            with open(origen, encoding="utf-8") as archivo:
+                texto = archivo.read(tope)
+    except (OSError, UnicodeDecodeError) as exc:
+        raise Rechazo(f"No se pudo leer el encargo «{origen}»: {getattr(exc, 'strerror', None) or 'no es texto UTF-8'}") from exc
+    if len(texto) >= tope:
+        raise Rechazo("El encargo supera el límite de 64 KiB")
     try:
         return json.loads(texto)
-    except ValueError as exc:
+    except (ValueError, RecursionError) as exc:
         raise Rechazo("El encargo no es JSON válido") from exc
 
 
@@ -190,7 +198,7 @@ def _activar(ctx: _Contexto) -> int:
             return 1
         if tope is None and ajustes.leer(home).tope_tokens_dia is None:
             texto = ctx.preguntar("Tope de tokens (entrada + salida) en 24 horas: ").strip()
-            if not texto.isdigit():
+            if not (texto.isascii() and texto.isdigit()):
                 raise Rechazo("El tope de tokens debe ser un número entero")
             tope = int(texto)
     conf = trabajos.activar(tope, home)
