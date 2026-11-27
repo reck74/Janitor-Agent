@@ -176,16 +176,6 @@ skills:
     path: software-development/test-driven-development
     purpose: proyectos
     templates: [creador-proyectos]
-  - id: claude-code
-    source: upstream-bundled
-    path: autonomous-ai-agents/claude-code
-    purpose: proyectos
-    templates: [creador-proyectos]
-  - id: codex
-    source: upstream-bundled
-    path: autonomous-ai-agents/codex
-    purpose: proyectos
-    templates: [creador-proyectos]
   - id: opencode
     source: upstream-bundled
     path: autonomous-ai-agents/opencode
