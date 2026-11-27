@@ -147,6 +147,15 @@ skills:
     platforms: [linux]
     templates: [creador-proyectos]
 
+  # Sin requires_tools: el core difiere las herramientas de plugin tras tool_search y
+  # la condición no se cumpliría nunca. La skill dice qué hacer si no hay obreros.
+  - id: janitor-obreros
+    source: janitor
+    path: projects/janitor-obreros
+    purpose: proyectos
+    platforms: [linux, macos, windows]
+    templates: [creador-proyectos]
+
   - id: github
     source: upstream-bundled
     path: software-development/github

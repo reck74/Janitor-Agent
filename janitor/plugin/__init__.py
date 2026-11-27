@@ -91,3 +91,16 @@ def register(ctx: Any) -> None:
         description="Lista las plantillas de agente especialista y crea un perfil "
         "nuevo desde una de ellas, sin memoria compartida.",
     )
+    from janitor.obreros import orden as obreros_orden
+
+    ctx.register_cli_command(
+        "obreros",
+        "Encarga trabajo a los programas de código que ya tienes instalados",
+        obreros_orden.setup_parser,
+        handler_fn=obreros_orden.handle,
+        description="Activa la función, envía encargos en segundo plano, síguelos, "
+        "reanúdalos o cancélalos. Desactivada hasta que la actives.",
+    )
+    from janitor.plugin import obreros as obreros_plugin
+
+    obreros_plugin.registrar(ctx)
