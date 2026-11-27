@@ -247,4 +247,4 @@ Decisiones que necesitan al dueño (producto):
 |---|---|---|
 | Canal de actualización del motor | `main` (cada merge llega a todos los usuarios al pulsar «Actualizar») | Si los usuarios deben recibir solo releases etiquetados. Cambiarlo implica que motor, app y `update_core` sigan etiquetas en vez de una rama |
 | Reapertura tras actualizar | El AppImage viejo se reabre solo y, si hace falta, pide la app nueva (3.3) | Si se prefiere que la app quede cerrada con el aviso, como hoy |
-| Enlace de descarga | Página `releases/latest` del fork (descarga guiada) | Si el botón debe descargar el archivo directamente |
+| Enlace de descarga | Página `releases/latest` del fork (descarga guiada). **Sustituido el 2026-11-27** por la actualización automática: [`actualizacion-automatica.md`](actualizacion-automatica.md) | Si el botón debe descargar el archivo directamente |
