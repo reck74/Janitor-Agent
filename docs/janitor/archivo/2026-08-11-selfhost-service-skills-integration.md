@@ -1,5 +1,7 @@
 # Plan: Integrate Self-Hosted Service Skills into Janitor Core
 
+> **Histórico: no describe el estado actual.** Se conserva como registro. Lo que cita (instaladores por terminal, `janitor-core`, alias pre-1.0, Infisical, OpenCode, el sync v2026.8.13 → v2026.9.24) está retirado o ya hecho. Estado vigente: [`../plans/janitor-desktop-app.md`](../plans/janitor-desktop-app.md); instalar: [`../instalar-app.md`](../instalar-app.md).
+
 **Branch:** `feat/janitor-selfhost-service-skills`
 **Date:** 2026-08-11
 **Status:** In Progress

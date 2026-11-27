@@ -1,5 +1,7 @@
 # Janitor Restructuring v5 — Minimal Installer + Optional Skills
 
+> **Histórico: no describe el estado actual.** Se conserva como registro. Lo que cita (instaladores por terminal, `janitor-core`, alias pre-1.0, Infisical, OpenCode, el sync v2026.8.13 → v2026.9.24) está retirado o ya hecho. Estado vigente: [`../plans/janitor-desktop-app.md`](../plans/janitor-desktop-app.md); instalar: [`../instalar-app.md`](../instalar-app.md).
+
 ## Summary
 
 The Janitor installer has been restructured from a monolithic full-stack deployment

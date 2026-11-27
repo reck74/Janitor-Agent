@@ -122,7 +122,8 @@ perfil principal, o el trabajo va al perfil Investigador.
 - **Docs:** `docs/janitor/specialized-agents/`; menciones en `README.md`,
   `AGENTS.md` (directiva 3 y sección de arquitectura) y `janitor-onboarding/SKILL.md`.
 - **A decidir por el dueño:** `.claude/agents/janitor-dev-boss-autonomous.md`
-  importa `OpenCodeOrchestrator`.
+  importa `OpenCodeOrchestrator`. *(Retirado el 2026-11-27 en la auditoría de
+  pulido, junto con `.opencode/`.)*
 - Grupos de skills tras el retiro (directiva 3): `core`, `system` (nuevo),
   `projects` (nuevo), `research` (reemplaza `agents`), `services`, `integrations`.
 - La migración v1 arma su lista desde el árbol vivo; al borrar skills deja de ver

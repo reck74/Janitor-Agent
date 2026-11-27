@@ -4,12 +4,9 @@ Janitor se instala como una app de escritorio. La app, al abrirla por primera
 vez, instala el motor en tu carpeta personal (`~/.janitor`) y te deja elegir el
 proveedor de IA. No hace falta Docker ni ninguna clave para la instalación base.
 
-> **Pendiente de confirmar en la primera versión publicada.** A fecha de esta guía
-> la última versión publicada solo trae el AppImage de Linux. Los nombres de los
-> demás archivos (Windows, macOS, Arch, fuentes de Arch, `SHA256SUMS`) salen del flujo
-> de publicación (`.github/workflows/janitor-desktop-release.yml`) y todavía no se
-> han visto en una versión publicada. Si no coinciden, manda lo que veas en la
-> página de versiones.
+> **Windows y macOS:** se compilan y se prueban en CI (la app arranca y se comprueba
+> su primera pantalla), pero todavía no se han probado en un equipo real. Si algo
+> no cuadra con esta guía, manda lo que veas en la página de versiones.
 
 ¿Tienes un Janitor antiguo instalado por terminal (`~/.janitor/janitor-core`)? La
 app no lo adopta y se niega a instalar encima. Desinstálalo primero con
@@ -30,8 +27,11 @@ Todo está en la página de versiones del proyecto:
 | Todos | `SHA256SUMS` (sumas para verificar la descarga) |
 
 En el paquete de Arch, `<versión>` es la etiqueta sin la `v` y con puntos en lugar
-de guiones: la etiqueta `v0.21.5-janitor.1` da
-`janitor-desktop-bin-0.21.5.janitor.1-1-x86_64.pkg.tar.zst`.
+de guiones: la etiqueta `v0.21.5-janitor.2` da
+`janitor-desktop-bin-0.21.5.janitor.2-1-x86_64.pkg.tar.zst`.
+
+En esa página quedan también `v1.0.0` y `v0.1.x`, de antes de la app: no son esta
+app. Usa la marcada como última («Latest»).
 
 Verifica lo que bajaste antes de ejecutarlo (sección 9).
 
@@ -131,8 +131,9 @@ intentar la instalación desde la app.
    primera navegación tarda bastante más que las siguientes.
 
 Los aplicativos opcionales (Honcho, n8n, LightRAG, NocoDB, WAHA, Firecrawl, Open
-Design) no se instalan con la base. Se añaden después, y solo entonces hace falta
-Docker.
+Design) no se instalan con la base. Se añaden después, pidiéndoselos a Janitor.
+Todos menos Open Design usan Docker, y solo entonces hace falta. En Windows los
+que usan Docker no están disponibles.
 
 ## 7. El comando `janitor`
 
@@ -148,7 +149,7 @@ y las mismas sesiones que la app:
 janitor                  # Janitor en el terminal
 janitor --tui            # la interfaz de pantalla completa
 janitor --version
-janitor services list    # aplicativos opcionales (necesitan Docker)
+janitor services list    # aplicativos opcionales (Docker; en Windows no están disponibles)
 ```
 
 ## 8. Actualizar

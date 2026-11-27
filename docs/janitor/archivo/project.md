@@ -1,5 +1,7 @@
 # Janitor-Agent Project Documentation
 
+> **Histórico: no describe el estado actual.** Se conserva como registro. Lo que cita (instaladores por terminal, `janitor-core`, alias pre-1.0, Infisical, OpenCode, el sync v2026.8.13 → v2026.9.24) está retirado o ya hecho. Estado vigente: [`../plans/janitor-desktop-app.md`](../plans/janitor-desktop-app.md); instalar: [`../instalar-app.md`](../instalar-app.md).
+
 ## Overview
 
 **Janitor-Agent** es un agente DevSecOps orquestador construido como un fork/wrapper alrededor de **Hermes-Agent** (de Nous Research). Proporciona capacidades de auditoría de ciberseguridad, análisis de código y automatización de infraestructura con una personalidad "cínica". El proyecto se encuentra en `/home/reck/Janitor-Agent`.
@@ -393,7 +395,7 @@ nanostores
 
 | Directorio | Propósito |
 |-----------|-----------|
-| `.opencode/` | Configuración del agente OpenCode |
+| `.opencode/` | Configuración del agente OpenCode (retirada el 2026-11-27) |
 | `.sisyphus/` | Herramienta de planificación Sisyphus |
 | `tinker-atropos/` | Submódulo de entrenamiento RL |
 | `packaging/` | Utilidades de empaquetado |
