@@ -82,6 +82,23 @@ def test_claude_con_sesion():
     _sin_identificadores(p)
 
 
+def test_codex_con_un_aviso_antes_de_la_linea_de_estado():
+    falso = Falso({
+        ("--version",): (0, "codex-cli 0.172.0\n", ""),
+        ("login", "status"): (0, "", "Hay una versión nueva de Codex\nLogged in using ChatGPT\n"),
+    })
+    assert detectar("codex", buscar=_buscar_en({"codex": "/x/codex"}), ejecutar=falso).disponible
+
+
+def test_codex_con_salida_que_no_dice_nada_queda_desconocido():
+    falso = Falso({
+        ("--version",): (0, "codex-cli 0.172.0\n", ""),
+        ("login", "status"): (0, "", "Hay una versión nueva de Codex\n"),
+    })
+    p = detectar("codex", buscar=_buscar_en({"codex": "/x/codex"}), ejecutar=falso)
+    assert p.sesion is None and not p.disponible
+
+
 def test_codex_con_sesion_chatgpt():
     falso = Falso({
         ("--version",): (0, "codex-cli 0.172.0\n", ""),
@@ -108,8 +125,6 @@ def test_codex_con_clave_api_no_conserva_la_clave():
     [
         ("claude", ("auth", "status"), (1, _claude_json(False), "")),
         ("codex", ("login", "status"), (1, "", "Not logged in\n")),
-        # Salida 0 sin la frase esperada tampoco cuenta como sesión.
-        ("codex", ("login", "status"), (0, "", "something else\n")),
     ],
 )
 def test_sin_sesion(nombre, orden, respuesta):

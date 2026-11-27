@@ -4,15 +4,21 @@ Construye la línea de comando de `codex exec --json` y analiza sus eventos JSON
 lanza nada: quien lo use ejecuta `argv` con `cwd=carpeta` y el texto de
 `encargo.a_prompt` por stdin (el «-» final le dice a Codex que lo lea de ahí).
 
-Codex no tiene un interruptor de «sin herramientas»: en modo consulta el aislamiento de
-solo lectura es el límite real y el texto del encargo le pide no leer ni ejecutar nada.
-Eso es una instrucción al modelo, no una garantía.
+El aislamiento `read-only` de Codex deja **leer todo el disco**: solo impide escribir.
+Por eso no se usa. En consulta se le quita la herramienta de comandos (no puede leer
+nada); en revisión corre con un perfil de permisos propio que solo deja leer la carpeta
+del proyecto, lo mínimo del sistema y la instalación del propio Codex, sin escritura ni
+red. Comprobado en Linux con un archivo señuelo fuera de la carpeta.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from collections.abc import Mapping
+from pathlib import Path
 
 from .encargo import (
     MODOS,
@@ -25,14 +31,13 @@ from .encargo import (
     entorno_comun,
 )
 
-__all__ = ["MODOS", "Resultado", "construir_argv", "entorno", "analizar_salida"]
+__all__ = ["MODOS", "Resultado", "construir_argv", "entorno", "analizar_salida", "preparar"]
 
 # Las dos políticas se fijan también como `-c`, porque `exec resume` no acepta
 # `--sandbox` y lo que quede en efecto no puede depender de la configuración del usuario.
-_POLITICA = (
-    "-c", 'sandbox_mode="read-only"',
-    "-c", 'approval_policy="never"',
-)
+_POLITICA = ("-c", 'approval_policy="never"')
+_PERFIL = "janitor_obrero"
+_TIEMPO_SONDEO = 20.0
 
 # Lo que el usuario tenga configurado (hooks, plugins, MCP, reglas, búsqueda web,
 # subagentes) no entra en el obrero.
@@ -58,6 +63,55 @@ _AISLAMIENTO = (
 # Sin `--ephemeral`: la conversación debe quedar guardada para `exec resume`.
 
 
+def _instalacion(ejecutable: str) -> str | None:
+    """Carpeta que el aislamiento debe poder leer para ejecutar el propio Codex."""
+    real = Path(os.path.realpath(ejecutable))
+    raiz = real.parent.parent if real.parent.name == "bin" else real.parent
+    # Nunca algo tan ancho como la carpeta personal o la raíz de un disco.
+    if len(raiz.parts) < 4 or raiz == Path.home():
+        raiz = real.parent
+    return str(raiz) if len(raiz.parts) >= 3 else None
+
+
+def preparar(ejecutable: str) -> dict:
+    """Averigua qué carpetas necesita leer Codex para lanzar sus comandos aislados.
+
+    El ejecutable que se encuentra en el PATH puede ser un lanzador (npm, mise…) y el
+    binario real vivir en otra parte. En Linux se le pregunta al propio aislamiento: ahí
+    dentro, el proceso 1 es ese binario.
+    """
+    rutas = {_instalacion(ejecutable)}
+    if sys.platform.startswith("linux"):
+        try:
+            sondeo = subprocess.run(
+                [ejecutable, "sandbox", "-c", 'sandbox_mode="read-only"', "--",
+                 "readlink", "/proc/1/exe"],
+                capture_output=True, text=True, timeout=_TIEMPO_SONDEO, stdin=subprocess.DEVNULL,
+                env=entorno(os.environ),
+            )
+            real = sondeo.stdout.strip()
+            if sondeo.returncode == 0 and os.path.isabs(real):
+                rutas.add(_instalacion(real))
+        except (OSError, subprocess.SubprocessError):
+            pass  # sin sondeo, el perfil se queda con la ruta del lanzador
+    return {"legibles": tuple(sorted(r for r in rutas if r))}
+
+
+def _toml(texto: str) -> str:
+    return json.dumps(texto, ensure_ascii=False)
+
+
+def _permisos(modo: str, legibles: tuple[str, ...]) -> list[str]:
+    if modo == "consulta":
+        return ["--disable", "shell_tool"]
+    entradas = ['":minimal"="read"', '":workspace_roots"={"."="read"}']
+    entradas += [f"{_toml(ruta)}=\"read\"" for ruta in legibles]
+    return [
+        "-c", f'default_permissions="{_PERFIL}"',
+        "-c", f"permissions.{_PERFIL}.filesystem={{{', '.join(entradas)}}}",
+    ]
+
+
 def construir_argv(
     ejecutable: str,
     *,
@@ -65,6 +119,7 @@ def construir_argv(
     carpeta: str,
     modelo: str | None = None,
     sesion: str | None = None,
+    legibles: tuple[str, ...] = (),
 ) -> list[str]:
     comprobar_modo(modo)
     comprobar_carpeta(carpeta)
@@ -73,9 +128,7 @@ def construir_argv(
     argv = [ejecutable, "-a", "never", "-C", carpeta, "exec"]
     if sesion is not None:
         argv += ["resume", comprobar_sesion(sesion)]
-    else:
-        argv += ["--sandbox", "read-only"]
-    argv += ["--json", *_POLITICA, *_AISLAMIENTO]
+    argv += ["--json", *_POLITICA, *_permisos(modo, legibles), *_AISLAMIENTO]
     if modelo is not None:
         argv.append(f"--model={comprobar_modelo(modelo)}")
     argv.append("-")

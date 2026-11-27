@@ -515,6 +515,7 @@ def _enviar(
         adaptador = ADAPTADORES[programa]
         argv = adaptador.construir_argv(
             detectado.ruta, modo=modo, carpeta=str(carpeta_proyecto), modelo=modelo, sesion=sesion,
+            **adaptador.preparar(detectado.ruta),
         )
         (ruta / ENTRADA).write_text(a_prompt(encargo, modo), encoding="utf-8", newline="\n")
         escribir_json(ruta / TRABAJO, {

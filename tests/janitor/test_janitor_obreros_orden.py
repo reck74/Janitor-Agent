@@ -318,3 +318,24 @@ def test_enviar_en_revision_sin_autorizar_dice_que_comando_ejecutar(home, tmp_pa
 
     assert codigo == 1 and "janitor obreros autorizar" in consola.json()["error"]
     assert trabajos.listar(home) == []
+
+
+@pytest.mark.parametrize("contenido", [
+    "[" * 200_000,                       # anidado hasta agotar la pila del analizador
+    json.dumps({"objetivo": "x" * 70_000, "contexto": "", "entregables": ["y"], "restricciones": []}),
+])
+def test_un_encargo_enorme_o_retorcido_es_un_rechazo_y_no_una_traza(home, tmp_path, contenido):
+    archivo = tmp_path / "encargo.json"
+    archivo.write_text(contenido, encoding="utf-8")
+    codigo, consola = correr(home, ["enviar", "--programa", "claude", "--modo", "consulta",
+                                    "--encargo", str(archivo)])
+    assert codigo == 1
+    assert trabajos.listar(home) == []
+
+
+def test_el_tope_escrito_con_cifras_raras_se_rechaza(home):
+    respuestas = iter(["si", "²"])
+    (home / "config.yaml").write_text("model: x\n", encoding="utf-8")
+    codigo, _ = correr(home, ["activar"], preguntar=lambda _texto: next(respuestas))
+    assert codigo == 1
+    assert not trabajos.ajustes_mod.leer(home).activo

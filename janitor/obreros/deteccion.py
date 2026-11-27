@@ -146,11 +146,13 @@ def _sesion_claude(codigo: int, stdout: str) -> tuple[bool | None, str | None]:
 
 def _sesion_codex(codigo: int, stdout: str, stderr: str) -> tuple[bool | None, str | None]:
     # Codex escribe el estado en stderr; se mira también stdout por si cambia.
-    linea = next(
-        (l.strip() for l in (stdout + "\n" + stderr).splitlines() if l.strip()),
-        "",
-    )
-    if codigo != 0 or not linea.startswith("Logged in"):
+    lineas = [l.strip() for l in (stdout + "\n" + stderr).splitlines() if l.strip()]
+    # Un aviso (de actualización, por ejemplo) puede ir antes de la línea de estado.
+    linea = next((l for l in lineas if l.startswith("Logged in")), None)
+    if linea is None:
+        # Sin la frase de «sin sesión» no se sabe: mejor «desconocido» que mandar a iniciarla.
+        return (False if any(l.startswith("Not logged in") for l in lineas) or codigo != 0 else None), None
+    if codigo != 0:
         return False, None
     # Con clave de API la línea incluye la clave enmascarada: solo se guarda el tipo.
     if "ChatGPT" in linea:

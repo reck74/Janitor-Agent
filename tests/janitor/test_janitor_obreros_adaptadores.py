@@ -149,16 +149,34 @@ def test_claude_sin_preguntas_ni_configuracion_ajena_y_con_sesion_guardada():
         assert "--continue" not in argv and "-c" not in argv
 
 
+def _valor_de_repetido(argv, opcion, valor):
+    return any(a == opcion and b == valor for a, b in zip(argv, argv[1:]))
+
+
+def test_codex_revision_deja_leer_solo_lo_declarado():
+    argv = codex.construir_argv("/usr/bin/codex", modo="revision", carpeta=CARPETA,
+                                legibles=("/opt/codex con espacios",))
+    perfil = next(a for a in argv if a.startswith("permissions.janitor_obrero.filesystem="))
+    assert '"/opt/codex con espacios"="read"' in perfil
+    assert '":root"' not in perfil
+
+
 def test_codex_siempre_solo_lectura_y_sin_aprobaciones():
     for _modo, sesion, argv in _argvs(codex):
         inicio = argv.index("exec")
         # `-a` solo existe como opción global, antes de `exec`.
         assert _valor_de(argv[:inicio], "-a") == "never"
         assert _valor_de(argv[:inicio], "-C") == CARPETA
-        assert 'sandbox_mode="read-only"' in argv and 'approval_policy="never"' in argv
-        if sesion is None:
-            assert _valor_de(argv, "--sandbox") == "read-only"
+        assert 'approval_policy="never"' in argv
         texto = " ".join(argv)
+        # El aislamiento `read-only` deja leer todo el disco: no se usa en ningún modo.
+        assert "read-only" not in texto
+        if _modo == "consulta":
+            assert _valor_de_repetido(argv, "--disable", "shell_tool")
+        else:
+            assert 'default_permissions="janitor_obrero"' in argv
+            perfil = next(a for a in argv if a.startswith("permissions.janitor_obrero.filesystem="))
+            assert '":workspace_roots"={"."="read"}' in perfil and "write" not in perfil
         for peligro in ("workspace-write", "danger-full-access", "dangerously", "--approve-for-me", "--trust", "--search"):
             assert peligro not in texto
         assert "--json" in argv and argv[-1] == "-"

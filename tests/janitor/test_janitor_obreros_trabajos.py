@@ -252,6 +252,25 @@ def test_cancelar_mata_el_arbol_entero(home, tmp_path):
         trabajos.cancelar(enviado.id, home)
 
 
+def test_un_arranque_que_sale_sin_escribir_nada_se_repite_una_vez(home, tmp_path):
+    cuenta = tmp_path / "cuenta"
+    cuerpo = (
+        f"ruta = {str(cuenta)!r}\n"
+        "veces = int(open(ruta).read()) if os.path.exists(ruta) else 0\n"
+        "open(ruta, 'w').write(str(veces + 1))\n"
+        "if veces == 0:\n"
+        "    sys.stderr.write('todavia arrancando')\n"
+        "    sys.exit(1)\n"
+        f"sys.stdout.write({json.dumps(SALIDA_CLAUDE)!r})\n"
+    )
+    ruta = programa_falso(tmp_path / "bin", cuerpo)
+    trabajo = trabajos.enviar(programa="claude", modo="consulta", encargo=ENCARGO, home=home,
+                              detectar=detector(ruta))
+    final = trabajos.esperar(trabajo.id, home, tope_segundos=ESPERA, intervalo=0.2)
+    assert final.estado == "terminado" and final.resultado["respuesta"] == "hola"
+    assert cuenta.read_text() == "2"
+
+
 def test_tope_de_tiempo_deja_el_trabajo_caducado(home, tmp_path):
     configurar(home, minutos_por_trabajo=0.05)  # 3 segundos
     pid_nieto = tmp_path / "nieto.pid"
