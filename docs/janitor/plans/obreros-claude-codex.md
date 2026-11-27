@@ -282,7 +282,8 @@ pruebas en `tests/janitor/` y un revisor distinto (directiva #20).
 | F7-03, F7-13, F7-05 | hecho (2026-11-26); **revisado por Codex en lectura estática, sin auditar por un revisor que repita las pruebas**; sin probar en Windows ni macOS | Supervisor (`trabajos.py`, `ejecutor.py`, `procesos.py`, `registro.py`), ajustes y comando `janitor obreros` (`orden.py`). `scripts/run_tests.sh -j 4 tests/janitor/` → 830 pasan, 24 saltadas. **Prueba real** en un home temporal (`/var/tmp/janitor-obreros-smoke2/`): rechazo sin activar; consulta con cada programa; reanudación con Claude; revisión de una carpeta con los dos (ambos encontraron el defecto sembrado y no tocaron el archivo); rechazo de `~/.ssh`; cancelación, sin procesos colgados |
 | F7-10 | a medias: aviso de activación y ajustes `janitor.obreros` en `config.yaml` hechos dentro del comando; falta la semilla y el aviso en la app | Misma evidencia |
 | F7-06, F7-07, F7-08 | hecho (2026-11-26); **revisado por Codex en lectura estática, sin auditar por un revisor que repita las pruebas**; sin probar con un modelo conduciendo las herramientas | Herramientas `obreros_enviar` y `obreros_ver` con `check_fn` y aviso de fin por `pre_llm_call` (`janitor/plugin/obreros.py`); skill `janitor-obreros` en el catálogo (sin `requires_tools`, ver 6.4); Creador de proyectos la usa por defecto. Carpetas autorizadas por el usuario (`janitor obreros autorizar`). `scripts/run_tests.sh -j 4 tests/janitor/` → 880 pasan, 24 saltadas. **Prueba real** por el cargador de plugins en un home temporal: herramientas ocultas sin activar y visibles al activar; envío a los dos programas con una conversación como origen; el aviso llegó una vez y solo a esa conversación; revisión rechazada sin autorizar la carpeta y aceptada tras autorizarla |
-| F7-04, F7-09, F7-11, F7-12 | sin empezar | — |
+| F7-11 | primer recorrido en solo lectura hecho (2026-11-27), ver 6.5; falta repetirlo en la app con un usuario respondiendo, y con el modo construcción | 6.5 |
+| F7-04, F7-09, F7-12 | sin empezar | — |
 
 Observado en la prueba real: Codex no informa qué modelo contestó, y una consulta mínima
 le cuesta unos 16.000 tokens de entrada (32.000 acumulados al reanudar); a Claude, unos
@@ -349,6 +350,43 @@ propósito de 4.3 («que la skill aparezca o no») queda sin cumplir.
   trabajo; si cambia su identificador, el trabajo solo se ve con `obreros_ver`.
 - `activar` y `autorizar` son órdenes de terminal: nada impide a un agente
   ejecutarlas salvo la instrucción de la skill, igual que el resto de órdenes.
+
+### 6.5 Primer recorrido real, F7-11 en solo lectura (2026-11-27)
+
+Perfil Creador de proyectos (MiniMax-M2.7) creado en el home de prueba
+`/var/tmp/janitor-a4/home`, con el código de esta rama, por `janitor -p obra chat -q`
+(cuatro turnos de la misma sesión). Proyecto de ejemplo: una CLI de notas en Python
+(`/var/tmp/janitor-f7-11/proyecto`); objetivo: buscar por etiqueta y exportar a JSON.
+Guiones y salidas en `/var/tmp/janitor-f7-11/`.
+
+Qué pasó:
+
+1. El agente cargó la skill y lanzó un plan a cada obrero en modo revisión, sin esperar.
+2. En el mensaje siguiente recibió el aviso (dos mensajes de usuario lo llevan en
+   `api_content` y ninguno en el texto visible), leyó los planes con `obreros_ver` y
+   lanzó la crítica cruzada reanudando la conversación de cada obrero.
+3. Presentó un plan único con las discrepancias y preguntó al usuario (`clarify`).
+4. Aplicó los cambios él mismo y lanzó la revisión cruzada del código.
+5. Contrastó los hallazgos ejecutando el código, corrigió y no hizo commit.
+
+Seis trabajos, todos terminados; unos 291.000 tokens de obreros (0,07 USD estimados
+por trabajo de Claude; Codex no informa coste). Comprobado aparte: las 67 pruebas del
+proyecto pasan y los obreros no escribieron nada.
+
+Observado:
+
+- **La aprobación del usuario no quedó probada.** En el modo de una sola consulta el
+  core contesta a `clarify` «no hay usuario, elige tú y sigue», y el agente aplicó el
+  plan. Es un efecto del modo de prueba, pero la skill ahora dice que sin respuesta se
+  detiene. Hay que repetirlo en la app o el TUI con un usuario respondiendo.
+- El agente llegó a las herramientas directamente y una vez por `tool_call`; las dos
+  vías conservaron la conversación de origen.
+- El perfil lleva también las skills de upstream `claude-code` y `codex`, que enseñan
+  a lanzar esos programas a mano; en este recorrido no las usó. Queda por decidir si
+  se retiran de la plantilla.
+- El agente amplió el alcance por su cuenta (deuda del proyecto, 67 pruebas para dos
+  funciones). Es conducta del modelo director, no del motor.
+- Texto del modelo con algunos caracteres en chino mezclados (MiniMax-M2.7).
 
 ### 6.2 Resultado del ensayo F7-00
 

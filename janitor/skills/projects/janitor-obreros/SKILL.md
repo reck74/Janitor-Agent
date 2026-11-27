@@ -130,7 +130,10 @@ es otro plan para el mismo objetivo; señala errores, riesgos y qué tomarías d
 
 **4. Plan único.** Consolida tú: lo que coincide, lo que discrepa y por qué eliges.
 Preséntaselo al usuario con las discrepancias a la vista y **espera su aprobación**.
-Sin aprobación no se aplica nada.
+Sin aprobación no se aplica nada. Aprobación es una respuesta del usuario al plan ya
+presentado: un «sigue» anterior al plan no cuenta, y si la pregunta vuelve sin
+respuesta (no hay nadie al otro lado, modo de una sola consulta, tarea programada), te
+detienes con el plan presentado y no decides por él.
 
 **5. Revisión cruzada de código.** Para revisar un cambio, envía en `revision` con la
 carpeta del proyecto (autorizada por el usuario), de preferencia al programa que no lo propuso, e indica en
