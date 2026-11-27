@@ -43,6 +43,11 @@ def _event(text: str, platform: Platform = Platform.TELEGRAM, chat_id: str = "12
     return MessageEvent(text=text, source=SessionSource(platform=platform, chat_id=chat_id, user_id="7"))
 
 
+def _gateway(authorized: bool = True, **attrs) -> SimpleNamespace:
+    """Gateway double; ``authorized`` is the answer of ``_is_user_authorized_for_source``."""
+    return SimpleNamespace(_is_user_authorized_for_source=lambda source: authorized, **attrs)
+
+
 async def _drain():
     while branding._background_tasks:
         await asyncio.gather(*list(branding._background_tasks), return_exceptions=True)
@@ -68,7 +73,7 @@ async def test_start_sends_welcome_photo_and_skips_dispatch(tmp_path, monkeypatc
     monkeypatch.setattr(branding, "WELCOME_IMAGE_PATH", welcome)
     monkeypatch.setattr(branding, "AVATAR_PATH", tmp_path / "missing.jpg")
     adapter = _adapter()
-    gateway = SimpleNamespace(adapters={Platform.TELEGRAM: adapter})
+    gateway = _gateway(adapters={Platform.TELEGRAM: adapter})
 
     result = branding.pre_gateway_dispatch(event=_event("/start"), gateway=gateway, session_store=None)
     await _drain()
@@ -86,7 +91,7 @@ async def test_start_falls_back_to_text_without_image(tmp_path, monkeypatch):
     monkeypatch.setattr(branding, "WELCOME_IMAGE_PATH", tmp_path / "missing.jpg")
     monkeypatch.setattr(branding, "AVATAR_PATH", tmp_path / "missing.jpg")
     adapter = _adapter()
-    gateway = SimpleNamespace(adapters={Platform.TELEGRAM: adapter})
+    gateway = _gateway(adapters={Platform.TELEGRAM: adapter})
 
     result = branding.pre_gateway_dispatch(event=_event("/start"), gateway=gateway)
     await _drain()
@@ -101,7 +106,7 @@ async def test_start_falls_back_to_text_without_image(tmp_path, monkeypatch):
 async def test_regular_text_and_other_platforms_pass_through(tmp_path, monkeypatch):
     monkeypatch.setattr(branding, "AVATAR_PATH", tmp_path / "missing.jpg")
     adapter = _adapter()
-    gateway = SimpleNamespace(adapters={Platform.TELEGRAM: adapter, Platform.DISCORD: adapter})
+    gateway = _gateway(adapters={Platform.TELEGRAM: adapter, Platform.DISCORD: adapter})
 
     assert branding.pre_gateway_dispatch(event=_event("hola"), gateway=gateway) is None
     assert branding.pre_gateway_dispatch(event=_event("/start", Platform.DISCORD), gateway=gateway) is None
@@ -112,7 +117,7 @@ async def test_regular_text_and_other_platforms_pass_through(tmp_path, monkeypat
 
 def test_start_without_running_loop_is_not_swallowed():
     """Outside an event loop the welcome can't be sent, so dispatch continues."""
-    gateway = SimpleNamespace(adapters={Platform.TELEGRAM: _adapter()})
+    gateway = _gateway(adapters={Platform.TELEGRAM: _adapter()})
     assert branding.pre_gateway_dispatch(event=_event("/start"), gateway=gateway) is None
 
 
@@ -121,7 +126,7 @@ async def test_multiplexed_profile_adapter_is_used(tmp_path, monkeypatch):
     monkeypatch.setattr(branding, "WELCOME_IMAGE_PATH", tmp_path / "missing.jpg")
     monkeypatch.setattr(branding, "AVATAR_PATH", tmp_path / "missing.jpg")
     default, coder = _adapter(), _adapter()
-    gateway = SimpleNamespace(
+    gateway = _gateway(
         adapters={Platform.TELEGRAM: default},
         _profile_adapters={"coder": {Platform.TELEGRAM: coder}},
     )
@@ -137,6 +142,52 @@ async def test_multiplexed_profile_adapter_is_used(tmp_path, monkeypatch):
     default._bot.send_message.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("chat_type", ["dm", "group"])
+@pytest.mark.parametrize(
+    "auth",
+    [
+        {"_is_user_authorized_for_source": lambda source: False},
+        {},  # a gateway without the seam: doubt counts as no
+        {"_is_user_authorized_for_source": Mock(side_effect=RuntimeError("boom"))},
+    ],
+    ids=["denied", "no-seam", "raises"],
+)
+async def test_unauthorized_start_gets_no_welcome_and_reaches_upstream(tmp_path, monkeypatch, chat_type, auth):
+    """The hook runs before the gateway's auth: a stranger gets nothing from Janitor, and the
+    event is not skipped, so upstream's pairing / ignore handling still decides."""
+    welcome = tmp_path / "telegram_welcome.jpg"
+    welcome.write_bytes(b"\xff\xd8\xff fake")
+    monkeypatch.setattr(branding, "WELCOME_IMAGE_PATH", welcome)
+    monkeypatch.setattr(branding, "AVATAR_PATH", tmp_path / "missing.jpg")
+    adapter = _adapter()
+    gateway = SimpleNamespace(adapters={Platform.TELEGRAM: adapter}, **auth)
+    event = MessageEvent(
+        text="/start",
+        source=SessionSource(platform=Platform.TELEGRAM, chat_id="-100", chat_type=chat_type, user_id="666"),
+    )
+
+    result = branding.pre_gateway_dispatch(event=event, gateway=gateway)
+    await _drain()
+
+    assert result is None
+    adapter._bot.send_photo.assert_not_awaited()
+    adapter._bot.send_message.assert_not_awaited()
+
+
+def test_the_authorization_seam_exists_on_the_real_gateway():
+    """``is_authorized`` denies when the seam is missing, so an upstream rename must fail here
+    instead of silently turning the welcome off for everyone."""
+    import inspect
+
+    from gateway.run import GatewayRunner
+
+    seam = GatewayRunner._is_user_authorized_for_source
+    params = list(inspect.signature(seam).parameters.values())[1:]
+    assert params and params[0].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+    assert all(p.default is not inspect.Parameter.empty for p in params[1:])
+
+
 # ── avatar ────────────────────────────────────────────────────────────
 
 
@@ -146,7 +197,7 @@ async def test_avatar_synced_once_per_adapter(tmp_path, monkeypatch):
     avatar.write_bytes(b"\xff\xd8\xff fake")
     monkeypatch.setattr(branding, "AVATAR_PATH", avatar)
     adapter = _adapter()
-    gateway = SimpleNamespace(adapters={Platform.TELEGRAM: adapter})
+    gateway = _gateway(adapters={Platform.TELEGRAM: adapter})
 
     for text in ("hola", "otra", "/help"):
         branding.pre_gateway_dispatch(event=_event(text), gateway=gateway)
@@ -264,7 +315,7 @@ async def test_enabled_plugin_handles_start_through_invoke_hook(tmp_path, monkey
         results = invoke_hook(
             "pre_gateway_dispatch",
             event=_event("/start"),
-            gateway=SimpleNamespace(adapters={Platform.TELEGRAM: adapter}),
+            gateway=_gateway(adapters={Platform.TELEGRAM: adapter}),
             session_store=None,
         )
         await _drain()

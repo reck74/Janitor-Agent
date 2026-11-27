@@ -5,6 +5,21 @@ changes are documented in the upstream release notes.
 
 ## Unreleased
 
+### Security
+- The local Honcho stack no longer ships a Postgres user/password in
+  `honcho-compose.yml`. Every install used the same credential, which stays in the
+  public git history: **consider it compromised**. `deploy` now generates one per
+  install in `<root>/docker/honcho-db.env` (mode 0600). Existing installs: re-run
+  `janitor services deploy honcho` (or ask Janitor to); it keeps the
+  `janitor-honcho-pgdata` data and its role and sets a new password inside the
+  database. `preflight` reports installs still on the shared credential as
+  `service.db_credentials: legacy-shared`. The database port was never published, so
+  the exposure was limited to the machine's own Docker network.
+- Telegram `/start` answered anyone: the Janitor plugin runs before the gateway's
+  authorization, sent the welcome to unauthorized senders and swallowed the event, so
+  upstream's pairing flow never ran for them. The welcome now goes to authorized
+  senders only; everyone else falls through to upstream's pairing / ignore handling.
+
 ### Fixed
 - `janitor update` failed at "Restoring local changes" with `package-lock.json`
   would be overwritten. The TUI step ran a plain `npm install` in `ui-tui/`,

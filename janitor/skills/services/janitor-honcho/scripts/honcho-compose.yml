@@ -2,9 +2,9 @@
 # into <janitor home>/docker/ next to honcho-llm.env (0600, only the LLM credentials
 # Honcho needs) and built from <janitor home>/src/honcho (pinned commit).
 # The API binds to loopback only. Volumes are never removed by Janitor.
-# The database credentials are internal to janitor-honcho-network (no published
-# port) and must stay as they are: existing janitor-honcho-pgdata volumes were
-# initialised with them.
+# No credential lives in this file. The Postgres role and password are generated
+# per install by `honcho_setup.py deploy` into honcho-db.env (0600) and reach the
+# containers through env_file; an older install is rotated on its next deploy.
 services:
   honcho-api:
     build:
@@ -16,11 +16,12 @@ services:
     ports:
       - "127.0.0.1:${JANITOR_HONCHO_PORT:-1973}:8000"
     environment:
-      - DB_CONNECTION_URI=postgresql+psycopg://janitor_bea9db7d:vPwptI+4UO+v+B+xnNdzoFltM3cKTLlp@honcho-database:5432/honcho
       - CACHE_URL=redis://honcho-redis:6379/0?suppress=true
       - CACHE_ENABLED=true
     env_file:
       - path: ./honcho-llm.env
+        required: true
+      - path: ./honcho-db.env
         required: true
     volumes:
       - honcho-api-data:/data
@@ -47,11 +48,12 @@ services:
     container_name: janitor-honcho-deriver
     entrypoint: ["python", "-m", "src.deriver"]
     environment:
-      - DB_CONNECTION_URI=postgresql+psycopg://janitor_bea9db7d:vPwptI+4UO+v+B+xnNdzoFltM3cKTLlp@honcho-database:5432/honcho
       - CACHE_URL=redis://honcho-redis:6379/0?suppress=true
       - CACHE_ENABLED=true
     env_file:
       - path: ./honcho-llm.env
+        required: true
+      - path: ./honcho-db.env
         required: true
     restart: unless-stopped
     networks:
@@ -68,9 +70,10 @@ services:
     image: pgvector/pgvector:pg15
     container_name: janitor-honcho-database
     environment:
-      POSTGRES_USER: janitor_bea9db7d
-      POSTGRES_PASSWORD: vPwptI+4UO+v+B+xnNdzoFltM3cKTLlp
       POSTGRES_DB: honcho
+    env_file:
+      - path: ./honcho-db.env
+        required: true
     volumes:
       - ../src/honcho/database/init.sql:/docker-entrypoint-initdb.d/init.sql
       - honcho-pgdata:/var/lib/postgresql/data
@@ -78,7 +81,7 @@ services:
     networks:
       - honcho-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U janitor_bea9db7d -d honcho"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d honcho"]
       interval: 10s
       timeout: 5s
       retries: 6

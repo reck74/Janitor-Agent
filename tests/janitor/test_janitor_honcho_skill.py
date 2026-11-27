@@ -80,6 +80,9 @@ if cmd == "compose":
         state["networks"] = ["janitor-honcho-network"]
         save(); sys.exit(state.get("up_rc", 0))
     sys.exit(0)
+if cmd == "exec":
+    state.setdefault("exec_stdin", []).append(sys.stdin.read())
+    save(); sys.exit(state.get("exec_rc", 0))
 if cmd == "inspect":
     c = state.get("containers", {}).get(argv[-1])
     if not c or c["status"] == "absent":
@@ -283,7 +286,8 @@ def test_manifest_and_compose_are_consistent_and_prefixed():
     ports = [p for spec in compose["services"].values() for p in spec.get("ports", [])]
     assert ports and all(p.startswith("127.0.0.1:") for p in ports)
     env_files = [e for spec in compose["services"].values() for e in spec.get("env_file", [])]
-    assert env_files and all("honcho-llm.env" in (e["path"] if isinstance(e, dict) else e) for e in env_files)
+    assert env_files and {Path(e["path"] if isinstance(e, dict) else e).name for e in env_files} == {
+        "honcho-llm.env", "honcho-db.env"}
     assert service.url.startswith("http://127.0.0.1:")
 
 
@@ -402,6 +406,78 @@ def test_deploy_is_idempotent_loopback_only_and_never_removes_volumes(env):
     assert SECRETS["TELEGRAM_BOT_TOKEN"] not in body, "containers get only the LLM credentials"
 
 
+def _db_env(env: Env) -> dict[str, str]:
+    path = env.home / "docker" / "honcho-db.env"
+    assert oct(path.stat().st_mode & 0o777) == "0o600"
+    pairs = [line.split("=", 1) for line in path.read_text(encoding="utf-8").splitlines()
+             if line and not line.startswith("#")]
+    return {k: v for k, v in pairs}
+
+
+def test_postgres_credentials_are_generated_per_install_and_never_shipped(tmp_path):
+    """The repo is public: a credential in the shipped compose is shared by every install.
+    Each install must get its own, and the containers must receive it only from that file."""
+    shipped = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+    for name, spec in shipped["services"].items():
+        inline = spec.get("environment") or {}
+        keys = {str(item).split("=", 1)[0] for item in inline} if isinstance(inline, list) else set(inline)
+        assert not keys & {"POSTGRES_USER", "POSTGRES_PASSWORD", "DB_CONNECTION_URI"}, name
+
+    creds = []
+    for label in ("a", "b"):
+        (tmp_path / label).mkdir()
+        e = Env(tmp_path / label)
+        e.write_env()
+        e.set_docker(daemon=True, compose="2.29.1", root_dir=str(e.tmp), containers={}, volumes=[],
+                     networks=[], after_up=_running(), serve_health=True)
+        port = str(_free_port())
+        first, proc = e.run("deploy", "--port", port, "--timeout", "10", "--interval", "0.2")
+        before = (e.home / "docker" / "honcho-db.env").read_bytes()
+        second, _ = e.run("deploy", "--port", port, "--timeout", "10", "--interval", "0.2")
+        assert (first["db_credentials"], second["db_credentials"]) == ("generated", "unchanged")
+        assert (e.home / "docker" / "honcho-db.env").read_bytes() == before, "a re-deploy keeps the credential"
+        values = _db_env(e)
+        user, password = values["POSTGRES_USER"], values["POSTGRES_PASSWORD"]
+        assert f"//{user}:{password}@" in values["DB_CONNECTION_URI"], "API and database must agree"
+        assert password not in proc.stdout + proc.stderr
+        assert not [c for c in e.calls("docker") if password in " ".join(c)], "never in a process argv"
+        assert password not in (e.home / "docker" / "honcho-compose.yml").read_text(encoding="utf-8")
+        creds.append((user, password))
+    assert creds[0][0] != creds[1][0] and creds[0][1] != creds[1][1]
+    assert COMPOSE.read_text(encoding="utf-8").find(creds[0][1]) == -1
+
+
+def test_an_existing_database_gets_its_shared_password_rotated_in_place(env):
+    """Postgres ignores POSTGRES_PASSWORD once the volume is initialised, so an install made with
+    the old shared credential keeps it until the deploy changes it inside the database. A failed
+    rotation is reported, removes nothing, and the next deploy finishes it with the same password."""
+    state = dict(daemon=True, compose="2.29.1", root_dir=str(env.tmp), containers={},
+                 volumes=["janitor-honcho-pgdata"], networks=[], after_up=_running(), serve_health=True)
+    env.set_docker(**state)
+    port = str(_free_port())
+    pre, _ = env.run("preflight", "--port", port)
+    assert pre["service"]["db_credentials"] == "legacy-shared"
+
+    env.set_docker(**state, exec_rc=1)
+    failed, _ = env.run("deploy", "--port", port, "--timeout", "1", "--interval", "0.2", expect=1)
+    assert failed["reason"] == "db_credential_sync_failed" and failed["db_credentials"] == "rotated"
+    values = _db_env(env)
+    assert values["POSTGRES_USER"] == _load_script().LEGACY_DB_USER, "the role that owns the data is kept"
+
+    env.set_docker(**{**env.docker(), "exec_rc": 0})
+    done, proc = env.run("deploy", "--port", port, "--timeout", "10", "--interval", "0.2")
+    assert done["ok"] and done["db_credentials"] == "unchanged"
+    assert _db_env(env) == values
+    sql = env.docker()["exec_stdin"][-1]
+    assert sql.strip() == f"ALTER ROLE \"{values['POSTGRES_USER']}\" WITH PASSWORD '{values['POSTGRES_PASSWORD']}';"
+    assert values["POSTGRES_PASSWORD"] not in proc.stdout + proc.stderr
+    calls = env.calls("docker")
+    assert not [c for c in calls if _forbidden(c) or values["POSTGRES_PASSWORD"] in " ".join(c)]
+    assert "janitor-honcho-pgdata" in env.docker()["volumes"]
+    post, _ = env.run("preflight", "--port", port)
+    assert post["service"]["db_credentials"] == "per-install"
+
+
 def test_deploy_keeps_user_customised_files(env, honcho_api):
     docker_dir = env.home / "docker"
     docker_dir.mkdir()
@@ -414,6 +490,7 @@ def test_deploy_keeps_user_customised_files(env, honcho_api):
                    volumes=["janitor-honcho-pgdata"], networks=["janitor-honcho-network"])
     doc, _ = env.run("deploy", "--port", str(honcho_api.port), "--timeout", "10", "--interval", "0.2")
     assert doc["compose"] == "kept-user-file" and doc["llm_env"] == "kept-user-file"
+    assert doc["db_credentials"] == "rotated", "the volume already exists: its role is kept"
     assert (docker_dir / "honcho-compose.yml").read_text(encoding="utf-8") == custom_compose
     assert (docker_dir / "honcho-llm.env").read_text(encoding="utf-8") == "LLM_OPENAI_API_KEY=mine\n"
     assert env.calls("git") == []

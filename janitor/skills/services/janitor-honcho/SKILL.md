@@ -72,13 +72,14 @@ python3 $S cloud-login                            # device-code sign-in (see Pit
 | Command | Writes | Guarantees |
 |---|---|---|
 | `preflight` | nothing | presence of secrets only, never values |
-| `deploy` | `<root>/docker/{honcho-compose.yml,honcho-llm.env}`, `<root>/src/honcho` | idempotent; loopback port; `up -d` only; keeps user-edited files; failure names the container + last log lines |
+| `deploy` | `<root>/docker/{honcho-compose.yml,honcho-llm.env,honcho-db.env}`, `<root>/src/honcho` | idempotent; loopback port; `up -d` only; keeps user-edited files; failure names the container + last log lines |
 | `activate` | `honcho.json` (backup first), `.env` `HONCHO_BASE_URL` (local), `config.yaml` `memory.provider` | runs only after a successful round trip; refuses if the `janitor` launcher would refuse to start |
 | `rollback` | `config.yaml`, `.env` | restores the previous provider; volumes, `honcho.json`, backups stay |
 
 Preflight keys you act on: `recommendation` (`local`, `cloud`, `already-active`),
 `modes.local.blockers[]`, `modes.cloud.credential` (`api_key`/`oauth`/`none`),
-`docker.install_hint.command`, `docker.fix_hint`, `port`, `deriver`, `service.state`.
+`docker.install_hint.command`, `docker.fix_hint`, `port`, `deriver`, `service.state`,
+`service.db_credentials` (`legacy-shared` → see Pitfalls: re-run `deploy`).
 
 Blocker → what to tell the user (they run any command themselves):
 
@@ -161,6 +162,17 @@ Reply in Spanish. Show what you will change before changing it.
   use `janitor memory setup honcho`: it activates before verifying.
 - `deploy` keeps a `honcho-compose.yml` or `honcho-llm.env` the user edited
   (`kept-user-file`); it only replaces files Janitor shipped (old copy backed up).
+- Postgres credentials are per install: `deploy` generates them in `honcho-db.env` (mode
+  0600) and the compose file ships none. Installs made before that share one password
+  that is public in the repository history. When `preflight` reports
+  `service.db_credentials: legacy-shared`, tell the user and, with their yes, re-run
+  `deploy`: it keeps the `janitor-honcho-pgdata` volume and its role, sets a new password
+  inside the database and recreates the containers (`db_credentials: rotated`). On
+  `db_credential_sync_failed` nothing is lost; fix what `log` names and re-run `deploy`.
+  The database port was never published, so the old password was reachable only from
+  this machine's Docker network. `user-managed` (the user's own compose): say that a
+  password copied from Janitor's old compose is public and theirs to change. Never
+  print the contents of `honcho-db.env`.
 - `honcho-llm.env` holds only the LLM keys Honcho needs (mode 0600); the containers
   never see the rest of `.env`. Changing keys later: re-run `deploy`.
 - One local Honcho serves every profile on the machine; `activate` / `rollback` act on
