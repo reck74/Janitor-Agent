@@ -2,8 +2,9 @@
 
 Runs from the ``pre_gateway_dispatch`` hook so the upstream Telegram
 adapter stays untouched. Upstream ignores ``/start``; Janitor answers it
-with the welcome image, and syncs the bot avatar once per adapter the
-first time that adapter delivers a message.
+with the welcome image for authorized senders only (anyone else falls
+through to upstream's pairing / ignore handling), and syncs the bot avatar
+once per adapter the first time that adapter delivers a message.
 """
 
 from __future__ import annotations
@@ -55,6 +56,24 @@ def resolve_adapter(gateway: Any, source: Any) -> Any:
         if adapter is not None:
             return adapter
     return (getattr(gateway, "adapters", None) or {}).get(platform)
+
+
+def is_authorized(gateway: Any, source: Any) -> bool:
+    """Whether the gateway would admit ``source``; any doubt counts as no.
+
+    ``pre_gateway_dispatch`` runs BEFORE the gateway's own authorization
+    (``gateway/run_inbound.py::_hm_admit_event``), so a hook that answers must
+    ask for itself. ``_is_user_authorized_for_source(source)`` is the
+    one-argument seam upstream keeps for plugins (``gateway/run.py``).
+    """
+    check = getattr(gateway, "_is_user_authorized_for_source", None)
+    if not callable(check):
+        return False
+    try:
+        return check(source) is True
+    except Exception as exc:
+        logger.warning("Janitor /start authorization check failed: %s", exc)
+        return False
 
 
 async def send_welcome(adapter: Any, chat_id: str, image_path: Optional[Path] = None) -> bool:
@@ -145,6 +164,10 @@ def pre_gateway_dispatch(event: Any = None, gateway: Any = None, **_kwargs: Any)
         _spawn(sync_avatar(getattr(adapter, "_bot", None)))
 
     if not is_start_command(getattr(event, "text", None)):
+        return None
+    # Unauthorized sender: no welcome, and no skip, so upstream still offers
+    # pairing (DM) or ignores it (group).
+    if not is_authorized(gateway, source):
         return None
     chat_id = getattr(source, "chat_id", None)
     if not chat_id:
