@@ -5,11 +5,13 @@
 // (F1-13), P18 Hermes' embedded Skills Hub and plugin catalog hidden (F1-30),
 // P19 updates follow the release channel, not main (F1-28), P20 Windows/macOS
 // brand: home, AUMID, .exe identity, macOS menu roles (F6-04), P21 Janitor's
-// version in the sidebar / About (brand/app-version.mjs).
+// version in the sidebar / About (brand/app-version.mjs), P22 signed updates
+// of the app itself (brand/app-update.mjs + brand/app-update-patches.mjs, Fase 9).
 
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { APP_UPDATE_PATCHES } from '../brand/app-update-patches.mjs'
 import { APP_VERSION_PATCHES } from '../brand/app-version.mjs'
 import { CATALOG_FILES } from '../brand/catalog-rules.mjs'
 import { FIRST_RUN_PATCHES } from '../brand/first-run.mjs'
@@ -72,6 +74,7 @@ export function allPatches(appDir = DEFAULT_APP_DIR) {
     ...HIDDEN_SURFACE_PATCHES,
     ...RELEASE_CHANNEL_PATCHES,
     ...platformPatches(),
-    ...APP_VERSION_PATCHES
+    ...APP_VERSION_PATCHES,
+    ...APP_UPDATE_PATCHES
   ]
 }

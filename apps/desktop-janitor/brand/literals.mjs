@@ -46,7 +46,7 @@ export const LITERALS = {
     ['message: "Hermes couldn\'t finish updating",', "message: 'Janitor no pudo terminar la actualización',"],
     [
       '"You\'re still on the previous version and can keep using it. Try the update again, or open the update log to report the problem.\\n\\n" +',
-      "'Sigues en la versión anterior y puedes seguir usándola. Vuelve a intentar la actualización o abre el registro de actualización para informar del problema.\\n\\n' +"
+      "'Janitor se abrió igualmente y puedes seguir usándolo. Vuelve a intentar la actualización o abre el registro de actualización para informar del problema.\\n\\n' +"
     ],
     ['`Details: ${result.message}`', '`Detalles: ${result.message}`'],
     ["buttons: ['Try again', 'Open log', 'Close'],", "buttons: ['Reintentar', 'Abrir registro', 'Cerrar'],"],

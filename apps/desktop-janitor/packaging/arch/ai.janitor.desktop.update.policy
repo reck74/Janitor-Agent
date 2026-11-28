@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!-- Acción propia del actualizador de la app de Janitor (paquete janitor-desktop-bin).
+     Solo autoriza ejecutar el auxiliar del paquete, que verifica lo que instala.
+     auth_admin sin «keep»: la contraseña se pide en cada actualización. -->
+<policyconfig>
+  <vendor>Janitor</vendor>
+  <vendor_url>https://github.com/reck74/Janitor-Agent</vendor_url>
+  <action id="ai.janitor.desktop.update">
+    <description>Instalar una versión nueva de Janitor</description>
+    <message>Hace falta tu contraseña para instalar la versión nueva de Janitor</message>
+    <icon_name>janitor-desktop</icon_name>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/janitor-desktop/janitor-update-helper</annotate>
+  </action>
+</policyconfig>

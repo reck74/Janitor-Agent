@@ -34,6 +34,8 @@ fork_paths:
   - docs/janitor/**
   - scripts/*janitor*
   - scripts/verify-firecrawl-pgcron.sh
+  # Janitor's half of the desktop update hand-off, sourced by posix.sh (plan Fase 9).
+  - scripts/desktop-update/janitor-app.sh
   # Root name the banner touchpoints import janitor.version by.
   - janitor_version.py
   - janitor-tui.png
@@ -255,7 +257,15 @@ touchpoints:
       the gate relaunches that AppImage instead of ending in `skew`, with a
       neutral note: the app decides app/engine compatibility at boot
       (design actualizacion-diseno.md 3.3). Without `$APPIMAGE` (deb/rpm)
-      `skew` stays. Every Linux-visible text — result messages (main.ts boot
+      `skew` stays, with a notice that points to the fork's releases. Since
+      Fase 9 (docs/janitor/plans/actualizacion-automatica.md) the script also
+      sources the fork-only `janitor-app.sh` and, when the app passes a
+      delivery (`--target-commit`, `--app-kind`, `--app-installer`, ...),
+      installs the new app BEFORE the engine (AppImage: verified copy renamed
+      over the file; Arch: `pkexec` of the package's own root helper), leaves
+      the engine alone if that fails, pins `janitor update` with `--commit`,
+      and always reopens an install kind the app vouched for (`janitor_gate`).
+      Without those arguments nothing changes. Every Linux-visible text — result messages (main.ts boot
       dialog `detail`, ui.html shim, notify-send/zenity/kdialog), stage names
       and the notification title — is Spanish, plus a message of its own for
       exit 2 (another update holds the lock); macOS-only bundle-swap copy and

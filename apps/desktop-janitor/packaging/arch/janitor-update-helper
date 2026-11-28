@@ -1,0 +1,208 @@
+#!/bin/bash
+# janitor-update-helper — instala, como root, una versión nueva del paquete de
+# Arch de Janitor (janitor-desktop-bin) que la publicación firmó.
+#
+# Lo instala el propio paquete en /usr/lib/janitor-desktop/, propiedad de root,
+# y solo se ejecuta así (acción de polkit ai.janitor.desktop.update):
+#
+#   /usr/bin/pkexec /usr/lib/janitor-desktop/janitor-update-helper <paquete> <manifiesto> <firma>
+#
+# Quien lo llama es un programa del usuario y NO se confía en él: ni en sus
+# archivos, ni en lo que ya haya verificado, ni en su entorno. Diseño y
+# revisiones: docs/janitor/plans/actualizacion-automatica.md (sección 9).
+#
+#   1. Root nunca abre una ruta elegida por el usuario: cada archivo lo lee un
+#      proceso con la identidad del usuario, aislado, y root guarda una copia
+#      privada. Desde ahí solo se usa la copia.
+#   2. Primero el manifiesto y su firma Ed25519, con la clave pública que instaló
+#      el paquete. El tamaño y la suma del paquete salen de ese manifiesto.
+#   3. La copia del paquete tiene que medir y sumar lo firmado. Solo entonces se
+#      abre: nombre, versión y arquitectura de .PKGINFO, y nunca una versión
+#      más vieja que la instalada (la misma sí: repetir una entrega).
+#   4. pacman -U con argumentos fijos sobre la copia, fuera del cgroup, los
+#      límites, las señales y el terminal de quien llamó.
+#
+# Códigos de salida: 10 argumentos o entorno, 11 lectura, 12 firma, 13 el paquete
+# no es el del manifiesto, 14 metadatos del paquete, 15 versión más vieja,
+# 16 falló pacman, 17 ya hay otra actualización en curso.
+
+# Todo el guion dentro de main: pacman reemplaza este archivo mientras corre.
+main() {
+  set -uo pipefail
+  umask 077
+  export PATH=/usr/bin LC_ALL=C
+  unset IFS CDPATH ENV BASH_ENV GLOBIGNORE
+  cd / || exit 10
+
+  local -r KEY=/usr/lib/janitor-desktop/update-key.pem
+  local -r CACHE=/var/cache/janitor-desktop
+  local -r PKGNAME=janitor-desktop-bin
+  local -r NAME_RE='^janitor-desktop-bin-([0-9][0-9a-z.]*-[0-9]+)-x86_64\.pkg\.tar\.zst$'
+  local -r MAX_MANIFEST=262144 MAX_SIGNATURE=1024 MAX_PACKAGE=1073741824
+
+  die() { # código mensaje
+    printf 'janitor-update-helper: %s\n' "$2" >&2
+    exit "$1"
+  }
+
+  [ "$EUID" -eq 0 ] || die 10 "tiene que ejecutarse como root, mediante pkexec."
+  [ "$#" -eq 3 ] || die 10 "uso: janitor-update-helper <paquete> <manifiesto> <firma>"
+  [[ "${PKEXEC_UID:-}" =~ ^[0-9]+$ ]] || die 10 "solo se ejecuta mediante pkexec."
+
+  local src_pkg="$1" src_manifest="$2" src_sig="$3" arg
+  for arg in "$src_pkg" "$src_manifest" "$src_sig"; do
+    case "$arg" in
+      /*) ;;
+      *) die 10 "las rutas tienen que ser absolutas." ;;
+    esac
+    case "$arg" in *$'\n'*) die 10 "ruta no válida." ;; esac
+  done
+
+  local name="${src_pkg##*/}" version
+  [[ "$name" =~ $NAME_RE ]] || die 10 "el archivo no tiene nombre de paquete de Janitor."
+  version="${BASH_REMATCH[1]}"
+
+  local uid="$PKEXEC_UID" gid
+  gid="$(/usr/bin/id -g -- "$uid" 2>/dev/null)" || die 10 "no se reconoce al usuario que llamó."
+  [[ "$gid" =~ ^[0-9]+$ ]] || die 10 "no se reconoce al usuario que llamó."
+
+  # Un paquete compilado sin clave de publicación trae el archivo vacío.
+  [ -s "$KEY" ] && [ ! -L "$KEY" ] || die 12 "este paquete no trae clave de verificación: no puede actualizarse solo."
+
+  # Carpeta privada: la instala el paquete (0700 root). Nada de enlaces ni de otro dueño.
+  [ -d "$CACHE" ] || /usr/bin/install -d -m 0700 -o root -g root "$CACHE" || die 11 "no se pudo crear $CACHE."
+  [ ! -L "$CACHE" ] && [ "$(/usr/bin/stat -c '%u %a' "$CACHE" 2>/dev/null)" = "0 700" ] \
+    || die 11 "$CACHE no es una carpeta privada de root."
+
+  # Una sola actualización a la vez: también cierra la carrera entre dos
+  # auxiliares que consultan la versión instalada antes de instalar.
+  local lock_fd
+  exec {lock_fd}>"$CACHE/.lock" || die 11 "no se pudo abrir el bloqueo."
+  /usr/bin/flock -n "$lock_fd" || die 17 "ya hay otra actualización de la app en curso."
+
+  # Restos de una corrida que murió sin limpiar (bajo el bloqueo).
+  /usr/bin/find "$CACHE" -mindepth 1 -maxdepth 1 -name 'update.*' -exec /usr/bin/rm -rf -- {} + 2>/dev/null
+
+  local work
+  work="$(/usr/bin/mktemp -d "$CACHE/update.XXXXXXXX")" || die 11 "no se pudo crear la carpeta de trabajo."
+  # shellcheck disable=SC2064
+  trap "/usr/bin/rm -rf -- '$work'" EXIT
+
+  # Copia de un archivo del usuario: lo abre un proceso SIN privilegios (la
+  # identidad de quien llamó, sin descriptores heredados, sin capacidades, sin
+  # terminal) y root solo recibe bytes por una tubería, con tope y con plazo.
+  # Así root no sigue enlaces, ni abre FIFOs o dispositivos ajenos.
+  copy_as_user() { # origen destino tope_bytes segundos
+    local src="$1" dst="$2" max="$3" secs="$4" got
+    (
+      exec {lock_fd}>&-
+      local fd
+      for fd in /proc/self/fd/*; do
+        fd="${fd##*/}"
+        [ "$fd" -gt 2 ] 2>/dev/null && eval "exec $fd>&-" 2>/dev/null
+      done
+      exec /usr/bin/timeout -s KILL "$secs" \
+        /usr/bin/setpriv --reuid="$uid" --regid="$gid" --clear-groups \
+          --no-new-privs --inh-caps=-all --bounding-set=-all -- \
+        /usr/bin/cat -- "$src" </dev/null 2>/dev/null
+    ) | /usr/bin/timeout -s KILL "$secs" /usr/bin/head -c "$((max + 1))" >"$dst"
+    got="$(/usr/bin/stat -c %s "$dst" 2>/dev/null)" || return 1
+    [ "$got" -ge 1 ] && [ "$got" -le "$max" ]
+  }
+
+  copy_as_user "$src_manifest" "$work/manifest" "$MAX_MANIFEST" 30 \
+    || die 11 "no se pudo leer el manifiesto (vacío, ilegible o demasiado grande)."
+  copy_as_user "$src_sig" "$work/sig.b64" "$MAX_SIGNATURE" 30 \
+    || die 11 "no se pudo leer la firma (vacía, ilegible o demasiado grande)."
+
+  # Firma Ed25519 sobre los bytes exactos del manifiesto.
+  /usr/bin/base64 -d "$work/sig.b64" >"$work/sig" 2>/dev/null \
+    && [ "$(/usr/bin/stat -c %s "$work/sig")" -eq 64 ] \
+    || die 12 "la firma no tiene el formato esperado."
+  /usr/bin/openssl pkeyutl -verify -pubin -inkey "$KEY" -rawin -in "$work/manifest" -sigfile "$work/sig" \
+    >/dev/null 2>&1 || die 12 "la firma del manifiesto no es válida: no se instala nada."
+
+  # El manifiesto ya es de fiar. Su formato es fijo (una entrada por línea,
+  # apps/desktop-janitor/scripts/update-manifest.mjs): exactamente UNA entrada
+  # con el nombre de este paquete, de la que salen tamaño y suma.
+  /usr/bin/grep -q $'\r' "$work/manifest" && die 13 "el manifiesto no tiene el formato esperado."
+  local entry_re="^    \{\"name\": \"${name//./\\.}\", \"size\": ([0-9]{1,10}), \"sha256\": \"([0-9a-f]{64})\"\},?\$"
+  local line matches=0 size="" sum=""
+  while IFS= read -r line; do
+    if [[ "$line" =~ $entry_re ]]; then
+      matches=$((matches + 1)) size="${BASH_REMATCH[1]}" sum="${BASH_REMATCH[2]}"
+    fi
+  done <"$work/manifest"
+  [ "$matches" -eq 1 ] || die 13 "el manifiesto firmado no describe este paquete."
+  [ "$size" -ge 1 ] && [ "$size" -le "$MAX_PACKAGE" ] || die 13 "el manifiesto firmado no describe este paquete."
+
+  # Espacio: la copia más lo que pacman extrae (margen amplio).
+  local free_kb
+  free_kb="$(/usr/bin/df -Pk "$CACHE" | /usr/bin/awk 'NR==2 {print $4}')"
+  [[ "$free_kb" =~ ^[0-9]+$ ]] && [ "$free_kb" -gt $(((size / 1024) * 2)) ] \
+    || die 11 "no hay espacio libre suficiente en $CACHE."
+
+  local pkg="$work/$name"
+  copy_as_user "$src_pkg" "$pkg" "$size" 300 || die 11 "no se pudo leer el paquete, o no mide lo que dice el manifiesto."
+  [ "$(/usr/bin/stat -c %s "$pkg")" -eq "$size" ] || die 13 "el paquete no mide lo que dice el manifiesto firmado."
+  local got_sum
+  got_sum="$(/usr/bin/sha256sum -- "$pkg")" || die 11 "no se pudo calcular la suma del paquete."
+  [ "${got_sum%% *}" = "$sum" ] || die 13 "el paquete no coincide con el manifiesto firmado: no se instala."
+
+  # Contenido respaldado por la firma: ahora sí se abre.
+  local info pkgname="" pkgver="" pkgarch=""
+  info="$(/usr/bin/bsdtar -xOf "$pkg" .PKGINFO 2>/dev/null)" || die 14 "el paquete no trae metadatos legibles."
+  while IFS= read -r line; do
+    case "$line" in
+      "pkgname = "*) pkgname="${line#pkgname = }" ;;
+      "pkgver = "*) pkgver="${line#pkgver = }" ;;
+      "arch = "*) pkgarch="${line#arch = }" ;;
+    esac
+  done <<<"$info"
+  [ "$pkgname" = "$PKGNAME" ] || die 14 "el paquete no es $PKGNAME."
+  [ "$pkgarch" = "x86_64" ] && [ "$(/usr/bin/uname -m)" = "x86_64" ] || die 14 "el paquete no es para este equipo (x86_64)."
+  [ "$pkgver" = "$version" ] || die 14 "la versión del paquete no coincide con su nombre."
+
+  # Solo actualiza: tiene que estar instalado, y nunca se baja de versión.
+  local installed
+  installed="$(/usr/bin/pacman -Q -- "$PKGNAME" 2>/dev/null)" || die 15 "$PKGNAME no está instalado: este auxiliar solo actualiza."
+  installed="${installed#"$PKGNAME" }"
+  [ -n "$installed" ] || die 15 "no se pudo leer la versión instalada."
+  local cmp
+  cmp="$(/usr/bin/vercmp "$pkgver" "$installed" 2>/dev/null)" || die 15 "no se pudieron comparar las versiones."
+  [ "$cmp" -ge 0 ] 2>/dev/null || die 15 "la versión $pkgver es más vieja que la instalada ($installed): no se baja de versión."
+
+  # pacman fuera de lo que hereda de quien llamó: como unidad del sistema (otro
+  # cgroup, sin terminal, límites y señales por defecto); sin systemd, sesión
+  # nueva, entorno vacío, señales y límites restablecidos. Su salida va a un
+  # archivo de root, no a la tubería de quien llamó: quien la lee es un proceso
+  # del usuario, y pararlo o matarlo no puede bloquear ni cortar la instalación.
+  local rc out="$work/pacman.log"
+  if [ -d /run/systemd/system ] && [ -x /usr/bin/systemd-run ]; then
+    /usr/bin/systemd-run --quiet --wait --pipe --collect --service-type=exec \
+      --unit="janitor-desktop-update-$$" --description="Actualización de Janitor ($pkgver)" \
+      --property=UMask=0022 --setenv=PATH=/usr/bin --setenv=LC_ALL=C \
+      -- /usr/bin/pacman -U --noconfirm --noprogressbar -- "$pkg" </dev/null >"$out" 2>&1
+    rc=$?
+  else
+    (
+      exec {lock_fd}>&-
+      umask 022
+      ulimit -S -c 0 2>/dev/null
+      ulimit -f unlimited 2>/dev/null
+      ulimit -v unlimited 2>/dev/null
+      ulimit -d unlimited 2>/dev/null
+      exec /usr/bin/setsid --wait /usr/bin/env -i --default-signal PATH=/usr/bin LC_ALL=C \
+        /usr/bin/pacman -U --noconfirm --noprogressbar -- "$pkg" </dev/null >"$out" 2>&1
+    )
+    rc=$?
+  fi
+  /usr/bin/tail -c 16384 -- "$out" >&2 2>/dev/null
+  [ "$rc" -eq 0 ] || die 16 "pacman no pudo instalar el paquete (salida $rc). Si tu pacman.conf exige paquetes firmados para archivos locales (LocalFileSigLevel), instálalo a mano."
+
+  printf 'janitor-update-helper: instalado %s %s\n' "$PKGNAME" "$pkgver" >&2
+  exit 0
+}
+
+main "$@"
+exit 70

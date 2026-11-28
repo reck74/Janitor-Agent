@@ -6,7 +6,11 @@
 // AppImage under its versioned local name, so `makepkg` finds every source
 // without downloading anything.
 //
-//   node apps/desktop-janitor/scripts/arch-package.mjs --appimage <file> --tag <vX.Y.Z-janitor.N> --out <dir>
+//   node apps/desktop-janitor/scripts/arch-package.mjs --appimage <file> --tag <vX.Y.Z-janitor.N> --out <dir> [--update-key <pem>]
+//
+// The package also carries the app updater (plan Fase 9, F9-13): the root
+// helper, its polkit action and the release public key (brand/update-key.pem,
+// or --update-key for a rehearsal with a throwaway key).
 
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -42,7 +46,14 @@ function copy(from, to, mode) {
 /**
  * Writes PKGBUILD + sources into outDir. Returns { pkgver, pkgbuild, appimage }.
  */
-export function renderArchPackage({ appimage, tag, outDir, repoRoot = REPO_ROOT }) {
+export const UPDATE_KEY_FILE = path.resolve(SCRIPTS_DIR, '..', 'brand', 'update-key.pem')
+
+/**
+ * `updateKey`: the release public key (PEM) the package installs for its
+ * updater (packaging/arch/janitor-update-helper). Without one the package
+ * carries an empty file and the updater refuses to install anything.
+ */
+export function renderArchPackage({ appimage, tag, outDir, repoRoot = REPO_ROOT, updateKey = UPDATE_KEY_FILE }) {
   const pkgver = pkgverFromTag(tag)
 
   if (!appimage || !fs.statSync(appimage).isFile()) {
@@ -64,13 +75,31 @@ export function renderArchPackage({ appimage, tag, outDir, repoRoot = REPO_ROOT 
   copy(path.join(ARCH_DIR, 'Janitor.desktop'), desktop, 0o644)
   copy(path.join(repoRoot, 'LICENSE'), license, 0o644)
 
+  const helper = path.join(outDir, 'janitor-update-helper')
+  const policy = path.join(outDir, 'ai.janitor.desktop.update.policy')
+  const key = path.join(outDir, 'update-key.pem')
+
+  copy(path.join(ARCH_DIR, 'janitor-update-helper'), helper, 0o755)
+  copy(path.join(ARCH_DIR, 'ai.janitor.desktop.update.policy'), policy, 0o644)
+
+  const keyText = updateKey && fs.existsSync(updateKey) ? fs.readFileSync(updateKey, 'utf8') : ''
+
+  if (keyText && !keyText.includes('BEGIN PUBLIC KEY')) {
+    throw new Error(`${updateKey} is not a PEM public key`)
+  }
+
+  fs.writeFileSync(key, keyText, { mode: 0o644 })
+
   const values = {
     TAG: tag,
     PKGVER: pkgver,
     SHA_APPIMAGE: sha256(localAppimage),
     SHA_LAUNCHER: sha256(launcher),
     SHA_DESKTOP: sha256(desktop),
-    SHA_LICENSE: sha256(license)
+    SHA_LICENSE: sha256(license),
+    SHA_HELPER: sha256(helper),
+    SHA_POLICY: sha256(policy),
+    SHA_KEY: sha256(key)
   }
 
   const template = fs.readFileSync(path.join(ARCH_DIR, 'PKGBUILD.in'), 'utf8')
@@ -84,7 +113,7 @@ export function renderArchPackage({ appimage, tag, outDir, repoRoot = REPO_ROOT 
   const pkgbuild = path.join(outDir, 'PKGBUILD')
   fs.writeFileSync(pkgbuild, rendered)
 
-  return { pkgver, pkgbuild, appimage: localAppimage }
+  return { pkgver, pkgbuild, appimage: localAppimage, hasUpdateKey: Boolean(keyText) }
 }
 
 function parseArgs(argv) {
@@ -94,8 +123,8 @@ function parseArgs(argv) {
     const key = argv[i]
     const value = argv[i + 1]
 
-    if (!['--appimage', '--tag', '--out'].includes(key) || value === undefined) {
-      throw new Error('usage: arch-package.mjs --appimage <file> --tag <vX.Y.Z-janitor.N> --out <dir>')
+    if (!['--appimage', '--tag', '--out', '--update-key'].includes(key) || value === undefined) {
+      throw new Error('usage: arch-package.mjs --appimage <file> --tag <vX.Y.Z-janitor.N> --out <dir> [--update-key <pem>]')
     }
 
     out[key.slice(2)] = value
@@ -115,7 +144,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const result = renderArchPackage({
       appimage: path.resolve(args.appimage),
       tag: args.tag,
-      outDir: path.resolve(args.out)
+      outDir: path.resolve(args.out),
+      ...(args['update-key'] ? { updateKey: path.resolve(args['update-key']) } : {})
     })
 
     console.log(`PKGBUILD ${result.pkgver} → ${result.pkgbuild}`)

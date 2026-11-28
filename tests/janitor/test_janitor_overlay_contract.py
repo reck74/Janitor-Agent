@@ -97,6 +97,8 @@ def check_desktop_update_posix(tmp_path):
     args = seen["core"][0]
     assert args["keep_stash"] is True and args["yes"] is True and args["gateway"] is True, args
     assert args["branch"] == "main", args
+    # No delivery from the app: the engine follows the branch, unpinned (plan Fase 9).
+    assert args["commit"] is None, args
     assert seen["result"]["ok"] is True, seen["result"]
     # The relaunch gate's message reaches the app verbatim (boot dialog / shim window): Spanish.
     import subprocess
@@ -113,7 +115,8 @@ def check_desktop_update_posix(tmp_path):
 
     foreign = tmp_path / "opt" / "janitor"
     decision, message = gate()
-    assert decision == "skew" and "AppImage" in message, (decision, message)
+    assert decision == "skew" and "no se puede actualizar sola" in message, (decision, message)
+    assert "reck74/Janitor-Agent/releases" in message and "deb/rpm" not in message, message
     assert "Backend updated" not in message and "hermes" not in message.lower(), message
     # Run from an AppImage, the engine update reopens that AppImage; the app judges compatibility.
     appimage = tmp_path / "Janitor.AppImage"

@@ -6,9 +6,20 @@ name: Janitor Desktop release
 # the Arch Linux package repackaged from the AppImage (F1-31). Every artifact is
 # verified from the INSIDE (install stamp, signature, architecture, identity),
 # launched once with Playwright (F6-09: screenshots as `janitor-smoke-<target>`)
-# and, for a `v*` tag, the `release` job moves the release channel branch
-# (`stable`, janitor/release_channel.py) to the tag and attaches every file to
-# the fork's GitHub release, where users download it.
+# and, for a `v*` tag, the `release` job attaches every file to the fork's
+# GitHub release, with the signed update manifest (plan Fase 9), and only then
+# moves the release channel branch (`stable`, janitor/release_channel.py) to
+# the tag: nobody is told "there is a new version" before it exists complete.
+#
+# Signing (plan F9-01): the manifest (janitor-update.json: version, commit,
+# delivery number, and name/size/SHA-256 of every installer) is signed with
+# Ed25519. The PRIVATE key is the secret JANITOR_UPDATE_SIGNING_KEY of the
+# protected environment `janitor-release` (PEM, PKCS#8), which only the
+# `release` job uses; the PUBLIC key is committed in
+# apps/desktop-janitor/brand/update-key.pem and baked into the app and the Arch
+# package. Both are the project owner's: no agent creates or reads the private
+# key. Without the committed public key nothing is signed and the apps built
+# here do not update themselves (docs/janitor/actualizacion-firma.md).
 #
 # The build is always of the commit this run was triggered for (tag push, a
 # manual run from a branch or tag, or a PR head), never of another ref: the app
@@ -392,6 +403,27 @@ jobs:
           test "$(jq -r .branch "$stamp")" = "$STAMP_BRANCH"
           pacman -R --noconfirm janitor-desktop-bin
           test ! -e /opt/janitor-desktop
+      # Plan F9-09/F9-13: the updater end to end, as root in this throwaway
+      # container. Installs the package just built (N), builds the same app as
+      # N+1 and drives the package's REAL root helper the way pkexec would,
+      # with throwaway keys generated in the step: bad signature, altered
+      # manifest, package replaced after verification, files only root can
+      # read, a second update in progress, N → N+1, the same delivery again and
+      # an older one. Not covered here: the polkit dialog (no session) and the
+      # systemd-run path (no systemd in a container).
+      - name: Updater end to end (N → N+1, throwaway keys)
+        run: |
+          next_tag=$(node -e 'const m = /^(v\d+\.\d+\.\d+-janitor\.)(\d+)$/.exec(process.argv[1]); if (!m) process.exit(1); console.log(m[1] + (Number(m[2]) + 1))' "$EXPECTED_TAG")
+          next=/home/builder/pkg-next
+          node apps/desktop-janitor/scripts/arch-package.mjs \
+            --appimage appimage/Janitor-linux-x86_64.AppImage --tag "$next_tag" --out "$next"
+          chown -R builder: "$next"
+          runuser -u builder -- env HOME=/home/builder bash -c 'cd /home/builder/pkg-next && makepkg --cleanbuild --noconfirm --nodeps'
+          bash apps/desktop-janitor/scripts/arch-update-e2e.sh \
+            /home/builder/pkg/*.pkg.tar.zst "$next"/*.pkg.tar.zst "${next_tag#v}" "$GITHUB_SHA"
+          # The updated app is the real one: its stamp is this commit's.
+          test "$(jq -r .commit /opt/janitor-desktop/resources/install-stamp.json)" = "$GITHUB_SHA"
+          pacman -R --noconfirm janitor-desktop-bin
       # The makepkg sources for users who build the package themselves: PKGBUILD
       # plus the local sources it lists (arch-package.mjs), without the AppImage,
       # which makepkg downloads from the release by the URL in `source`.
@@ -403,7 +435,8 @@ jobs:
           name="janitor-desktop-bin-$pkgver"
           stage="$RUNNER_TEMP/src/$name"
           mkdir -p "$stage" dist
-          cp -p "$pkg/PKGBUILD" "$pkg/janitor-desktop.sh" "$pkg/Janitor.desktop" "$pkg/LICENSE" "$stage/"
+          cp -p "$pkg/PKGBUILD" "$pkg/janitor-desktop.sh" "$pkg/Janitor.desktop" "$pkg/LICENSE" \
+            "$pkg/janitor-update-helper" "$pkg/ai.janitor.desktop.update.policy" "$pkg/update-key.pem" "$stage/"
           tar -C "$RUNNER_TEMP/src" --sort=name --owner=0 --group=0 --numeric-owner \
             -czf "dist/$name.src.tar.gz" "$name"
           tar -tzvf "dist/$name.src.tar.gz"
@@ -438,6 +471,8 @@ jobs:
     needs: [prepare, build, arch-package]
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # The protected environment that holds the signing key (see the header).
+    environment: janitor-release
     permissions:
       contents: write
       actions: read
@@ -446,25 +481,33 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
-      # Order matters: first the channel branch, then the files. The app
-      # downloads scripts/install.sh at the commit it was built from and the
-      # installer clones the branch in install-stamp.json (the channel), so by
-      # the time anyone can download this release the channel must already
-      # contain that commit. A failure here publishes nothing.
-      - name: Move the release channel to the tag
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: '26'
+      # Order (plan F9-14): files first, channel last. The app and
+      # `janitor update` learn about a version from the channel branch, so it
+      # moves only once the release is published and checked. This step only
+      # proves the move at the end will be accepted, so a release is never
+      # published for a tag the channel cannot reach; it pushes nothing.
+      - name: The channel can move to the tag
         run: |
           channel=$(python3 -I -c 'import runpy, sys; print(runpy.run_path(sys.argv[1])["RELEASE_BRANCH"])' janitor/release_channel.py)
           test -n "$channel"
+          echo "CHANNEL=$channel" >> "$GITHUB_ENV"
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           # Only a commit already merged to main is released.
           if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
             echo "::error::The tag $GITHUB_REF_NAME ($GITHUB_SHA) is not reachable from origin/main. Merge it to main and tag a commit of main."
             exit 1
           fi
-          # Not forced: creates the branch the first time and refuses a
-          # non-fast-forward (an older tag than the channel's tip, or a
-          # channel moved by hand), so a release never rewinds users.
-          git push origin "$GITHUB_SHA:refs/heads/$channel"
+          # A release never rewinds users: the channel's tip must be an
+          # ancestor of the tag (or the channel must not exist yet).
+          if git fetch --no-tags origin "+refs/heads/$channel:refs/remotes/origin/$channel" 2>/dev/null; then
+            if ! git merge-base --is-ancestor "origin/$channel" "$GITHUB_SHA"; then
+              echo "::error::The channel $channel is not an ancestor of $GITHUB_REF_NAME: this tag is older than what users already have, or the channel was moved by hand."
+              exit 1
+            fi
+          fi
       - name: Download and check the files
         env:
           GH_TOKEN: ${{ github.token }}
@@ -505,6 +548,41 @@ jobs:
           cat ./*.sha256 > SHA256SUMS
           rm ./*.sha256
           ls -la
+      # Plan F9-01. The manifest lists every installer (not the sources tarball
+      # nor SHA256SUMS). The private key reaches only the `sign` command, through
+      # the environment; what was signed is then verified with the public key
+      # committed in the repo, file by file, before anything is published.
+      - name: Signed update manifest
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          key=apps/desktop-janitor/brand/update-key.pem
+          if [ ! -f "$key" ]; then
+            echo "::warning::No $key in the repo: this release carries no signed manifest and its apps do not update themselves (docs/janitor/actualizacion-firma.md)."
+            exit 0
+          fi
+          shopt -s nullglob
+          installers=(dist/Janitor-*.AppImage dist/Janitor-*.exe dist/Janitor-*.dmg dist/*.pkg.tar.zst)
+          node apps/desktop-janitor/scripts/update-manifest.mjs build \
+            --version "${TAG#v}" --commit "$GITHUB_SHA" --out dist "${installers[@]}"
+      - name: Sign the manifest
+        env:
+          JANITOR_UPDATE_SIGNING_KEY: ${{ secrets.JANITOR_UPDATE_SIGNING_KEY }}
+        run: |
+          [ -f dist/janitor-update.json ] || exit 0
+          if [ -z "$JANITOR_UPDATE_SIGNING_KEY" ]; then
+            echo "::error::The repo has a public update key but the environment janitor-release has no JANITOR_UPDATE_SIGNING_KEY secret (docs/janitor/actualizacion-firma.md)."
+            exit 1
+          fi
+          node apps/desktop-janitor/scripts/update-manifest.mjs sign \
+            --manifest dist/janitor-update.json --key-env JANITOR_UPDATE_SIGNING_KEY
+      - name: Verify the signed manifest against the files
+        run: |
+          [ -f dist/janitor-update.json ] || exit 0
+          # A secret that is not the pair of the committed public key fails here.
+          node apps/desktop-janitor/scripts/update-manifest.mjs verify \
+            --manifest dist/janitor-update.json --signature dist/janitor-update.json.sig \
+            --public-key apps/desktop-janitor/brand/update-key.pem --dir dist
       - name: Release notes
         env:
           TAG: ${{ github.ref_name }}
@@ -538,6 +616,44 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release view "$TAG" >/dev/null 2>&1 || \
-            gh release create "$TAG" --verify-tag --title "Janitor $TAG" --notes-file notes.md
-          gh release upload "$TAG" dist/* --clobber
+          # `gh release create` with files keeps the release a draft until
+          # every file is uploaded: it is never visible half-attached. A re-run
+          # for a release that already exists replaces its files.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" --verify-tag --title "Janitor $TAG" --notes-file notes.md dist/*
+          fi
+      # What users will download is what was built: every file is there, with
+      # its size, and the published manifest and signature are the signed ones.
+      - name: Verify the published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" --json isDraft,assets > release.json
+          test "$(jq -r .isDraft release.json)" = false
+          for f in dist/*; do
+            name=$(basename "$f")
+            want=$(stat -c %s "$f")
+            got=$(jq -r --arg n "$name" '.assets[] | select(.name == $n) | .size' release.json)
+            if [ "$got" != "$want" ]; then
+              echo "::error::Published $name has size '${got:-missing}', expected $want"
+              exit 1
+            fi
+          done
+          if [ -f dist/janitor-update.json ]; then
+            mkdir published
+            gh release download "$TAG" --dir published --pattern 'janitor-update.json*'
+            cmp dist/janitor-update.json published/janitor-update.json
+            cmp dist/janitor-update.json.sig published/janitor-update.json.sig
+            node apps/desktop-janitor/scripts/update-manifest.mjs verify \
+              --manifest published/janitor-update.json --signature published/janitor-update.json.sig \
+              --public-key apps/desktop-janitor/brand/update-key.pem
+          fi
+      # Last (plan F9-14): from here on the app and `janitor update` see the
+      # version. Not forced: creates the branch the first time and refuses a
+      # non-fast-forward, so a release never rewinds users.
+      - name: Move the release channel to the tag
+        run: git push origin "$GITHUB_SHA:refs/heads/$CHANNEL"

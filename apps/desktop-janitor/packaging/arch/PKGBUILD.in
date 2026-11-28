@@ -17,20 +17,30 @@ conflicts=('janitor-desktop')
 depends=('alsa-lib' 'at-spi2-core' 'cairo' 'dbus' 'expat' 'glib2' 'gtk3' 'libcups'
          'libx11' 'libxcb' 'libxcomposite' 'libxdamage' 'libxext' 'libxfixes'
          'libxkbcommon' 'libxrandr' 'mesa' 'nspr' 'nss' 'pango' 'systemd-libs'
-         'hicolor-icon-theme' 'xdg-utils' 'git' 'curl')
-optdepends=('libsecret: guardar credenciales en el llavero del sistema'
+         'hicolor-icon-theme' 'xdg-utils' 'git' 'curl'
+         # El actualizador de la app (janitor-update-helper): firma, lectura sin
+         # privilegios, bloqueo y comparación de versiones.
+         'bash' 'coreutils' 'util-linux' 'openssl' 'libarchive' 'pacman')
+optdepends=('polkit: actualizar la app sola (pide la contraseña del sistema)'
+            'libsecret: guardar credenciales en el llavero del sistema'
             'libnotify: notificaciones de escritorio')
 makedepends=('imagemagick')
 options=('!strip' '!debug')
 source=("${_appname}-${pkgver}.AppImage::${url}/releases/download/${_tag}/Janitor-linux-x86_64.AppImage"
         'janitor-desktop.sh'
         'Janitor.desktop'
-        'LICENSE')
+        'LICENSE'
+        'janitor-update-helper'
+        'ai.janitor.desktop.update.policy'
+        'update-key.pem')
 noextract=("${_appname}-${pkgver}.AppImage")
 sha256sums=('@SHA_APPIMAGE@'
             '@SHA_LAUNCHER@'
             '@SHA_DESKTOP@'
-            '@SHA_LICENSE@')
+            '@SHA_LICENSE@'
+            '@SHA_HELPER@'
+            '@SHA_POLICY@'
+            '@SHA_KEY@')
 
 _icon_sizes=(16 24 32 48 64 128 256 512)
 
@@ -69,6 +79,15 @@ package() {
     install -Dm644 "icons/${size}x${size}/${_appname}.png" \
       "$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/${_appname}.png"
   done
+
+  # El actualizador (plan Fase 9, F9-13): auxiliar de root, su acción de polkit,
+  # la clave pública de publicación (vacía si esta compilación no lleva clave:
+  # el auxiliar se niega entonces) y la carpeta privada donde verifica.
+  install -Dm755 janitor-update-helper "$pkgdir/usr/lib/${_appname}/janitor-update-helper"
+  install -Dm644 update-key.pem "$pkgdir/usr/lib/${_appname}/update-key.pem"
+  install -Dm644 ai.janitor.desktop.update.policy \
+    "$pkgdir/usr/share/polkit-1/actions/ai.janitor.desktop.update.policy"
+  install -dm700 "$pkgdir/var/cache/${_appname}"
 
   local licdir="$pkgdir/usr/share/licenses/$pkgname"
   install -Dm644 LICENSE "$licdir/LICENSE"

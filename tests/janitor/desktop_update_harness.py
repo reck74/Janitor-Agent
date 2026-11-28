@@ -35,7 +35,7 @@ _RECORDING_CORE = (
     "def _record(args):\n"
     "    with open(os.environ['JANITOR_TEST_CORE_ARGS'], 'a', encoding='utf-8') as fh:\n"
     "        fh.write(json.dumps(vars(args), sort_keys=True) + '\\n')\n"
-    "    return 0\n"
+    "    return int(os.environ.get('JANITOR_TEST_CORE_EXIT', '0'))\n"
     "core.run_janitor_update = _record\n"
     "import janitor.cli\n"
 )
@@ -54,11 +54,15 @@ def handoff_env(root: Path, **overrides: str) -> dict:
 
 
 def run_posix_handoff(
-    root: Path, *extra_args: str, with_janitor: bool = True, env: dict | None = None
+    root: Path, *extra_args: str, with_janitor: bool = True, env: dict | None = None,
+    script: Path = POSIX_SH,
 ) -> dict:
     """Run the real hand-off end to end; return what each entry point received.
 
-    ``env`` adds variables to the environment the app would pass (e.g. ``APPIMAGE``).
+    ``script`` is the hand-off to run (a copy with a constant replaced, for a
+    test that cannot use a system path). ``env`` adds variables to the environment the app would pass (e.g. ``APPIMAGE``);
+    ``JANITOR_TEST_CORE_EXIT`` there makes the recorded ``janitor update`` fail
+    with that exit code.
     """
     install_root = root / "hermes-agent"
     bin_dir = install_root / "venv" / "bin"
@@ -80,7 +84,7 @@ def run_posix_handoff(
         "JANITOR_TEST_CORE_ARGS": str(core_args),
     })
     subprocess.run(
-        ["/bin/bash", str(POSIX_SH), "--install-root", str(install_root), "--no-ui", *extra_args],
+        ["/bin/bash", str(script), "--install-root", str(install_root), "--no-ui", *extra_args],
         env=run_env,
         timeout=60,
         check=True,
