@@ -312,7 +312,7 @@ def test_arch_without_a_polkit_agent_gives_the_exact_manual_command(arch):
     assert f"pacman -U {arch['package']}" in seen["result"]["message"], seen["result"]
 
 
-@pytest.mark.parametrize("code, fragment", [(13, "cambió después de descargarlo"), (15, "no se baja de versión"), (12, "firma")])
+@pytest.mark.parametrize("code, fragment", [(13, "no es el que describe el manifiesto firmado"), (15, "no se baja de versión"), (12, "firma")])
 def test_arch_a_refusal_of_the_root_helper_is_explained_and_changes_nothing(arch, code, fragment):
     seen = _run_arch(arch, pkexec_exit=code)
 

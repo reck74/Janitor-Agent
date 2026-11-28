@@ -174,13 +174,15 @@ main() {
 
   # pacman fuera de lo que hereda de quien llamó: como unidad del sistema (otro
   # cgroup, sin terminal, límites y señales por defecto); sin systemd, sesión
-  # nueva, entorno vacío, señales y límites restablecidos.
-  local rc
+  # nueva, entorno vacío, señales y límites restablecidos. Su salida va a un
+  # archivo de root, no a la tubería de quien llamó: quien la lee es un proceso
+  # del usuario, y pararlo o matarlo no puede bloquear ni cortar la instalación.
+  local rc out="$work/pacman.log"
   if [ -d /run/systemd/system ] && [ -x /usr/bin/systemd-run ]; then
     /usr/bin/systemd-run --quiet --wait --pipe --collect --service-type=exec \
       --unit="janitor-desktop-update-$$" --description="Actualización de Janitor ($pkgver)" \
       --property=UMask=0022 --setenv=PATH=/usr/bin --setenv=LC_ALL=C \
-      -- /usr/bin/pacman -U --noconfirm --noprogressbar -- "$pkg" </dev/null >&2
+      -- /usr/bin/pacman -U --noconfirm --noprogressbar -- "$pkg" </dev/null >"$out" 2>&1
     rc=$?
   else
     (
@@ -191,10 +193,11 @@ main() {
       ulimit -v unlimited 2>/dev/null
       ulimit -d unlimited 2>/dev/null
       exec /usr/bin/setsid --wait /usr/bin/env -i --default-signal PATH=/usr/bin LC_ALL=C \
-        /usr/bin/pacman -U --noconfirm --noprogressbar -- "$pkg" </dev/null >&2
+        /usr/bin/pacman -U --noconfirm --noprogressbar -- "$pkg" </dev/null >"$out" 2>&1
     )
     rc=$?
   fi
+  /usr/bin/tail -c 16384 -- "$out" >&2 2>/dev/null
   [ "$rc" -eq 0 ] || die 16 "pacman no pudo instalar el paquete (salida $rc). Si tu pacman.conf exige paquetes firmados para archivos locales (LocalFileSigLevel), instálalo a mano."
 
   printf 'janitor-update-helper: instalado %s %s\n' "$PKGNAME" "$pkgver" >&2

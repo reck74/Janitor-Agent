@@ -27,6 +27,7 @@ export const MANIFEST_NAME = 'janitor-update.json'
 export const SIGNATURE_NAME = 'janitor-update.json.sig'
 export const MANIFEST_SCHEMA = 1
 export const MANIFEST_MAX_BYTES = 256 * 1024
+export const MANIFEST_TIMEOUT_MS = 30_000
 export const SIGNATURE_MAX_BYTES = 1024
 export const INSTALLER_MAX_BYTES = 1024 * 1024 * 1024
 export const APPIMAGE_NAME = 'Janitor-linux-x86_64.AppImage'
@@ -271,13 +272,17 @@ export function decideUpdate({ manifest, targetCommit, appVersion, acceptedSeque
     fail('otro-commit', 'El manifiesto publicado no corresponde a la versión del canal: no se instala nada. Vuelve a intentarlo en unos minutos.')
   }
 
-  const floor = Math.max(Number(acceptedSequence) || 0, sequenceForVersion(appVersion) ?? 0)
-
-  if (manifest.sequence < floor) {
+  // A delivery older than one this install already accepted is a replay.
+  if (manifest.sequence < (Number(acceptedSequence) || 0)) {
     fail('mas-vieja', `La versión publicada (${manifest.version}) es más vieja que la que ya tienes: no se baja de versión.`)
   }
 
-  if (manifest.version === appVersion) return { action: 'engine-only', installer: null }
+  // The app is already at what the channel publishes, or past it (installed by
+  // hand before the channel moved): no installer, and the engine still follows
+  // the channel -- `janitor update --commit` never goes back on its own.
+  if (manifest.version === appVersion || manifest.sequence < (sequenceForVersion(appVersion) ?? 0)) {
+    return { action: 'engine-only', installer: null }
+  }
 
   const installer = installerFor(kind, manifest)
 
@@ -326,7 +331,9 @@ async function get(fetchImpl, url, what, signal) {
  * gives the manifest and its signature. Nothing here is trusted until the
  * signature holds and the manifest names `commit`.
  */
-export async function fetchVerifiedManifest({ commit, publicKeyPem, fetchImpl, signal }) {
+export async function fetchVerifiedManifest({ commit, publicKeyPem, fetchImpl, signal: outer, timeoutMs = MANIFEST_TIMEOUT_MS }) {
+  // Three small files: a server that stops answering must not hold the check or the update open.
+  const signal = AbortSignal.any([outer, AbortSignal.timeout(timeoutMs)].filter(Boolean))
   const pyproject = await readCapped(await get(fetchImpl, pyprojectUrl(commit), 'la versión del canal', signal), MANIFEST_MAX_BYTES, 'La descripción de la versión')
   const version = versionFromPyproject(pyproject.toString('utf8'))
 
@@ -614,6 +621,8 @@ export function readInstallFacts({ env, execPath, fsImpl = fs, pathLookup = () =
 /**
  * deps:
  *   appVersion, platform, arch, env, execPath, hermesHome, publicKeyPem
+ *   releaseBranch                   the release channel; an install that follows another
+ *                                   branch (a developer's) keeps the hand-off it always had
  *   fetchImpl(url, init)            the transport (global fetch in the app)
  *   packageOwner(file) → Promise<string|null>   pacman -Qqo, or null
  *   pathLookup(command) → string|null
@@ -638,13 +647,16 @@ export function createDesktopUpdater(deps) {
     return installPromise
   }
 
+  // Releases, and so manifests, exist only for the release channel.
+  const offChannel = status => Boolean(deps.releaseBranch && status?.branch && status.branch !== deps.releaseBranch)
+
   return {
     install,
 
     /** Add the app's side to the engine's update status (check at startup). Never throws. */
     async augmentStatus(status) {
       try {
-        const usable = status?.supported && !status.error && typeof status.targetSha === 'string'
+        const usable = status?.supported && !status.error && typeof status.targetSha === 'string' && !offChannel(status)
 
         const info = await checkAppUpdate({
           install: await install(),
@@ -686,6 +698,12 @@ export function createDesktopUpdater(deps) {
 
         if (!status?.supported || status.error || !status.targetSha) {
           fail('red', `No se pudo consultar el canal de versiones${status?.message ? ` (${status.message})` : ''}.`)
+        }
+
+        if (offChannel(status)) {
+          deps.log(`[janitor-update] engine-only hand-off: this install follows ${status.branch}, not the release channel`)
+
+          return { args: [] }
         }
 
         deps.progress({ stage: 'fetch', message: 'Comprobando la versión publicada…', percent: 0 })

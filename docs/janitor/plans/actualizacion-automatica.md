@@ -91,8 +91,10 @@ app se cierra para actualizar el motor.
 5. Si el usuario cancela la contraseña o la instalación de la app falla, **no se toca el
    motor**: Janitor se reabre tal como estaba, con un aviso exacto de qué pasó. Si la app
    se instaló y falla el motor, se reabre la app nueva, que ya sabe ofrecer la
-   actualización del motor. Nunca queda cerrado sin explicación, y el paso en que iba
-   queda anotado para poder terminar la misma entrega al siguiente intento.
+   actualización del motor. Nunca queda cerrado sin explicación. El paso en que iba
+   queda anotado (`paso.json`) solo para diagnóstico: la misma entrega se termina al
+   siguiente intento porque la app vuelve a comparar su versión y el commit del motor
+   con el manifiesto firmado, no porque lea esa nota.
 
 ### 4.2 Piezas
 
@@ -198,7 +200,7 @@ app se cierra para actualizar el motor.
 | F9-08 | **Hecho para Linux (2026-11-27), sin auditar.** Textos nuevos en español; el aviso «AppImage/deb/rpm» ya no existe: para una instalación desconocida dice que esa copia no se actualiza sola y da el enlace a las versiones | `apps/desktop-janitor/brand/`, guiones | prueba «the relay no longer tells anyone to reinstall «AppImage/deb/rpm» by hand»; `test_janitor_overlay_contract.py::test_touchpoint_contract[desktop-update-posix]` |
 | F9-09 | **Hecho en parte para Linux (2026-11-27).** Arch: paso «Updater end to end (N → N+1, throwaway keys)» del trabajo `arch-package` (instala el paquete N real, compila N+1, ejecuta el auxiliar real como root con claves de ensayo). AppImage: pruebas del relevo con ejecutables sustitutos y de la descarga con servidor local. **No cubierto en CI:** la app Electron real cerrándose y reabriendo la N+1, el diálogo de polkit y el camino `systemd-run` del auxiliar (el contenedor no tiene systemd) | flujo de publicación | ensayo local del paso de Arch en un contenedor `archlinux:base-devel` con un AppImage de mentira: `== Arch updater e2e: all checks passed (0.21.5.janitor.4-1 → 0.21.5.janitor.5-1)`. Corrida de CI: ver el PR |
 | F9-10 | **Sin hacer.** Prueba real: equipo del dueño (Arch) y, si hay equipos, Windows y Mac. Necesita la clave del dueño y una versión publicada | — | evidencia anotada; lo no probado se anota como no probado |
-| F9-11 | **Primera mitad hecha (2026-11-27):** revisión del DISEÑO del auxiliar por un subagente distinto y consulta a Codex, antes de escribirlo (sección 9.2). **Pendiente:** la revisión del código final por un revisor distinto | — | directiva #20 |
+| F9-11 | **Hecho para la entrega de Linux (2026-11-27).** Diseño del auxiliar revisado antes de escribirlo por un subagente distinto y por Codex (sección 9.2). Código final revisado por un subagente Opus distinto, que leyó el diff y volvió a correr las pruebas (sección 9.5): sin bloqueantes; 4 hallazgos importantes y 6 menores, corregidos o anotados. Pendiente: nada de Linux; la revisión se repite con Windows y macOS | sección 9.5 | directiva #20 |
 
 | F9-12 | **Hecho (2026-11-27), sin auditar.** `janitor update --commit <sha>`: 40 hexadecimales; el commit debe estar contenido en `origin/<rama>` (se comprueba antes del stash, del cambio de rama y de activar código); nunca vuelve a un commit que HEAD ya superó; `merge --ff-only` y el mismo `reset --hard` de respaldo | `janitor/update_core.py` | `scripts/run_tests.sh tests/janitor/test_janitor_update_commit_pin.py` → 12 pruebas, 0 fallos, con git real |
 | F9-13 | **Hecho (2026-11-27), sin auditar el código.** `janitor-update-helper` (root), acción `ai.janitor.desktop.update` (`auth_admin`, sin «keep»), clave pública y carpeta privada `/var/cache/janitor-desktop`, todo dentro del paquete. Diseño y revisiones en la sección 9 | `apps/desktop-janitor/packaging/arch/` | ensayo en contenedor de Arch (F9-09): 11 rechazos sin cambiar nada, N→N+1, repetición y paquete más viejo. **No verificado:** el diálogo de polkit en una sesión gráfica real, ni que polkit considere activa la sesión cuando el relevo corre bajo `user@.service` (Hyprland) |
@@ -353,7 +355,12 @@ touchpoint`; `python -m janitor.catalog check` → `40/40 catalog entries resolv
 - En el equipo de desarrollo, `test_touchpoint_contract[version]` falla porque el entorno
   de Python prestado del checkout principal tiene instalada la `.2`; no depende de este
   cambio (comprobar en CI).
-- El código no lo ha leído un revisor distinto (segunda mitad de F9-11).
+- Las correcciones de la sección 9.5 las probó quien las escribió; el revisor no las ha
+  vuelto a leer.
+- Durante la ventana entre publicar la versión y mover `stable` (sección 9.5), que una
+  instalación nueva desde el AppImage recién publicado consiga su commit pidiéndolo por
+  SHA (`scripts/install.sh`, `git fetch origin <sha>`): GitHub lo permite para commits
+  alcanzables, pero no se ha ejecutado.
 
 ### 9.4 Lo que tiene que hacer el dueño a mano
 
@@ -366,3 +373,32 @@ touchpoint`; `python -m janitor.catalog check` → `40/40 catalog entries resolv
    actualizar el motor una vez (verá el aviso antiguo una última vez).
 4. Con la versión siguiente, hacer la prueba real (F9-10): aviso al abrir, contraseña del
    sistema, reapertura sola; y probar a cancelar la contraseña.
+
+### 9.5 Revisión del código por un revisor distinto (directiva #20, 2026-11-27)
+
+Un subagente Opus sin el contexto del autor leyó el diff completo del PR 109 contra este
+plan y volvió a correr las verificaciones. Veredicto: apto con correcciones menores; sin
+bloqueantes y sin camino a root, a instalar algo sin firma, a bajar de versión ni a que
+root lea archivos ajenos. Cada hallazgo se comprobó contra el código antes de aceptarlo.
+
+| Hallazgo | Qué se hizo |
+|---|---|
+| Una app instalada a mano por delante del canal (o una instalación que sigue otra rama) dejaba al motor sin poder actualizarse desde la app: el manifiesto «más viejo» o inexistente lo bloqueaba todo | App por delante del canal → solo motor, fijado al commit del manifiesto (`decideUpdate`); sigue rechazándose una entrega más vieja que una ya aceptada. Instalación que sigue otra rama → relevo de siempre, sin pedir manifiesto (`releaseBranch`). Pruebas nuevas en `app-update.test.mjs` |
+| `pacman` escribía en la tubería de quien llamó al auxiliar: un programa del usuario podía cortarlo o bloquearlo a mitad (reabría en parte el primer hallazgo de 9.2) | La salida de `pacman` va a un archivo en la carpeta privada de root y se copia a la salida de errores al terminar |
+| La directiva #13 de `AGENTS.md` seguía diciendo que `stable` se mueve antes de adjuntar | Corregida: se mueve al final, tras publicar y verificar (F9-14) |
+| La ventana entre publicar y mover `stable` no estaba analizada | Se mantiene el orden (canal al final, hallazgo 3 de la sección 8). En esa ventana la versión existe pero nadie la recibe; si el último `push` falla, se vuelve a lanzar el trabajo. Una instalación nueva desde ese AppImage clona `stable` y pide su commit por SHA: no verificado (9.3) |
+| Sin plazo propio al pedir versión, manifiesto y firma | 30 s (`MANIFEST_TIMEOUT_MS`), con prueba |
+| Dos pruebas leían código fuente | Sustituida una por una prueba de carga del módulo aislado; eliminada la otra (el relevo ya lo prueban `test_janitor_desktop_update*.py`). El resto de `app-update-patches.test.mjs` comprueba el texto ya parcheado, como las demás pruebas de parches del overlay: se deja |
+| `paso.json` no lo lee nadie, y el plan decía que sí | Texto corregido (4.1 y `janitor-app.sh`): es solo diagnóstico |
+| El aviso de la salida 13 del auxiliar solo describía uno de sus dos casos | Aviso que cubre los dos |
+| Faltaba probar un manifiesto firmado sin la entrada del paquete, o con ella dos veces | Dos casos nuevos en `arch-update-e2e.sh` (salida 13) |
+| Restos `.janitor-nuevo.*` de un corte junto al AppImage | Se borran al empezar la siguiente instalación |
+
+Corridas tras las correcciones: `node --test apps/desktop-janitor/scripts/*.test.mjs` →
+406 pruebas, 0 fallos; `node apps/desktop-janitor/scripts/build.mjs --check` → `280/280
+patches resolve`; `scripts/run_tests.sh tests/janitor/` → 917 pasan, 1 falla (la de la
+versión instalada del entorno prestado, 9.3; el revisor confirmó la causa);
+`python -m janitor.overlay check` y `python -m janitor.catalog check` → correctos;
+`arch-update-e2e.sh` en un contenedor `archlinux:base-devel` local → 13 rechazos, N→N+1,
+repetición y paquete más viejo: `all checks passed (0.21.5.janitor.4-1 →
+0.21.5.janitor.5-1)`. `shellcheck` no está instalado en el equipo: no se corrió.

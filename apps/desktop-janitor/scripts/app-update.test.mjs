@@ -22,6 +22,7 @@ import {
   createDesktopUpdater,
   decideUpdate,
   detectInstallKind,
+  fetchVerifiedManifest,
   installerFor,
   prepareUpdate,
   readAcceptedSequence,
@@ -193,8 +194,9 @@ test('never an older delivery; the same one can be repeated; a newer one is inst
   assert.equal(decide({}).installer.name, APPIMAGE_NAME)
   // Same delivery again (the app is already N+1, the engine is not): finish it.
   assert.deepEqual(decide({ appVersion: N1, acceptedSequence: manifest.sequence }), { action: 'engine-only', installer: null })
-  // The app is newer than what is offered.
-  rejects(() => decide({ appVersion: '0.21.5-janitor.6' }), 'mas-vieja')
+  // The app is ahead of the channel (installed by hand before the channel moved):
+  // no installer, and the engine can still follow the channel.
+  assert.deepEqual(decide({ appVersion: '0.21.5-janitor.6' }), { action: 'engine-only', installer: null })
   // A newer delivery was accepted before (a replayed old manifest).
   rejects(() => decide({ acceptedSequence: manifest.sequence + 1 }), 'mas-vieja')
   // The channel moved: the manifest is of another commit.
@@ -554,6 +556,22 @@ test('startup check: an app already on the published version adds nothing, and a
   assert.equal(behind.behind, 3)
   assert.equal(behind.janitorApp.needsApp, false)
   assert.ok(offline.logs.some(line => line.includes('app check')))
+})
+
+test('an install that follows another branch keeps the hand-off it always had: no manifest is asked for', { skip: NEEDS_POSIX }, async () => {
+  const { instance, logs } = updater('otra-rama', { env: appImageEnv('otra-rama'), releaseBranch: 'stable', fetchImpl: () => assert.fail('must not fetch') })
+  const onMain = { ...ENGINE_CURRENT, branch: 'main', updateAvailable: true }
+
+  assert.deepEqual(await instance.prepareHandoff({ freshStatus: async () => onMain, relayScriptText: RELAY }), { args: [] })
+  assert.ok(logs.some(line => line.includes('follows main')))
+  // The check at startup does not hide the engine update behind a manifest that cannot exist.
+  assert.equal((await instance.augmentStatus(onMain)).janitorApp.error, null)
+})
+
+test('a server that stops answering does not hold the check open', async () => {
+  const hung = (url, { signal }) => new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason)))
+
+  await rejectsAsync(fetchVerifiedManifest({ commit: COMMIT, publicKeyPem: keys.publicKeyPem, fetchImpl: hung, timeoutMs: 50 }), 'red')
 })
 
 test('a cached status is only reused by the app version that produced it', () => {

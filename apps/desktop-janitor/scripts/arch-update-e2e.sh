@@ -92,6 +92,20 @@ run 12 "manifest signed with another key" "$WORK/$NEW_NAME" "$WORK/otra/janitor-
 sed 's/"sequence": /"sequence": 1/' "$MANIFEST" > "$WORK/alterado.json" && chown janitor-e2e: "$WORK/alterado.json"
 run 12 "manifest altered after signing" "$WORK/$NEW_NAME" "$WORK/alterado.json" "$SIG"
 
+# Validly signed manifests that do not describe this package exactly once.
+mkdir -p "$WORK/ajeno" "$WORK/doble"
+echo "otro archivo" > "$WORK/ajeno/otro.txt"
+node "$SCRIPTS/update-manifest.mjs" build --version "$NEW_VERSION" --commit "$COMMIT" --out "$WORK/ajeno" "$WORK/ajeno/otro.txt" >/dev/null
+sed -E 's/^(    \{"name": .*\})$/\1,\n\1/' "$MANIFEST" > "$WORK/doble/janitor-update.json"
+[ "$(grep -c '"name": ' "$WORK/doble/janitor-update.json")" -eq 2 ] || fail "the duplicated manifest was not built"
+for dir in ajeno doble; do
+  JANITOR_E2E_KEY="$(cat "$WORK/keys/test-update-key.private.pem")" \
+    node "$SCRIPTS/update-manifest.mjs" sign --manifest "$WORK/$dir/janitor-update.json" --key-env JANITOR_E2E_KEY >/dev/null
+done
+chown -R janitor-e2e: "$WORK/ajeno" "$WORK/doble"
+run 13 "signed manifest without this package" "$WORK/$NEW_NAME" "$WORK/ajeno/janitor-update.json" "$WORK/ajeno/janitor-update.json.sig"
+run 13 "signed manifest that lists this package twice" "$WORK/$NEW_NAME" "$WORK/doble/janitor-update.json" "$WORK/doble/janitor-update.json.sig"
+
 # The package the app verified is swapped for another one before root reads it.
 mkdir -p "$WORK/sustituido"
 head -c "$(stat -c %s "$WORK/$NEW_NAME")" /dev/urandom > "$WORK/sustituido/$NEW_NAME"

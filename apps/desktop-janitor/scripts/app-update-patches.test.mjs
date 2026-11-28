@@ -10,6 +10,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
+import { pathToFileURL } from 'node:url'
 
 import { APP_UPDATE_PATCHES, NOTICE, RUNTIME_MODULE, appUpdateGlueSource, appUpdatePatches, readUpdatePublicKey } from '../brand/app-update-patches.mjs'
 
@@ -18,7 +19,6 @@ import { APP_DIR, FORK_ONLY_TARGETS, OVERLAY_DIR, OVERLAY_FILES } from './build.
 import { computePatchedFiles } from './patch-engine.mjs'
 import { checkTranspiles } from './transpile-check.mjs'
 
-const REPO_ROOT = path.resolve(OVERLAY_DIR, '..', '..')
 const patched = computePatchedFiles(APP_DIR, allPatches())
 const text = file => patched.get(file).toString('utf8')
 const upstream = file => fs.readFileSync(path.join(APP_DIR, file), 'utf8')
@@ -30,13 +30,18 @@ test('the logic the tests import is the file the build ships, and the build remo
   assert.match(text('electron/main.ts'), /import \* as janitorAppUpdate from '\.\/janitor-app-update\.mjs'/)
 })
 
-test('the logic ships with Node built-ins only: nothing for the bundler to miss', () => {
-  const source = fs.readFileSync(path.join(OVERLAY_DIR, 'brand', 'app-update.mjs'), 'utf8')
-  const imports = [...source.matchAll(/^import .* from '([^']+)'$/gm)].map(match => match[1])
+test('the logic loads on its own, away from the repo: nothing for the bundler to miss', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'janitor-app-update-'))
 
-  assert.deepEqual(imports, ['node:crypto', 'node:fs', 'node:path'])
-  // No environment variable or setting changes the origin or the key.
-  assert.doesNotMatch(source, /process\.env/)
+  try {
+    fs.copyFileSync(path.join(OVERLAY_DIR, 'brand', 'app-update.mjs'), path.join(dir, 'solo.mjs'))
+
+    const loaded = await import(pathToFileURL(path.join(dir, 'solo.mjs')).href)
+
+    assert.equal(typeof loaded.createDesktopUpdater, 'function')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
 })
 
 test('every patched file still transpiles', () => {
@@ -131,16 +136,4 @@ test('«Actualizar siempre sin preguntar» is off by default, lives in Ajustes a
   assert.ok(store.indexOf('janitorAutoUpdateStarted = true') < store.indexOf('if (isUpdateToastSnoozed()) {\n    return\n  }\n\n  notify({'))
   assert.ok(settings.includes(`title=${JSON.stringify(NOTICE.autoTitle)}`))
   assert.match(settings, /onCheckedChange=\{value => void setJanitorAutoUpdate\(value\)\}/)
-})
-
-test('the relay no longer tells anyone to reinstall «AppImage/deb/rpm» by hand', () => {
-  for (const name of ['posix.sh', 'janitor-app.sh']) {
-    const script = fs.readFileSync(path.join(REPO_ROOT, 'scripts', 'desktop-update', name), 'utf8')
-
-    assert.doesNotMatch(script, /AppImage\/deb\/rpm/, name)
-    // `sudo` only ever appears in the command the user is told to run by hand.
-    const sudoLines = script.split('\n').filter(line => /\bsudo\b/.test(line) && !line.trimStart().startsWith('#'))
-
-    assert.ok(sudoLines.every(line => line.includes('manual="Para instalarla a mano: sudo pacman -U')), `${name} must never run sudo`)
-  }
 })

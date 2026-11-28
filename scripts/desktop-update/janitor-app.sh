@@ -11,8 +11,10 @@
 #   app installed, engine failed    → the new app reopens and offers the engine
 #                                     update again (same delivery, same commit)
 #
-# The app always reopens, and the step reached is written to
-# $HERMES_HOME/desktop-update/paso.json so the same delivery can be finished.
+# The app always reopens. The step reached is written to
+# $HERMES_HOME/desktop-update/paso.json for whoever diagnoses a cut delivery;
+# nothing reads it back: the same delivery is finished because the app compares
+# its own version and the engine's commit with the signed manifest again.
 #
 # Arguments (parsed in posix.sh, all optional; none = today's engine-only run):
 #   --target-commit <sha>      engine commit of the signed manifest (janitor update --commit)
@@ -53,7 +55,7 @@ janitor_args_valid() { # the app builds these; anything else is refused before a
   return 0
 }
 
-janitor_note_step() { # step -- where this delivery got to; read by the next attempt and by people
+janitor_note_step() { # step -- where this delivery got to, for people (nothing reads it back)
   local dir="$HERMES_HOME/desktop-update"
   mkdir -p "$dir" 2>/dev/null || return 0
   printf '{"version":"%s","commit":"%s","kind":"%s","step":"%s","at":%s}\n' \
@@ -87,6 +89,7 @@ janitor_install_appimage() {
   dir="$(dirname -- "$target")"
   [ -w "$dir" ] || { janitor_app_fail 22 "no tienes permiso de escritura en $dir. Mueve el AppImage a una carpeta tuya o reemplázalo a mano por el de $JANITOR_RELEASES_URL."; return 1; }
   staged="$dir/.$(basename -- "$target").janitor-nuevo.$$"
+  rm -f -- "$dir/.$(basename -- "$target").janitor-nuevo."* 2>/dev/null   # left by a run that was cut
   cp -f -- "$JANITOR_APP_INSTALLER" "$staged" 2>/dev/null \
     || { rm -f -- "$staged" 2>/dev/null; janitor_app_fail 23 "no se pudo copiar el AppImage nuevo a $dir (¿disco lleno?)."; return 1; }
   if [ "$(stat -c %s -- "$staged" 2>/dev/null)" != "$JANITOR_APP_SIZE" ] \
@@ -122,7 +125,7 @@ janitor_install_pacman() {
     126) janitor_app_fail 26 "cancelaste la contraseña del sistema." ;;
     127) janitor_app_fail 27 "el sistema no pudo pedir la contraseña (no hay agente de permisos en esta sesión, o no estás autorizado). $manual" ;;
     12) janitor_app_fail 28 "la firma de la versión no es válida para este paquete instalado." ;;
-    13) janitor_app_fail 24 "el paquete descargado ya no coincide con el que se verificó (cambió después de descargarlo)." ;;
+    13) janitor_app_fail 24 "el paquete descargado no es el que describe el manifiesto firmado (cambió después de verificarlo, o el manifiesto no lo incluye)." ;;
     15) janitor_app_fail 28 "el paquete publicado es más viejo que el instalado: no se baja de versión." ;;
     16) janitor_app_fail 29 "pacman no pudo instalar el paquete (detalle en el registro de la actualización). $manual" ;;
     17) janitor_app_fail 29 "ya hay otra actualización de la app en curso." ;;

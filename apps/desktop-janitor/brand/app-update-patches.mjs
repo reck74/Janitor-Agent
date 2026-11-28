@@ -79,6 +79,7 @@ export function appUpdateGlueSource(publicKeyPem) {
     '  execPath: process.execPath,',
     '  hermesHome: HERMES_HOME,',
     '  publicKeyPem: JANITOR_UPDATE_PUBLIC_KEY,',
+    '  releaseBranch: DEFAULT_UPDATE_BRANCH,',
     '  fetchImpl: (url, init) => fetch(url, init),',
     '  packageOwner: janitorPackageOwner,',
     '  pathLookup: command => findOnPath(command),',
